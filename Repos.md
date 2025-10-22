@@ -14,3 +14,6 @@ IAC
 
 3. Web Vulnerability Detection :
 - https://github.com/usestrix/strix
+
+4. SBOM Scanning :
+- https://github.com/anchore/grype
