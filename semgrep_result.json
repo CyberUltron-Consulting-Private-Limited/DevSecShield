@@ -1,0 +1,132 @@
+{
+    "version": "1.136.0",
+    "results": [],
+    "errors": [
+        {
+            "code": 3,
+            "level": "warn",
+            "type": "Syntax error",
+            "message": "Syntax error at line backend\\mcpscan_utils\\core\\runner_function.py:466:\n missing element",
+            "path": "backend\\mcpscan_utils\\core\\runner_function.py"
+        }
+    ],
+    "paths": {
+        "scanned": [
+            "backend\\__init__.py",
+            "backend\\api_routes\\routing_admin.py",
+            "backend\\api_routes\\routing_llm_scan.py",
+            "backend\\api_routes\\routing_mcp_scan.py",
+            "backend\\api_routes\\routing_normal_sys.py",
+            "backend\\auth_schema.py",
+            "backend\\auth_utils.py",
+            "backend\\html_email.py",
+            "backend\\llm_scan_utils\\garak_scan.py",
+            "backend\\llm_scan_utils\\llm_scan_utils.py",
+            "backend\\main.py",
+            "backend\\mcpscan_utils\\__init__.py",
+            "backend\\mcpscan_utils\\core\\extract_description.py",
+            "backend\\mcpscan_utils\\core\\lang_utils.py",
+            "backend\\mcpscan_utils\\core\\llm_bridge.py",
+            "backend\\mcpscan_utils\\core\\runner.py",
+            "backend\\mcpscan_utils\\core\\runner_function.py",
+            "backend\\mcpscan_utils\\core\\semgrep_utils.py",
+            "backend\\mcpscan_utils\\core\\source_utils.py",
+            "backend\\mcpscan_utils\\mcpscan_phase2.py",
+            "backend\\models.py",
+            "backend\\normal_scan_utils\\analyze_image.py",
+            "backend\\normal_scan_utils\\analyze_repo.py",
+            "backend\\normal_scan_utils\\attack_diagram.py",
+            "backend\\normal_scan_utils\\consolidate.py",
+            "backend\\normal_scan_utils\\get_threat_model.py",
+            "backend\\normal_scan_utils\\infographics.py",
+            "backend\\normal_scan_utils\\prompts.py",
+            "backend\\plans.py",
+            "backend\\routing_auth.py",
+            "backend\\test.py",
+            "backend\\utilities.py",
+            "backend\\virus_scan_utils.py"
+        ],
+        "skipped": [
+            {
+                "path": "backend\\mcpscan_utils\\core\\runner_function.py",
+                "reason": "analysis_failed_parser_or_internal_error"
+            },
+            {
+                "path": "backend\\uploads\\1\\Blue-Logo.png",
+                "reason": "exceeded_size_limit"
+            }
+        ]
+    },
+    "time": {
+        "rules": [],
+        "rules_parse_time": 0.3515148162841797,
+        "profiling_times": {
+            "config_time": 1.9028544425964355,
+            "core_time": 3.6487085819244385,
+            "ignores_time": 0.00024390220642089844,
+            "total_time": 5.552726745605469
+        },
+        "parsing_time": {
+            "total_time": 0.0,
+            "per_file_time": {
+                "mean": 0.0,
+                "std_dev": 0.0
+            },
+            "very_slow_stats": {
+                "time_ratio": 0.0,
+                "count_ratio": 0.0
+            },
+            "very_slow_files": []
+        },
+        "scanning_time": {
+            "total_time": 2.7117395401000977,
+            "per_file_time": {
+                "mean": 0.08217392545757872,
+                "std_dev": 0.00792943205809751
+            },
+            "very_slow_stats": {
+                "time_ratio": 0.0,
+                "count_ratio": 0.0
+            },
+            "very_slow_files": []
+        },
+        "matching_time": {
+            "total_time": 0.0,
+            "per_file_and_rule_time": {
+                "mean": 0.0,
+                "std_dev": 0.0
+            },
+            "very_slow_stats": {
+                "time_ratio": 0.0,
+                "count_ratio": 0.0
+            },
+            "very_slow_rules_on_files": []
+        },
+        "tainting_time": {
+            "total_time": 0.0,
+            "per_def_and_rule_time": {
+                "mean": 0.0,
+                "std_dev": 0.0
+            },
+            "very_slow_stats": {
+                "time_ratio": 0.0,
+                "count_ratio": 0.0
+            },
+            "very_slow_rules_on_defs": []
+        },
+        "fixpoint_timeouts": [],
+        "prefiltering": {
+            "project_level_time": 0.0,
+            "file_level_time": 0.0,
+            "rules_with_project_prefilters_ratio": 0.0,
+            "rules_with_file_prefilters_ratio": 0.9933774834437086,
+            "rules_selected_ratio": 0.04097682119205298,
+            "rules_matched_ratio": 0.04097682119205298
+        },
+        "targets": [],
+        "total_bytes": 0,
+        "max_memory_bytes": 285933440
+    },
+    "engine_requested": "OSS",
+    "skipped_rules": []
+}
