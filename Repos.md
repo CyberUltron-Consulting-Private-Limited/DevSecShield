@@ -46,7 +46,7 @@ IAC
 
 
 7. MCP Scanning ( remote and local )
-- https://github.com/invariantlabs-ai/mcp-scan
+- https://github.com/invariantlabs-ai/mcp-scan ✔️✔️ Implemented function
 
 ```uvx mcp-scan C:\Users\HP\Desktop\MCPTest\time_mcp.json --json --opt-out --verbose  --storage-file mcp_results```
 
@@ -55,6 +55,14 @@ Notes:
 - this JSON file is what gets extracted by the scanner and then it runs the server using this config and makes requests to it , to get information about the tools available and some metadata about them.
 - for local MCP server scans , they must have a config file in their repo , that the scanner will detect and scan 
 - for remote scans ( MCP Servers listed in MCP.so ), the server configs for each server is listed on their site MCP.so . We need to find a way to give this config file to the scanner to start the server and scan it . The most probable way would be to ask the user to copy and paste the config file into the text area . 
+
+Lable values 
+1 -> low 
+2 -> High 
+3 -> Critical
+
+Sidenotes:
+- those weird characters that show up in the description fields as strings , is somethign you cannot solve because that was present in the raw string that was read too .
 
 
 

@@ -1,0 +1,128 @@
+{
+    "playwright.tool.browser_close": {
+        "hash": "9ab0541bfb528c058efc8ad3565867a9",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215736",
+        "description": "Close the page"
+    },
+    "playwright.tool.browser_resize": {
+        "hash": "56dc79e446e5346d5a533438c8fb195b",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215789",
+        "description": "Resize the browser window"
+    },
+    "playwright.tool.browser_console_messages": {
+        "hash": "ef440a9cde2178e2cf166dc5224af29e",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215798",
+        "description": "Returns all console messages"
+    },
+    "playwright.tool.browser_handle_dialog": {
+        "hash": "096afabc52854c318e97f79c5e608ac1",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215804",
+        "description": "Handle a dialog"
+    },
+    "playwright.tool.browser_evaluate": {
+        "hash": "60f736017294715acf02f2ec3fd0ac14",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215810",
+        "description": "Evaluate JavaScript expression on page or element"
+    },
+    "playwright.tool.browser_file_upload": {
+        "hash": "0045cf273000f0cd7f2891ea2c8e9b36",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215816",
+        "description": "Upload one or multiple files"
+    },
+    "playwright.tool.browser_fill_form": {
+        "hash": "a63285dcff94d0a4157f9d6df19b5a33",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215822",
+        "description": "Fill multiple form fields"
+    },
+    "playwright.tool.browser_install": {
+        "hash": "39380579d2a80c03231e81ae5017e335",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215828",
+        "description": "Install the browser specified in the config. Call this if you get an error about the browser not being installed."
+    },
+    "playwright.tool.browser_press_key": {
+        "hash": "8bab675a1b5afc88d33bfba453780c6b",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215833",
+        "description": "Press a key on the keyboard"
+    },
+    "playwright.tool.browser_type": {
+        "hash": "0a46c0f81a4400b8a5b257e0240582ae",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215839",
+        "description": "Type text into editable element"
+    },
+    "playwright.tool.browser_navigate": {
+        "hash": "37d3ba8875d16249ee08be1e5ff4b10b",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215844",
+        "description": "Navigate to a URL"
+    },
+    "playwright.tool.browser_navigate_back": {
+        "hash": "d45c1063bdb60004fd20b822a666f1ec",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215850",
+        "description": "Go back to the previous page"
+    },
+    "playwright.tool.browser_network_requests": {
+        "hash": "dc361d117e0f19d7b43b10378b5a8856",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215856",
+        "description": "Returns all network requests since loading the page"
+    },
+    "playwright.tool.browser_take_screenshot": {
+        "hash": "22c3140f6acfd92df484b465f9fe7768",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215862",
+        "description": "Take a screenshot of the current page. You can't perform actions based on the screenshot, use browser_snapshot for actions."
+    },
+    "playwright.tool.browser_snapshot": {
+        "hash": "e30a435e3edcfe64e550f09ed03d5a0e",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215868",
+        "description": "Capture accessibility snapshot of the current page, this is better than screenshot"
+    },
+    "playwright.tool.browser_click": {
+        "hash": "dd77d28e1e1a930614b22639bfd5d842",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215881",
+        "description": "Perform click on a web page"
+    },
+    "playwright.tool.browser_drag": {
+        "hash": "46b9e52d6b34971174f9cc39b77bc117",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215886",
+        "description": "Perform drag and drop between two elements"
+    },
+    "playwright.tool.browser_hover": {
+        "hash": "db6d8e752a10be574764668a19544ceb",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215892",
+        "description": "Hover over element on page"
+    },
+    "playwright.tool.browser_select_option": {
+        "hash": "5b5ad3756dd93c3043df0c7063564f75",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215897",
+        "description": "Select an option in a dropdown"
+    },
+    "playwright.tool.browser_tabs": {
+        "hash": "79d43118c2e8cecfa537e88787d696e6",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215903",
+        "description": "List, create, close, or select a browser tab."
+    },
+    "playwright.tool.browser_wait_for": {
+        "hash": "795bcdd69d65558f9630091aeab0ba2a",
+        "type": "tool",
+        "timestamp": "2025-10-25T11:32:05.215912",
+        "description": "Wait for text to appear or disappear or a specified time to pass"
+    }
+}
