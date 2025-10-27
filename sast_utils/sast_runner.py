@@ -1,0 +1,123 @@
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+import shutil
+from git import Repo, GitCommandError
+from rich.console import Console
+
+def is_github_url(url: str) -> bool:
+    return url.startswith(("http://", "https://")) and "github.com" in url
+
+def clone_repo(url: str) -> Path:
+    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
+    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
+    try:
+        Repo.clone_from(url, tmp, depth=1)
+    except GitCommandError as e:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise RuntimeError(f"Clone failed: {e}") from e
+    return tmp
+
+def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
+    try:
+        lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
+        return "\n".join(
+            f"{i+1:>5}| {lines[i]}" for i in range(start - 1, min(end, len(lines)))
+        )
+    except Exception as exc:
+        Console().print(f"Failed to read code snippet {fp}:{start}-{end} — {exc}",style="bold red")
+        return ""
+
+
+
+def run_sast_scan(repo_url: str | None = None, PAT: str | None = None , app_lang : str = "python") -> dict | str:
+    """
+    Run a SAST scan on a given directory.
+    Args:
+        repo_url: The URL of the GitHub repository to scan.
+        PAT: The GitHub token to use for authentication.
+        app_lang: The language of the application to scan.
+    Returns:
+        A dictionary containing the scan results.
+        A string containing the error message if the scan fails.
+    """
+    try:
+        json_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        Console().print(f"Starting SAST scan 🟨 🔍 for {app_lang} application",style="bold yellow")
+        if repo_url and is_github_url(repo_url):
+            ind = repo_url.find("github.com")
+            repo = repo_url[ind:]
+            repo = f"https://{PAT}@{repo}"
+            directory = clone_repo(repo)
+
+        if app_lang not in ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]:
+            raise ValueError(f"Unsupported language: {app_lang}")
+        app_config = f"p/{app_lang}"
+
+
+        if directory:
+            cmd =[
+                "semgrep",
+                "--config",
+                app_config,
+                "--verbose",
+                "--json",
+                "--output",
+                json_temp.name,
+                directory
+            ]
+        else:
+            raise ValueError(f"Directory not provided")
+
+        result = subprocess.run(cmd)
+
+
+        if result.returncode != 0:
+            raise RuntimeError(f"SAST scan failed: {result.stderr}")
+
+        Console().print(f"SAST scan ran successfully, reading results now .. 🟨",style="bold yellow")
+        
+        with open(json_temp.name, "r", encoding="utf-8") as f:
+            sast_json = json.load(f)
+            # for testing
+            with open("test_aa.json", "w+", encoding="utf-8") as f:
+                json.dump(sast_json, f, indent=2)
+            for i in range(len(sast_json["results"])):
+                result = sast_json["results"][i]
+                path = result["path"]
+                start = result["start"]["line"]
+                end = result["end"]["line"]
+                snippet = snippet_with_numbers(Path(path), start, end)
+                sast_json["results"][i]["snippet"] = snippet
+            
+            # No need for parsing errors as they are not vulnerabilities
+            # for i in range(len(sast_json["errors"])):
+            #     for j in range(len(sast_json["errors"][i]["type"][1])):
+            #         if sast_json["errors"][i]["type"][1][j]["type"] != "Internal matching error":
+            #             result = sast_json["errors"][i]["type"][1][j]
+            #             path = result["path"]
+            #             start = result["start"]["line"]
+            #             end = result["end"]["line"]
+            #             snippet = snippet_with_numbers(Path(path), start, end)
+            #             sast_json["errors"][i]["type"][1][j]["snippet"] = snippet
+
+        json_temp.close()
+
+        # for testing
+        with open("test.json", "w+", encoding="utf-8") as f:
+            json.dump(sast_json, f, indent=2)
+        
+        Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(sast_json['results'])}",style="bold green")
+        return sast_json
+    except Exception as e:
+        Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
+        return str(e)
+
+
+if __name__ == "__main__":
+    result = run_sast_scan(
+        repo_url="https://github.com/CyberUltron-Nikhil/RiskPilot",
+        PAT="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",
+        app_lang="javascript",
+    )

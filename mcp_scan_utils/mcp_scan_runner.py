@@ -3,11 +3,12 @@ import json
 import tempfile
 import shutil
 from rich.progress import Progress,Task
-def run_mcp_scan(server_config_path:str,progress:Progress,task:Task) -> list[dict]:
+from rich.console import Console
+def run_mcp_scan(server_config_path:str) -> list[dict] | str:
 
     try:
         # STEP : ------------------------------------------------------------Running the mcp-scan command----------------------------------------------------------
-        progress.update(task, description=f"Starting the mcp-scan command for the server config path: {server_config_path} 🟨",advance=10)
+        Console().print(f"Starting the mcp-scan command for the server config path: {server_config_path} 🟨",style="bold yellow")
         temp_dir = tempfile.mkdtemp()
         cmd=[ "uvx" , "mcp-scan" ,server_config_path, "--json" , "--opt-out" , "--full-toxic-flows","--storage-file", temp_dir ]
         result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -18,7 +19,7 @@ def run_mcp_scan(server_config_path:str,progress:Progress,task:Task) -> list[dic
             raise Exception(f"Error: {result.stderr.decode('utf-8')}")
         
         # STEP : ------------------------------------------------------------Decoding the results----------------------------------------------------------
-        progress.update(task, description=f"Decoding the results 🟨",advance=10)
+        Console().print(f"Decoding the results 🟨",style="bold yellow")
         results = result.stdout.decode("utf-8")
         error = result.stderr.decode("utf-8")
 
@@ -27,27 +28,26 @@ def run_mcp_scan(server_config_path:str,progress:Progress,task:Task) -> list[dic
         #     json.dump(results, f, indent=2)
 
         # STEP :----------------------------------------------------------Loading the results into a dictionary----------------------------------------------------------
-        progress.update(task, description=f"Loading the results into a dictionary 🟨",advance=10)
+        Console().print(f"Loading the results into a dictionary 🟨",style="bold yellow")
         start_index = results.find("{") # because sometimes the scan prints an error message before the actual results , so we need to load the results from the start of the json object
         raw_scan_dict = json.loads(results[start_index:])
 
-        #for testing
+        # for testing
         # with open("mcp_results_2.json", "w+") as f:
         #     json.dump(raw_scan_dict, f, indent=2)
 
         
         # STEP : ---------Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server-------------
-        progress.update(task, description=f"Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server 🟨",advance=10)
+        Console().print(f"Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server 🟨",style="bold yellow")
         list_of_tools_per_server = []
         
         servers = raw_scan_dict[server_config_path]["servers"]
-        print(f"Number of servers found : {len(servers)} 🟩")
+        Console().print(f"Number of servers found : {len(servers)} 🟩",style="bold green")
         for server in servers:
             server_tools = []
             server_name = server["name"]
             if error in server or server["signature"]==None:
-                # error workflow
-                continue
+                raise Exception(f"Server {server_name} encountered an error : {server["error"]["message"]} , Exception: {server["error"]["exception"]}")
             tools = server["signature"]["tools"]
             for tool in tools:
                 tool_name = tool["name"]
@@ -62,7 +62,7 @@ def run_mcp_scan(server_config_path:str,progress:Progress,task:Task) -> list[dic
             list_of_tools_per_server.append(server_tools)
 
         # STEP : ------------------------------Mapping the tools with the issues and vulnerabilities found in the server----------------------------------------
-        progress.update(task, description=f"Mapping the tools with the issues and vulnerabilities found in the server 🟨",advance=10)
+        Console().print(f"Mapping the tools with the issues and vulnerabilities found in the server 🟨",style="bold yellow")
         final_issues = []
         issues = raw_scan_dict[server_config_path]["issues"]
         for issue in issues:
@@ -93,28 +93,21 @@ def run_mcp_scan(server_config_path:str,progress:Progress,task:Task) -> list[dic
                         "issue_severity": issue_severity
                     }
                     final_issues.append(issue_dict)
-        print(f"Number of issues found : {len(final_issues)} 🟩")
+        Console().print(f"Number of issues found : {len(final_issues)} 🟩",style="bold green")
 
         # for testing
         # with open("final_issues.json", "w+") as f:
         #     json.dump(final_issues, f, indent=2)
 
-        progress.update(task, description=f"Finished the mcp-scan command for the server config path: {server_config_path} 🟩",advance=10)
-        progress.update(task, completed=100)
+        Console().print(f"Finished the mcp-scan command for the server config path: {server_config_path} 🟩",style="bold green")
         return final_issues
     
     except Exception as e:
-        progress.update(task, description=f"Error occured while running the mcp-scan 🔴: {e}")
-        progress.update(task, completed=100)
-        return None
+        Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
+        return str(e)
 
-def run_mcp_scan_with_progress(server_config_path:str) -> list[dict]:
-    with Progress() as progress:
-        task = progress.add_task("Running the mcp-scan command", total=100)
-        result = run_mcp_scan(server_config_path,progress,task)
-    return result
 
 if __name__ == "__main__":
-    results = run_mcp_scan_with_progress(server_config_path="C:\\Users\\HP\\Desktop\\DevSecShield\\test-server-mcp.json")
-    print(results[-1])
+    results = run_mcp_scan("test-server-mcp.json")
+    print(results[-1]) if type(results) == list else print(results)
 

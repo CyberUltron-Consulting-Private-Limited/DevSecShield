@@ -33,7 +33,7 @@ IAC
 - https://github.com/usestrix/strix
 
 4. SBOM Scanning :
-- https://github.com/anchore/grype 🟩
+- https://github.com/anchore/grype 🟩  ✔️✔️ Implemented function
 
 ```grype dir:. --output json --file test.json```
 
@@ -41,12 +41,12 @@ IAC
 - https://github.com/yacwagh/double-trust
 
 6. LLM Benchmarking:
-- https://github.com/NVIDIA/garak 🟩
+- https://github.com/NVIDIA/garak 🟩 ✔️✔️ Implemented function
 
 
 
 7. MCP Scanning ( remote and local )
-- https://github.com/invariantlabs-ai/mcp-scan ✔️✔️ Implemented function
+- https://github.com/invariantlabs-ai/mcp-scan 🟩 ✔️✔️ Implemented function
 
 ```uvx mcp-scan C:\Users\HP\Desktop\MCPTest\time_mcp.json --json --opt-out --verbose  --storage-file mcp_results```
 

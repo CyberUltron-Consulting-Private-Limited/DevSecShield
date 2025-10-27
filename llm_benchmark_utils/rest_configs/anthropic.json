@@ -1,0 +1,24 @@
+{
+    "rest": {
+       "RestGenerator": {
+          "name": "anthropic",
+          "request_timeout": 10000,
+          "uri": "https://generativelanguage.googleapis.com/v1beta/models/<MODEL_NAME>:generateContent",
+          "method": "post",
+          "headers": {
+             "x-api-key": "<API_KEY>",
+             "Content-Type": "application/json",
+             "anthropic-version": "2023-06-01"
+          },
+          "req_template_json_object": {
+            "model": "<MODEL_NAME>",
+            "max_tokens":  2048,
+            "messages": [
+                {"role": "user", "content": "$INPUT"}
+            ]
+        },
+          "response_json": true,
+          "response_json_field": "$.content[0].text"
+       }
+    }
+ }

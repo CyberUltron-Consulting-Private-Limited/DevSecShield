@@ -1,0 +1,2017 @@
+{
+  "version": "1.136.0",
+  "results": [
+    {
+      "check_id": "typescript.react.security.audit.react-unsanitized-property.react-unsanitized-property",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+      "start": {
+        "line": 210,
+        "col": 46,
+        "offset": 6510
+      },
+      "end": {
+        "line": 210,
+        "col": 113,
+        "offset": 6577
+      },
+      "extra": {
+        "metavars": {
+          "$1": {
+            "start": {
+              "line": 1,
+              "col": 1,
+              "offset": 0
+            },
+            "end": {
+              "line": 1,
+              "col": 10,
+              "offset": 9
+            },
+            "abstract_content": "innerHTML"
+          },
+          "$X": {
+            "start": {
+              "line": 208,
+              "col": 57,
+              "offset": 6402
+            },
+            "end": {
+              "line": 208,
+              "col": 58,
+              "offset": 6403
+            },
+            "abstract_content": "e"
+          },
+          "$Y": {
+            "start": {
+              "line": 208,
+              "col": 59,
+              "offset": 6404
+            },
+            "end": {
+              "line": 208,
+              "col": 66,
+              "offset": 6411
+            },
+            "abstract_content": "message"
+          },
+          "$BODY": {
+            "start": {
+              "line": 210,
+              "col": 17,
+              "offset": 6481
+            },
+            "end": {
+              "line": 210,
+              "col": 25,
+              "offset": 6489
+            },
+            "abstract_content": "chartRef"
+          },
+          "$HTML": {
+            "start": {
+              "line": 210,
+              "col": 34,
+              "offset": 6498
+            },
+            "end": {
+              "line": 210,
+              "col": 43,
+              "offset": 6507
+            },
+            "abstract_content": "innerHTML"
+          },
+          "$SINK": {
+            "start": {
+              "line": 210,
+              "col": 46,
+              "offset": 6510
+            },
+            "end": {
+              "line": 210,
+              "col": 113,
+              "offset": 6577
+            },
+            "abstract_content": "`<p class=\"text-red-500\">Error rendering chart: errorMessage</p>"
+          }
+        },
+        "message": "Detection of innerHTML from non-constant definition. This can inadvertently expose users to cross-site scripting (XSS) attacks if this comes from user-provided input. If you have to use innerHTML, consider using a sanitization library such as DOMPurify to sanitize your HTML.",
+        "metadata": {
+          "cwe": [
+            "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+          ],
+          "owasp": [
+            "A07:2017 - Cross-Site Scripting (XSS)",
+            "A03:2021 - Injection"
+          ],
+          "references": [
+            "https://react.dev/reference/react-dom/components/common#dangerously-setting-the-inner-html"
+          ],
+          "category": "security",
+          "confidence": "MEDIUM",
+          "technology": [
+            "react"
+          ],
+          "cwe2022-top25": true,
+          "cwe2021-top25": true,
+          "subcategory": [
+            "vuln"
+          ],
+          "likelihood": "MEDIUM",
+          "impact": "MEDIUM",
+          "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+          "vulnerability_class": [
+            "Cross-Site-Scripting (XSS)"
+          ],
+          "source": "https://semgrep.dev/r/typescript.react.security.audit.react-unsanitized-property.react-unsanitized-property",
+          "shortlink": "https://sg.run/70Zv",
+          "semgrep.dev": {
+            "rule": {
+              "origin": "community",
+              "r_id": 9782,
+              "rule_id": "3qUBl4",
+              "rv_id": 947028,
+              "url": "https://semgrep.dev/playground/r/0bT1E2G/typescript.react.security.audit.react-unsanitized-property.react-unsanitized-property",
+              "version_id": "0bT1E2G"
+            }
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "6ad8f8a4d8cd2aec06b792325cc3a22f7beb6ab8978b245e2a6c844919731ee29453fa15aee08e64098fee547791c5f309fb4cad8559cfa59badff2910e2071a_0",
+        "lines": "                chartRef.current.innerHTML = `<p class=\"text-red-500\">Error rendering chart: ${errorMessage}</p>`;",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "dataflow_trace": {
+          "taint_source": [
+            "CliLoc",
+            [
+              {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+                "start": {
+                  "line": 208,
+                  "col": 57,
+                  "offset": 6402
+                },
+                "end": {
+                  "line": 208,
+                  "col": 58,
+                  "offset": 6403
+                }
+              },
+              "e"
+            ]
+          ],
+          "intermediate_vars": [
+            {
+              "location": {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+                "start": {
+                  "line": 208,
+                  "col": 21,
+                  "offset": 6366
+                },
+                "end": {
+                  "line": 208,
+                  "col": 33,
+                  "offset": 6378
+                }
+              },
+              "content": "errorMessage"
+            }
+          ],
+          "taint_sink": [
+            "CliLoc",
+            [
+              {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+                "start": {
+                  "line": 210,
+                  "col": 46,
+                  "offset": 6510
+                },
+                "end": {
+                  "line": 210,
+                  "col": 113,
+                  "offset": 6577
+                }
+              },
+              "`<p class=\"text-red-500\">Error rendering chart: ${errorMessage}</p>"
+            ]
+          ]
+        },
+        "engine_kind": "OSS"
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\layout.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\layout.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\login\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\login\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\create-project-dialog.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\create-project-dialog.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\ModelChoicePicker.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\ModelChoicePicker.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-main.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-main.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-secondary.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-secondary.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\DreadHeatmap.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\DreadHeatmap.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\FailedControlsChart.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\FailedControlsChart.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMFailedControlsChart.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMFailedControlsChart.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPFailedControlsChart.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPFailedControlsChart.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\OwaspTracker.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\OwaspTracker.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContentSkeleton.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContentSkeleton.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\StatusBadge.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\StatusBadge.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\avatar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\avatar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\badge.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\badge.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\breadcrumb.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\breadcrumb.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\button.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\button.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\card.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\card.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\checkbox.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\checkbox.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dialog.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dialog.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\drawer.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\drawer.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dropdown-menu.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dropdown-menu.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\input.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\input.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\label.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\label.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\scroll-area.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\scroll-area.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\select.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\select.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\separator.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\separator.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sheet.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sheet.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\skeleton.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\skeleton.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\table.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\table.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tabs.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tabs.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\textarea.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\textarea.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle-group.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle-group.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tooltip.tsx:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tooltip.tsx"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\eslint.config.mjs:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\eslint.config.mjs"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\hooks\\use-mobile.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\hooks\\use-mobile.ts"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.express.web.cors-default-config-express.cors-default-config-express",
+      "message": "Internal matching error when running javascript.express.web.cors-default-config-express.cors-default-config-express on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.koa.web.cors-default-config-koa.cors-default-config-koa",
+      "message": "Internal matching error when running javascript.koa.web.cors-default-config-koa.cors-default-config-koa on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\input_validation.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\input_validation.ts"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\utils.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\utils.ts"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Internal matching error",
+      "rule_id": "javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm",
+      "message": "Internal matching error when running javascript.crypto-js.cryptojs-weak-algorithm.cryptojs-weak-algorithm on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\tailwind.config.ts:\n An error occurred while invoking the Semgrep engine. Please help us fix this by creating an issue at https://github.com/semgrep/semgrep\n\nmetavariable-name:module(s) operator is only supported in the Pro engine",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\tailwind.config.ts"
+    },
+    {
+      "code": 3,
+      "level": "warn",
+      "type": [
+        "PartialParsing",
+        [
+          {
+            "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx",
+            "start": {
+              "line": 56,
+              "col": 51,
+              "offset": 0
+            },
+            "end": {
+              "line": 56,
+              "col": 68,
+              "offset": 17
+            }
+          }
+        ]
+      ],
+      "message": "Syntax error at line C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx:56:\n `& drop files here` was unexpected",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx",
+      "spans": [
+        {
+          "file": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx",
+          "start": {
+            "line": 56,
+            "col": 51,
+            "offset": 0
+          },
+          "end": {
+            "line": 56,
+            "col": 68,
+            "offset": 17
+          }
+        }
+      ]
+    }
+  ],
+  "paths": {
+    "scanned": [
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\layout.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\login\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\password_reset\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\register\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\app-sidebar.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\create-project-dialog.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\ModelChoicePicker.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-main.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-secondary.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\DreadHeatmap.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\FailedControlsChart.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\KeyMetricsCards.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMFailedControlsChart.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMKeyMetricsCard.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPFailedControlsChart.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPKeyMetricsCard.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\OwaspTracker.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContentSkeleton.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\StatusBadge.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\section-cards.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\site-header.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\theme-provider.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\avatar.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\badge.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\breadcrumb.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\button.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\card.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\checkbox.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dialog.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\drawer.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dropdown-menu.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\input.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\label.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\scroll-area.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\select.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\separator.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sheet.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\skeleton.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\table.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tabs.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\textarea.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle-group.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tooltip.tsx",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\eslint.config.mjs",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\hooks\\use-mobile.ts",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\input_validation.ts",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\utils.ts",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\next.config.ts",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\postcss.config.mjs",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\tailwind.config.ts"
+    ],
+    "skipped": [
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\backend\\uploads\\1\\Blue-Logo.png",
+        "reason": "exceeded_size_limit"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\layout.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\login\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\test-pdf\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\layout.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\[id]\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\llm\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\[id]\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\mcp\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\overview\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\reports\\page.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\LoginForm.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\auth\\ResetLoginForm.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\chart-area-interactive.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\create-project-dialog.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\deleting\\DeleteConfirmDialog.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateAdminForm.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\CreateUserForm.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\DFDUpload.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\MCPScanCreate.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\ModelChoicePicker.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-documents.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-main.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-secondary.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\nav-user.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\DreadHeatmap.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\FailedControlsChart.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMFailedControlsChart.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanPDFReport.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\LLMScanProjectContent.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPFailedControlsChart.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\OwaspTracker.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContent.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ProjectContentSkeleton.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\StatusBadge.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ZoomableMermaid.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\sidebar.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\avatar.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\badge.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\breadcrumb.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\button.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\card.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\chart.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\checkbox.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dialog.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\drawer.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\dropdown-menu.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\input.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\label.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\scroll-area.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\select.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\separator.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sheet.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\skeleton.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sonner.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\table.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tabs.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\textarea.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle-group.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\toggle.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\tooltip.tsx",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\eslint.config.mjs",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\hooks\\use-mobile.ts",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\interceptors.js",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\error-handler.ts",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\input_validation.ts",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\lib\\utils.ts",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\tailwind.config.ts",
+        "reason": "analysis_failed_parser_or_internal_error"
+      }
+    ]
+  },
+  "time": {
+    "rules": [],
+    "rules_parse_time": 3.0504987239837646,
+    "profiling_times": {
+      "config_time": 10.729859352111816,
+      "core_time": 53.99106287956238,
+      "ignores_time": 0.0005116462707519531,
+      "total_time": 64.72333455085754
+    },
+    "parsing_time": {
+      "total_time": 0.0,
+      "per_file_time": {
+        "mean": 0.0,
+        "std_dev": 0.0
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_files": []
+    },
+    "scanning_time": {
+      "total_time": 48.09599328041077,
+      "per_file_time": {
+        "mean": 0.5343999253378974,
+        "std_dev": 0.5795676837825171
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.47969642394438083,
+        "count_ratio": 0.1111111111111111
+      },
+      "very_slow_files": [
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\admin\\page.tsx",
+          "ftime": 1.5032880306243896
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\sidebar.tsx",
+          "ftime": 1.5291197299957275
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanProjectContent.tsx",
+          "ftime": 1.6125974655151367
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\MCPScanPDFReport.tsx",
+          "ftime": 1.6335515975952148
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\project_content\\ThreatModelingPDFReport.tsx",
+          "ftime": 1.707017183303833
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\data-table.tsx",
+          "ftime": 2.2950026988983154
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\NormalSysCreate.tsx",
+          "ftime": 2.7502617835998535
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\app\\user\\normal-system\\[id]\\page.tsx",
+          "ftime": 2.8109171390533447
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\ui\\file-upload.tsx",
+          "ftime": 3.4556543827056885
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_atkhygp4\\frontend\\components\\form\\LLMScanCreate.tsx",
+          "ftime": 3.7740659713745117
+        }
+      ]
+    },
+    "matching_time": {
+      "total_time": 0.0,
+      "per_file_and_rule_time": {
+        "mean": 0.0,
+        "std_dev": 0.0
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_files": []
+    },
+    "tainting_time": {
+      "total_time": 0.0,
+      "per_def_and_rule_time": {
+        "mean": 0.0,
+        "std_dev": 0.0
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_defs": []
+    },
+    "fixpoint_timeouts": [],
+    "prefiltering": {
+      "project_level_time": 0.0,
+      "file_level_time": 0.0,
+      "rules_with_project_prefilters_ratio": 0.0,
+      "rules_with_file_prefilters_ratio": 0.9069916613213599,
+      "rules_selected_ratio": 0.16666666666666666,
+      "rules_matched_ratio": 0.16666666666666666
+    },
+    "targets": [],
+    "total_bytes": 0,
+    "max_memory_bytes": 1263231744
+  },
+  "engine_requested": "OSS",
+  "interfile_languages_used": [],
+  "skipped_rules": []
+}
