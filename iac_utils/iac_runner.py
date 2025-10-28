@@ -67,6 +67,7 @@ def run_iac_scan(repo_url: str | None = None, PAT: str | None = None , mode : Li
         # ]
 
         result = subprocess.run(cmd)
+        # this is useless because return code is always 1 and doesnt indicate any thing specifically 
         # if result.returncode != 0:
         #     Console().print(f"subprocess retruned code : {result.returncode} 🔴",style="bold red")
         #     raise Exception(f"Error: {result.stderr.decode('utf-8') if result.stderr else 'No error message'}")
@@ -76,8 +77,8 @@ def run_iac_scan(repo_url: str | None = None, PAT: str | None = None , mode : Li
         json_temp.close()
         
         #for testing
-        with open("iac_results.json", "w+") as f:
-            json.dump(results, f)
+        # with open("iac_results.json", "w+") as f:
+        #     json.dump(results, f)
         
         Console().print(f"IAC scan completed successfully 🟢",style="bold green")
         return results
