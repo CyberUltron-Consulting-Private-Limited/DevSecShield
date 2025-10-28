@@ -40,7 +40,7 @@ def run_garak_scan(
     
 
     # -------------------------STEP [1] : Retrive Config Template (in both dict and json string) -----------------------------------------------------------------------
-    config_path = Path.cwd() / "rest_configs" / f"{model_type}.json"
+    config_path = Path(os.path.realpath(__file__)).parent / "rest_configs" / f"{model_type}.json"
 
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -68,7 +68,7 @@ def run_garak_scan(
 
     # -------------------------STEP [3] : Construct a job_id and results directory-----------------------------------------------------------------------
     job_id = str(uuid.uuid4())
-    results_dir = Path.cwd() / "results"
+    results_dir = Path(os.path.realpath(__file__)).parent / "results"
     results_dir.mkdir(exist_ok=True)
     report_prefix = results_dir / f"garak_{job_id}"
 
@@ -98,13 +98,13 @@ def run_garak_scan(
     ]
 
     
-    # because --model_type is being deprecated in garak, we need to use the new command
+    # because --model_type is being deprecated in garak ( un tested and doesn't work )
     # cmd = [
     #     "python",
     #     "-m",
     #     "garak",
     #     "--target_type", "rest", "-G"
-    #     ,custom_scan_config_path,
+    #     ,temp_json.name,
     #     "--probes", probes,
     #     "--report_prefix", str(report_prefix)
     # ]

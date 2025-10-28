@@ -2015,7 +2015,7 @@
   ],
   "source": {
     "type": "sbom-file",
-    "target": "C:\\Users\\HP\\Desktop\\DevSecShield\\test_cDX_sbom.json"
+    "target": "test_cDX_sbom.json"
   },
   "distro": {
     "name": "",
@@ -2029,7 +2029,7 @@
       "output": [
         "json"
       ],
-      "file": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmplwioa5u4.json",
+      "file": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpralqks23.json",
       "pretty": false,
       "distro": "",
       "add-cpes-if-none": false,
@@ -2187,90 +2187,90 @@
     "db": {
       "status": {
         "schemaVersion": "v6.1.3",
-        "from": "https://grype.anchore.io/databases/v6/vulnerability-db_v6.1.3_2025-10-26T14:32:54Z_1761496156.tar.zst?checksum=sha256%3Ac3b996dab318d51529fd7ff711d911e44d9b0ddbe077b3c79c2b318e12796fb4",
-        "built": "2025-10-26T16:29:16Z",
+        "from": "https://grype.anchore.io/databases/v6/vulnerability-db_v6.1.3_2025-10-27T01:31:36Z_1761545266.tar.zst?checksum=sha256%3A01fe2033360ee65f04b123e8825f7b21f0a71aa9dca4514d44119545ca9342e2",
+        "built": "2025-10-27T06:07:46Z",
         "path": "C:\\Users\\HP\\AppData\\Local\\cache\\grype\\db\\6\\vulnerability.db",
         "valid": true
       },
       "providers": {
         "alma": {
-          "captured": "2025-10-26T14:32:54Z",
+          "captured": "2025-10-27T01:31:36Z",
           "input": "xxh64:cb6c0ed6a811075d"
         },
         "alpine": {
-          "captured": "2025-10-26T14:32:58Z",
-          "input": "xxh64:8dc2faf587c1f212"
+          "captured": "2025-10-27T01:31:43Z",
+          "input": "xxh64:d4e8f57333dee537"
         },
         "amazon": {
-          "captured": "2025-10-26T14:32:56Z",
-          "input": "xxh64:f44a0836ea9db781"
+          "captured": "2025-10-27T01:31:36Z",
+          "input": "xxh64:f6b4ae31e1b8fefe"
         },
         "bitnami": {
-          "captured": "2025-10-26T14:33:00Z",
-          "input": "xxh64:d0a50a9b6a0843c4"
+          "captured": "2025-10-27T01:31:40Z",
+          "input": "xxh64:b831b90c243a66d7"
         },
         "chainguard": {
-          "captured": "2025-10-26T14:33:07Z",
-          "input": "xxh64:6edd3583dd2c6239"
+          "captured": "2025-10-27T01:31:44Z",
+          "input": "xxh64:00a98f8575577ed3"
         },
         "chainguard-libraries": {
-          "captured": "2025-10-26T14:33:01Z",
-          "input": "xxh64:30f2a2b61d8e37a9"
+          "captured": "2025-10-27T01:31:42Z",
+          "input": "xxh64:d8406827ad7075b3"
         },
         "debian": {
-          "captured": "2025-10-26T14:32:57Z",
-          "input": "xxh64:0f8ee3568b13d12c"
+          "captured": "2025-10-27T01:31:37Z",
+          "input": "xxh64:bbb200f5f2bcd6ed"
         },
         "echo": {
-          "captured": "2025-10-26T14:32:54Z",
-          "input": "xxh64:aa76c52a40272055"
+          "captured": "2025-10-27T01:31:36Z",
+          "input": "xxh64:35c4ce76442d2998"
         },
         "epss": {
-          "captured": "2025-10-26T14:32:57Z",
+          "captured": "2025-10-27T01:31:49Z",
           "input": "xxh64:601d3fd3882eed5c"
         },
         "github": {
-          "captured": "2025-10-26T14:32:56Z",
-          "input": "xxh64:6a12ccbe7ed846d4"
+          "captured": "2025-10-27T01:31:39Z",
+          "input": "xxh64:d4a1a03e7cd287d8"
         },
         "kev": {
-          "captured": "2025-10-26T14:33:01Z",
+          "captured": "2025-10-27T01:31:36Z",
           "input": "xxh64:fd750722bbb5d703"
         },
         "mariner": {
-          "captured": "2025-10-26T14:33:04Z",
-          "input": "xxh64:f1679d09a3e6d7f2"
+          "captured": "2025-10-27T01:31:39Z",
+          "input": "xxh64:6eb8955da33457d1"
         },
         "minimos": {
-          "captured": "2025-10-26T14:33:00Z",
-          "input": "xxh64:8abab9a623e0c5ad"
+          "captured": "2025-10-27T01:31:39Z",
+          "input": "xxh64:62d69308058e38be"
         },
         "nvd": {
-          "captured": "2025-10-26T14:33:59Z",
-          "input": "xxh64:8a43acba25b81479"
+          "captured": "2025-10-27T01:32:39Z",
+          "input": "xxh64:92b00d45cd493e9d"
         },
         "oracle": {
-          "captured": "2025-10-26T14:33:00Z",
+          "captured": "2025-10-27T01:31:37Z",
           "input": "xxh64:e2a2487a0bd10b9e"
         },
         "rhel": {
-          "captured": "2025-10-26T14:33:24Z",
-          "input": "xxh64:3be254ba66069bfa"
+          "captured": "2025-10-27T01:32:05Z",
+          "input": "xxh64:83915b032be4f190"
         },
         "sles": {
-          "captured": "2025-10-26T14:33:10Z",
-          "input": "xxh64:ddac94ca26d199f5"
+          "captured": "2025-10-27T01:31:58Z",
+          "input": "xxh64:7a652aea5b599e7a"
         },
         "ubuntu": {
-          "captured": "2025-10-26T14:34:16Z",
-          "input": "xxh64:e90dbc4279731235"
+          "captured": "2025-10-27T01:32:40Z",
+          "input": "xxh64:2e8ada0da03d4083"
         },
         "wolfi": {
-          "captured": "2025-10-26T14:32:57Z",
-          "input": "xxh64:b08ef0a0c7298cd3"
+          "captured": "2025-10-27T01:31:43Z",
+          "input": "xxh64:ea41d5e8a8eb802b"
         }
       }
     },
-    "timestamp": "2025-10-27T10:35:33.2304905+05:30"
+    "timestamp": "2025-10-28T12:00:02.876158+05:30"
   }
 }

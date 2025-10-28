@@ -33,21 +33,29 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
         raw_scan_dict = json.loads(results[start_index:])
 
         # for testing
-        # with open("mcp_results_2.json", "w+") as f:
-        #     json.dump(raw_scan_dict, f, indent=2)
+        with open("mcp_results_2.json", "w+") as f:
+            json.dump(raw_scan_dict, f, indent=2)
 
         
         # STEP : ---------Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server-------------
         Console().print(f"Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server 🟨",style="bold yellow")
         list_of_tools_per_server = []
+        error_messages = []
+
+        if raw_scan_dict[server_config_path]["error"]:
+            raise Exception(f"Error: {raw_scan_dict[server_config_path]["error"]["message"]} , Exception: {raw_scan_dict[server_config_path]["error"]["exception"]}")
         
         servers = raw_scan_dict[server_config_path]["servers"]
         Console().print(f"Number of servers found : {len(servers)} 🟩",style="bold green")
         for server in servers:
             server_tools = []
             server_name = server["name"]
+
+            #if server encountered an error , then skip to next server after saving error message
             if error in server or server["signature"]==None:
-                raise Exception(f"Server {server_name} encountered an error : {server["error"]["message"]} , Exception: {server["error"]["exception"]}")
+                error_messages.append(f"Server {server_name} encountered an error : {server["error"]["message"]} , Exception: {server["error"]["exception"]}")
+                Console().print(f"Server {server_name} encountered an error : {server["error"]["message"]} , Exception: {server["error"]["exception"]} 🟥",style="magenta2")
+                continue
             tools = server["signature"]["tools"]
             for tool in tools:
                 tool_name = tool["name"]
@@ -56,7 +64,7 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
                 tool = {
                     "name": tool_name,
                     "description": tool_description.encode("utf-8").decode("utf-8"),
-                    "input_schema": tool_input_schema
+                    "input_schema": tool_input_schema,
                 }
                 server_tools.append(tool)
             list_of_tools_per_server.append(server_tools)
@@ -96,11 +104,12 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
         Console().print(f"Number of issues found : {len(final_issues)} 🟩",style="bold green")
 
         # for testing
-        # with open("final_issues.json", "w+") as f:
-        #     json.dump(final_issues, f, indent=2)
+        return_result = {"final_issues": final_issues, "error_messages": error_messages}
+        with open("final_issues.json", "w+") as f:
+            json.dump(return_result, f, indent=2)
 
         Console().print(f"Finished the mcp-scan command for the server config path: {server_config_path} 🟩",style="bold green")
-        return final_issues
+        return return_result
     
     except Exception as e:
         Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
@@ -109,5 +118,6 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
 
 if __name__ == "__main__":
     results = run_mcp_scan("test-server-mcp.json")
-    print(results[-1]) if type(results) == list else print(results)
+    # print(results["final_issues"][-1]) if type(results) == dict else print(results)
+    # print(results["error_messages"]) if type(results) == dict else None
 

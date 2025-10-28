@@ -10,7 +10,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "howtocook-mcp"
+        "howtocook-mp"
       ]
     }
     }
