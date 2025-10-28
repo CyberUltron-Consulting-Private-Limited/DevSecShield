@@ -30,7 +30,7 @@ https://github.com/aquasecurity/tfsec/blob/master/tfsec-to-trivy-migration-guide
 2. Code and Data leakage monitoring:
 - https://github.com/gitleaks
 
-3. Web Vulnerability Detection :
+3. Web Vulnerability Detection DAST :
 - https://github.com/usestrix/strix
 
 4. SBOM Scanning :
