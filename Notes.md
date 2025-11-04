@@ -31,7 +31,7 @@ https://github.com/aquasecurity/tfsec/blob/master/tfsec-to-trivy-migration-guide
 - https://github.com/gitleaks
 ```gitleaks_utils\gitleaks.exe dir . --report-format json --report-path testing.json``` 
 
-3. Web Vulnerability Detection DAST :
+3. Web Vulnerability Detection ( DAST ) : 🟨 In progress
 - https://github.com/usestrix/strix
 
 4. SBOM Scanning :
