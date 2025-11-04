@@ -1,0 +1,2276 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-jpcq-cgw6-v4j6",
+        "dataSource": "https://github.com/advisories/GHSA-jpcq-cgw6-v4j6",
+        "namespace": "github:language:javascript",
+        "severity": "Medium",
+        "urls": [],
+        "description": "Potential XSS vulnerability in jQuery",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:L/A:N/E:H",
+            "metrics": {
+              "baseScore": 6.9,
+              "exploitabilityScore": 1.7,
+              "impactScore": 4.8
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "knownExploited": [
+          {
+            "cve": "CVE-2020-11023",
+            "vendorProject": "JQuery",
+            "product": "JQuery",
+            "dateAdded": "2025-01-23",
+            "requiredAction": "Apply mitigations per vendor instructions or discontinue use of the product if mitigations are unavailable.",
+            "dueDate": "2025-02-13",
+            "knownRansomwareCampaignUse": "unknown",
+            "notes": "This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/jquery/jquery/security/advisories/GHSA-jpcq-cgw6-v4j6",
+            "urls": [
+              "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/",
+              "https://nvd.nist.gov/vuln/detail/CVE-2020-11023"
+            ],
+            "cwes": [
+              "CWE-79"
+            ]
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2020-11023",
+            "epss": 0.27849,
+            "percentile": 0.96262,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2020-11023",
+            "cwe": "CWE-79",
+            "source": "security-advisories@github.com",
+            "type": "Secondary"
+          },
+          {
+            "cve": "CVE-2020-11023",
+            "cwe": "CWE-79",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "3.5.0"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "3.5.0",
+              "date": "2020-07-28",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 62.475
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2020-11023",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2020-11023",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00067.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00085.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-11/msg00039.html",
+            "http://packetstormsecurity.com/files/162160/jQuery-1.0.3-Cross-Site-Scripting.html",
+            "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released",
+            "https://github.com/jquery/jquery/security/advisories/GHSA-jpcq-cgw6-v4j6",
+            "https://jquery.com/upgrade-guide/3.5/",
+            "https://lists.apache.org/thread.html/r0483ba0072783c2e1bfea613984bfb3c86e73ba8879d780dc1cc7d36%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r0593393ca1e97b1e7e098fe69d414d6bd0a467148e9138d07e86ebbb%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r07ab379471fb15644bf7a92e4a98cbc7df3cf4e736abae0cc7625fe6%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r094f435595582f6b5b24b66fedf80543aa8b1d57a3688fbcc21f06ec%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r1fed19c860a0d470f2a3eded12795772c8651ff583ef951ddac4918c%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r2c85121a47442036c7f8353a3724aa04f8ecdfda1819d311ba4f5330%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r3702ede0ff83a29ba3eb418f6f11c473d6e3736baba981a8dbd9c9ef%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r49ce4243b4738dd763caeb27fa8ad6afb426ae3e8c011ff00b8b1f48%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r4aadb98086ca72ed75391f54167522d91489a0d0ae25b12baa8fc7c5%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r4dba67be3239b34861f1b9cfdf9dfb3a90272585dcce374112ed6e16%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r54565a8f025c7c4f305355fdfd75b68eca442eebdb5f31c2e7d977ae%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r55f5e066cc7301e3630ce90bbbf8d28c82212ae1f2d4871012141494%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r564585d97bc069137e64f521e68ba490c7c9c5b342df5d73c49a0760%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r6c4df3b33e625a44471009a172dabe6865faec8d8f21cac2303463b1%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r6e97b37963926f6059ecc1e417721608723a807a76af41d4e9dbed49%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r706cfbc098420f7113968cc377247ec3d1439bce42e679c11c609e2d%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r8f70b0f65d6bedf316ecd899371fd89e65333bc988f6326d2956735c%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r9006ad2abf81d02a0ef2126bab5177987e59095b7194a487c4ea247c%40%3Ccommits.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r9c5fda81e4bca8daee305b4c03283dddb383ab8428a151d4cb0b3b15%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r9e0bd31b7da9e7403478d22652b8760c946861f8ebd7bd750844898e%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra32c7103ded9041c7c1cb8c12c8d125a6b2f3f3270e2937ef8417fac%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra374bb0299b4aa3e04edde01ebc03ed6f90cf614dad40dd428ce8f72%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra3c9219fcb0b289e18e9ec5a5ebeaa5c17d6b79a201667675af6721c%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra406b3adfcffcb5ce8707013bdb7c35e3ffc2776a8a99022f15274c6%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rab82dd040f302018c85bd07d33f5604113573514895ada523c3401d9%40%3Ccommits.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/radcb2aa874a79647789f3563fcbbceaf1045a029ee8806b59812a8ea%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rb25c3bc7418ae75cba07988dafe1b6912f76a9dd7d94757878320d61%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rb69b7d8217c1a6a2100247a5d06ce610836b31e3f5d73fc113ded8e7%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rbb448222ba62c430e21e13f940be4cb5cfc373cd3bce56b48c0ffa67%40%3Cdev.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rd38b4185a797b324c8dd940d9213cf99fcdc2dbf1fc5a63ba7dee8c9%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rda99599896c3667f2cc9e9d34c7b6ef5d2bbed1f4801e1d75a2b0679%40%3Ccommits.nifi.apache.org%3E",
+            "https://lists.apache.org/thread.html/re4ae96fa5c1a2fe71ccbb7b7ac1538bd0cb677be270a2bf6e2f8d108%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rede9cfaa756e050a3d83045008f84a62802fc68c17f2b4eabeaae5e4%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/ree3bd8ddb23df5fa4e372d11c226830ea3650056b1059f3965b3fce2%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rf0f8939596081d84be1ae6a91d6248b96a02d8388898c372ac807817%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/rf1ba79e564fe7efc56aef7c986106f1cf67a3427d08e997e088e7a93%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rf661a90a15da8da5922ba6127b3f5f8194d4ebec8855d60a0dd13248%40%3Cdev.hive.apache.org%3E",
+            "https://lists.debian.org/debian-lts-announce/2021/03/msg00033.html",
+            "https://lists.debian.org/debian-lts-announce/2023/08/msg00040.html",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/AVKYXLWCLZBV2N7M46KYK4LVA5OXWPBY/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/QPN2L2XVQGUA2V5HNQJWHK3APSK3VN7K/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SAPQVX3XDNPGFT26QAQ6AJIXZZBZ4CD4/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SFP4UK4EGP4AFH2MWYJ5A5Z4I7XVFQ6B/",
+            "https://security.gentoo.org/glsa/202007-03",
+            "https://security.netapp.com/advisory/ntap-20200511-0006/",
+            "https://www.debian.org/security/2020/dsa-4693",
+            "https://www.drupal.org/sa-core-2020-002",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpuApr2021.html",
+            "https://www.oracle.com/security-alerts/cpuapr2022.html",
+            "https://www.oracle.com/security-alerts/cpujan2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2020.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2020.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://www.tenable.com/security/tns-2021-02",
+            "https://www.tenable.com/security/tns-2021-10",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00067.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00085.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-11/msg00039.html",
+            "http://packetstormsecurity.com/files/162160/jQuery-1.0.3-Cross-Site-Scripting.html",
+            "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released",
+            "https://github.com/github/advisory-database/blob/99afa6fdeaf5d1d23e1021ff915a5e5dbc82c1f1/advisories/github-reviewed/2020/04/GHSA-jpcq-cgw6-v4j6/GHSA-jpcq-cgw6-v4j6.json#L20-L37",
+            "https://github.com/jquery/jquery/security/advisories/GHSA-jpcq-cgw6-v4j6",
+            "https://jquery.com/upgrade-guide/3.5/",
+            "https://lists.apache.org/thread.html/r0483ba0072783c2e1bfea613984bfb3c86e73ba8879d780dc1cc7d36%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r0593393ca1e97b1e7e098fe69d414d6bd0a467148e9138d07e86ebbb%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r07ab379471fb15644bf7a92e4a98cbc7df3cf4e736abae0cc7625fe6%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r094f435595582f6b5b24b66fedf80543aa8b1d57a3688fbcc21f06ec%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r1fed19c860a0d470f2a3eded12795772c8651ff583ef951ddac4918c%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r2c85121a47442036c7f8353a3724aa04f8ecdfda1819d311ba4f5330%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r3702ede0ff83a29ba3eb418f6f11c473d6e3736baba981a8dbd9c9ef%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r49ce4243b4738dd763caeb27fa8ad6afb426ae3e8c011ff00b8b1f48%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r4aadb98086ca72ed75391f54167522d91489a0d0ae25b12baa8fc7c5%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r4dba67be3239b34861f1b9cfdf9dfb3a90272585dcce374112ed6e16%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r54565a8f025c7c4f305355fdfd75b68eca442eebdb5f31c2e7d977ae%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r55f5e066cc7301e3630ce90bbbf8d28c82212ae1f2d4871012141494%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r564585d97bc069137e64f521e68ba490c7c9c5b342df5d73c49a0760%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r6c4df3b33e625a44471009a172dabe6865faec8d8f21cac2303463b1%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r6e97b37963926f6059ecc1e417721608723a807a76af41d4e9dbed49%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r706cfbc098420f7113968cc377247ec3d1439bce42e679c11c609e2d%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r8f70b0f65d6bedf316ecd899371fd89e65333bc988f6326d2956735c%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r9006ad2abf81d02a0ef2126bab5177987e59095b7194a487c4ea247c%40%3Ccommits.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/r9c5fda81e4bca8daee305b4c03283dddb383ab8428a151d4cb0b3b15%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/r9e0bd31b7da9e7403478d22652b8760c946861f8ebd7bd750844898e%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra32c7103ded9041c7c1cb8c12c8d125a6b2f3f3270e2937ef8417fac%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra374bb0299b4aa3e04edde01ebc03ed6f90cf614dad40dd428ce8f72%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra3c9219fcb0b289e18e9ec5a5ebeaa5c17d6b79a201667675af6721c%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/ra406b3adfcffcb5ce8707013bdb7c35e3ffc2776a8a99022f15274c6%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rab82dd040f302018c85bd07d33f5604113573514895ada523c3401d9%40%3Ccommits.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/radcb2aa874a79647789f3563fcbbceaf1045a029ee8806b59812a8ea%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rb25c3bc7418ae75cba07988dafe1b6912f76a9dd7d94757878320d61%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rb69b7d8217c1a6a2100247a5d06ce610836b31e3f5d73fc113ded8e7%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rbb448222ba62c430e21e13f940be4cb5cfc373cd3bce56b48c0ffa67%40%3Cdev.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rd38b4185a797b324c8dd940d9213cf99fcdc2dbf1fc5a63ba7dee8c9%40%3Cissues.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rda99599896c3667f2cc9e9d34c7b6ef5d2bbed1f4801e1d75a2b0679%40%3Ccommits.nifi.apache.org%3E",
+            "https://lists.apache.org/thread.html/re4ae96fa5c1a2fe71ccbb7b7ac1538bd0cb677be270a2bf6e2f8d108%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rede9cfaa756e050a3d83045008f84a62802fc68c17f2b4eabeaae5e4%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/ree3bd8ddb23df5fa4e372d11c226830ea3650056b1059f3965b3fce2%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rf0f8939596081d84be1ae6a91d6248b96a02d8388898c372ac807817%40%3Cdev.felix.apache.org%3E",
+            "https://lists.apache.org/thread.html/rf1ba79e564fe7efc56aef7c986106f1cf67a3427d08e997e088e7a93%40%3Cgitbox.hive.apache.org%3E",
+            "https://lists.apache.org/thread.html/rf661a90a15da8da5922ba6127b3f5f8194d4ebec8855d60a0dd13248%40%3Cdev.hive.apache.org%3E",
+            "https://lists.debian.org/debian-lts-announce/2021/03/msg00033.html",
+            "https://lists.debian.org/debian-lts-announce/2023/08/msg00040.html",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/AVKYXLWCLZBV2N7M46KYK4LVA5OXWPBY/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/QPN2L2XVQGUA2V5HNQJWHK3APSK3VN7K/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SAPQVX3XDNPGFT26QAQ6AJIXZZBZ4CD4/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SFP4UK4EGP4AFH2MWYJ5A5Z4I7XVFQ6B/",
+            "https://security.gentoo.org/glsa/202007-03",
+            "https://security.netapp.com/advisory/ntap-20200511-0006/",
+            "https://www.debian.org/security/2020/dsa-4693",
+            "https://www.drupal.org/sa-core-2020-002",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpuApr2021.html",
+            "https://www.oracle.com/security-alerts/cpuapr2022.html",
+            "https://www.oracle.com/security-alerts/cpujan2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2020.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2020.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://www.tenable.com/security/tns-2021-02",
+            "https://www.tenable.com/security/tns-2021-10",
+            "https://www.cisa.gov/known-exploited-vulnerabilities-catalog?field_cve=CVE-2020-11023"
+          ],
+          "description": "In jQuery versions greater than or equal to 1.0.3 and before 3.5.0, passing HTML containing <option> elements from untrusted sources - even after sanitizing it - to one of jQuery's DOM manipulation methods (i.e. .html(), .append(), and others) may execute untrusted code. This problem is patched in jQuery 3.5.0.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.1,
+                "exploitabilityScore": 2.9,
+                "impactScore": 2.8
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "2.0",
+              "vector": "AV:N/AC:M/Au:N/C:N/I:P/A:N",
+              "metrics": {
+                "baseScore": 4.3,
+                "exploitabilityScore": 8.6,
+                "impactScore": 2.9
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.9,
+                "exploitabilityScore": 1.7,
+                "impactScore": 4.8
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "knownExploited": [
+            {
+              "cve": "CVE-2020-11023",
+              "vendorProject": "JQuery",
+              "product": "JQuery",
+              "dateAdded": "2025-01-23",
+              "requiredAction": "Apply mitigations per vendor instructions or discontinue use of the product if mitigations are unavailable.",
+              "dueDate": "2025-02-13",
+              "knownRansomwareCampaignUse": "unknown",
+              "notes": "This vulnerability could affect an open-source component, third-party library, protocol, or proprietary implementation that could be used by different products. For more information, please see: https://github.com/jquery/jquery/security/advisories/GHSA-jpcq-cgw6-v4j6",
+              "urls": [
+                "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/",
+                "https://nvd.nist.gov/vuln/detail/CVE-2020-11023"
+              ],
+              "cwes": [
+                "CWE-79"
+              ]
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2020-11023",
+              "epss": 0.27849,
+              "percentile": 0.96262,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2020-11023",
+              "cwe": "CWE-79",
+              "source": "security-advisories@github.com",
+              "type": "Secondary"
+            },
+            {
+              "cve": "CVE-2020-11023",
+              "cwe": "CWE-79",
+              "source": "nvd@nist.gov",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "javascript-matcher",
+          "searchedBy": {
+            "language": "javascript",
+            "namespace": "github:language:javascript",
+            "package": {
+              "name": "jquery",
+              "version": "3.4.1"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-jpcq-cgw6-v4j6",
+            "versionConstraint": ">=1.0.3,<3.5.0 (semantic)"
+          },
+          "fix": {
+            "suggestedVersion": "3.5.0"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:npm/jquery@3.4.1",
+        "name": "jquery",
+        "version": "3.4.1",
+        "type": "npm",
+        "locations": null,
+        "language": "javascript",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:npm/jquery@3.4.1",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-gxr4-xjj5-5px2",
+        "dataSource": "https://github.com/advisories/GHSA-gxr4-xjj5-5px2",
+        "namespace": "github:language:javascript",
+        "severity": "Medium",
+        "urls": [],
+        "description": "Potential XSS vulnerability in jQuery",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:L/A:N",
+            "metrics": {
+              "baseScore": 6.9,
+              "exploitabilityScore": 1.7,
+              "impactScore": 4.8
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2020-11022",
+            "epss": 0.30076,
+            "percentile": 0.96466,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2020-11022",
+            "cwe": "CWE-79",
+            "source": "security-advisories@github.com",
+            "type": "Secondary"
+          },
+          {
+            "cve": "CVE-2020-11022",
+            "cwe": "CWE-79",
+            "source": "nvd@nist.gov",
+            "type": "Secondary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "3.5.0"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "3.5.0",
+              "date": "2020-07-28",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 17.895220000000002
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2020-11022",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2020-11022",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00067.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00085.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-11/msg00039.html",
+            "http://packetstormsecurity.com/files/162159/jQuery-1.2-Cross-Site-Scripting.html",
+            "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/",
+            "https://github.com/jquery/jquery/commit/1d61fd9407e6fbe82fe55cb0b938307aa0791f77",
+            "https://github.com/jquery/jquery/security/advisories/GHSA-gxr4-xjj5-5px2",
+            "https://jquery.com/upgrade-guide/3.5/",
+            "https://lists.apache.org/thread.html/r0483ba0072783c2e1bfea613984bfb3c86e73ba8879d780dc1cc7d36%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r49ce4243b4738dd763caeb27fa8ad6afb426ae3e8c011ff00b8b1f48%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r54565a8f025c7c4f305355fdfd75b68eca442eebdb5f31c2e7d977ae%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r564585d97bc069137e64f521e68ba490c7c9c5b342df5d73c49a0760%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r706cfbc098420f7113968cc377247ec3d1439bce42e679c11c609e2d%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r8f70b0f65d6bedf316ecd899371fd89e65333bc988f6326d2956735c%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rbb448222ba62c430e21e13f940be4cb5cfc373cd3bce56b48c0ffa67%40%3Cdev.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rdf44341677cf7eec7e9aa96dcf3f37ed709544863d619cca8c36f133%40%3Ccommits.airflow.apache.org%3E",
+            "https://lists.apache.org/thread.html/re4ae96fa5c1a2fe71ccbb7b7ac1538bd0cb677be270a2bf6e2f8d108%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rede9cfaa756e050a3d83045008f84a62802fc68c17f2b4eabeaae5e4%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/ree3bd8ddb23df5fa4e372d11c226830ea3650056b1059f3965b3fce2%40%3Cissues.flink.apache.org%3E",
+            "https://lists.debian.org/debian-lts-announce/2021/03/msg00033.html",
+            "https://lists.debian.org/debian-lts-announce/2023/08/msg00040.html",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/AVKYXLWCLZBV2N7M46KYK4LVA5OXWPBY/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/QPN2L2XVQGUA2V5HNQJWHK3APSK3VN7K/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SAPQVX3XDNPGFT26QAQ6AJIXZZBZ4CD4/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SFP4UK4EGP4AFH2MWYJ5A5Z4I7XVFQ6B/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/VOE7P7APPRQKD4FGNHBKJPDY6FFCOH3W/",
+            "https://security.gentoo.org/glsa/202007-03",
+            "https://security.netapp.com/advisory/ntap-20200511-0006/",
+            "https://www.debian.org/security/2020/dsa-4693",
+            "https://www.drupal.org/sa-core-2020-002",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpuApr2021.html",
+            "https://www.oracle.com/security-alerts/cpuapr2022.html",
+            "https://www.oracle.com/security-alerts/cpujan2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2020.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2020.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://www.tenable.com/security/tns-2020-10",
+            "https://www.tenable.com/security/tns-2020-11",
+            "https://www.tenable.com/security/tns-2021-02",
+            "https://www.tenable.com/security/tns-2021-10",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00067.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-07/msg00085.html",
+            "http://lists.opensuse.org/opensuse-security-announce/2020-11/msg00039.html",
+            "http://packetstormsecurity.com/files/162159/jQuery-1.2-Cross-Site-Scripting.html",
+            "https://blog.jquery.com/2020/04/10/jquery-3-5-0-released/",
+            "https://github.com/jquery/jquery/commit/1d61fd9407e6fbe82fe55cb0b938307aa0791f77",
+            "https://github.com/jquery/jquery/security/advisories/GHSA-gxr4-xjj5-5px2",
+            "https://jquery.com/upgrade-guide/3.5/",
+            "https://lists.apache.org/thread.html/r0483ba0072783c2e1bfea613984bfb3c86e73ba8879d780dc1cc7d36%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r49ce4243b4738dd763caeb27fa8ad6afb426ae3e8c011ff00b8b1f48%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r54565a8f025c7c4f305355fdfd75b68eca442eebdb5f31c2e7d977ae%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r564585d97bc069137e64f521e68ba490c7c9c5b342df5d73c49a0760%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r706cfbc098420f7113968cc377247ec3d1439bce42e679c11c609e2d%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/r8f70b0f65d6bedf316ecd899371fd89e65333bc988f6326d2956735c%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rbb448222ba62c430e21e13f940be4cb5cfc373cd3bce56b48c0ffa67%40%3Cdev.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rdf44341677cf7eec7e9aa96dcf3f37ed709544863d619cca8c36f133%40%3Ccommits.airflow.apache.org%3E",
+            "https://lists.apache.org/thread.html/re4ae96fa5c1a2fe71ccbb7b7ac1538bd0cb677be270a2bf6e2f8d108%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/rede9cfaa756e050a3d83045008f84a62802fc68c17f2b4eabeaae5e4%40%3Cissues.flink.apache.org%3E",
+            "https://lists.apache.org/thread.html/ree3bd8ddb23df5fa4e372d11c226830ea3650056b1059f3965b3fce2%40%3Cissues.flink.apache.org%3E",
+            "https://lists.debian.org/debian-lts-announce/2021/03/msg00033.html",
+            "https://lists.debian.org/debian-lts-announce/2023/08/msg00040.html",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/AVKYXLWCLZBV2N7M46KYK4LVA5OXWPBY/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/QPN2L2XVQGUA2V5HNQJWHK3APSK3VN7K/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SAPQVX3XDNPGFT26QAQ6AJIXZZBZ4CD4/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/SFP4UK4EGP4AFH2MWYJ5A5Z4I7XVFQ6B/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/VOE7P7APPRQKD4FGNHBKJPDY6FFCOH3W/",
+            "https://security.gentoo.org/glsa/202007-03",
+            "https://security.netapp.com/advisory/ntap-20200511-0006/",
+            "https://www.debian.org/security/2020/dsa-4693",
+            "https://www.drupal.org/sa-core-2020-002",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpuApr2021.html",
+            "https://www.oracle.com/security-alerts/cpuapr2022.html",
+            "https://www.oracle.com/security-alerts/cpujan2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2020.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2020.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://www.tenable.com/security/tns-2020-10",
+            "https://www.tenable.com/security/tns-2020-11",
+            "https://www.tenable.com/security/tns-2021-02",
+            "https://www.tenable.com/security/tns-2021-10"
+          ],
+          "description": "In jQuery versions greater than or equal to 1.2 and before 3.5.0, passing HTML from untrusted sources - even after sanitizing it - to one of jQuery's DOM manipulation methods (i.e. .html(), .append(), and others) may execute untrusted code. This problem is patched in jQuery 3.5.0.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.1,
+                "exploitabilityScore": 2.9,
+                "impactScore": 2.8
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "2.0",
+              "vector": "AV:N/AC:M/Au:N/C:N/I:P/A:N",
+              "metrics": {
+                "baseScore": 4.3,
+                "exploitabilityScore": 8.6,
+                "impactScore": 2.9
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.9,
+                "exploitabilityScore": 1.7,
+                "impactScore": 4.8
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2020-11022",
+              "epss": 0.30076,
+              "percentile": 0.96466,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2020-11022",
+              "cwe": "CWE-79",
+              "source": "security-advisories@github.com",
+              "type": "Secondary"
+            },
+            {
+              "cve": "CVE-2020-11022",
+              "cwe": "CWE-79",
+              "source": "nvd@nist.gov",
+              "type": "Secondary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "javascript-matcher",
+          "searchedBy": {
+            "language": "javascript",
+            "namespace": "github:language:javascript",
+            "package": {
+              "name": "jquery",
+              "version": "3.4.1"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-gxr4-xjj5-5px2",
+            "versionConstraint": ">=1.2.0,<3.5.0 (semantic)"
+          },
+          "fix": {
+            "suggestedVersion": "3.5.0"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:npm/jquery@3.4.1",
+        "name": "jquery",
+        "version": "3.4.1",
+        "type": "npm",
+        "locations": null,
+        "language": "javascript",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:npm/jquery@3.4.1",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-q2q7-5pp4-w6pg",
+        "dataSource": "https://github.com/advisories/GHSA-q2q7-5pp4-w6pg",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "Catastrophic backtracking in URL authority parser when passed URL containing many @ characters",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "metrics": {
+              "baseScore": 7.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2021-33503",
+            "epss": 0.00863,
+            "percentile": 0.74458,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2021-33503",
+            "cwe": "CWE-400",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.26.5"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "1.26.5",
+              "date": "2021-06-02",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.6472500000000001
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2021-33503",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2021-33503",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://github.com/advisories/GHSA-q2q7-5pp4-w6pg",
+            "https://github.com/urllib3/urllib3/commit/2d4a3fee6de2fa45eb82169361918f759269b4ec",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/6SCV7ZNAHS3E6PBFLJGENCDRDRWRZZ6W/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/FMUGWEAUYGGHTPPXT6YBD53WYXQGVV73/",
+            "https://security.gentoo.org/glsa/202107-36",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://github.com/advisories/GHSA-q2q7-5pp4-w6pg",
+            "https://github.com/urllib3/urllib3/commit/2d4a3fee6de2fa45eb82169361918f759269b4ec",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/6SCV7ZNAHS3E6PBFLJGENCDRDRWRZZ6W/",
+            "https://lists.fedoraproject.org/archives/list/package-announce%40lists.fedoraproject.org/message/FMUGWEAUYGGHTPPXT6YBD53WYXQGVV73/",
+            "https://security.gentoo.org/glsa/202107-36",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html"
+          ],
+          "description": "An issue was discovered in urllib3 before 1.26.5. When provided with a URL containing many @ characters in the authority component, the authority regular expression exhibits catastrophic backtracking, causing a denial of service if a URL were passed as a parameter or redirected to via an HTTP redirect.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "2.0",
+              "vector": "AV:N/AC:L/Au:N/C:N/I:N/A:P",
+              "metrics": {
+                "baseScore": 5,
+                "exploitabilityScore": 10,
+                "impactScore": 2.9
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2021-33503",
+              "epss": 0.00863,
+              "percentile": 0.74458,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2021-33503",
+              "cwe": "CWE-400",
+              "source": "nvd@nist.gov",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "urllib3",
+              "version": "1.25.8"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-q2q7-5pp4-w6pg",
+            "versionConstraint": ">=1.25.4,<1.26.5 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "1.26.5"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/urllib3@1.25.8",
+        "name": "urllib3",
+        "version": "1.25.8",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/urllib3@1.25.8",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-v845-jxx5-vc9f",
+        "dataSource": "https://github.com/advisories/GHSA-v845-jxx5-vc9f",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "`Cookie` HTTP header isn't stripped on cross-origin redirects",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N",
+            "metrics": {
+              "baseScore": 5.9,
+              "exploitabilityScore": 0.8,
+              "impactScore": 5.2
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2023-43804",
+            "epss": 0.0064,
+            "percentile": 0.69865,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2023-43804",
+            "cwe": "CWE-200",
+            "source": "security-advisories@github.com",
+            "type": "Secondary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.26.17"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "1.26.17",
+              "date": "2023-10-03",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.4288
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2023-43804",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-43804",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://github.com/urllib3/urllib3/commit/01220354d389cd05474713f8c982d05c9b17aafb",
+            "https://github.com/urllib3/urllib3/commit/644124ecd0b6e417c527191f866daa05a5a2056d",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-v845-jxx5-vc9f",
+            "https://lists.debian.org/debian-lts-announce/2023/10/msg00012.html",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/5F5CUBAN5XMEBVBZPHFITBLMJV5FIJJ5/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/I3PR7C6RJ6JUBQKIJ644DMIJSUP36VDY/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/NDAGZXYJ7H2G3SB47M453VQVNAWKAEJJ/",
+            "https://github.com/urllib3/urllib3/commit/01220354d389cd05474713f8c982d05c9b17aafb",
+            "https://github.com/urllib3/urllib3/commit/644124ecd0b6e417c527191f866daa05a5a2056d",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-v845-jxx5-vc9f",
+            "https://lists.debian.org/debian-lts-announce/2023/10/msg00012.html",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/5F5CUBAN5XMEBVBZPHFITBLMJV5FIJJ5/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/I3PR7C6RJ6JUBQKIJ644DMIJSUP36VDY/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/NDAGZXYJ7H2G3SB47M453VQVNAWKAEJJ/",
+            "https://security.netapp.com/advisory/ntap-20241213-0007/",
+            "https://www.vicarius.io/vsociety/posts/cve-2023-43804-urllib3-vulnerability-3"
+          ],
+          "description": "urllib3 is a user-friendly HTTP client library for Python. urllib3 doesn't treat the `Cookie` HTTP header special or provide any helpers for managing cookies over HTTP, that is the responsibility of the user. However, it is possible for a user to specify a `Cookie` header and unknowingly leak information via HTTP redirects to a different origin if that user doesn't disable redirects explicitly. This issue has been patched in urllib3 version 1.26.17 or 2.0.5.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+              "metrics": {
+                "baseScore": 8.1,
+                "exploitabilityScore": 2.9,
+                "impactScore": 5.2
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N",
+              "metrics": {
+                "baseScore": 5.9,
+                "exploitabilityScore": 0.8,
+                "impactScore": 5.2
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2023-43804",
+              "epss": 0.0064,
+              "percentile": 0.69865,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2023-43804",
+              "cwe": "CWE-200",
+              "source": "security-advisories@github.com",
+              "type": "Secondary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "urllib3",
+              "version": "1.25.8"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-v845-jxx5-vc9f",
+            "versionConstraint": "<1.26.17 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "1.26.17"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/urllib3@1.25.8",
+        "name": "urllib3",
+        "version": "1.25.8",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/urllib3@1.25.8",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-35jh-r3h4-6jhm",
+        "dataSource": "https://github.com/advisories/GHSA-35jh-r3h4-6jhm",
+        "namespace": "github:language:javascript",
+        "severity": "High",
+        "urls": [],
+        "description": "Command Injection in lodash",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": {
+              "baseScore": 7.2,
+              "exploitabilityScore": 1.3,
+              "impactScore": 5.9
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2021-23337",
+            "epss": 0.00278,
+            "percentile": 0.51033,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2021-23337",
+            "cwe": "CWE-94",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "4.17.21"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "4.17.21",
+              "date": "2021-05-07",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.20433
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2021-23337",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2021-23337",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://cert-portal.siemens.com/productcert/pdf/ssa-637483.pdf",
+            "https://github.com/lodash/lodash/blob/ddfd9b11a0126db2302cb70ec9973b66baec0975/lodash.js%23L14851",
+            "https://security.netapp.com/advisory/ntap-20210312-0006/",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGFUJIONWEBJARS-1074932",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARS-1074930",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWER-1074928",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWERGITHUBLODASH-1074931",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSNPM-1074929",
+            "https://snyk.io/vuln/SNYK-JS-LODASH-1040724",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://cert-portal.siemens.com/productcert/pdf/ssa-637483.pdf",
+            "https://github.com/lodash/lodash/blob/ddfd9b11a0126db2302cb70ec9973b66baec0975/lodash.js%23L14851",
+            "https://security.netapp.com/advisory/ntap-20210312-0006/",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGFUJIONWEBJARS-1074932",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARS-1074930",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWER-1074928",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWERGITHUBLODASH-1074931",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSNPM-1074929",
+            "https://snyk.io/vuln/SNYK-JS-LODASH-1040724",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html"
+          ],
+          "description": "Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+              "metrics": {
+                "baseScore": 7.2,
+                "exploitabilityScore": 1.3,
+                "impactScore": 5.9
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "2.0",
+              "vector": "AV:N/AC:L/Au:S/C:P/I:P/A:P",
+              "metrics": {
+                "baseScore": 6.5,
+                "exploitabilityScore": 8,
+                "impactScore": 6.5
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "report@snyk.io",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+              "metrics": {
+                "baseScore": 7.2,
+                "exploitabilityScore": 1.3,
+                "impactScore": 5.9
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2021-23337",
+              "epss": 0.00278,
+              "percentile": 0.51033,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2021-23337",
+              "cwe": "CWE-94",
+              "source": "nvd@nist.gov",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "javascript-matcher",
+          "searchedBy": {
+            "language": "javascript",
+            "namespace": "github:language:javascript",
+            "package": {
+              "name": "lodash",
+              "version": "4.17.19"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-35jh-r3h4-6jhm",
+            "versionConstraint": "<4.17.21 (semantic)"
+          },
+          "fix": {
+            "suggestedVersion": "4.17.21"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:npm/lodash@4.17.19",
+        "name": "lodash",
+        "version": "4.17.19",
+        "type": "npm",
+        "locations": null,
+        "language": "javascript",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:npm/lodash@4.17.19",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-m2qf-hxjv-5gpq",
+        "dataSource": "https://github.com/advisories/GHSA-m2qf-hxjv-5gpq",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "Flask vulnerable to possible disclosure of permanent session cookie due to missing Vary: Cookie header",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "metrics": {
+              "baseScore": 7.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2023-30861",
+            "epss": 0.00215,
+            "percentile": 0.44265,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2023-30861",
+            "cwe": "CWE-539",
+            "source": "security-advisories@github.com",
+            "type": "Secondary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "2.2.5"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "2.2.5",
+              "date": "2023-05-03",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.16125
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2023-30861",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-30861",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://github.com/pallets/flask/commit/70f906c51ce49c485f1d355703e9cc3386b1cc2b",
+            "https://github.com/pallets/flask/commit/afd63b16170b7c047f5758eb910c416511e9c965",
+            "https://github.com/pallets/flask/releases/tag/2.2.5",
+            "https://github.com/pallets/flask/releases/tag/2.3.2",
+            "https://github.com/pallets/flask/security/advisories/GHSA-m2qf-hxjv-5gpq",
+            "https://lists.debian.org/debian-lts-announce/2023/08/msg00024.html",
+            "https://security.netapp.com/advisory/ntap-20230818-0006/",
+            "https://www.debian.org/security/2023/dsa-5442",
+            "https://github.com/pallets/flask/commit/70f906c51ce49c485f1d355703e9cc3386b1cc2b",
+            "https://github.com/pallets/flask/commit/afd63b16170b7c047f5758eb910c416511e9c965",
+            "https://github.com/pallets/flask/releases/tag/2.2.5",
+            "https://github.com/pallets/flask/releases/tag/2.3.2",
+            "https://github.com/pallets/flask/security/advisories/GHSA-m2qf-hxjv-5gpq",
+            "https://lists.debian.org/debian-lts-announce/2023/08/msg00024.html",
+            "https://security.netapp.com/advisory/ntap-20230818-0006/",
+            "https://www.debian.org/security/2023/dsa-5442"
+          ],
+          "description": "Flask is a lightweight WSGI web application framework. When all of the following conditions are met, a response containing data intended for one client may be cached and subsequently sent by the proxy to other clients. If the proxy also caches `Set-Cookie` headers, it may send one client's `session` cookie to other clients. The severity depends on the application's use of the session and the proxy's behavior regarding cookies. The risk depends on all these conditions being met.\n\n1. The application must be hosted behind a caching proxy that does not strip cookies or ignore responses with cookies.\n2. The application sets `session.permanent = True`\n3. The application does not access or modify the session at any point during a request.\n4. `SESSION_REFRESH_EACH_REQUEST` enabled (the default).\n5. The application does not set a `Cache-Control` header to indicate that a page is private or should not be cached.\n\nThis happens because vulnerable versions of Flask only set the `Vary: Cookie` header when the session is accessed or modified, not when it is refreshed (re-sent to update the expiration) without being accessed or modified. This issue has been fixed in versions 2.3.2 and 2.2.5.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2023-30861",
+              "epss": 0.00215,
+              "percentile": 0.44265,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2023-30861",
+              "cwe": "CWE-539",
+              "source": "security-advisories@github.com",
+              "type": "Secondary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "flask",
+              "version": "1.0"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-m2qf-hxjv-5gpq",
+            "versionConstraint": "<2.2.5 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "2.2.5"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/flask@1.0",
+        "name": "flask",
+        "version": "1.0",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "BSD-3-Clause"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/flask@1.0",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-wqvq-5m8c-6g24",
+        "dataSource": "https://github.com/advisories/GHSA-wqvq-5m8c-6g24",
+        "namespace": "github:language:python",
+        "severity": "Medium",
+        "urls": [],
+        "description": "CRLF injection in urllib3",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+            "metrics": {
+              "baseScore": 6.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 2.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2020-26137",
+            "epss": 0.00239,
+            "percentile": 0.47089,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2020-26137",
+            "cwe": "CWE-74",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.25.9"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "1.25.9",
+              "date": "2021-06-19",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.137425
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2020-26137",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2020-26137",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "https://bugs.python.org/issue39603",
+            "https://github.com/urllib3/urllib3/commit/1dd69c5c5982fae7c87a620d487c2ebf7a6b436b",
+            "https://github.com/urllib3/urllib3/pull/1800",
+            "https://lists.debian.org/debian-lts-announce/2021/06/msg00015.html",
+            "https://lists.debian.org/debian-lts-announce/2023/10/msg00012.html",
+            "https://usn.ubuntu.com/4570-1/",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://bugs.python.org/issue39603",
+            "https://github.com/urllib3/urllib3/commit/1dd69c5c5982fae7c87a620d487c2ebf7a6b436b",
+            "https://github.com/urllib3/urllib3/pull/1800",
+            "https://lists.debian.org/debian-lts-announce/2021/06/msg00015.html",
+            "https://lists.debian.org/debian-lts-announce/2023/10/msg00012.html",
+            "https://usn.ubuntu.com/4570-1/",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html"
+          ],
+          "description": "urllib3 before 1.25.9 allows CRLF injection if the attacker controls the HTTP request method, as demonstrated by inserting CR and LF control characters in the first argument of putrequest(). NOTE: this is similar to CVE-2020-26116.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 2.6
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "2.0",
+              "vector": "AV:N/AC:L/Au:N/C:P/I:P/A:N",
+              "metrics": {
+                "baseScore": 6.4,
+                "exploitabilityScore": 10,
+                "impactScore": 5
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2020-26137",
+              "epss": 0.00239,
+              "percentile": 0.47089,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2020-26137",
+              "cwe": "CWE-74",
+              "source": "nvd@nist.gov",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "urllib3",
+              "version": "1.25.8"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-wqvq-5m8c-6g24",
+            "versionConstraint": "<1.25.9 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "1.25.9"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/urllib3@1.25.8",
+        "name": "urllib3",
+        "version": "1.25.8",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/urllib3@1.25.8",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-34jh-p97f-mpxf",
+        "dataSource": "https://github.com/advisories/GHSA-34jh-p97f-mpxf",
+        "namespace": "github:language:python",
+        "severity": "Medium",
+        "urls": [],
+        "description": "urllib3's Proxy-Authorization request header isn't stripped during cross-origin redirects",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+            "metrics": {
+              "baseScore": 4.4,
+              "exploitabilityScore": 0.8,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2024-37891",
+            "epss": 0.00142,
+            "percentile": 0.35191,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2024-37891",
+            "cwe": "CWE-669",
+            "source": "security-advisories@github.com",
+            "type": "Secondary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.26.19"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "1.26.19",
+              "date": "2024-06-18",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.06674000000000001
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-37891",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-37891",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "https://github.com/urllib3/urllib3/commit/accff72ecc2f6cf5a76d9570198a93ac7c90270e",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-34jh-p97f-mpxf",
+            "https://github.com/urllib3/urllib3/commit/accff72ecc2f6cf5a76d9570198a93ac7c90270e",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-34jh-p97f-mpxf",
+            "https://security.netapp.com/advisory/ntap-20240822-0003/",
+            "https://www.vicarius.io/vsociety/posts/proxy-authorization-header-handling-vulnerability-in-urllib3-cve-2024-37891"
+          ],
+          "description": "urllib3 is a user-friendly HTTP client library for Python. When using urllib3's proxy support with `ProxyManager`, the `Proxy-Authorization` header is only sent to the configured proxy, as expected. However, when sending HTTP requests *without* using urllib3's proxy support, it's possible to accidentally configure the `Proxy-Authorization` header even though it won't have any effect as the request is not using a forwarding proxy or a tunneling proxy. In those cases, urllib3 doesn't treat the `Proxy-Authorization` HTTP header as one carrying authentication material and thus doesn't strip the header on cross-origin redirects. Because this is a highly unlikely scenario, we believe the severity of this vulnerability is low for almost all users. Out of an abundance of caution urllib3 will automatically strip the `Proxy-Authorization` header during cross-origin redirects to avoid the small chance that users are doing this on accident. Users should use urllib3's proxy support or disable automatic redirects to achieve safe processing of the `Proxy-Authorization` header, but we still decided to strip the header by default in order to further protect users who aren't using the correct approach. We believe the number of usages affected by this advisory is low. It requires all of the following to be true to be exploited: 1. Setting the `Proxy-Authorization` header without using urllib3's built-in proxy support. 2. Not disabling HTTP redirects. 3. Either not using an HTTPS origin server or for the proxy or target origin to redirect to a malicious origin. Users are advised to update to either version 1.26.19 or version 2.2.2. Users unable to upgrade may use the `Proxy-Authorization` header with urllib3's `ProxyManager`, disable HTTP redirects using `redirects=False` when sending requests, or not user the `Proxy-Authorization` header as mitigations.",
+          "cvss": [
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 4.4,
+                "exploitabilityScore": 0.8,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2024-37891",
+              "epss": 0.00142,
+              "percentile": 0.35191,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2024-37891",
+              "cwe": "CWE-669",
+              "source": "security-advisories@github.com",
+              "type": "Secondary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "urllib3",
+              "version": "1.25.8"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-34jh-p97f-mpxf",
+            "versionConstraint": "<1.26.19 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "1.26.19"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/urllib3@1.25.8",
+        "name": "urllib3",
+        "version": "1.25.8",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/urllib3@1.25.8",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-29mw-wpgm-hmr9",
+        "dataSource": "https://github.com/advisories/GHSA-29mw-wpgm-hmr9",
+        "namespace": "github:language:javascript",
+        "severity": "Medium",
+        "urls": [],
+        "description": "Regular Expression Denial of Service (ReDoS) in lodash",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+            "metrics": {
+              "baseScore": 5.3,
+              "exploitabilityScore": 3.9,
+              "impactScore": 1.5
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2020-28500",
+            "epss": 0.00084,
+            "percentile": 0.25349,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2020-28500",
+            "cwe": "NVD-CWE-Other",
+            "source": "nvd@nist.gov",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "4.17.21"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "4.17.21",
+              "date": "2022-01-07",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.04326000000000001
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2020-28500",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2020-28500",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "https://cert-portal.siemens.com/productcert/pdf/ssa-637483.pdf",
+            "https://github.com/lodash/lodash/blob/npm/trimEnd.js%23L8",
+            "https://github.com/lodash/lodash/pull/5065",
+            "https://security.netapp.com/advisory/ntap-20210312-0006/",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGFUJIONWEBJARS-1074896",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARS-1074894",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWER-1074892",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWERGITHUBLODASH-1074895",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSNPM-1074893",
+            "https://snyk.io/vuln/SNYK-JS-LODASH-1018905",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html",
+            "https://cert-portal.siemens.com/productcert/pdf/ssa-637483.pdf",
+            "https://github.com/lodash/lodash/blob/npm/trimEnd.js%23L8",
+            "https://github.com/lodash/lodash/pull/5065",
+            "https://security.netapp.com/advisory/ntap-20210312-0006/",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGFUJIONWEBJARS-1074896",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARS-1074894",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWER-1074892",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWERGITHUBLODASH-1074895",
+            "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSNPM-1074893",
+            "https://snyk.io/vuln/SNYK-JS-LODASH-1018905",
+            "https://www.oracle.com//security-alerts/cpujul2021.html",
+            "https://www.oracle.com/security-alerts/cpujan2022.html",
+            "https://www.oracle.com/security-alerts/cpujul2022.html",
+            "https://www.oracle.com/security-alerts/cpuoct2021.html"
+          ],
+          "description": "Lodash versions prior to 4.17.21 are vulnerable to Regular Expression Denial of Service (ReDoS) via the toNumber, trim and trimEnd functions.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "metrics": {
+                "baseScore": 5.3,
+                "exploitabilityScore": 3.9,
+                "impactScore": 1.5
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "2.0",
+              "vector": "AV:N/AC:L/Au:N/C:N/I:N/A:P",
+              "metrics": {
+                "baseScore": 5,
+                "exploitabilityScore": 10,
+                "impactScore": 2.9
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "report@snyk.io",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "metrics": {
+                "baseScore": 5.3,
+                "exploitabilityScore": 3.9,
+                "impactScore": 1.5
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2020-28500",
+              "epss": 0.00084,
+              "percentile": 0.25349,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2020-28500",
+              "cwe": "NVD-CWE-Other",
+              "source": "nvd@nist.gov",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "javascript-matcher",
+          "searchedBy": {
+            "language": "javascript",
+            "namespace": "github:language:javascript",
+            "package": {
+              "name": "lodash",
+              "version": "4.17.19"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-29mw-wpgm-hmr9",
+            "versionConstraint": ">=4.0.0,<4.17.21 (semantic)"
+          },
+          "fix": {
+            "suggestedVersion": "4.17.21"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:npm/lodash@4.17.19",
+        "name": "lodash",
+        "version": "4.17.19",
+        "type": "npm",
+        "locations": null,
+        "language": "javascript",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:npm/lodash@4.17.19",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-g4mx-q9vg-27p4",
+        "dataSource": "https://github.com/advisories/GHSA-g4mx-q9vg-27p4",
+        "namespace": "github:language:python",
+        "severity": "Medium",
+        "urls": [],
+        "description": "urllib3's request body not stripped after redirect from 303 status changes request method to GET",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:A/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+            "metrics": {
+              "baseScore": 4.2,
+              "exploitabilityScore": 0.6,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2023-45803",
+            "epss": 0.00055,
+            "percentile": 0.17278,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2023-45803",
+            "cwe": "CWE-200",
+            "source": "security-advisories@github.com",
+            "type": "Secondary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "1.26.18"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "1.26.18",
+              "date": "2023-10-18",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.025300000000000003
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2023-45803",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-45803",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "https://github.com/urllib3/urllib3/commit/4e98d57809dacab1cbe625fddeec1a290c478ea9",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-g4mx-q9vg-27p4",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/4R2Y5XK3WALSR3FNAGN7JBYV2B343ZKB/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/5F5CUBAN5XMEBVBZPHFITBLMJV5FIJJ5/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/PPDPLM6UUMN55ESPQWJFLLIZY4ZKCNRX/",
+            "https://www.rfc-editor.org/rfc/rfc9110.html#name-get",
+            "https://github.com/urllib3/urllib3/commit/4e98d57809dacab1cbe625fddeec1a290c478ea9",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-g4mx-q9vg-27p4",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/4R2Y5XK3WALSR3FNAGN7JBYV2B343ZKB/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/5F5CUBAN5XMEBVBZPHFITBLMJV5FIJJ5/",
+            "https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/PPDPLM6UUMN55ESPQWJFLLIZY4ZKCNRX/",
+            "https://www.rfc-editor.org/rfc/rfc9110.html#name-get"
+          ],
+          "description": "urllib3 is a user-friendly HTTP client library for Python. urllib3 previously wouldn't remove the HTTP request body when an HTTP redirect response using status 301, 302, or 303 after the request had its method changed from one that could accept a request body (like `POST`) to `GET` as is required by HTTP RFCs. Although this behavior is not specified in the section for redirects, it can be inferred by piecing together information from different sections and we have observed the behavior in other major HTTP client implementations like curl and web browsers. Because the vulnerability requires a previously trusted service to become compromised in order to have an impact on confidentiality we believe the exploitability of this vulnerability is low. Additionally, many users aren't putting sensitive data in HTTP request bodies, if this is the case then this vulnerability isn't exploitable. Both of the following conditions must be true to be affected by this vulnerability: 1. Using urllib3 and submitting sensitive information in the HTTP request body (such as form data or JSON) and 2. The origin service is compromised and starts redirecting using 301, 302, or 303 to a malicious peer or the redirected-to service becomes compromised. This issue has been addressed in versions 1.26.18 and 2.0.7 and users are advised to update to resolve this issue. Users unable to update should disable redirects for services that aren't expecting to respond with redirects with `redirects=False` and disable automatic redirects with `redirects=False` and handle 301, 302, and 303 redirects manually by stripping the HTTP request body.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:A/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 4.2,
+                "exploitabilityScore": 0.6,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:A/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 4.2,
+                "exploitabilityScore": 0.6,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2023-45803",
+              "epss": 0.00055,
+              "percentile": 0.17278,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2023-45803",
+              "cwe": "CWE-200",
+              "source": "security-advisories@github.com",
+              "type": "Secondary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "urllib3",
+              "version": "1.25.8"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-g4mx-q9vg-27p4",
+            "versionConstraint": ">=0,<1.26.18 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "1.26.18"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/urllib3@1.25.8",
+        "name": "urllib3",
+        "version": "1.25.8",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/urllib3@1.25.8",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-pq67-6m6q-mj2v",
+        "dataSource": "https://github.com/advisories/GHSA-pq67-6m6q-mj2v",
+        "namespace": "github:language:python",
+        "severity": "Medium",
+        "urls": [],
+        "description": "urllib3 redirects are not disabled when retries are disabled on PoolManager instantiation",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:N/A:N",
+            "metrics": {
+              "baseScore": 5.3,
+              "exploitabilityScore": 1.7,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2025-50181",
+            "epss": 0.00023,
+            "percentile": 0.04753,
+            "date": "2025-11-02"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2025-50181",
+            "cwe": "CWE-601",
+            "source": "security-advisories@github.com",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [
+            "2.5.0"
+          ],
+          "state": "fixed",
+          "available": [
+            {
+              "version": "2.5.0",
+              "date": "2025-06-19",
+              "kind": "first-observed"
+            }
+          ]
+        },
+        "advisories": [],
+        "risk": 0.011845000000000001
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2025-50181",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2025-50181",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "https://github.com/urllib3/urllib3/commit/f05b1329126d5be6de501f9d1e3e36738bc08857",
+            "https://github.com/urllib3/urllib3/security/advisories/GHSA-pq67-6m6q-mj2v"
+          ],
+          "description": "urllib3 is a user-friendly HTTP client library for Python. Prior to 2.5.0, it is possible to disable redirects for all requests by instantiating a PoolManager and specifying retries in a way that disable redirects. By default, requests and botocore users are not affected. An application attempting to mitigate SSRF or open redirect vulnerabilities by disabling redirects at the PoolManager level will remain vulnerable. This issue has been patched in version 2.5.0.",
+          "cvss": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.1,
+                "exploitabilityScore": 2.9,
+                "impactScore": 2.8
+              },
+              "vendorMetadata": {}
+            },
+            {
+              "source": "security-advisories@github.com",
+              "type": "Secondary",
+              "version": "3.1",
+              "vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 5.3,
+                "exploitabilityScore": 1.7,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2025-50181",
+              "epss": 0.00023,
+              "percentile": 0.04753,
+              "date": "2025-11-02"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2025-50181",
+              "cwe": "CWE-601",
+              "source": "security-advisories@github.com",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "urllib3",
+              "version": "1.25.8"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-pq67-6m6q-mj2v",
+            "versionConstraint": "<2.5.0 (python)"
+          },
+          "fix": {
+            "suggestedVersion": "2.5.0"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "pkg:pypi/urllib3@1.25.8",
+        "name": "urllib3",
+        "version": "1.25.8",
+        "type": "python",
+        "locations": null,
+        "language": "python",
+        "licenses": [
+          "MIT"
+        ],
+        "cpes": [],
+        "purl": "pkg:pypi/urllib3@1.25.8",
+        "upstreams": []
+      }
+    }
+  ],
+  "source": {
+    "type": "sbom-file",
+    "target": "test_cDX_sbom.json"
+  },
+  "distro": {
+    "name": "",
+    "version": "",
+    "idLike": null
+  },
+  "descriptor": {
+    "name": "grype",
+    "version": "0.101.0",
+    "configuration": {
+      "output": [
+        "json"
+      ],
+      "file": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpx_u3amla.json",
+      "pretty": false,
+      "distro": "",
+      "add-cpes-if-none": false,
+      "output-template-file": "",
+      "check-for-app-update": true,
+      "only-fixed": false,
+      "only-notfixed": false,
+      "ignore-wontfix": "",
+      "platform": "",
+      "search": {
+        "scope": "squashed",
+        "unindexed-archives": false,
+        "indexed-archives": true
+      },
+      "ignore": [
+        {
+          "vulnerability": "",
+          "include-aliases": false,
+          "reason": "",
+          "namespace": "",
+          "fix-state": "",
+          "package": {
+            "name": "kernel-headers",
+            "version": "",
+            "language": "",
+            "type": "rpm",
+            "location": "",
+            "upstream-name": "kernel"
+          },
+          "vex-status": "",
+          "vex-justification": "",
+          "match-type": "exact-indirect-match"
+        },
+        {
+          "vulnerability": "",
+          "include-aliases": false,
+          "reason": "",
+          "namespace": "",
+          "fix-state": "",
+          "package": {
+            "name": "linux(-.*)?-headers-.*",
+            "version": "",
+            "language": "",
+            "type": "deb",
+            "location": "",
+            "upstream-name": "linux.*"
+          },
+          "vex-status": "",
+          "vex-justification": "",
+          "match-type": "exact-indirect-match"
+        },
+        {
+          "vulnerability": "",
+          "include-aliases": false,
+          "reason": "",
+          "namespace": "",
+          "fix-state": "",
+          "package": {
+            "name": "linux-libc-dev",
+            "version": "",
+            "language": "",
+            "type": "deb",
+            "location": "",
+            "upstream-name": "linux"
+          },
+          "vex-status": "",
+          "vex-justification": "",
+          "match-type": "exact-indirect-match"
+        }
+      ],
+      "exclude": [],
+      "externalSources": {
+        "enable": false,
+        "maven": {
+          "searchUpstreamBySha1": true,
+          "baseUrl": "https://search.maven.org/solrsearch/select",
+          "rateLimit": 300000000
+        }
+      },
+      "match": {
+        "java": {
+          "using-cpes": false
+        },
+        "jvm": {
+          "using-cpes": true
+        },
+        "dotnet": {
+          "using-cpes": false
+        },
+        "golang": {
+          "using-cpes": false,
+          "always-use-cpe-for-stdlib": true,
+          "allow-main-module-pseudo-version-comparison": false
+        },
+        "javascript": {
+          "using-cpes": false
+        },
+        "python": {
+          "using-cpes": false
+        },
+        "ruby": {
+          "using-cpes": false
+        },
+        "rust": {
+          "using-cpes": false
+        },
+        "stock": {
+          "using-cpes": true
+        }
+      },
+      "fail-on-severity": "",
+      "registry": {
+        "insecure-skip-tls-verify": false,
+        "insecure-use-http": false,
+        "auth": null,
+        "ca-cert": ""
+      },
+      "show-suppressed": false,
+      "by-cve": false,
+      "SortBy": {
+        "sort-by": "risk"
+      },
+      "name": "",
+      "default-image-pull-source": "",
+      "vex-documents": [],
+      "vex-add": [],
+      "match-upstream-kernel-headers": false,
+      "fix-channel": {
+        "redhat-eus": {
+          "apply": "auto",
+          "versions": ">= 8.0"
+        }
+      },
+      "timestamp": true,
+      "db": {
+        "cache-dir": "C:\\Users\\HP\\AppData\\Local\\cache\\grype\\db",
+        "update-url": "https://grype.anchore.io/databases",
+        "ca-cert": "",
+        "auto-update": true,
+        "validate-by-hash-on-start": true,
+        "validate-age": true,
+        "max-allowed-built-age": 432000000000000,
+        "require-update-check": false,
+        "update-available-timeout": 30000000000,
+        "update-download-timeout": 300000000000,
+        "max-update-check-frequency": 7200000000000
+      },
+      "exp": {},
+      "dev": {
+        "db": {
+          "debug": false
+        }
+      }
+    },
+    "db": {
+      "status": {
+        "schemaVersion": "v6.1.3",
+        "from": "https://grype.anchore.io/databases/v6/vulnerability-db_v6.1.3_2025-11-03T00:25:57Z_1762153926.tar.zst?checksum=sha256%3A6954d74a6259667afd2b275d67f2324506d630affbe6bacc762c8225a3e7a932",
+        "built": "2025-11-03T07:12:06Z",
+        "path": "C:\\Users\\HP\\AppData\\Local\\cache\\grype\\db\\6\\vulnerability.db",
+        "valid": true
+      },
+      "providers": {
+        "alma": {
+          "captured": "2025-11-03T00:26:01Z",
+          "input": "xxh64:04b6495da9f6c62b"
+        },
+        "alpine": {
+          "captured": "2025-11-03T00:25:57Z",
+          "input": "xxh64:4dd5fa22dc593297"
+        },
+        "amazon": {
+          "captured": "2025-11-03T00:26:08Z",
+          "input": "xxh64:9a22d17737c73fa9"
+        },
+        "bitnami": {
+          "captured": "2025-11-03T00:26:10Z",
+          "input": "xxh64:7f6ed892998e28e7"
+        },
+        "chainguard": {
+          "captured": "2025-11-03T00:26:03Z",
+          "input": "xxh64:a3049a66682d5316"
+        },
+        "chainguard-libraries": {
+          "captured": "2025-11-03T00:26:08Z",
+          "input": "xxh64:24611b98850a5956"
+        },
+        "debian": {
+          "captured": "2025-11-03T00:26:02Z",
+          "input": "xxh64:412d5307be27d8b0"
+        },
+        "echo": {
+          "captured": "2025-11-03T00:25:58Z",
+          "input": "xxh64:acc3fd5ba5a1a988"
+        },
+        "epss": {
+          "captured": "2025-11-03T00:26:05Z",
+          "input": "xxh64:9ffe54324b0addab"
+        },
+        "github": {
+          "captured": "2025-11-03T00:26:11Z",
+          "input": "xxh64:b6245c3e5ad9699f"
+        },
+        "kev": {
+          "captured": "2025-11-03T00:26:12Z",
+          "input": "xxh64:b51ce9b7f4d76473"
+        },
+        "mariner": {
+          "captured": "2025-11-03T00:26:20Z",
+          "input": "xxh64:80dc842779365880"
+        },
+        "minimos": {
+          "captured": "2025-11-03T00:26:10Z",
+          "input": "xxh64:5cfcf81c7ec1ae86"
+        },
+        "nvd": {
+          "captured": "2025-11-03T00:27:12Z",
+          "input": "xxh64:aa38af6d815c7e26"
+        },
+        "oracle": {
+          "captured": "2025-11-03T00:26:02Z",
+          "input": "xxh64:e86c43f47d7f6a64"
+        },
+        "rhel": {
+          "captured": "2025-11-03T00:26:29Z",
+          "input": "xxh64:76ab1a4b37d0a52b"
+        },
+        "sles": {
+          "captured": "2025-11-03T00:26:11Z",
+          "input": "xxh64:0d922f2a712c6690"
+        },
+        "ubuntu": {
+          "captured": "2025-11-03T00:26:58Z",
+          "input": "xxh64:2ec4480156135d53"
+        },
+        "wolfi": {
+          "captured": "2025-11-03T00:26:02Z",
+          "input": "xxh64:960922316bcc4060"
+        }
+      }
+    },
+    "timestamp": "2025-11-04T08:59:47.1707701+05:30"
+  }
+}

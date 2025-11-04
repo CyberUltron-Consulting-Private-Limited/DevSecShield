@@ -1,0 +1,46 @@
+{
+    "scan_metadata": {
+        "timestamp": "2025-11-04T05:24:18Z",
+        "repository": "https://github.com/CyberUltron-Nikhil/MCPTest",
+        "total_agents": 3,
+        "scan_duration": "1.47s"
+    },
+    "agents": [
+        {
+            "id": "d9fdd6d1d3f7b3e443338dae1be89c2a44995d7b7a871a9dafb673f0c77ed1b9",
+            "file_path": "C:\\Users\\HP\\AppData\\Local\\Temp\\agent_discovery_px1xbe8_\\agents\\custom_prompt_agent.py",
+            "role": "Unknown",
+            "system_prompt": "",
+            "framework": "LangChain",
+            "tools": [],
+            "risk_level": "low",
+            "risk_score": 0.0,
+            "risk_factors": [],
+            "risk_reason": "Low risk agent"
+        },
+        {
+            "id": "54a038645ebb30d03daf09c54657197a24536d1fc166f4d26b4b60f915fd21e8",
+            "file_path": "C:\\Users\\HP\\AppData\\Local\\Temp\\agent_discovery_px1xbe8_\\agents\\react_agent.py",
+            "role": "Unknown",
+            "system_prompt": "",
+            "framework": "LangChain",
+            "tools": [],
+            "risk_level": "low",
+            "risk_score": 0.0,
+            "risk_factors": [],
+            "risk_reason": "Low risk agent"
+        },
+        {
+            "id": "1c68be930e584fe45fb6292bc335dc59df9f3fd078fbba430f768e50e5734ad3",
+            "file_path": "C:\\Users\\HP\\AppData\\Local\\Temp\\agent_discovery_px1xbe8_\\agents\\tool_use_agent.py",
+            "role": "Unknown",
+            "system_prompt": "",
+            "framework": "LangChain",
+            "tools": [],
+            "risk_level": "low",
+            "risk_score": 0.0,
+            "risk_factors": [],
+            "risk_reason": "Low risk agent"
+        }
+    ]
+}

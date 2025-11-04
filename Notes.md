@@ -27,8 +27,9 @@ IAC
 https://github.com/aquasecurity/tfsec/blob/master/tfsec-to-trivy-migration-guide.md  (tfsec to trivy migration)
 
 
-2. Code and Data leakage monitoring:
+2. Code and Data leakage monitoring: 🟩  ✔️✔️ Implemented function ✔️✔️ Docker tested
 - https://github.com/gitleaks
+```gitleaks_utils\gitleaks.exe dir . --report-format json --report-path testing.json``` 
 
 3. Web Vulnerability Detection DAST :
 - https://github.com/usestrix/strix
@@ -39,11 +40,11 @@ https://github.com/aquasecurity/tfsec/blob/master/tfsec-to-trivy-migration-guide
 ```grype dir:. --output json --file test.json```
 
 5. Agent discovery:
-- https://github.com/yacwagh/double-trust
+- https://github.com/yacwagh/double-trust 🟩  ✔️✔️ Implemented function ✔️✔️ Docker tested
 
 6. LLM Benchmarking:
 - https://github.com/NVIDIA/garak 🟩 ✔️✔️ Implemented function ✔️✔️ Docker tested
-- Python 3.13.5 only works for this godamn thing 🔴
+- Python 3.13.5 only works for this godamn thing ⚠️
 
 
 
