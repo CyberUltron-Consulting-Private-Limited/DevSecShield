@@ -87,27 +87,39 @@ def run_garak_scan(
 
     # -------------------------STEP [5] : Build Command seperately for custom and non-custom models-----------------------------------------------------------------------
 
-    cmd = [
-        "python",
-        "-m",
-        "garak",
-        "--model_type", "rest", "-G"
-        ,temp_json.name,
-        "--probes", probes,
-        "--report_prefix", str(report_prefix)
-    ]
-
-    
-    # because --model_type is being deprecated in garak ( un tested and doesn't work )
+    # without uv ( using the deprecated --model_type method )
     # cmd = [
     #     "python",
     #     "-m",
     #     "garak",
-    #     "--target_type", "rest", "-G"
+    #     "--model_type", "rest", "-G"
     #     ,temp_json.name,
     #     "--probes", probes,
     #     "--report_prefix", str(report_prefix)
     # ]
+
+    # with uv ( using the new --target_type method )
+    # cmd = [
+    #     "uv",
+    #     "run",
+    #     "garak",
+    #     "--model_type", "rest", "-G"
+    #     ,temp_json.name,
+    #     "--probes", probes,
+    #     "--report_prefix", str(report_prefix)
+    # ]
+
+    
+    # because --model_type is being deprecated in garak , using the new --target_type method using uv 
+    cmd = [
+        "uv",
+        "run",
+        "garak",
+        "--target_type", "rest", "-G"
+        ,temp_json.name,
+        "--probes", probes,
+        "--report_prefix", str(report_prefix)
+    ]
 
     if generations:
         cmd.extend([
@@ -246,7 +258,6 @@ if __name__=="__main__":
     # Test with multiple probes to demonstrate separate vulnerability summaries
     print("Testing Garak scan with multiple probes...")
     print("Probes: dan.Ablation_Dan_11_0,dan.DanInTheWild")
-    print("Each probe will now get its own separate vulnerability summary entry\n")
     
     results = run_garak_scan(
         model_type="custom",

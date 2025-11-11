@@ -34,6 +34,10 @@ https://github.com/aquasecurity/tfsec/blob/master/tfsec-to-trivy-migration-guide
 3. Web Vulnerability Detection ( DAST ) : 🟨 In progress
 - https://github.com/usestrix/strix
 
+``` git clone https://github.com/GreyDGL/PentestGPT ```
+``` uv pip install -e pentestgpt ```
+``` uv run pentestgpt-connection ```
+
 4. SBOM Scanning :
 - https://github.com/anchore/grype 🟩  ✔️✔️ Implemented function ✔️✔️ Docker tested
 
@@ -72,3 +76,11 @@ Sidenotes:
 
 ## Notes:
 - A project must can be associated to atleast 1 editor users and optionally viewer users ( just send a mail to the user saying they have a project waiting for them )
+
+
+
+
+
+## Notes  
+- PentestGPT works fully through standard input and output 
+- PentAGI / pentagi 

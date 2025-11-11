@@ -1,0 +1,13 @@
+[project]
+name = "devsecshield"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.13.0.2",
+    "garak>=0.13.2",
+    "gitpython>=3.1.45",
+    "rich>=14.2.0",
+    "semgrep>=1.79.0",
+]

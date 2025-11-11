@@ -131,7 +131,7 @@ if __name__ == "__main__":
         github_repo_url="https://github.com/yacwagh/double-trust",
         PAT="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",
     )
-    with open("result.json", "w+") as f:
+    with open("discovery_results.json", "w+") as f:
         json.dump(result, f, indent=4)
     
     print(result)

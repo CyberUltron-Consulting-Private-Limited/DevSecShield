@@ -100,6 +100,6 @@ if __name__ == "__main__":
         PAT="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",
     )
     result = run_sbom_scan(
-        sbom_json_file="test_cDX_sbom.json",
+        sbom_json_file=("C:\\Users\\HP\\Desktop\\DevSecShield\\tools\\sbom_sca_utils\\test_cDX_sbom.json"),
     )
     # print(result)

@@ -3,5 +3,5 @@ name = "dast-utils"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.10.18"
 dependencies = []

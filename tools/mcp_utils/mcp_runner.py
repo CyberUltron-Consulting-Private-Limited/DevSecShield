@@ -43,27 +43,29 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
         error_messages = []
 
         if raw_scan_dict[server_config_path]["error"]:
-            raise Exception(f"Error: {raw_scan_dict[server_config_path]["error"]["message"]} , Exception: {raw_scan_dict[server_config_path]["error"]["exception"]}")
+            raise Exception(f"Error: {raw_scan_dict[server_config_path]['error']['message']} , Exception: {raw_scan_dict[server_config_path]['error']['exception']}")
         
         servers = raw_scan_dict[server_config_path]["servers"]
         Console().print(f"Number of servers found : {len(servers)} 🟩",style="bold green")
         for server in servers:
             server_tools = []
             server_name = server["name"]
+            Console().print(f"Server {server_name} found , fetching tools...🟩",style="bold orange3")
 
             #if server encountered an error , then skip to next server after saving error message
             if error in server or server["signature"]==None:
-                error_messages.append(f"Server {server_name} encountered an error : {server["error"]["message"]} , Exception: {server["error"]["exception"]}")
-                Console().print(f"Server {server_name} encountered an error : {server["error"]["message"]} , Exception: {server["error"]["exception"]} 🟥",style="magenta2")
+                error_messages.append(f"Server {server_name} encountered an error : {server['error']['message']} ")
+                Console().print(f"Server {server_name} encountered an error : {server['error']['message']} 🟥",style="magenta2")
                 continue
             tools = server["signature"]["tools"]
             for tool in tools:
+                Console().print(f"Tool {tool['name']} found , fetching description...🟩",style="bold orange3")
                 tool_name = tool["name"]
                 tool_description = tool["description"]
                 tool_input_schema = tool["inputSchema"]
                 tool = {
                     "name": tool_name,
-                    "description": tool_description.encode("utf-8").decode("utf-8"),
+                    "description": tool_description.encode("utf-8").decode("utf-8",errors="ignore"),
                     "input_schema": tool_input_schema,
                 }
                 server_tools.append(tool)
@@ -73,7 +75,21 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
         Console().print(f"Mapping the tools with the issues and vulnerabilities found in the server 🟨",style="bold yellow")
         final_issues = []
         issues = raw_scan_dict[server_config_path]["issues"]
+        Console().print(f"Number of issues found : {len(issues)} 🟩",style="bold green")
         for issue in issues:
+            if issue["extra_data"] == None:
+                Console().print(f"Issue {issue['code']} found , mapping to tool {list_of_tools_per_server[issue['reference'][0]][issue['reference'][1]]} 🟩",style="bold green")
+                
+                issue_dict = {
+                        "issue_code": issue["code"],
+                        "issue_message": issue["message"],
+                        "issue_type": "unknown",
+                        "server": servers[issue["reference"][0]]["name"],
+                        "tool": list_of_tools_per_server[issue["reference"][0]][issue["reference"][1]],
+                        "issue_severity": "unknown"
+                    }
+                final_issues.append(issue_dict)
+                continue
             issue_types = issue["extra_data"].keys()
             issue_code = issue["code"]
             issue_message = issue["message"]
@@ -117,7 +133,7 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
 
 
 if __name__ == "__main__":
-    results = run_mcp_scan("test-server-mcp.json")
+    results = run_mcp_scan("C:\\Users\\HP\\Desktop\\DevSecShield\\tools\\mcp_utils\\test-server-mcp.json")
     # print(results["final_issues"][-1]) if type(results) == dict else print(results)
     # print(results["error_messages"]) if type(results) == dict else None
 

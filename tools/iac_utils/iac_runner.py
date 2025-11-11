@@ -77,8 +77,8 @@ def run_iac_scan(repo_url: str | None = None, PAT: str | None = None , mode : Li
         json_temp.close()
         
         #for testing
-        # with open("iac_results.json", "w+") as f:
-        #     json.dump(results, f)
+        with open("iac_results.json", "w+") as f:
+            json.dump(results, f)
         
         Console().print(f"IAC scan completed successfully 🟢",style="bold green")
         return results
