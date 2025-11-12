@@ -6,8 +6,8 @@ import logging
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from llm_service.llm import get_json_llm_response
-from llm_service.prompts.discovery_prompts import SUMMARIZER_SYSTEM
+from tools.discovery_utils.llm_service.llm import get_json_llm_response
+from tools.discovery_utils.llm_service.prompts.discovery_prompts import SUMMARIZER_SYSTEM
 
 
 logger = logging.getLogger(__name__)

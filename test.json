@@ -1,0 +1,954 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-77cj-rv5x-v6r2",
+        "dataSource": "https://github.com/advisories/GHSA-77cj-rv5x-v6r2",
+        "namespace": "github:language:python",
+        "severity": "Medium",
+        "urls": [],
+        "description": "FastChat open redirect vulnerability",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.0",
+            "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+            "metrics": {
+              "baseScore": 6.1,
+              "exploitabilityScore": 2.9,
+              "impactScore": 2.8
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2024-10908",
+            "epss": 0.00638,
+            "percentile": 0.69651,
+            "date": "2025-11-10"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2024-10908",
+            "cwe": "CWE-601",
+            "source": "security@huntr.dev",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [],
+          "state": "not-fixed"
+        },
+        "advisories": [],
+        "risk": 0.35408999999999996
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-10908",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-10908",
+          "namespace": "nvd:cpe",
+          "severity": "Medium",
+          "urls": [
+            "https://huntr.com/bounties/61f5e725-5579-4d08-8a88-e4ba04e6d1f2"
+          ],
+          "description": "An open redirect vulnerability in lm-sys/fastchat Release v0.2.36 allows a remote unauthenticated attacker to redirect users to arbitrary websites via a specially crafted URL. This can be exploited for phishing attacks, malware distribution, and credential theft.",
+          "cvss": [
+            {
+              "source": "security@huntr.dev",
+              "type": "Secondary",
+              "version": "3.0",
+              "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+              "metrics": {
+                "baseScore": 6.1,
+                "exploitabilityScore": 2.9,
+                "impactScore": 2.8
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2024-10908",
+              "epss": 0.00638,
+              "percentile": 0.69651,
+              "date": "2025-11-10"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2024-10908",
+              "cwe": "CWE-601",
+              "source": "security@huntr.dev",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "fschat",
+              "version": "0.2.36"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-77cj-rv5x-v6r2",
+            "versionConstraint": "<=0.2.36 (python)"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "a2fd0165e0a7acb8",
+        "name": "fschat",
+        "version": "0.2.36",
+        "type": "python",
+        "locations": [
+          {
+            "path": "\\uv.lock",
+            "accessPath": "\\uv.lock",
+            "annotations": {
+              "evidence": "primary"
+            }
+          }
+        ],
+        "language": "python",
+        "licenses": [],
+        "cpes": [
+          "cpe:2.3:a:python-fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:fschat:0.2.36:*:*:*:*:*:*:*"
+        ],
+        "purl": "pkg:pypi/fschat@0.2.36",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-79rp-v9rm-gxm8",
+        "dataSource": "https://github.com/advisories/GHSA-79rp-v9rm-gxm8",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "FastChat Denial of Service vulnerability",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.0",
+            "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "metrics": {
+              "baseScore": 7.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2024-10912",
+            "epss": 0.00285,
+            "percentile": 0.5153,
+            "date": "2025-11-10"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2024-10912",
+            "cwe": "CWE-400",
+            "source": "security@huntr.dev",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [],
+          "state": "not-fixed"
+        },
+        "advisories": [],
+        "risk": 0.21375
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-10912",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-10912",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://huntr.com/bounties/52f335b8-1134-4d0f-acb4-efef516de414"
+          ],
+          "description": "A Denial of Service (DoS) vulnerability exists in the file upload feature of lm-sys/fastchat version 0.2.36. The vulnerability is due to improper handling of form-data with a large filename in the file upload request. An attacker can exploit this by sending a payload with an excessively large filename, causing the server to become overwhelmed and unavailable to legitimate users.",
+          "cvss": [
+            {
+              "source": "security@huntr.dev",
+              "type": "Secondary",
+              "version": "3.0",
+              "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2024-10912",
+              "epss": 0.00285,
+              "percentile": 0.5153,
+              "date": "2025-11-10"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2024-10912",
+              "cwe": "CWE-400",
+              "source": "security@huntr.dev",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "fschat",
+              "version": "0.2.36"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-79rp-v9rm-gxm8",
+            "versionConstraint": "<=0.2.36 (python)"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "a2fd0165e0a7acb8",
+        "name": "fschat",
+        "version": "0.2.36",
+        "type": "python",
+        "locations": [
+          {
+            "path": "\\uv.lock",
+            "accessPath": "\\uv.lock",
+            "annotations": {
+              "evidence": "primary"
+            }
+          }
+        ],
+        "language": "python",
+        "licenses": [],
+        "cpes": [
+          "cpe:2.3:a:python-fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:fschat:0.2.36:*:*:*:*:*:*:*"
+        ],
+        "purl": "pkg:pypi/fschat@0.2.36",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-h254-g997-685c",
+        "dataSource": "https://github.com/advisories/GHSA-h254-g997-685c",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "FastChat Server-Side Request Forgery vulnerability",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.0",
+            "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "metrics": {
+              "baseScore": 7.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2024-11603",
+            "epss": 0.00125,
+            "percentile": 0.32497,
+            "date": "2025-11-10"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2024-11603",
+            "cwe": "CWE-918",
+            "source": "security@huntr.dev",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [],
+          "state": "not-fixed"
+        },
+        "advisories": [],
+        "risk": 0.09375
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-11603",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-11603",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://huntr.com/bounties/89f1158d-4a75-4000-a1bd-f82dd1a62bff"
+          ],
+          "description": "A Server-Side Request Forgery (SSRF) vulnerability exists in lm-sys/fastchat version 0.2.36. The vulnerability is present in the `/queue/join?` endpoint, where insufficient validation of the path parameter allows an attacker to send crafted requests. This can lead to unauthorized access to internal networks or the AWS metadata endpoint, potentially exposing sensitive data and compromising internal servers.",
+          "cvss": [
+            {
+              "source": "security@huntr.dev",
+              "type": "Secondary",
+              "version": "3.0",
+              "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2024-11603",
+              "epss": 0.00125,
+              "percentile": 0.32497,
+              "date": "2025-11-10"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2024-11603",
+              "cwe": "CWE-918",
+              "source": "security@huntr.dev",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "fschat",
+              "version": "0.2.36"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-h254-g997-685c",
+            "versionConstraint": "<=0.2.36 (python)"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "a2fd0165e0a7acb8",
+        "name": "fschat",
+        "version": "0.2.36",
+        "type": "python",
+        "locations": [
+          {
+            "path": "\\uv.lock",
+            "accessPath": "\\uv.lock",
+            "annotations": {
+              "evidence": "primary"
+            }
+          }
+        ],
+        "language": "python",
+        "licenses": [],
+        "cpes": [
+          "cpe:2.3:a:python-fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:fschat:0.2.36:*:*:*:*:*:*:*"
+        ],
+        "purl": "pkg:pypi/fschat@0.2.36",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-qg86-f892-m4hj",
+        "dataSource": "https://github.com/advisories/GHSA-qg86-f892-m4hj",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "FastChat Uncontrolled Resource Consumption vulnerability",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.0",
+            "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+            "metrics": {
+              "baseScore": 7.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2024-10907",
+            "epss": 0.00071,
+            "percentile": 0.21986,
+            "date": "2025-11-10"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2024-10907",
+            "cwe": "CWE-835",
+            "source": "security@huntr.dev",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [],
+          "state": "not-fixed"
+        },
+        "advisories": [],
+        "risk": 0.05325
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-10907",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-10907",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://huntr.com/bounties/bf3ca81d-3508-4455-95d9-0b653e46d6e4"
+          ],
+          "description": "In lm-sys/fastchat Release v0.2.36, the server fails to handle excessive characters appended to the end of multipart boundaries. This flaw can be exploited by sending malformed multipart requests with arbitrary characters at the end of the boundary. Each extra character is processed in an infinite loop, leading to excessive resource consumption and a complete denial of service (DoS) for all users. The vulnerability is unauthenticated, meaning no user login or interaction is required for an attacker to exploit this issue.",
+          "cvss": [
+            {
+              "source": "security@huntr.dev",
+              "type": "Secondary",
+              "version": "3.0",
+              "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2024-10907",
+              "epss": 0.00071,
+              "percentile": 0.21986,
+              "date": "2025-11-10"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2024-10907",
+              "cwe": "CWE-835",
+              "source": "security@huntr.dev",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "fschat",
+              "version": "0.2.36"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-qg86-f892-m4hj",
+            "versionConstraint": "<=0.2.36 (python)"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "a2fd0165e0a7acb8",
+        "name": "fschat",
+        "version": "0.2.36",
+        "type": "python",
+        "locations": [
+          {
+            "path": "\\uv.lock",
+            "accessPath": "\\uv.lock",
+            "annotations": {
+              "evidence": "primary"
+            }
+          }
+        ],
+        "language": "python",
+        "licenses": [],
+        "cpes": [
+          "cpe:2.3:a:python-fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:fschat:0.2.36:*:*:*:*:*:*:*"
+        ],
+        "purl": "pkg:pypi/fschat@0.2.36",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-g44m-hpf4-vmrp",
+        "dataSource": "https://github.com/advisories/GHSA-g44m-hpf4-vmrp",
+        "namespace": "github:language:python",
+        "severity": "High",
+        "urls": [],
+        "description": "FastChat Server-Side Request Forgery vulnerability",
+        "cvss": [
+          {
+            "type": "Secondary",
+            "version": "3.0",
+            "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+            "metrics": {
+              "baseScore": 7.5,
+              "exploitabilityScore": 3.9,
+              "impactScore": 3.6
+            },
+            "vendorMetadata": {}
+          }
+        ],
+        "epss": [
+          {
+            "cve": "CVE-2024-12376",
+            "epss": 0.00059,
+            "percentile": 0.18583,
+            "date": "2025-11-10"
+          }
+        ],
+        "cwes": [
+          {
+            "cve": "CVE-2024-12376",
+            "cwe": "CWE-918",
+            "source": "security@huntr.dev",
+            "type": "Primary"
+          }
+        ],
+        "fix": {
+          "versions": [],
+          "state": "not-fixed"
+        },
+        "advisories": [],
+        "risk": 0.044250000000000005
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2024-12376",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2024-12376",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "urls": [
+            "https://huntr.com/bounties/c9cc3f28-ee9f-4d2d-9ee5-8c6455a11892"
+          ],
+          "description": "A Server-Side Request Forgery (SSRF) vulnerability was identified in the lm-sys/fastchat web server, specifically in the affected version git 2c68a13. This vulnerability allows an attacker to access internal server resources and data that are otherwise inaccessible, such as AWS metadata credentials.",
+          "cvss": [
+            {
+              "source": "security@huntr.dev",
+              "type": "Secondary",
+              "version": "3.0",
+              "vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+              "metrics": {
+                "baseScore": 7.5,
+                "exploitabilityScore": 3.9,
+                "impactScore": 3.6
+              },
+              "vendorMetadata": {}
+            }
+          ],
+          "epss": [
+            {
+              "cve": "CVE-2024-12376",
+              "epss": 0.00059,
+              "percentile": 0.18583,
+              "date": "2025-11-10"
+            }
+          ],
+          "cwes": [
+            {
+              "cve": "CVE-2024-12376",
+              "cwe": "CWE-918",
+              "source": "security@huntr.dev",
+              "type": "Primary"
+            }
+          ]
+        }
+      ],
+      "matchDetails": [
+        {
+          "type": "exact-direct-match",
+          "matcher": "python-matcher",
+          "searchedBy": {
+            "language": "python",
+            "namespace": "github:language:python",
+            "package": {
+              "name": "fschat",
+              "version": "0.2.36"
+            }
+          },
+          "found": {
+            "vulnerabilityID": "GHSA-g44m-hpf4-vmrp",
+            "versionConstraint": "<=0.2.36 (python)"
+          }
+        }
+      ],
+      "artifact": {
+        "id": "a2fd0165e0a7acb8",
+        "name": "fschat",
+        "version": "0.2.36",
+        "type": "python",
+        "locations": [
+          {
+            "path": "\\uv.lock",
+            "accessPath": "\\uv.lock",
+            "annotations": {
+              "evidence": "primary"
+            }
+          }
+        ],
+        "language": "python",
+        "licenses": [],
+        "cpes": [
+          "cpe:2.3:a:python-fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python-fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python-fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:python_fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python_fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:fschat:fschat:0.2.36:*:*:*:*:*:*:*",
+          "cpe:2.3:a:python:fschat:0.2.36:*:*:*:*:*:*:*"
+        ],
+        "purl": "pkg:pypi/fschat@0.2.36",
+        "upstreams": []
+      }
+    }
+  ],
+  "source": {
+    "type": "directory",
+    "target": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_nqy2s1l4"
+  },
+  "distro": {
+    "name": "",
+    "version": "",
+    "idLike": null
+  },
+  "descriptor": {
+    "name": "grype",
+    "version": "0.101.0",
+    "configuration": {
+      "output": [
+        "json"
+      ],
+      "file": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmprydq3ksl.json",
+      "pretty": false,
+      "distro": "",
+      "add-cpes-if-none": false,
+      "output-template-file": "",
+      "check-for-app-update": true,
+      "only-fixed": false,
+      "only-notfixed": false,
+      "ignore-wontfix": "",
+      "platform": "",
+      "search": {
+        "scope": "squashed",
+        "unindexed-archives": false,
+        "indexed-archives": true
+      },
+      "ignore": [
+        {
+          "vulnerability": "",
+          "include-aliases": false,
+          "reason": "",
+          "namespace": "",
+          "fix-state": "",
+          "package": {
+            "name": "kernel-headers",
+            "version": "",
+            "language": "",
+            "type": "rpm",
+            "location": "",
+            "upstream-name": "kernel"
+          },
+          "vex-status": "",
+          "vex-justification": "",
+          "match-type": "exact-indirect-match"
+        },
+        {
+          "vulnerability": "",
+          "include-aliases": false,
+          "reason": "",
+          "namespace": "",
+          "fix-state": "",
+          "package": {
+            "name": "linux(-.*)?-headers-.*",
+            "version": "",
+            "language": "",
+            "type": "deb",
+            "location": "",
+            "upstream-name": "linux.*"
+          },
+          "vex-status": "",
+          "vex-justification": "",
+          "match-type": "exact-indirect-match"
+        },
+        {
+          "vulnerability": "",
+          "include-aliases": false,
+          "reason": "",
+          "namespace": "",
+          "fix-state": "",
+          "package": {
+            "name": "linux-libc-dev",
+            "version": "",
+            "language": "",
+            "type": "deb",
+            "location": "",
+            "upstream-name": "linux"
+          },
+          "vex-status": "",
+          "vex-justification": "",
+          "match-type": "exact-indirect-match"
+        }
+      ],
+      "exclude": [],
+      "externalSources": {
+        "enable": false,
+        "maven": {
+          "searchUpstreamBySha1": true,
+          "baseUrl": "https://search.maven.org/solrsearch/select",
+          "rateLimit": 300000000
+        }
+      },
+      "match": {
+        "java": {
+          "using-cpes": false
+        },
+        "jvm": {
+          "using-cpes": true
+        },
+        "dotnet": {
+          "using-cpes": false
+        },
+        "golang": {
+          "using-cpes": false,
+          "always-use-cpe-for-stdlib": true,
+          "allow-main-module-pseudo-version-comparison": false
+        },
+        "javascript": {
+          "using-cpes": false
+        },
+        "python": {
+          "using-cpes": false
+        },
+        "ruby": {
+          "using-cpes": false
+        },
+        "rust": {
+          "using-cpes": false
+        },
+        "stock": {
+          "using-cpes": true
+        }
+      },
+      "fail-on-severity": "",
+      "registry": {
+        "insecure-skip-tls-verify": false,
+        "insecure-use-http": false,
+        "auth": null,
+        "ca-cert": ""
+      },
+      "show-suppressed": false,
+      "by-cve": false,
+      "SortBy": {
+        "sort-by": "risk"
+      },
+      "name": "",
+      "default-image-pull-source": "",
+      "vex-documents": [],
+      "vex-add": [],
+      "match-upstream-kernel-headers": false,
+      "fix-channel": {
+        "redhat-eus": {
+          "apply": "auto",
+          "versions": ">= 8.0"
+        }
+      },
+      "timestamp": true,
+      "db": {
+        "cache-dir": "C:\\Users\\HP\\AppData\\Local\\cache\\grype\\db",
+        "update-url": "https://grype.anchore.io/databases",
+        "ca-cert": "",
+        "auto-update": true,
+        "validate-by-hash-on-start": true,
+        "validate-age": true,
+        "max-allowed-built-age": 432000000000000,
+        "require-update-check": false,
+        "update-available-timeout": 30000000000,
+        "update-download-timeout": 300000000000,
+        "max-update-check-frequency": 7200000000000
+      },
+      "exp": {},
+      "dev": {
+        "db": {
+          "debug": false
+        }
+      }
+    },
+    "db": {
+      "status": {
+        "schemaVersion": "v6.1.3",
+        "from": "https://grype.anchore.io/databases/v6/vulnerability-db_v6.1.3_2025-11-11T00:25:59Z_1762845878.tar.zst?checksum=sha256%3Ad1670d44ca26c43130aaa698236d481a2455bcd35fa03409580ace6441b4a9cf",
+        "built": "2025-11-11T07:24:38Z",
+        "path": "C:\\Users\\HP\\AppData\\Local\\cache\\grype\\db\\6\\vulnerability.db",
+        "valid": true
+      },
+      "providers": {
+        "alma": {
+          "captured": "2025-11-11T00:25:59Z",
+          "input": "xxh64:b0db8dce7e55a2a0"
+        },
+        "alpine": {
+          "captured": "2025-11-11T00:26:02Z",
+          "input": "xxh64:0fdf51b3d77e5b52"
+        },
+        "amazon": {
+          "captured": "2025-11-11T00:26:01Z",
+          "input": "xxh64:c2f224239346bbf2"
+        },
+        "bitnami": {
+          "captured": "2025-11-11T00:26:12Z",
+          "input": "xxh64:88601259efdaf4de"
+        },
+        "chainguard": {
+          "captured": "2025-11-11T00:26:15Z",
+          "input": "xxh64:e639a897198a8700"
+        },
+        "chainguard-libraries": {
+          "captured": "2025-11-11T00:25:59Z",
+          "input": "xxh64:7acbcd688422f422"
+        },
+        "debian": {
+          "captured": "2025-11-11T00:26:13Z",
+          "input": "xxh64:dd361cc7733333f9"
+        },
+        "echo": {
+          "captured": "2025-11-11T00:26:11Z",
+          "input": "xxh64:de6bd3de78c2b0f9"
+        },
+        "epss": {
+          "captured": "2025-11-11T00:26:04Z",
+          "input": "xxh64:228797625073dd5a"
+        },
+        "github": {
+          "captured": "2025-11-11T00:26:20Z",
+          "input": "xxh64:388fdf2a577bf3e4"
+        },
+        "kev": {
+          "captured": "2025-11-11T00:26:05Z",
+          "input": "xxh64:86530a7f22f7bae7"
+        },
+        "mariner": {
+          "captured": "2025-11-11T00:26:06Z",
+          "input": "xxh64:bbaf11280df3f8bb"
+        },
+        "minimos": {
+          "captured": "2025-11-11T00:25:59Z",
+          "input": "xxh64:aa5a27f197fa1328"
+        },
+        "nvd": {
+          "captured": "2025-11-11T00:28:31Z",
+          "input": "xxh64:34547306ec50936d"
+        },
+        "oracle": {
+          "captured": "2025-11-11T00:26:08Z",
+          "input": "xxh64:505028cba1bb6cf9"
+        },
+        "rhel": {
+          "captured": "2025-11-11T00:27:00Z",
+          "input": "xxh64:3b1d3f83a65c7794"
+        },
+        "sles": {
+          "captured": "2025-11-11T00:26:32Z",
+          "input": "xxh64:2cb63ec10efb3347"
+        },
+        "ubuntu": {
+          "captured": "2025-11-11T00:28:14Z",
+          "input": "xxh64:c30b1e2397b44fff"
+        },
+        "wolfi": {
+          "captured": "2025-11-11T00:26:13Z",
+          "input": "xxh64:f9f08d008c7c2642"
+        }
+      }
+    },
+    "timestamp": "2025-11-12T12:08:31.4474324+05:30"
+  }
+}

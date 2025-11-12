@@ -9,8 +9,8 @@ from typing import Dict, Any
 import logging
 import hashlib
 
-from extractor import extract_system_prompts, extract_langchain_agents
-from role_assigner import summarize_prompt_role
+from tools.discovery_utils.extractor import extract_system_prompts, extract_langchain_agents
+from tools.discovery_utils.role_assigner import summarize_prompt_role
 import sys
 import os
 from git import Repo, GitCommandError
@@ -31,7 +31,7 @@ def clone_repo(url: str) -> Path:
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from llm_service.llm import MissingApiKeyError
+from tools.discovery_utils.llm_service.llm import MissingApiKeyError
 
 
 logger = logging.getLogger(__name__)

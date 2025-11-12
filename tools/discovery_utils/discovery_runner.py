@@ -8,10 +8,10 @@ import json
 from typing import Any, Dict, List, Optional
 
 
-from discovery import discover_agents
-from llm_service.llm import get_json_llm_response, MissingApiKeyError
-from llm_service.prompts.tool_detection import TOOL_DETECTION_PROMPT
-from llm_service.prompts.agent_risk import AGENT_RISK_PROMPT
+from tools.discovery_utils.discovery import discover_agents
+from tools.discovery_utils.llm_service.llm import get_json_llm_response, MissingApiKeyError
+from tools.discovery_utils.llm_service.prompts.tool_detection import TOOL_DETECTION_PROMPT
+from tools.discovery_utils.llm_service.prompts.agent_risk import AGENT_RISK_PROMPT
 from git import Repo, GitCommandError
 from rich.console import Console
 
