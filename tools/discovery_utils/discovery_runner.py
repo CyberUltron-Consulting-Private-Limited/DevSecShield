@@ -122,6 +122,8 @@ class DiscoveryService:
             return saved_agents
             
         finally:
+            with open("discovery_results.json", "w+") as f:
+                json.dump(saved_agents, f, indent=4)
             # Clean up temporary directory
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)

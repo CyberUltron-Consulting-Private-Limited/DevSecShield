@@ -1,7 +1,7 @@
 {
-  "test-server-mcp.json": {
-    "client": null,
-    "path": "test-server-mcp.json",
+  "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpo80eur2d.json": {
+    "client": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpo80eur2d.json",
+    "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpo80eur2d.json",
     "servers": [
       {
         "name": "playwright",
@@ -30,7 +30,7 @@
             "serverInfo": {
               "name": "Playwright",
               "title": null,
-              "version": "0.0.44",
+              "version": "0.0.46",
               "websiteUrl": null,
               "icons": null
             },
@@ -799,6 +799,126 @@
     ],
     "issues": [
       {
+        "code": "E001",
+        "message": "Malicious input detected within the tool documentation.",
+        "reference": [
+          0,
+          11
+        ],
+        "extra_data": null
+      },
+      {
+        "code": "TF001",
+        "message": "Data leak toxic flow detected. The same agent has access to at least one tool that produces untrusted content, one tool that can access private data, and one tool that can behave as a public sink. For more information, see https://explorer.invariantlabs.ai/docs/mcp-scan/issue-code-reference/#TF001",
+        "reference": null,
+        "extra_data": {
+          "untrusted_content_tool": [
+            {
+              "reference": [
+                0,
+                2
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                4
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                12
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                13
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                14
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                19
+              ],
+              "label_value": 1.0
+            }
+          ],
+          "private_data_tool": [
+            {
+              "reference": [
+                0,
+                2
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                4
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                12
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                13
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                14
+              ],
+              "label_value": 1.0
+            }
+          ],
+          "public_sink_tool": [
+            {
+              "reference": [
+                0,
+                5
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                6
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                9
+              ],
+              "label_value": 2.0
+            }
+          ]
+        }
+      },
+      {
         "code": "TF002",
         "message": "Destructive toxic flow detected. The same agent has access to at least one tool that produces untrusted content and one tool that can behave destructively. For more information, see https://explorer.invariantlabs.ai/docs/mcp-scan/issue-code-reference/#TF002",
         "reference": null,
@@ -830,7 +950,7 @@
                 0,
                 13
               ],
-              "label_value": 1.0
+              "label_value": 2.0
             },
             {
               "reference": [
@@ -860,21 +980,21 @@
                 0,
                 3
               ],
-              "label_value": 1.0
+              "label_value": 2.0
             },
             {
               "reference": [
                 0,
                 4
               ],
-              "label_value": 3.0
+              "label_value": 2.0
             },
             {
               "reference": [
                 0,
                 5
               ],
-              "label_value": 2.0
+              "label_value": 1.0
             },
             {
               "reference": [
@@ -895,6 +1015,13 @@
                 0,
                 9
               ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                11
+              ],
               "label_value": 1.0
             },
             {
@@ -909,7 +1036,7 @@
                 0,
                 16
               ],
-              "label_value": 1.0
+              "label_value": 2.0
             },
             {
               "reference": [
@@ -951,85 +1078,85 @@
         },
         {
           "is_public_sink": 0.0,
-          "destructive": 1.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 3.0,
-          "untrusted_content": 2.0,
-          "private_data": 2.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 2.0,
-          "untrusted_content": 0.0,
-          "private_data": 2.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 1.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 1.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 1.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 2.0,
-          "private_data": 2.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 1.0,
-          "private_data": 2.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 2.0,
-          "private_data": 2.0
-        },
-        {
-          "is_public_sink": 0.0,
           "destructive": 2.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
         },
         {
           "is_public_sink": 0.0,
+          "destructive": 2.0,
+          "untrusted_content": 2.0,
+          "private_data": 2.0
+        },
+        {
+          "is_public_sink": 2.0,
           "destructive": 1.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 2.0,
+          "destructive": 0.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 1.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 1.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 2.0,
+          "destructive": 2.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 0.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 1.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 0.0,
+          "untrusted_content": 2.0,
+          "private_data": 2.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 0.0,
+          "untrusted_content": 2.0,
+          "private_data": 2.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 0.0,
+          "untrusted_content": 2.0,
+          "private_data": 1.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 2.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 0.0,
+          "destructive": 2.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
         },

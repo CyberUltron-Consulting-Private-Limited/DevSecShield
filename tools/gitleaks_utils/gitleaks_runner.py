@@ -86,7 +86,7 @@ def run_gitleaks_scan(repo_url: str | None = None, PAT: str | None = None ) -> d
             gitleaks_json = json.load(f)
 
             # for testing
-            with open("test_aa.json", "w+", encoding="utf-8") as f:
+            with open("gitleaks_test.json", "w+", encoding="utf-8") as f:
                 json.dump(gitleaks_json, f, indent=2)
 
             for i in range(len(gitleaks_json)):
@@ -101,7 +101,7 @@ def run_gitleaks_scan(repo_url: str | None = None, PAT: str | None = None ) -> d
         json_temp.close()
 
         # for testing
-        with open("test.json", "w+", encoding="utf-8") as f:
+        with open("gitleaks_test.json", "w+", encoding="utf-8") as f:
             json.dump(gitleaks_json, f, indent=2)
         
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(gitleaks_json)}",style="bold green")

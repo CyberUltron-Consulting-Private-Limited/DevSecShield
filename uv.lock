@@ -711,6 +711,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "garak" },
     { name = "gitpython" },
+    { name = "openai" },
     { name = "rich" },
     { name = "semgrep" },
 ]
@@ -720,6 +721,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.13.0.2" },
     { name = "garak", specifier = ">=0.13.2" },
     { name = "gitpython", specifier = ">=3.1.45" },
+    { name = "openai", specifier = ">=1.109.1" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "semgrep", specifier = ">=1.79.0" },
 ]

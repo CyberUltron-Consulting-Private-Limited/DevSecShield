@@ -4,15 +4,25 @@ import tempfile
 import shutil
 from rich.progress import Progress,Task
 from rich.console import Console
-def run_mcp_scan(server_config_path:str) -> list[dict] | str:
+def run_mcp_scan(server_config_json:str) -> list[dict] | str:
 
     try:
+        Console().print(f"Validating the server config json 🟨",style="bold yellow")
+        data_json = json.loads(server_config_json)
+        Console().print(f"JSON Valid and creating json file 🟩",style="bold green")
+        server_config_json_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json",mode="w+")
+        json.dump(data_json, server_config_json_temp, indent=2)
+        server_config_json_temp.flush()
+        server_config_path = server_config_json_temp.name
+        Console().print(f"Server config json validated and created a temporary file successfully 🟩",style="bold green")
+
         # STEP : ------------------------------------------------------------Running the mcp-scan command----------------------------------------------------------
         Console().print(f"Starting the mcp-scan command for the server config path: {server_config_path} 🟨",style="bold yellow")
         temp_dir = tempfile.mkdtemp()
         cmd=[ "uvx" , "mcp-scan" ,server_config_path, "--json" , "--opt-out" , "--full-toxic-flows","--storage-file", temp_dir ]
         result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         shutil.rmtree(temp_dir)
+        server_config_json_temp.close()
 
         # STEP : Checking if the command was successful
         if result.returncode != 0:
@@ -33,7 +43,7 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
         raw_scan_dict = json.loads(results[start_index:])
 
         # for testing
-        with open("mcp_results_2.json", "w+") as f:
+        with open("mcp_test_raw.json", "w+") as f:
             json.dump(raw_scan_dict, f, indent=2)
 
         
@@ -121,7 +131,7 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
 
         # for testing
         return_result = {"final_issues": final_issues, "error_messages": error_messages}
-        with open("final_issues.json", "w+") as f:
+        with open("mcp_test.json", "w+") as f:
             json.dump(return_result, f, indent=2)
 
         Console().print(f"Finished the mcp-scan command for the server config path: {server_config_path} 🟩",style="bold green")
@@ -133,7 +143,11 @@ def run_mcp_scan(server_config_path:str) -> list[dict] | str:
 
 
 if __name__ == "__main__":
-    results = run_mcp_scan("C:\\Users\\HP\\Desktop\\DevSecShield\\tools\\mcp_utils\\test-server-mcp.json")
+    json_data = json.load(open("C:\\Users\\HP\\Desktop\\DevSecShield\\tools\\mcp_utils\\test-server-mcp.json"))
+    string_json = str(json_data)
+    string_json = string_json.replace("'", '"')
+    Console().print(f"String json: {string_json} 🟩",style="bold green")
+    results = run_mcp_scan(string_json)
     # print(results["final_issues"][-1]) if type(results) == dict else print(results)
     # print(results["error_messages"]) if type(results) == dict else None
 
