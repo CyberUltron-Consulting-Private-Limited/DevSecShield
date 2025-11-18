@@ -3,18 +3,7 @@ from openai import NotGiven, OpenAI
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-def validate_json(json_string:str) -> dict:
-    """
-    Validates a JSON string and returns a dictionary
-    Args:
-        json_string: The JSON string to validate
-    Returns:
-        The validated JSON dictionary
-    """
-    try:
-        return json.loads(json_string)
-    except Exception as e:
-        return str(e)
+
 
 def generate_structured_response(prompt:str,
                       model:str="gpt-4o",
