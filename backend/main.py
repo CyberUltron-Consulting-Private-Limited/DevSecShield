@@ -74,11 +74,7 @@ BASE_MEDIA_PATH = "uploads\\"
 
 auth_api_routes(app,engine)
 admin_routes(app,engine)
-normal_system_scan_routes(app,engine,BASE_MEDIA_PATH)
 
-llm_scan_routes(app,engine,BASE_MEDIA_PATH)
-
-mcp_scan_routes(app,engine)
 
 @app.get("/overview",dependencies=[Depends(limiter)])
 async def overview(Authorization: Annotated[str | None, Header()] = None):
