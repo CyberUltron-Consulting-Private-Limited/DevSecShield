@@ -77,8 +77,8 @@ def run_iac_scan(repo_url: str | None = None, PAT: str | None = None , mode : Li
         json_temp.close()
         
         #for testing
-        with open("iac_results.json", "w+") as f:
-            json.dump(results, f)
+        # with open("iac_results.json", "w+") as f:
+        #     json.dump(results, f)
         
         Console().print(f"IAC scan completed successfully 🟢",style="bold green")
         return results
@@ -93,8 +93,8 @@ if __name__ == "__main__":
         PAT="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",
         mode="trivy",
     )
-    result = run_iac_scan(
-        repo_url="https://github.com/CyberUltron-Nikhil/DevSecShield",
-        PAT="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",
-    )
+    # result = run_iac_scan(
+    #     repo_url="https://github.com/CyberUltron-Nikhil/DevSecShield",
+    #     PAT="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",
+    # )
     # print(result)

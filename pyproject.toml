@@ -1,11 +1,13 @@
 [project]
-name = "devsecshield"
+name = "devsecshield_global"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "celery>=5.5.3",
     "fastapi-throttle>=0.1.8",
+    "fastapi[standard]>=0.121.1",
     "fastmcp>=2.13.0.2",
     "garak>=0.13.2",
     "gitpython>=3.1.45",

@@ -105,8 +105,8 @@ def run_sast_scan(repo_url: str | None = None, PAT: str | None = None , app_lang
         json_temp.close()
 
         # for testing
-        with open("sast_test.json", "w+", encoding="utf-8") as f:
-            json.dump(sast_json, f, indent=2)
+        # with open("sast_test.json", "w+", encoding="utf-8") as f:
+        #     json.dump(sast_json, f, indent=2)
         
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(sast_json['results'])}",style="bold green")
         return sast_json

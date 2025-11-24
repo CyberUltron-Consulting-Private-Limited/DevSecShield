@@ -1,6 +1,7 @@
-## Doubts to clear : 
-1. should i implement a "job" polling architecture for the scans . 
-2. confirm if one chat only can do the scan once 
+#TO DO 
+1. make the scan results human readable and not JSON 
+
+- Dockerfile builds alright , test the compose of rabbit + worker later 
 
 
 ## Database Architecture ( Postgres )
@@ -129,6 +130,15 @@ Collection 1 : Messages
 
 
 ## Useful notes : 
+
+- How to generate a 256 char long password : 
+```openssl rand -hex 256```
+
+- Use this exact command when spinning up a celery worker 
+```uv run celery -A scan_worker worker -P threads --loglevel=info```
+
+
+- Mongo DB stuff 
 ```
 
 from bson import ObjectId

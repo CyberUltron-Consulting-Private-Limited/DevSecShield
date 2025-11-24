@@ -122,14 +122,22 @@ class DiscoveryService:
             return saved_agents
             
         finally:
-            with open("discovery_results.json", "w+") as f:
-                json.dump(saved_agents, f, indent=4)
+            # for testing
+            # with open("discovery_results.json", "w+") as f:
+            #     json.dump(saved_agents, f, indent=4)
             # Clean up temporary directory
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-if __name__ == "__main__":
+def run_discovery_scan(github_repo_url: str, PAT: str):
     result = DiscoveryService.discover_agents_from_github(
+        github_repo_url="https://github.com/yacwagh/double-trust",
+        PAT="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",
+    )
+    return result 
+
+if __name__ == "__main__":
+    result = run_discovery_scan(
         github_repo_url="https://github.com/yacwagh/double-trust",
         PAT="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",
     )

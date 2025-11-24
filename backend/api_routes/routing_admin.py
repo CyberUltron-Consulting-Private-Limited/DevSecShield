@@ -3,11 +3,10 @@ from fastapi import FastAPI, HTTPException, Header, status
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from pydantic import BaseModel
-from ..auth_utils import get_user_from_header_or_raise_exception, get_hashed_password
-from ..models import User
-from ..plans import plans
-from ..auth_utils import send_email
-from ..html_email import create_user_password_email_html
+from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email
+from backend.models import User
+from backend.auth_utils.plans import plans
+from backend.auth_utils.html_email import create_user_password_email_html
 import psycopg2
 
 class CreateUserData(BaseModel):

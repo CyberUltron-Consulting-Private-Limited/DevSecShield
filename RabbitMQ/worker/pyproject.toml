@@ -1,0 +1,14 @@
+[project]
+name = "devsecshield_worker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "celery>=5.5.3",
+    "garak>=0.13.2",
+    "gitpython>=3.1.45",
+    "openai>=1.109.1",
+    "rich>=14.2.0",
+    "semgrep>=1.79.0",
+]

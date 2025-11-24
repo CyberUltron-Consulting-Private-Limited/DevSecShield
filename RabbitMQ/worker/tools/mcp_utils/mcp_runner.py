@@ -43,8 +43,8 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
         raw_scan_dict = json.loads(results[start_index:])
 
         # for testing
-        with open("mcp_test_raw.json", "w+") as f:
-            json.dump(raw_scan_dict, f, indent=2)
+        # with open("mcp_test_raw.json", "w+") as f:
+        #     json.dump(raw_scan_dict, f, indent=2)
 
         
         # STEP : ---------Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server-------------
@@ -131,8 +131,8 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
 
         # for testing
         return_result = {"final_issues": final_issues, "error_messages": error_messages}
-        with open("mcp_test.json", "w+") as f:
-            json.dump(return_result, f, indent=2)
+        # with open("mcp_test.json", "w+") as f:
+        #     json.dump(return_result, f, indent=2)
 
         Console().print(f"Finished the mcp-scan command for the server config path: {server_config_path} 🟩",style="bold green")
         return return_result

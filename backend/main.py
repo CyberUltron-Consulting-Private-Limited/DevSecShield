@@ -1,13 +1,13 @@
 import os
 import datetime
 from typing import Annotated
-from .auth_utils import get_hashed_password, get_user_from_header_or_raise_exception
+from backend.auth_utils.auth_utils import get_hashed_password, get_user_from_header_or_raise_exception
 from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from sqlmodel import Session, SQLModel, create_engine
 from starlette.responses import JSONResponse
-from .models import *
-from .api_routes.routing_admin import admin_routes
-from .api_routes.routing_auth import auth_api_routes
+from backend.models import *
+from backend.api_routes.routing_admin import admin_routes
+from backend.api_routes.routing_auth import auth_api_routes
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from fastapi_throttle import RateLimiter

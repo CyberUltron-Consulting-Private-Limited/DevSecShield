@@ -1,0 +1,186 @@
+from typing import Literal, Optional
+from celery import Celery
+from rich.console import Console
+from celery.result import AsyncResult
+import time 
+from dotenv import load_dotenv
+import os
+import sys
+from tools.sast_utils.sast_runner import run_sast_scan
+from tools.sbom_sca_utils.sbom_runner import run_sbom_scan
+from tools.iac_utils.iac_runner import run_iac_scan
+from tools.gitleaks_utils.gitleaks_runner import run_gitleaks_scan
+from tools.discovery_utils.discovery_runner import run_discovery_scan
+from tools.llm_utils.llm_runner import run_garak_scan
+from tools.mcp_utils.mcp_runner import run_mcp_scan
+#====================================== Setting credentials to connect to broker ================================================================
+try:
+    load_dotenv()
+    username = os.getenv("RABBIT_ADMIN_USERNAME")
+    password = os.getenv("RABBIT_ADMIN_PASSWORD")
+    if not username or not password : 
+        raise Exception()
+except Exception as e :
+    Console().print("Set username and password env variables to access broker",style="bold red")
+    sys.exit()
+
+
+
+
+
+#============================================================== Registering tasks to worker ==================================================================== 
+
+try:
+    app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
+    Console().print(f"Celery App instantiated",style="bold green")
+
+
+
+    # ------------------------------------------- SAST Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def sast(
+        repo_url:str, 
+        PAT:str,
+        app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
+
+        
+        if not repo_url or not PAT or not app_lang or ( app_lang not in ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] ) :
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_sast_scan(
+            repo_url=repo_url,
+            PAT=PAT,
+            app_lang=app_lang
+        )  
+        return results
+    Console().print(f"Registered SAST task",style="bold green")
+
+
+     # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def sbom_sca(
+        repo_url:str, 
+        PAT:str):
+
+        
+        if not repo_url or not PAT  :
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_sbom_scan(
+            repo_url=repo_url,
+            PAT=PAT,
+        )  
+        return results 
+    Console().print(f"Registered SBOM SCA task",style="bold green")
+
+
+     # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def iac(
+        repo_url:str, 
+        PAT:str,
+        ):
+
+        
+        if not repo_url or not PAT :
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_iac_scan(
+            repo_url=repo_url,
+            PAT=PAT,
+        ) 
+        return results 
+    Console().print(f"Registered IAC task",style="bold green")
+
+     # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def discovery(
+        repo_url:str, 
+        PAT:str):
+
+        
+        if not repo_url or not PAT  :
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_discovery_scan(
+            github_repo_url=repo_url,
+            PAT=PAT,
+        )  
+
+        return results
+    Console().print(f"Registered Agent discovery task",style="bold green")
+
+
+     # ------------------------------------------- LLM benchmark Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def llm_benchmark(
+        model_type: Literal["openai", "anthropic", "gemini","custom"],
+        model_name: str,
+        probes: Literal["all", "ansiescape", "atkgen", "audio", "av_spam_scanning", "continuation", "dan", "divergence", "doctor", "donotanswer", "encoding", "exploitation", "fileformats", "glitch", "goodside", "grandma", "latentinjection", "leakreplay", "lmrc", "malwaregen", "misleading", "packagehallucination", "phrasing", "promptinject", "realtoxicityprompts", "sata", "snowball", "suffix", "tap", "test", "topic", "visual_jailbreak", "xss"] = "all",
+        api_key: Optional[str] = None,
+        headers: Optional[dict] = None,
+        request_template: Optional[dict] = None,
+        response_json_field: Optional[str] = None,
+        generations: Optional[int] = 1,
+        method: Literal["get", "post"] = "post",
+        model_uri: Optional[str] = None,):
+
+        
+        if (model_type not in ["openai", "anthropic", "gemini","custom"]):
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_garak_scan(
+            model_type=model_type,
+            model_name=model_name,
+            probes=probes,
+            api_key=api_key,
+            headers=headers,
+            request_template=request_template,
+            response_json_field=response_json_field,
+            generations=generations,
+            method=method,
+            model_uri=model_uri,
+        ) 
+
+        return results 
+    Console().print(f"Registered LLM task",style="bold green")
+
+
+     # ------------------------------------------- MCP Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def mcp(
+        server_config_json:str
+        ):
+
+        
+        if not server_config_json:
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_mcp_scan(
+            server_config_json=server_config_json
+        )
+
+        return results 
+
+    Console().print(f"Registered MCP task",style="bold green")
+
+
+     # ------------------------------------------- Gitleaks Scanning task -------------------------------------------------------------------------------------------
+    @app.task
+    def gitleaks(
+        repo_url:str, 
+        PAT:str,):
+
+        
+        if not repo_url or not PAT  :
+            raise Exception("Arguments are invalid/incorrect")
+
+        results = run_gitleaks_scan(
+            repo_url=repo_url,
+            PAT=PAT,
+        )  
+        return results
+    Console().print(f"Registered Gitleaks task",style="bold green")
+
+except Exception as e:
+    Console().print(f"Error occured while registering tasks : {str(e)}",style="bold red")

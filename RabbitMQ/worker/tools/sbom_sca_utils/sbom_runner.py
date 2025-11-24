@@ -83,8 +83,8 @@ def run_sbom_scan(repo_url: str | None = None, PAT: str | None = None, sbom_json
         json_temp.close()
 
         # for testing
-        with open("sbom_test.json", "w+") as f:
-            json.dump(sbom_json, f, indent=2)
+        # with open("sbom_test.json", "w+") as f:
+        #     json.dump(sbom_json, f, indent=2)
 
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(sbom_json['matches'])}",style="bold green")
         return sbom_json
