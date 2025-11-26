@@ -18,6 +18,7 @@ try:
     load_dotenv()
     username = os.getenv("RABBIT_ADMIN_USERNAME")
     password = os.getenv("RABBIT_ADMIN_PASSWORD")
+    mongo_url = os.getenv("MONGO_CONNECTION_URL")
     if not username or not password : 
         raise Exception()
 except Exception as e :
@@ -31,7 +32,8 @@ except Exception as e :
 #============================================================== Registering tasks to worker ==================================================================== 
 
 try:
-    app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
+    # app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
+    app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend=mongo_url)
     Console().print(f"Celery App instantiated",style="bold green")
 
 

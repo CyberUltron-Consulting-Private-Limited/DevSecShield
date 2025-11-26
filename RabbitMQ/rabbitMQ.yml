@@ -1,9 +1,9 @@
 services:
   
-  celery_worker:
+  # celery_worker:
   #   build: worker
-    container_name: celery_worker
-    image: worker:latest
+  #   container_name: celery_worker
+  #   image: worker:latest
   
   rabbitmq:
     image: rabbitmq:latest

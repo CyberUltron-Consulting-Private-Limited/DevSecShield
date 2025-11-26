@@ -9,6 +9,7 @@ dependencies = [
     "garak>=0.13.2",
     "gitpython>=3.1.45",
     "openai>=1.109.1",
+    "pymongo>=4.15.4",
     "rich>=14.2.0",
     "semgrep>=1.79.0",
 ]

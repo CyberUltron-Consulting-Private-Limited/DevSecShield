@@ -11,15 +11,18 @@ try:
     load_dotenv()
     username = os.getenv("RABBIT_ADMIN_USERNAME")
     password = os.getenv("RABBIT_ADMIN_PASSWORD")
+    mongo_url = os.getenv("MONGO_CONNECTION_URL")
 except Exception as e :
     Console().print("Set username and password env variables to access broker",style="bold red")
 
 
 
+# simple_app = Celery('testing_tasks',
+#                     broker=f"amqp://{username}:{password}@localhost:5672",
+#                     backend='rpc://')
 simple_app = Celery('testing_tasks',
                     broker=f"amqp://{username}:{password}@localhost:5672",
-                    backend='rpc://')
-
+                    backend=mongo_url)
 
 
 def test(

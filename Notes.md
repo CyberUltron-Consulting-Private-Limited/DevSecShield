@@ -1,7 +1,25 @@
-#TO DO 
-1. make the scan results human readable and not JSON 
+# TO DO 
+- DAST inputs ( figure out how to do )
+- integrations other than github 
+    - gitlab 
+    - buddy 
+    - circle CI
+    - codeship
+    - bamboo
+    - Azure 
+    - AWS
+    - bitbucket
+    - jenkins 
+    - travis 
 
+
+
+
+- make the scan results human readable and not JSON 
+
+# Notes
 - Dockerfile builds alright , test the compose of rabbit + worker later 
+
 
 
 ## Database Architecture ( Postgres )
@@ -186,11 +204,25 @@ https://github.com/aquasecurity/tfsec/blob/master/tfsec-to-trivy-migration-guide
 ```gitleaks_utils\gitleaks.exe dir . --report-format json --report-path testing.json``` 
 
 3. Web Vulnerability Detection ( DAST ) : 🟨 In progress
-- https://github.com/usestrix/strix
 
-``` git clone https://github.com/GreyDGL/PentestGPT ```
+- https://github.com/usestrix/strix 🔴
+
+``uv tool install strix-agent`` worked !
+But strix doesn't have any options to store report is specified directory 
+And re runs the container on every run 
+no way to extract run ID 
+
+- https://github.com/aliasrobotics/cai 🔴
+
+Errors while running cai after installation ( termios error and agent errors from within the source code )
+
+- 
+
+
+
+<!-- ``` git clone https://github.com/GreyDGL/PentestGPT ```
 ``` uv pip install -e pentestgpt ```
-``` uv run pentestgpt-connection ```
+``` uv run pentestgpt-connection ``` -->
 
 4. SBOM Scanning :
 - https://github.com/anchore/grype 🟩  ✔️✔️ Implemented function ✔️✔️ Docker tested
