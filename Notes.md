@@ -46,6 +46,7 @@ Table 2 : Verification code :
 Table 3 : SAST Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -56,6 +57,7 @@ Table 3 : SAST Scan-chats :
 Table 4 : SBOM_SCA Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -66,6 +68,7 @@ Table 4 : SBOM_SCA Scan-chats :
 Table 5 : IAC Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -76,6 +79,7 @@ Table 5 : IAC Scan-chats :
 Table 6 : Gitleaks Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -87,6 +91,7 @@ Table 6 : Gitleaks Scan-chats :
 Table 7 : MCP Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -97,6 +102,7 @@ Table 7 : MCP Scan-chats :
 Table 8 : Agent_discovery Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -107,6 +113,7 @@ Table 8 : Agent_discovery Scan-chats :
 Table 9 : LLM_Benchmarking Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
@@ -117,6 +124,7 @@ Table 9 : LLM_Benchmarking Scan-chats :
 Table 10 : DAST Scan-chats :
 - id : int 
 - user_id : int 
+- task_id : str
 - scan_status : "not_started" | "running" | "completed" | "failed" 
 - conversation_id : string ( uuid )
 - created_at : datetime
