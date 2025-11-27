@@ -1,5 +1,20 @@
 # TO DO 
 - DAST inputs ( figure out how to do )
+look into Tools for DAST :
+1. ZAP Spider scan  
+2. subfinder 
+3. searchsploit scan 
+4. fetch WHOIS data for a given domain 
+5. Nuclei scan 
+6. nmap scan 
+7. ajaz spider scan ( not sure ) 
+8. SQL map scan 
+9. harvester scan
+
+look at this for reference : 
+``https://github.com/ramkansal/pentestMCP/tree/main``
+``https://github.com/zaproxy/zap-api-python/tree/main``
+
 - integrations other than github 
     - gitlab 
     - buddy 

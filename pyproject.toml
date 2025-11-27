@@ -21,3 +21,8 @@ dependencies = [
     "semgrep>=1.79.0",
     "sqlmodel>=0.0.27",
 ]
+
+[tool.uv.workspace]
+members = [
+    "rabbitmq/dast_worker",
+]
