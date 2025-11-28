@@ -20,9 +20,8 @@ dependencies = [
     "rich>=14.2.0",
     "semgrep>=1.79.0",
     "sqlmodel>=0.0.27",
+    "zaproxy>=0.4.0",
 ]
 
-[tool.uv.workspace]
-members = [
-    "rabbitmq/dast_worker",
-]
+
+

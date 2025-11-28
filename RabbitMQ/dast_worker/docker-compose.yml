@@ -1,16 +1,13 @@
-# services:
-#   zap_api:
-#     image: ghcr.io/zaproxy/zaproxy:stable
-#   volumes:
-#     - ./ : /zap/wrk/:rw
-version: '3.1'
-
 services:
-  zap:
-    image: owasp/zap2docker-stable:2.12.0
-    container_name: zap
+  ZAP:
+    image: zaproxy/zap-stable
+    container_name: ZAP_Daemon_mode
     ports:
-      - "8080:8080"
-      - "8090:8090"
-    command: >
-      sh -c "zap-webswing.sh"
+      - 8090:8090
+    command: zap-x.sh -daemon -host 0.0.0.0 -port 8090 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=${ZAP_API_KEY}
+    # command: zap-x.sh -daemon -host 0.0.0.0 -port 8090 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
+    volumes:
+      - zap_volume:/zap
+volumes:
+  zap_volume:
+    driver: local
