@@ -2,6 +2,7 @@ from typing import Annotated, Union, Any
 from datetime import datetime
 from fastapi import Depends, FastAPI, HTTPException, status , Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from rich.console import Console
 from sqlalchemy import Engine
 from sqlmodel import Session, delete, select, update
 from ..auth_utils.auth_utils import (
@@ -85,6 +86,7 @@ def auth_api_routes(app: FastAPI, engine: Engine):
             "refresh_token": create_refresh_token(new_user.email),
         }
         except Exception as e:
+            Console().print(f"An error has occured : {str(e)}",style="bold red")
             if isinstance(e,psycopg2.Error):
                 raise HTTPException(status_code=500, detail="Server is busy, please try again later")
             if isinstance(e,HTTPException):

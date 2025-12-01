@@ -1,5 +1,6 @@
 from email import message
 from typing import Literal
+from fastapi import HTTPException, status
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
 from langchain.messages import AnyMessage, HumanMessage , SystemMessage , AIMessage
@@ -72,51 +73,69 @@ def chatbot_response(
         yield(f"node: {metadata['langgraph_node']}  content: {token.content_blocks}\n")
 
 
+
+
+def summarize ( history : list[AnyMessage] ):
+    model = ChatBedrock(
+        model="openai.gpt-oss-20b-1:0",
+        region="ap-south-1",
+        aws_access_key_id="AKIA5T2YUFAY5IVCRYEY",
+        aws_secret_access_key="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")
+    summarizing_agent = create_agent(model,system_prompt="You are a summarizing agent, please summarize the chat history given to you and output the results to the user")
+    result = summarizing_agent.invoke({"messages":history})
+    summarized_history = result["messages"][-1]
+    return summarized_history
+
+
 def create_response(
     scan_type:Literal["SAST" , "SCA+SBOM" , "IAC" , "Code/Data Leakage" , "MCP Server" , "LLM Benchmarking" , "AI Agent Discovery"],
     scan_results:str,
-    history:list[AnyMessage],
     content:str,
     role:Literal["human" ,"system" ,"ai"],
-    chat_summary:list[AnyMessage]=None,
     max_history_length:int=3 ):
 
     """
     Handle all summarizing , db querying and saving here before invoking a response from the model
+    
+    TO DO : query and get active history inside this function instead of passing as args .  Only receive new message as args 
     """
+    
+    try:
+        # STEP [ 1 ] ========================Add new message to messages log ==============================================================================
+        
+        # TO DO ⚠️
 
-    #summarize chat history if more than limit . not confirmed ⚠️
-    if len(history) >= max_history_length:
-        Console().print(f"Chat history has reached its maximum length of {max_history_length}. Summarizing chat...",style="bold blue1")
-        #summarize
-        model = ChatBedrock(
-            model="openai.gpt-oss-20b-1:0",
-            region="ap-south-1",
-            aws_access_key_id="AKIA5T2YUFAY5IVCRYEY",
-            aws_secret_access_key="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")
-        summarizing_agent = create_agent(model,system_prompt="You are a summarizing agent, please summarize the chat history given to you and output the results to the user")
-        result = summarizing_agent.invoke({"messages":history})
-        summarized_history = result["messages"][-1]
-        # saved to postgres db as well 
-        history=summarized_history
+        # STEP [ 2 ] ========================= Summarize the chat history when active history is above limit ===============================================
+        
+        history = [] # empty history to be updated later with a query to the db 
 
-        Console().print(f"Chat history summarized ✔️",style="bold green")
+        if len(history) >= max_history_length:
+            Console().print(f"Chat history has reached its maximum length of {max_history_length}. Summarizing chat...",style="bold blue1")
+            # STEP [ 1 ] -----------------> summarize
+            summarized_history = summarize(history=history)
+            # STEP [ 2 ] ----------------> update active context ( add the part where it updates mongo db active context )
+            # TO DO ⚠️
+            history=summarized_history
 
-    return chatbot_response(
-       scan_results=scan_results,
-        scan_type=scan_type,
-        history=history,
-        content=content,
-        role=role, 
-    )
+            Console().print(f"Chat history summarized ✔️",style="bold green")
 
+        # STEP [ 3 ] ======================================== Generate Response =========================================================================================
+        return chatbot_response(
+        scan_results=scan_results,
+            scan_type=scan_type,
+            history=history,
+            content=content,
+            role=role, 
+        )
+    except Exception as e:
+        Console().print(f"An error has occured : {str(e)}",style="bold red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR , detail="Could not generate response , try again later")
 
 if __name__=="__main__":
 
     streamer = create_response(
         scan_results="API Key compromised",
         scan_type='SAST',
-        history=[],
         content="hi",
         role="human",
     )
