@@ -5,7 +5,7 @@ import tempfile
 import shutil
 from git import Repo, GitCommandError
 from rich.console import Console
-from utils.repo_utils import clone_and_return_directory
+# from utils.repo_utils import clone_and_return_directory
 
 def is_github_url(url: str) -> bool:
     return url.startswith(("http://", "https://")) and "github.com" in url
@@ -55,31 +55,31 @@ def run_sast_scan(repo_url: str | None = None, PAT: str | None = None , app_lang
         json_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         Console().print(f"Starting SAST scan 🟨 🔍 for {app_lang} application",style="bold yellow")
         
-        # if repo_url and is_github_url(repo_url):
-        #     Console().print(f"Cloning GitHub repository 🟨 🔍",style="bold blue1")
-        #     ind = repo_url.find("github.com")
-        #     repo = repo_url[ind:]
-        #     repo = f"https://{PAT}@{repo}"
-        #     directory = clone_repo(repo)
+        if repo_url and is_github_url(repo_url):
+            Console().print(f"Cloning GitHub repository 🟨 🔍",style="bold blue1")
+            ind = repo_url.find("github.com")
+            repo = repo_url[ind:]
+            repo = f"https://{PAT}@{repo}"
+            directory = clone_repo(repo)
         
-        # elif repo_url and is_bitbucket_url(repo_url):
-        #     Console().print(f"Cloning Bitbucket repository 🟨 🔍",style="bold blue1")
-        #     ind = repo_url.find("bitbucket.org")
-        #     repo = repo_url[ind:]
-        #     repo = f"https://x-token-auth:{PAT}@{repo}"
-        #     directory = clone_repo(repo)
+        elif repo_url and is_bitbucket_url(repo_url):
+            Console().print(f"Cloning Bitbucket repository 🟨 🔍",style="bold blue1")
+            ind = repo_url.find("bitbucket.org")
+            repo = repo_url[ind:]
+            repo = f"https://x-token-auth:{PAT}@{repo}"
+            directory = clone_repo(repo)
         
-        # elif repo_url and is_gitlab_url(repo_url):
-        #     Console().print(f"Cloning Gitlab repository 🟨 🔍",style="bold blue1")
-        #     ind = repo_url.find("gitlab.com")
-        #     repo = repo_url[ind:]
-        #     repo = f"https://oauth2:{PAT}@{repo}"
-        #     directory = clone_repo(repo)
+        elif repo_url and is_gitlab_url(repo_url):
+            Console().print(f"Cloning Gitlab repository 🟨 🔍",style="bold blue1")
+            ind = repo_url.find("gitlab.com")
+            repo = repo_url[ind:]
+            repo = f"https://oauth2:{PAT}@{repo}"
+            directory = clone_repo(repo)
         
-        # else:
-        #     raise ValueError(f"Unsupported URL: {repo_url}")
+        else:
+            raise ValueError(f"Unsupported URL: {repo_url}")
 
-        directory = clone_and_return_directory(repo_url, PAT)
+        # directory = clone_and_return_directory(repo_url, PAT)
 
         if app_lang not in ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]:
             raise ValueError(f"Unsupported language: {app_lang}")
@@ -146,16 +146,16 @@ def run_sast_scan(repo_url: str | None = None, PAT: str | None = None , app_lang
 
 
 if __name__ == "__main__":
-    bitbucket_result = run_sast_scan(
-        repo_url="https://sirniksalot-admin@bitbucket.org/sirniksalot/pedro-duarte.git",
-        PAT="ATCTT3xFfGN04kvG8anKPSzfd2E6FW5TfC-9kCKLgAbu_n8clCz0rYBmUNt6BdCQa1mPCEzYWPZt86mN5OCGoJ0oyXz2qYj_9TI739-L5Ik30bhmwimX1kT-tR9s3Us-jC8Zf4GNDJ-K0mF7VZxHQiOFuAbH3waoIaXGq6yYkQ2-SupjYJGLKLE=01DD659F",
-        app_lang="javascript",
-    )
-    gitlab_result = run_sast_scan(
-        repo_url="https://gitlab.com/sirniksalot-group/SirNiksALot-project.git",
-        PAT="glpat-j-kWHdSBppL5jfw-cMcWnm86MQp1OmowcnF2Cw.01.1207m75uw",
-        app_lang="javascript",
-    )
+    # bitbucket_result = run_sast_scan(
+    #     repo_url="https://sirniksalot-admin@bitbucket.org/sirniksalot/pedro-duarte.git",
+    #     PAT="ATCTT3xFfGN04kvG8anKPSzfd2E6FW5TfC-9kCKLgAbu_n8clCz0rYBmUNt6BdCQa1mPCEzYWPZt86mN5OCGoJ0oyXz2qYj_9TI739-L5Ik30bhmwimX1kT-tR9s3Us-jC8Zf4GNDJ-K0mF7VZxHQiOFuAbH3waoIaXGq6yYkQ2-SupjYJGLKLE=01DD659F",
+    #     app_lang="javascript",
+    # )
+    # gitlab_result = run_sast_scan(
+    #     repo_url="https://gitlab.com/sirniksalot-group/SirNiksALot-project.git",
+    #     PAT="glpat-j-kWHdSBppL5jfw-cMcWnm86MQp1OmowcnF2Cw.01.1207m75uw",
+    #     app_lang="javascript",
+    # )
     github_result = run_sast_scan(
         repo_url="https://github.com/CyberUltron-Nikhil/RiskPilot",
         PAT="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",
