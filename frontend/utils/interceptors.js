@@ -1,13 +1,13 @@
 import axios from "axios";
 // Base URL can be configured via env; falls back to local FastAPI server
-const apiBaseURL = "http://127.0.0.1:8081"; // for local development
+export const apiBaseURL = "http://127.0.0.1:8081"; // for local development
 // const apiBaseURL = "http://13.203.233.15:8081";
 
 const api = axios.create({
   baseURL: apiBaseURL,
 });
 
-function getAccessToken() {
+export function getAccessToken() {
   try {
     return typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
   } catch {
@@ -15,7 +15,7 @@ function getAccessToken() {
   }
 }
 
-function getRefreshToken() {
+export function getRefreshToken() {
   try {
     return typeof window !== "undefined" ? localStorage.getItem("refresh_token") : null;
   } catch {

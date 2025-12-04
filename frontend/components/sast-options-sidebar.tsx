@@ -107,7 +107,7 @@ export function SASTOptionsSidebar() {
         {/* Integration Inputs */}
         <div className="mb-8">
           <h3 className="text-sm font-semibold text-zinc-300 mb-4 flex flex-row items-center gap-2">
-            Repository Integration <p className="text-red-500">*</p>
+            Repository Selection <p className="text-red-500">*</p>
           </h3>
           <Accordion type="single" collapsible className="w-full">
             {/* GitHub Integration */}

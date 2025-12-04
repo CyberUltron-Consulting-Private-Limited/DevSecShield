@@ -1,4 +1,5 @@
 from email import message
+import json
 from typing import Literal
 from fastapi import HTTPException, status
 from langchain.agents import create_agent
@@ -37,6 +38,7 @@ def add_message(messages:list[AnyMessage],role:Literal["human" , "system" , "ai"
 
 def chatbot_response(
     scan_type:Literal["SAST" , "SCA+SBOM" , "IAC" , "Code/Data Leakage" , "MCP Server" , "LLM Benchmarking" , "AI Agent Discovery"],
+    message_id:str,
     scan_results:str,
     history:list[AnyMessage],
     content:str,
@@ -70,7 +72,23 @@ def chatbot_response(
         {"messages": new_history },
         stream_mode="messages",
     ):
-        yield(f"node: {metadata['langgraph_node']}  content: {token.content_blocks}\n")
+        print(f"metadata: {metadata}")
+        print(f"token: {token}")
+
+        # print(f"token.content_blocks: {len(token.content_blocks)}")
+        for content_block in token.content_blocks:
+            content = content_block["text"]
+            start = content.find("<reasoning>")
+            end = content.find("</reasoning>")
+            reasoning = content[start:end+len("</reasoning>")].replace("<reasoning>", "").replace("</reasoning>", "")
+            content_without_reasoning = content[:start] + content[end+len("</reasoning>"):]
+            data = {
+                "message_id": message_id,
+                "content": content_without_reasoning,
+                "reasoning": reasoning,
+            }
+            Console().print(f"yielding data: {data}",style="bold green")
+            yield(json.dumps(data))
 
 
 
@@ -87,8 +105,9 @@ def summarize ( history : list[AnyMessage] ):
     return summarized_history
 
 
-def create_response(
+async def create_response(
     scan_type:Literal["SAST" , "SCA+SBOM" , "IAC" , "Code/Data Leakage" , "MCP Server" , "LLM Benchmarking" , "AI Agent Discovery"],
+    message_id:str,
     scan_results:str,
     content:str,
     role:Literal["human" ,"system" ,"ai"],
@@ -120,13 +139,16 @@ def create_response(
             Console().print(f"Chat history summarized ✔️",style="bold green")
 
         # STEP [ 3 ] ======================================== Generate Response =========================================================================================
-        return chatbot_response(
-        scan_results=scan_results,
+        for data in  chatbot_response(
+            message_id=message_id,
+            scan_results=scan_results,
             scan_type=scan_type,
             history=history,
             content=content,
-            role=role, 
-        )
+            role=role, ):
+
+            yield data
+
     except Exception as e:
         Console().print(f"An error has occured : {str(e)}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR , detail="Could not generate response , try again later")
@@ -134,6 +156,7 @@ def create_response(
 if __name__=="__main__":
 
     streamer = create_response(
+        message_id="123",
         scan_results="API Key compromised",
         scan_type='SAST',
         content="hi",

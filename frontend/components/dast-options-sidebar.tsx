@@ -106,7 +106,6 @@ export function DASTOptionsSidebar() {
             </div>
           </div>
         </div>
-      </div>
     </ScrollArea>
   );
 }
