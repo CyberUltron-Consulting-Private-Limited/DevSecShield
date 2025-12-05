@@ -18,7 +18,7 @@ try:
     load_dotenv()
     username = os.getenv("RABBIT_ADMIN_USERNAME")
     password = os.getenv("RABBIT_ADMIN_PASSWORD")
-    mongo_url = os.getenv("MONGO_CONNECTION_URL")
+    mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
     if not username or not password : 
         raise Exception()
 except Exception as e :

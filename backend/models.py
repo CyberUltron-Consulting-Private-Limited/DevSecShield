@@ -32,3 +32,21 @@ class VerificationCode(SQLModel,table=True):
     
     class Config:
         arbitrary_types_allowed = True
+
+
+
+class SASTConversation(SQLModel,table=True):
+    id : int | None = Field(default=None,primary_key=True)
+    user_id : int
+    task_id : str | None = Field(default=None)
+    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" ] = Field(default="pending",sa_type=String)
+    title : str = Field(default="New SAST Conversation")
+    conversation_id : str
+    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+    message_limit : int
+
+    class Config:
+        arbitrary_types_allowed = True
+    

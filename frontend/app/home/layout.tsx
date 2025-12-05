@@ -11,6 +11,7 @@ import {
   Bot,
   Link2,
   Home,
+  Loader2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,6 +26,17 @@ import {
   SidebarProvider,
   SidebarInset,
 } from "@/components/ui/sidebar";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 const navigationItems = [
   { name: "Home", href: "/home", icon: Home },
@@ -44,10 +56,25 @@ export default function HomeLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
 
-  return (
+  const queryClient = new QueryClient()
+
+  useEffect(() => {
+    if(localStorage.getItem("access_token")==null || localStorage.getItem("access_token")==""){
+      toast.error("Please login to access this page")
+      router.push("/login")
+    }else{
+      setLoading(false)
+    }
+  }, [])
+
+  if (!loading) { 
+    return (
+    <QueryClientProvider client={queryClient}>
     <SidebarProvider>
-      <Sidebar className="border-r border-zinc-800  dark:[&_[data-sidebar=sidebar]]:!bg-zinc-950 [&_[data-sidebar=sidebar]]:!text-zinc-300">
+      <Sidebar className="border-r border-zinc-800 ">
           <SidebarHeader className="border-b border-zinc-800">
             <div className="p-4">
               <h1 className="text-xl font-bold text-white">DevSec Shield</h1>
@@ -106,7 +133,16 @@ export default function HomeLayout({
         </Sidebar>
 
         <SidebarInset className="overflow-auto">{children}</SidebarInset>
-      </SidebarProvider>
+    </SidebarProvider>
+    <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   );
+} 
+else{
+  return (
+    <div className="flex items-center justify-center h-screen">
+      <Loader2 className="w-10 h-10 animate-spin" />
+    </div>
+  )
 }
-
+}

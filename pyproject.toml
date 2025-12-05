@@ -16,6 +16,7 @@ dependencies = [
     "openai>=1.109.1",
     "passlib>=1.7.4",
     "psycopg2>=2.9.11",
+    "pymongo>=4.15.5",
     "python-jose>=3.5.0",
     "rich>=14.2.0",
     "semgrep>=1.79.0",

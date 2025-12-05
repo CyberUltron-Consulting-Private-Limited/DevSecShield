@@ -1,6 +1,9 @@
 import os
 import datetime
 from typing import Annotated
+
+from celery import Celery
+from rich.console import Console
 from backend.auth_utils.auth_utils import get_hashed_password, get_user_from_header_or_raise_exception
 from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from sqlmodel import Session, SQLModel, create_engine
@@ -13,7 +16,7 @@ from starlette.middleware.cors import CORSMiddleware
 from fastapi_throttle import RateLimiter
 from dotenv import load_dotenv
 import psycopg2
-
+from pymongo import MongoClient
 from backend.api_routes.routing_dast import dast_routes
 from backend.api_routes.routing_discovery import discovery_routes
 from backend.api_routes.routing_gitleaks import gitleaks_routes
@@ -75,8 +78,14 @@ def make_admin():
         session.add(user)
         session.commit()
 
-def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+
+def get_mongo_client_db():
+    mongo_url = "mongodb://localhost:27017/"
+    mongo_client = MongoClient(mongo_url)
+    db = mongo_client['devsecshield_backend_server_db']
+    return db
+
+
 
 
 
@@ -84,8 +93,9 @@ BASE_MEDIA_PATH = "uploads\\"
 
 auth_api_routes(app,engine)
 admin_routes(app,engine)
+
 discovery_routes(app,engine)
-sast_routes(app,engine)
+sast_routes(app,engine,get_mongo_client_db())
 dast_routes(app,engine)
 iac_routes(app,engine)
 sca_sbom_routes(app,engine)
@@ -94,22 +104,9 @@ llm_routes(app,engine)
 mcp_routes(app,engine)
 
 
-    
-def test_db():
-    with Session(engine) as session:
-        # user = session.exec(select(User).where(User.email == "nikhil@cyberultron.com")).first()
-        # print(user.email)
-        # print(user.is_superuser)
-        # print(user.password==get_hashed_password("Testing123"))
-        all_users = session.exec(select(User).where(User.email == "nikhil@cyberultron.com")).all()
-        for user in all_users:
-            session.delete(user)
-        session.commit()
-        print("Users deleted")
 
     
 if __name__=="__main__":
-    # test_db()
-    create_db_and_tables()
     # create_user()
     # make_admin()
+    Console().print("Ran main.py ✔️",style="bold green")

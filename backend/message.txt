@@ -1,0 +1,16 @@
+Hello   
+
+I see that the recent SAST (Static Application Security Testing) scan flagged a **compromised API key**. This is a serious exposure that could give attackers unauthorized access to your services that the recent SAST (Static Application Security Testing) scan flagged a **compromised API key**. This is a serious exposure that could give attackers unauthorized access to your services, data, or even push malicious changes into your application.
+
+How can I help you today?  ven push malicious changes into your application.
+
+How can I help you today?  
+- Want a quick rundown on why this is dangerous?  
+- Need guidance on how to replace the key, revoke the old one, and secure it going forward?  
+- Curious about automated wayick rundown on why this is dangerous?  
+- Need guidance on how to replace the key, revoke the old one, and secure it going forward?  
+- Curious about automated ways to detect future key leaks?  
+
+Let me know what you’d like to dive intfuture key leaks?  
+
+Let me know what you’d like to dive into

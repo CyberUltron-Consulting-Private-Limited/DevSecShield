@@ -1,3 +1,4 @@
+import asyncio
 from email import message
 import json
 from typing import Literal
@@ -83,7 +84,7 @@ def chatbot_response(
             reasoning = content[start:end+len("</reasoning>")].replace("<reasoning>", "").replace("</reasoning>", "")
             content_without_reasoning = content[:start] + content[end+len("</reasoning>"):]
             data = {
-                "message_id": message_id,
+                "message_id": message_id, # this message id is useless ( the UI employs an auto incrementing integer for message id )
                 "content": content_without_reasoning,
                 "reasoning": reasoning,
             }
@@ -139,6 +140,7 @@ async def create_response(
             Console().print(f"Chat history summarized ✔️",style="bold green")
 
         # STEP [ 3 ] ======================================== Generate Response =========================================================================================
+        message = ""
         for data in  chatbot_response(
             message_id=message_id,
             scan_results=scan_results,
@@ -147,11 +149,22 @@ async def create_response(
             content=content,
             role=role, ):
 
+            message_dict = json.loads(data)
+            message += message_dict["content"]
+
             yield data
+        else: 
+            with open("else_message.txt", "w",errors="ignore") as f:
+                f.write(message)
+        
 
     except Exception as e:
         Console().print(f"An error has occured : {str(e)}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR , detail="Could not generate response , try again later")
+    
+    finally: 
+            with open("finally_message.txt", "w",errors="ignore") as f:
+                f.write(message)
 
 if __name__=="__main__":
 
@@ -163,5 +176,7 @@ if __name__=="__main__":
         role="human",
     )
     # print(type(streamer["messages"][-1]))
-    for stream in streamer:
-        Console().print(stream,style="bold green")
+    async def get_result():
+        async for stream in streamer:
+            Console().print(stream,style="bold green")
+    asyncio.run(get_result())
