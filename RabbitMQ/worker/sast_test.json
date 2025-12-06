@@ -3,7 +3,7 @@
   "results": [
     {
       "check_id": "python.fastapi.file.tainted-path-traversal-stdlib-fastapi.tainted-path-traversal-stdlib-fastapi",
-      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
       "start": {
         "line": 79,
         "col": 23,
@@ -186,7 +186,7 @@
           }
         },
         "severity": "ERROR",
-        "fingerprint": "26a9e9fcdc4f51b91f00b6834ddf047f4b4c052dc900243f3572fdc679c361c6df33bb096849fcf8f37d5682c7ecdb324ee3feb81d2f157ced32ed03210f185a_0",
+        "fingerprint": "017fac9785eaf2d420f197ee50e0be5631bd33ff9ff37b4a53c1c8da9c6c808d11397aacb11981a3caae179822358270f93b5db10b0bc51ee1bec3e7eef50afb_0",
         "lines": "            with open(path,\"wb\") as file:",
         "is_ignored": false,
         "validation_state": "NO_VALIDATOR",
@@ -195,7 +195,7 @@
             "CliLoc",
             [
               {
-                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
                 "start": {
                   "line": 57,
                   "col": 29,
@@ -213,7 +213,7 @@
           "intermediate_vars": [
             {
               "location": {
-                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
                 "start": {
                   "line": 57,
                   "col": 29,
@@ -229,7 +229,7 @@
             },
             {
               "location": {
-                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
                 "start": {
                   "line": 74,
                   "col": 13,
@@ -245,7 +245,7 @@
             },
             {
               "location": {
-                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
                 "start": {
                   "line": 75,
                   "col": 13,
@@ -264,7 +264,7 @@
             "CliLoc",
             [
               {
-                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
                 "start": {
                   "line": 79,
                   "col": 23,
@@ -289,68 +289,68 @@
       "code": 3,
       "level": "warn",
       "type": "Syntax error",
-      "message": "Syntax error at line C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\runner_function.py:473:\n missing element",
-      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\runner_function.py"
+      "message": "Syntax error at line C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\runner_function.py:473:\n missing element",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\runner_function.py"
     }
   ],
   "paths": {
     "scanned": [
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\__init__.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_admin.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_llm_scan.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_mcp_scan.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\auth_schema.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\auth_utils.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\graph.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\html_email.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\llm_scan_utils\\garak_scan.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\llm_scan_utils\\llm_scan_utils.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\main.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\__init__.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\extract_description.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\lang_utils.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\llm_bridge.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\runner.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\runner_function.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\semgrep_utils.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\source_utils.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\mcpscan_phase2.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\models.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\analyze_image.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\analyze_repo.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\attack_diagram.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\consolidate.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\get_threat_model.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\infographics.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\prompts.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\plans.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\routing_auth.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\test.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\utilities.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\virus_scan_utils.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backup.py",
-      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\main.py"
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\__init__.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_admin.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_llm_scan.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_mcp_scan.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\auth_schema.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\auth_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\graph.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\html_email.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\llm_scan_utils\\garak_scan.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\llm_scan_utils\\llm_scan_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\main.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\__init__.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\extract_description.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\lang_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\llm_bridge.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\runner.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\runner_function.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\semgrep_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\source_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\mcpscan_phase2.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\models.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\analyze_image.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\analyze_repo.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\attack_diagram.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\consolidate.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\get_threat_model.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\infographics.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\prompts.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\plans.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\routing_auth.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\test.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\utilities.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\virus_scan_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backup.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\main.py"
     ],
     "skipped": [
       {
-        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\core\\runner_function.py",
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\core\\runner_function.py",
         "reason": "analysis_failed_parser_or_internal_error"
       },
       {
-        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\uploads\\1\\Blue-Logo.png",
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\uploads\\1\\Blue-Logo.png",
         "reason": "exceeded_size_limit"
       }
     ]
   },
   "time": {
     "rules": [],
-    "rules_parse_time": 12.607173681259155,
+    "rules_parse_time": 5.301424264907837,
     "profiling_times": {
-      "config_time": 49.496882915496826,
-      "core_time": 70.59271383285522,
-      "ignores_time": 0.0012233257293701172,
-      "total_time": 120.09616041183472
+      "config_time": 41.06847429275513,
+      "core_time": 41.12891674041748,
+      "ignores_time": 0.0011386871337890625,
+      "total_time": 82.1996660232544
     },
     "parsing_time": {
       "total_time": 0.0,
@@ -365,55 +365,55 @@
       "very_slow_files": []
     },
     "scanning_time": {
-      "total_time": 51.94086194038391,
+      "total_time": 33.51522350311279,
       "per_file_time": {
-        "mean": 1.4428017205662202,
-        "std_dev": 1.8552570027336097
+        "mean": 0.9309784306420218,
+        "std_dev": 0.5447356194903641
       },
       "very_slow_stats": {
-        "time_ratio": 0.7166580833883373,
-        "count_ratio": 0.3333333333333333
+        "time_ratio": 0.5965341817046621,
+        "count_ratio": 0.2777777777777778
       },
       "very_slow_files": [
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_llm_scan.py",
-          "ftime": 2.2648532390594482
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\auth_utils.py",
+          "ftime": 1.5207171440124512
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\mcpscan_utils\\mcpscan_phase2.py",
-          "ftime": 2.359588861465454
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\mcpscan_utils\\mcpscan_phase2.py",
+          "ftime": 1.5736174583435059
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\auth_utils.py",
-          "ftime": 2.430358409881592
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_llm_scan.py",
+          "ftime": 1.596132755279541
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\routing_auth.py",
-          "ftime": 2.5802299976348877
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\routing_auth.py",
+          "ftime": 1.8312687873840332
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\llm_scan_utils\\garak_scan.py",
-          "ftime": 2.834519624710083
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\llm_scan_utils\\garak_scan.py",
+          "ftime": 1.8910636901855469
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backup.py",
-          "ftime": 3.738290548324585
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_mcp_scan.py",
+          "ftime": 2.137225389480591
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_admin.py",
-          "ftime": 3.8807454109191895
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_admin.py",
+          "ftime": 2.1607701778411865
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_normal_sys.py",
-          "ftime": 4.145823955535889
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backup.py",
+          "ftime": 2.1674821376800537
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\api_routes\\routing_mcp_scan.py",
-          "ftime": 4.251160383224487
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\normal_scan_utils\\get_threat_model.py",
+          "ftime": 2.246072769165039
         },
         {
-          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_2zigwdsx\\backend\\normal_scan_utils\\get_threat_model.py",
-          "ftime": 5.356168746948242
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_v9vjejl7\\backend\\api_routes\\routing_normal_sys.py",
+          "ftime": 2.868626117706299
         }
       ]
     },
@@ -452,7 +452,7 @@
     },
     "targets": [],
     "total_bytes": 0,
-    "max_memory_bytes": 4827776192
+    "max_memory_bytes": 4830197504
   },
   "engine_requested": "OSS",
   "interfile_languages_used": [],

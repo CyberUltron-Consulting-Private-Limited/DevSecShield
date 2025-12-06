@@ -1,3 +1,4 @@
+import datetime
 import os
 import sys
 from typing import Annotated, Literal
@@ -20,7 +21,7 @@ from sse_starlette.sse import EventSourceResponse
 from pymongo.database import Database
 import json
 import time
-from backend.mongo_models import Conversation, MessageLog
+from backend.mongo_models import ActiveContextLog, Conversation, MessageLog
 import uuid
 
 
@@ -30,7 +31,6 @@ class CreateSastScanConversationData(BaseModel):
     title: str
 
 class SendMessageToSastScanConversationData(BaseModel):
-    message_id: str
     user_message: str
 
 class StartSastScanData(BaseModel):
@@ -110,7 +110,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             console.print(f"Conversation id: {conversation.id} found in main database" ,style="bold green")
             
 
-            # STEP [ 2 ] : =========== get the conversation from the mongo db to get the conversation id ======================
+            # STEP [ 2 ] : =========== get the conversation from the mongo db to get the conversation id ( for validation )======================
             conversation_collection = mongo_db["conversations"]
             mongo_conversation = None
             mongo_conversation = conversation_collection.find_one({"_id": ObjectId(conversation.conversation_id)})
@@ -119,20 +119,20 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             console.print(f"Conversation id: {mongo_conversation['_id']} found in mongo db" ,style="bold green")
 
             # STEP [ 3 ] : =========== return the messages from the mongo db ======================
-            with mongo_db["message_log"].find({"conversation_id": ObjectId(mongo_conversation['_id'])}) as messages:
+            with mongo_db["message_log"].find({"conversation_id": str(mongo_conversation['_id'])}).sort("created_at", 1) as messages:
                 messages_data = []
+                i = 0
                 for message in messages:
                     messages_data.append({
-                        "id": str(message["_id"]),
+                        "id": i,
                         "content": message["content"],
                         "role": message["sender"],
-                        "timestamp": message["created_at"],
-                        "is_streaming": True,
+                        "timestamp": message["created_at"] ,
+                        "is_streaming": False,
                     })
+                    i += 1
                 console.print(f"{len(messages_data)} messages found for conversation: {mongo_conversation['_id']}" ,style="bold green")
-                return {
-                    "messages": messages_data,
-                    }
+                return { "messages": messages_data, }
 
             
         except Exception as e:
@@ -159,7 +159,9 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 conv_type="sast",
                 title=data.title,
                 messages=[],
-                message_limit=20)
+                message_limit=20,
+                created_at=datetime.datetime.now(datetime.timezone.utc),
+            )
             new_conversation= conversation_collection.insert_one(conversation_instance)
             new_conversation_object_id : ObjectId = new_conversation.inserted_id
             new_conversation_id = str(new_conversation_object_id)
@@ -198,42 +200,83 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             # user = await get_user_from_header_or_raise_exception(engine, Authorization)
             user = User(id=1) # for testing purposes
 
-            # TO DO : if scan is not completed then simply yeild a static response saying "run the scan first"
+            # Note : 
+            # Inserting any message into Messages log or Active context log must be done by associating it with : 
+            # 1. conversation_id ( mongo db conversation id )
+            # 2. user_id ( user id )
 
-            # STEP [ 1 ] : =========== Check if scan has completed by checking the conversation status in the main db ======================
+
+            # STEP [ 1 ] : =========== Check if scan has completed by checking the conversation status in the main db and get the results  ======================
+            SCAN_RESULTS = None
             with Session(engine) as session:
                 conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
                 if not conversation:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-                if conversation.scan_status != "completed" or conversation.scan_data != None:
+                if conversation.scan_status != "success" or conversation.scan_data == {} or conversation.scan_data == None or conversation.scan_status == "started" or conversation.scan_status == "failure":
                     return EventSourceResponse(stream_text("Scan is not completed yet, please run the scan first"), media_type="text/event-stream")
+                SCAN_RESULTS = conversation.scan_data
+            
+            if not conversation.conversation_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
             
             
-            # STEP [ 2 ] : =========== Add the message to the mongo db ======================
+            # STEP [ 2 ] : =========== Add the user message to the mongo db ====================== ⭐
             message_collection = mongo_db["message_log"]
             message_instance = MessageLog(
                 conversation_id=conversation.conversation_id,
-                parent_id=None,
                 user_id=user.id,
                 content=data.user_message,
-                sender="human",
+                type="message",
+                sender="user",
+                created_at=datetime.datetime.now(datetime.timezone.utc),
             )
-            message_collection.insert_one(message_instance)
-            console.print(f"User Message added to mongo db" ,style="bold green")
+            result = message_collection.insert_one(message_instance)
+            user_message_id = str(result.inserted_id)
+            console.print(f"User message added to mongo db" ,style="bold green")
+        
+            # STEP [ 3 ] : =========== Add user message to the active context log ====================== ⭐
+            active_context_collection = mongo_db["active_context"]
+            active_context_instance = ActiveContextLog(
+                conversation_id=conversation.conversation_id,
+                user_id=user.id,
+                content=data.user_message,
+                type="message",
+                sender="user",
+                created_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+            result = active_context_collection.insert_one(active_context_instance)
+            active_context_message_id = str(result.inserted_id)
+            console.print(f"User message added to active context log" ,style="bold green")
+
+            # STEP [ 4 ] : =========== Append the mongo db conversation with user message======================
+            conversation_collection = mongo_db["conversations"]
+            mongo_conversation = conversation_collection.find_one({"_id": ObjectId(conversation.conversation_id)})
+            if not mongo_conversation:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+            mongo_conversation["messages"].append(user_message_id) # APPENDED USER MESSAGE INTO CONVERSATION HISTORY LOG 
+            conversation_collection.update_one({"_id": ObjectId(conversation.conversation_id)}, {"$set": {"messages": mongo_conversation["messages"]}})
+            mongo_conversation_id = str(mongo_conversation["_id"])
+            console.print(f"Mongo db conversation array updated with user message" ,style="bold green")
+
 
 
             
-            # STEP [ 3 ] : =========== Get the conversation from the mongo db ======================
-            MAX_ACTIVE_HISTORY_LENGTH = 3
+            
+            
+            # STEP [ 5 ] : =========== Get the conversation from the mongo db ======================
+            MAX_ACTIVE_HISTORY_LENGTH = 4
             return EventSourceResponse(create_response(
-                message_id=data.message_id,
+                mongo_conversation_id=mongo_conversation_id,
+                user_id=user.id,
+                mongo_db=mongo_db,
                 scan_type="SAST",
-                scan_results="",
+                scan_results=SCAN_RESULTS,
                 content=data.user_message,
                 role="human",
                 max_history_length=MAX_ACTIVE_HISTORY_LENGTH,
             ), media_type="text/event-stream")
-            # send a message to the sast scan conversation for the user 🟨
+
+           
         except Exception as e:
             console.print(f"Error in send_message_to_sast_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
@@ -265,8 +308,8 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             simple_app = get_celery_app()
             if simple_app==None:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app , please try again later")
-            status = simple_app.AsyncResult(task_id)
-            celery_status = str(status.state).lower()
+            async_result = simple_app.AsyncResult(task_id)
+            celery_status = str(async_result.state).lower()
 
             # STEP [ 3 ] : =========== Update the main db conversation the scan status ( only when changed )======================
             with Session(engine) as session:
@@ -334,7 +377,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
                 if conversation==None:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found or User not allowed to start this conversation")
-                if conversation.scan_status != "completed" or conversation.scan_data != None:
+                if conversation.scan_status == "success" or conversation.scan_data != {} or  conversation.scan_status == "started" or conversation.scan_status == "failure" :
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
             
             
@@ -383,23 +426,39 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not allowed to delete this conversation")
                 session.delete(conversation)
                 session.commit()
+            console.print(f"Conversation id: {conversation.id} deleted from main database" ,style="bold orange3")
             
-            # STEP [ 2 ] : =========== Delete the conversation + messagesfrom the mongo db ======================
+            # STEP [ 2 ] : =========== Delete the conversation + messages + active contextfrom the mongo db ======================
             conversation_collection = mongo_db["conversations"]
             mongo_conversation = None
             mongo_conversation = conversation_collection.find_one({"_id": ObjectId(conversation.conversation_id)})
             if mongo_conversation==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+            console.print(f"Conversation id: {mongo_conversation['_id']} found in mongo db" ,style="bold yellow")
+            
             
             # STEP [ 2a ] ------------------ Delelte messages with conversation_id -----------------------------
             message_collection = mongo_db["message_log"]
-            result = message_collection.delete_many({"conversation_id": ObjectId(mongo_conversation['_id'])})
-            console.print(f"{result.deleted_count} Messages with conversation_id: {mongo_conversation['_id']} deleted from mongo db" ,style="bold green")
+            result = message_collection.delete_many({"conversation_id": str(mongo_conversation['_id'])})
+            console.print(f"{result.deleted_count} Messages with conversation_id: {mongo_conversation['_id']} deleted from mongo db" ,style="bold orange3")
+
             
             
             # STEP [ 2b ] ------------------ Delelte conversation with conversation_id -----------------------------
-            conversation_collection.delete_one({"_id": ObjectId(mongo_conversation['_id'])})
-            console.print(f"Conversation id: {mongo_conversation['_id']} deleted from mongo db" ,style="bold green")
+            conversation_collection.delete_one({"_id": mongo_conversation['_id']})
+            console.print(f"Conversation id: {mongo_conversation['_id']} deleted from mongo db" ,style="bold orange3")
+
+            # STEP [ 2c ] ------------------ Delelte active context with conversation_id -----------------------------
+            active_context_collection = mongo_db["active_context"]
+            result = active_context_collection.delete_many({"conversation_id": str(mongo_conversation['_id'])})
+            console.print(f"{result.deleted_count} Active context with conversation_id: {mongo_conversation['_id']} deleted from mongo db" ,style="bold orange3")
+
+
+
+            console.print(f"Conversation id: {conversation.id} deleted from main database and conversation id: {mongo_conversation['_id']} deleted along with messages from mongo db" ,style="bold green")
+            return {
+                "message": "Conversation deleted successfully",
+            }
                 
         except Exception as e:
             console.print(f"Error in delete_sast_scan_conversation: {e}",style="bold red")

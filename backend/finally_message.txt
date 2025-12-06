@@ -1,6 +1,0 @@
-Hello!   
-I’ve just finished a scan of your codebase and flagged a potential issue: *I’ve just finished a scan of your codebase and flagged a potential issue: **an API key stored in the source is likely compromised**. 
-
-If you’d like, I can walk you through the next stepstored in the source is likely compromised**. 
-
-If you’d like, I can walk you through the next steps—such as rotating the key, tightening your secrets management, or reviewing related audit logs. Just let me know what you need help withtating the key, tightening your secrets management, or reviewing related audit logs. Just let me know what you need help with!

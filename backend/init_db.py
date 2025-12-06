@@ -42,9 +42,9 @@ def mongo_db_create_collections_and_documents():
         if 'message_log' not in collections:
             db.create_collection('message_log')
             console.print(f"message_log collection created",style="bold green")
-        if 'active_context_log' not in collections:
-            db.create_collection('active_context_log')
-            console.print(f"active_context_log collection created",style="bold green")
+        if 'active_context' not in collections:
+            db.create_collection('active_context')
+            console.print(f"active_context collection created",style="bold green")
         console.print(f"collections created",style="bold green")
         console.print(f"list of collections: {db.list_collection_names()}",style="bold green")
     except Exception as e:

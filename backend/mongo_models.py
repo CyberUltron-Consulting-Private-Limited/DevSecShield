@@ -43,7 +43,6 @@ class MessageLog(TypedDict, total=False):
     """
     _id: str  # MongoDB ObjectId as string (auto-generated, always present when reading)
     conversation_id: str  # or UUID (to be determined)
-    parent_id: Optional[str]  # Parent message _id (can be None for root messages)
     user_id: int
     content: str
     created_at: datetime
@@ -61,11 +60,9 @@ class ActiveContextLog(TypedDict, total=False):
     """
     _id: str  # MongoDB ObjectId as string (auto-generated, always present when reading)
     conversation_id: str  # or UUID (to be determined)
-    parent_id: Optional[str]  # Parent active context _id (can be None for root contexts)
     user_id: int
     content: str
     created_at: datetime
     type: MessageType
     sender: SenderType
-    title: str
 
