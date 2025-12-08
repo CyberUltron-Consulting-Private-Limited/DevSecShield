@@ -40,6 +40,7 @@ class SASTConversation(SQLModel,table=True):
     user_id : int
     task_id : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" ] = Field(default="pending",sa_type=String)
+    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
     conversation_id : str
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)

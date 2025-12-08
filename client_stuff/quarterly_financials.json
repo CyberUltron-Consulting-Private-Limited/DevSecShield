@@ -1,0 +1,2678 @@
+[
+  {
+    "Indicator": "Net Sales/Income from operations",
+    "Q2 '25": {
+      "value": "22,697",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "22,134",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "22,504",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "22,318",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "22,301",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "21,963",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "22,208",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "22,205",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "22,515",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "22,831",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "23,190",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "23,229",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "22,539",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "21,528",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Other Operating Income",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Total Income From Operations",
+    "Q2 '25": {
+      "value": "22,697",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "22,134",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "22,504",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "22,318",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "22,301",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "21,963",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "22,208",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "22,205",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "22,515",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "22,831",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "23,190",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "23,229",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "22,539",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "21,528",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "EXPENDITURE"
+  },
+  {
+    "Indicator": "Consumption of Raw Materials",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Purchase of Traded Goods",
+    "Q2 '25": {
+      "value": "105",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "54",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "81",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "45",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "103",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "66",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "82",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "145",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "57",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "97",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "36",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "196",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "167",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "248",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Increase/Decrease in Stocks",
+    "Q2 '25": {
+      "value": "-17",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "12",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "31",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "-15",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "-0",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "15",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "-61",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "92",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "-18",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "83",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "-0",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "-33",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "-34",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Power & Fuel",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Employees Cost",
+    "Q2 '25": {
+      "value": "13,616",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "13,427",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "13,345",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "13,303",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "13,469",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "13,229",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "13,625",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "13,423",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "13,853",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "14,027",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "13,807",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "13,617",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "13,726",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "12,613",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Depreciation",
+    "Q2 '25": {
+      "value": "691",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "685",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "721",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "676",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "830",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "728",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "840",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "931",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "897",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "738",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "846",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "922",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "796",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "773",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Excise Duty",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Admin. And Selling Expenses",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "R & D Expenses",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Provisions And Contingencies",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Exp. Capitalised",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Other Expenses",
+    "Q2 '25": {
+      "value": "4,620",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "4,407",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "4,450",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "4,397",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "4,240",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "4,314",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "4,083",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "4,499",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "4,540",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "4,528",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "4,757",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "4,868",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "4,737",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "4,841",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "P/L Before Other Inc., Int., Excpt. Items & Tax",
+    "Q2 '25": {
+      "value": "3,680",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3,547",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3,902",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3,863",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "3,672",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "3,625",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "3,560",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "3,267",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "3,075",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "3,457",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "3,658",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "3,624",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "3,144",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "3,085",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Other Income",
+    "Q2 '25": {
+      "value": "947",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "1,066",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "1,188",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "1,004",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "961",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "729",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "652",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "597",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "739",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "648",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "645",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "638",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "509",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "472",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "P/L Before Int., Excpt. Items & Tax",
+    "Q2 '25": {
+      "value": "4,628",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "4,614",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "5,090",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "4,867",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "4,634",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "4,354",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "4,213",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "3,865",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "3,815",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "4,105",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "4,304",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "4,262",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "3,654",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "3,558",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Interest",
+    "Q2 '25": {
+      "value": "361",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "360",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "376",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "414",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "356",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "328",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "330",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "312",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "303",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "308",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "286",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "290",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "227",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "204",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "P/L Before Exceptional Items & Tax",
+    "Q2 '25": {
+      "value": "4,267",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "4,253",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "4,713",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "4,452",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "4,277",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "4,026",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "3,882",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "3,552",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "3,512",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "3,797",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "4,018",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "3,972",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "3,427",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "3,353",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Exceptional Items",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "P/L Before Tax",
+    "Q2 '25": {
+      "value": "4,267",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "4,253",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "4,713",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "4,452",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "4,277",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "4,026",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "3,882",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "3,552",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "3,512",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "3,797",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "4,018",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "3,972",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "3,427",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "3,353",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Tax",
+    "Q2 '25": {
+      "value": "1,020",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "921",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "1,154",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "1,086",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "1,051",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "985",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "1,004",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "851",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "841",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "911",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "924",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "910",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "771",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "793",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "P/L After Tax from Ordinary Activities",
+    "Q2 '25": {
+      "value": "3,247",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3,331",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3,559",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3,366",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "3,226",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "3,041",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "2,878",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "2,701",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "2,670",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "2,885",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "3,093",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "3,062",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "2,656",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "2,560",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Prior Year Adjustments",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Extra Ordinary Items",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Net Profit/(Loss) For the Period",
+    "Q2 '25": {
+      "value": "3,247",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3,331",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3,559",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3,366",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "3,226",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "3,041",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "2,878",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "2,701",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "2,670",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "2,885",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "3,093",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "3,062",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "2,656",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "2,560",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Minority Interest",
+    "Q2 '25": {
+      "value": "-16",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "-6",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "-18",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "-12",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "-17",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "-33",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "-23",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "-6",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "-21",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "-15",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "-19",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "-12",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "9",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "4",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Share Of P/L Of Associates",
+    "Q2 '25": {
+      "value": "15",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "5",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "29",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "0",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "0",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "-4",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "-20",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "-0",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "-3",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "0",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "0",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "2",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "-7",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "-1",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Net P/L After M.I & Associates",
+    "Q2 '25": {
+      "value": "3,246",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3,330",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3,569",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3,353",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "3,208",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "3,003",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "2,834",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "2,694",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "2,646",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "2,870",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "3,074",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "3,052",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "2,659",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "2,563",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Equity Share Capital",
+    "Q2 '25": {
+      "value": "2,096",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "2,096",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "2,094",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "2,093",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "1,046",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "1,046",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "1,045",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "1,044",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "1,044",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "1,097",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "1,097",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "1,097",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "1,097",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "1,096",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Reserves Excluding Revaluation Reserves",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Equity Dividend Rate (%)",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "EPS Before Extra Ordinary"
+  },
+  {
+    "Indicator": "Basic EPS",
+    "Q2 '25": {
+      "value": "3.10",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3.18",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3.41",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3.21",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "6.14",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "5.75",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "5.43",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "5.16",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "5.06",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "5.23",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "5.61",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "5.57",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "4.86",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "4.69",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Diluted EPS",
+    "Q2 '25": {
+      "value": "3.09",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3.17",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3.39",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3.20",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "6.12",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "5.73",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "5.41",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "5.15",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "5.04",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "5.12",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "5.60",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "5.56",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "4.85",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "4.67",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "EPS After Extra Ordinary"
+  },
+  {
+    "Indicator": "Basic EPS.",
+    "Q2 '25": {
+      "value": "3.10",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3.18",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3.41",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3.21",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "6.14",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "5.75",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "5.43",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "5.16",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "5.06",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "5.23",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "5.61",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "5.57",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "4.86",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "4.69",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Diluted EPS.",
+    "Q2 '25": {
+      "value": "3.09",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "3.17",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "3.39",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "3.20",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "6.12",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "5.73",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "5.41",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "5.15",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "5.04",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "5.12",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "5.60",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "5.56",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "4.85",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "4.67",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Public Share Holding"
+  },
+  {
+    "Indicator": "No Of Shares (Crores)",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Share Holding (%)",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "Promoters and Promoter Group Shareholding"
+  },
+  {
+    "Indicator": "a) Pledged/Encumbered"
+  },
+  {
+    "Indicator": "- Number of shares (Crores)",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "- Per. of shares (as a % of the total sh. of prom. and promoter group)",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "- Per. of shares (as a % of the total Share Cap. of the company)",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "b) Non-encumbered"
+  },
+  {
+    "Indicator": "- Number of shares (Crores).",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "- Per. of shares (as a % of the total sh. of prom. and promoter group).",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  },
+  {
+    "Indicator": "- Per. of shares (as a % of the total Share Cap. of the company).",
+    "Q2 '25": {
+      "value": "--",
+      "month": "Sep '25"
+    },
+    "Q1 '25": {
+      "value": "--",
+      "month": "Jun '25"
+    },
+    "Q4 '25": {
+      "value": "--",
+      "month": "Mar '25"
+    },
+    "Q3 '24": {
+      "value": "--",
+      "month": "Dec '24"
+    },
+    "Q2 '24": {
+      "value": "--",
+      "month": "Sep '24"
+    },
+    "Q1 '24": {
+      "value": "--",
+      "month": "Jun '24"
+    },
+    "Q4 '24": {
+      "value": "--",
+      "month": "Mar '24"
+    },
+    "Q3 '23": {
+      "value": "--",
+      "month": "Dec '23"
+    },
+    "Q2 '23": {
+      "value": "--",
+      "month": "Sep '23"
+    },
+    "Q1 '23": {
+      "value": "--",
+      "month": "Jun '23"
+    },
+    "Q4 '23": {
+      "value": "--",
+      "month": "Mar '23"
+    },
+    "Q3 '22": {
+      "value": "--",
+      "month": "Dec '22"
+    },
+    "Q2 '22": {
+      "value": "--",
+      "month": "Sep '22"
+    },
+    "Q1 '22": {
+      "value": "--",
+      "month": "Jun '22"
+    }
+  }
+]

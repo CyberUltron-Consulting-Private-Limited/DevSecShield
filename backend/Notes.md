@@ -1,14 +1,7 @@
 ## To do 
 
-- SAST conversations list + deletion + rename ✅
-- SAST conversation get ✅
-- SAST conversation scan start + scan poll  ✅
-- SAST conversation message send 🟨
-    - add empty message to mongo db log and pass message id to create response func
-    - let response func write to the same message document ( as specified in the message id ) after streaming is complete 
-    - think about how to implement , parent message id . ( or maybe get rid of it , because the array might handle this sequence itself )
-        - it must be fault tolerant ( it should represent the correct sequence of messages )
-
+- SAST : add a field in the SAST Conversation table to store the table_data ( which we will be allowing the user to export as a PDF )
+- SAST : connect UI to backend after above is done
 
 
 ## Notes 

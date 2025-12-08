@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from backend.ai_utils.chatbot import create_response
+from backend.ai_utils.export_generation import create_export_results
 from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception
 from backend.celery_connection import get_celery_app
 from backend.models import SASTConversation, User
@@ -492,4 +493,53 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating conversation , please try again later")
+    
+    @app.get("/sast/conversation/{conversation_id}/export",summary="Export the results of a SAST scan conversation")
+    async def export_sast_scan_conversation(conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+        """
+        Export the results of a SAST scan conversation.
+        """
+        try:
+            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            user = User(id=1) # for testing purposes
+
+            
+            export_results = None
+            
+            # STEP [ 1 ] : ======================= Get the conversation from main db and check if export_results is already populated ========================================
+            conversation = None
+            with Session(engine) as session:
+                conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
+                if not conversation:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+                if conversation.export_results:
+                    export_results = conversation.export_results
+
+                
+            # STEP [ 2 ] : ======================= Export the results of the conversation if export data is not already populated ========================================
+            if not export_results:
+                export_results = create_export_results(conversation.scan_data)
+            
+                # STEP [ 3 ] : ======================= Update the main db conversation the export_results ======================
+                with Session(engine) as session:
+                    conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
+                    if not conversation:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not allowed to export this conversation")
+                    conversation.export_results = export_results
+                    session.commit()
+                    session.refresh(conversation)
+                    console.print(f"Export results for conversation id: {conversation.id} updated in main database" ,style="bold green")
+                    
+            
+            if export_results:
+                return {"data": export_results}
+            else:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export results not found")
+            
+        
+        except Exception as e:
+            console.print(f"Error in export_sast_scan_conversation: {e}",style="bold red")
+            if isinstance(e,HTTPException):
+                raise e
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting conversation , please try again later")
     
