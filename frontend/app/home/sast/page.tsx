@@ -27,92 +27,54 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { SastConversation  , deleteSastConversation, getSastConversations, renameSastConversation } from "@/utils/backend_api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success";
 
-interface Conversation {
-  id: number;
-  title: string;
-  created_at: string;
-  last_updated?: string;
-  scan_status: ScanStatus;
-}
 
 export default function SASTPage() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [conversations, setConversations] = useState<SastConversation[]>([]);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<SastConversation | null>(null);
   const [newName, setNewName] = useState("");
+  // Access the client
+  const queryClient = useQueryClient()
 
-  // Mock data
-  const mockConversations: Conversation[] = [
-    {
-      id: 1,
-      title: "Security Scan - Main Repository",
-      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      scan_status: "success",
-    },
-    {
-      id: 2,
-      title: "API Endpoint Analysis",
-      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      scan_status: "success",
-    },
-    {
-      id: 3,
-      title: "Authentication Module Review",
-      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      scan_status: "started",
-    },
-    {
-      id: 4,
-      title: "Database Query Security",
-      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      scan_status: "failure",
-    },
-    {
-      id: 5,
-      title: "Frontend Component Scan",
-      created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-      scan_status: "pending",
-    },
-    {
-      id: 6,
-      title: "Backend Service Analysis",
-      created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      scan_status: "retry",
-    },
-  ];
+  // Queries
+  const query = useQuery({ queryKey: ['sast-conversations'], queryFn: getSastConversations })
 
   useEffect(() => {
-    // TODO: Fetch conversations from API
-    // const fetchConversations = async () => {
-    //   try {
-    //     const response = await fetch('/api/sast/conversations', {
-    //       headers: {
-    //         'Authorization': `Bearer ${token}`
-    //       }
-    //     });
-    //     const data = await response.json();
-    //     setConversations(data);
-    //   } catch (error) {
-    //     console.error('Error fetching conversations:', error);
-    //   } finally {
-    //     setLoading(false);
-    //   }
-    // };
-    // fetchConversations();
-    
-    // Using mock data for now
-    setTimeout(() => {
-      setConversations(mockConversations);
-      setLoading(false);
-    }, 500);
-  }, []);
+    if (query.data) {
+      setConversations(query.data);
+    }
+    if (query.error) {
+      toast.error('Error fetching sast conversations');
+    }
+  }, [query.data , query.error]);
+
+  //mutations
+  const deleteSastConversationMutation = useMutation({
+    mutationFn: deleteSastConversation,
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
+      toast.success('Sast conversation deleted successfully');
+    },
+  })
+
+  const renameSastConversationMutation = useMutation({
+    mutationFn: renameSastConversation,
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
+      toast.success('Sast conversation deleted successfully');
+    },
+  })
+
+
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -150,26 +112,20 @@ export default function SASTPage() {
     );
   };
 
-  const handleRename = (conversation: Conversation) => {
+  const handleRename = (conversation: SastConversation) => {
     setSelectedConversation(conversation);
     setNewName(conversation.title);
     setRenameDialogOpen(true);
   };
 
-  const handleDelete = (conversation: Conversation) => {
+  const handleDelete = (conversation: SastConversation) => {
     setSelectedConversation(conversation);
     setDeleteDialogOpen(true);
   };
 
   const confirmRename = () => {
     if (selectedConversation && newName.trim()) {
-      setConversations(
-        conversations.map((conv) =>
-          conv.id === selectedConversation.id
-            ? { ...conv, title: newName.trim() }
-            : conv
-        )
-      );
+      renameSastConversationMutation.mutate({ conversation_id: selectedConversation.id, title: newName.trim() });
       setRenameDialogOpen(false);
       setSelectedConversation(null);
       setNewName("");
@@ -200,16 +156,22 @@ export default function SASTPage() {
                 Manage and view all your SAST scan conversations.
               </p>
             </div>
-            <Link href="/home/sast/new">
-              <Button className="bg-teal-600 hover:bg-teal-700 text-white">
-                <Plus className="h-4 w-4 mr-2" />
-                New Scan
+            <div className="flex flex-row items-center gap-2">
+              <Link href="/home/sast/new">
+                <Button className="bg-teal-600 hover:bg-teal-700 text-white">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Scan
+                </Button>
+              </Link>
+              <Button className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations'] })}>
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Refresh
               </Button>
-            </Link>
+            </div>
           </div>
 
           {/* Conversations Table */}
-          {loading ? (
+          {query.isLoading ? (
             <div className="text-center py-12">
               <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>
             </div>
@@ -250,7 +212,7 @@ export default function SASTPage() {
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {formatDate(conversation.created_at)}
                       </TableCell>
-                      <TableCell>{getStatusBadge(conversation.scan_status)}</TableCell>
+                      <TableCell>{getStatusBadge(conversation.scan_status as ScanStatus)}</TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -270,7 +232,7 @@ export default function SASTPage() {
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => handleDelete(conversation)}
+                              onClick={() => deleteSastConversationMutation.mutate(conversation.id)}
                               variant="destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
