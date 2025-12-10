@@ -1,3 +1,4 @@
+import copy
 from openpyxl.worksheet import worksheet
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -7,6 +8,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from typing import List, Dict
 from rich.console import Console
+from rich.prompt import Prompt
+from rich.table import Table
 import json
 import time
 import pandas as pd
@@ -52,11 +55,21 @@ def prepare_for_quarterly_dataframe(data:dict,company_name:str) -> dict:
     for key , value in data.items():
         result[key] = value
     return result
+
+def sort_quarter_key(q):
+        # if key is "Company Name" or "Indicators" , return 0
+        # Handle format like "Q2 '25" or "Q2'25"
+        q_clean = q.replace(" ", "")
+        if "'" in q_clean:
+            parts = q_clean.split("'")
+            quarter = parts[0].strip()
+            year = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            q_num = int(quarter[1]) if len(quarter) > 1 and quarter[1].isdigit() else 0
+            return (-year, -q_num)  # Negative for descending (most recent first)
+        return (0, 0)
+    
 def parse_data(dict_data:list[dict] , company_name:str) -> dict:
 
-
-    # with open("indicator_data.json", "w+") as f:
-    #     json.dump(dict_data, f)
 
     result = []
     
@@ -72,7 +85,6 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             if not new_key:
                 raise ValueError(f"Invalid quarter: {key}")
             new_key = new_key + " " + key[-3:]
-            # indicator_data[new_key] = {"value":value , "month":key}
             indicator_data[new_key] = value
         result.append(indicator_data)
 
@@ -84,6 +96,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
     Op. PBT = Op. EBIT - Interest
     PBT = Op. PBT + Other income
     """
+    total_income_from_operations , purchase_of_traded_goods , increase_decrease_in_stocks , employee_cost , other_expenses , depreciation , interest , other_income = None, None, None, None, None, None, None, None
     # getting all required data for calcs 
     for item in result:
         if item["Indicators"] == "Total Income From Operations" :
@@ -124,15 +137,35 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
 
     # for op revenue growth % calculation
     op_revenue_growth_rate = {}
-    last_seen = total_income_from_operations[list(total_income_from_operations.keys())[-1]]
+    last_seen = None
     for key in reversed(list(total_income_from_operations.keys())):
         if key == "Indicators":
             op_revenue_growth_rate["Indicators"] = "Operating Revenue Growth Rate"
             continue
-        op_revenue_growth_rate[key] = str(round((last_seen - total_income_from_operations[key]) / last_seen * 100 , 2)) + "%"
-        last_seen = total_income_from_operations[key]
-    # console.print(f"Operating Revenue Growth Rate calculated successfully", style="bold green")
-    result.append(op_revenue_growth_rate)
+        
+        value = total_income_from_operations[key]
+        if last_seen is None:
+            # First quarter (most recent) - no growth to calculate
+            op_revenue_growth_rate[key] = "N/A"
+            last_seen = value
+            continue
+        
+        if last_seen == 0:
+            op_revenue_growth_rate[key] = "0.000%"
+            last_seen = value
+            continue
+        # Growth formula: (Current - Previous) / Previous * 100
+        op_revenue_growth_rate[key] = str(round((value - last_seen) / last_seen * 100 , 3)) + "%"
+        last_seen = value
+    
+    # quarrters are reversed at this point , so we need to reverse it back
+    formatted_op_revenue_growth_rate = {"Indicators" : "Operating Revenue Growth Rate"}
+    for key in reversed(list(op_revenue_growth_rate.keys())):
+        if key == "Indicators":
+            formatted_op_revenue_growth_rate["Indicators"] = "Operating Revenue Growth Rate"
+            continue
+        formatted_op_revenue_growth_rate[key] = op_revenue_growth_rate[key]
+    result.append(formatted_op_revenue_growth_rate)
 
 
     # for contribution calculation
@@ -142,7 +175,6 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             contribution["Indicators"] = "Contribution"
             continue
         contribution[key] = total_income_from_operations[key] - purchase_of_traded_goods[key] - increase_decrease_in_stocks[key]
-    # console.print(f"Contribution calculated successfully", style="bold green")
     result.append(contribution)
 
     
@@ -153,7 +185,6 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             op_ebitda["Indicators"] = "Op. EBITDA"
             continue
         op_ebitda[key] = contribution[key] - employee_cost[key] - other_expenses[key]
-    # console.print(f"Op. EBITDA calculated successfully", style="bold green")
     result.append(op_ebitda)
 
     # for op. ebit calculation
@@ -163,7 +194,6 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             op_ebit["Indicators"] = "Op. EBIT"
             continue
         op_ebit[key] = op_ebitda[key] - depreciation[key]
-    # console.print(f"Op. EBIT calculated successfully", style="bold green")
     result.append(op_ebit)
 
     # for op. pbt calculation
@@ -173,7 +203,6 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             op_pbt["Indicators"] = "Op. PBT"
             continue
         op_pbt[key] = op_ebit[key] - interest[key]
-    # console.print(f"Op. PBT calculated successfully", style="bold green")
     result.append(op_pbt)
 
     # for pbt calculation
@@ -183,7 +212,6 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             pbt["Indicators"] = "PBT"
             continue
         pbt[key] = op_pbt[key] + other_income[key]
-    # console.print(f"PBT calculated successfully", style="bold green")
     result.append(pbt)
 
     
@@ -207,8 +235,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             contribution_percentage["Indicators"] = "Contribution %"
             continue
-        contribution_percentage[key] = str(round((contribution[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Contribution % calculated successfully", style="bold green")
+        contribution_percentage[key] = round((contribution[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(contribution_percentage)
 
     # for employees cost % calculation
@@ -217,8 +244,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             employees_cost_percentage["Indicators"] = "Employees Cost %"
             continue
-        employees_cost_percentage[key] = str(round((employee_cost[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Employees Cost % calculated successfully", style="bold green")
+        employees_cost_percentage[key] = round((employee_cost[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(employees_cost_percentage)
 
     # for Other expenses % calculation
@@ -227,8 +253,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             other_expenses_percentage["Indicators"] = "Other Expenses %"
             continue
-        other_expenses_percentage[key] = str(round((other_expenses[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Other Expenses % calculated successfully", style="bold green")
+        other_expenses_percentage[key] = round((other_expenses[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(other_expenses_percentage)
 
     # for Op. EBITDA % calculation
@@ -237,8 +262,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             op_ebitda_percentage["Indicators"] = "Op. EBITDA %"
             continue
-        op_ebitda_percentage[key] = str(round((op_ebitda[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Op. EBITDA % calculated successfully", style="bold green")
+        op_ebitda_percentage[key] = round((op_ebitda[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(op_ebitda_percentage)
 
 
@@ -248,8 +272,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             op_ebit_percentage["Indicators"] = "Op. EBIT %"
             continue
-        op_ebit_percentage[key] = str(round((op_ebit[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Op. EBIT % calculated successfully", style="bold green")
+        op_ebit_percentage[key] = round((op_ebit[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(op_ebit_percentage)
 
     # for Op. PBT % calculation
@@ -258,8 +281,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             op_pbt_percentage["Indicators"] = "Op. PBT %"
             continue
-        op_pbt_percentage[key] = str(round((op_pbt[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Op. PBT % calculated successfully", style="bold green")
+        op_pbt_percentage[key] = round((op_pbt[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(op_pbt_percentage)
 
     # for PBT % calculation
@@ -268,8 +290,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             pbt_percentage["Indicators"] = "PBT %"
             continue
-        pbt_percentage[key] = str(round((pbt[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"PBT % calculated successfully", style="bold green")
+        pbt_percentage[key] = round((pbt[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(pbt_percentage)
 
     # for Depreciation % calculation
@@ -278,8 +299,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             depreciation_percentage["Indicators"] = "Depreciation %"
             continue
-        depreciation_percentage[key] = str(round((depreciation[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Depreciation % calculated successfully", style="bold green")
+        depreciation_percentage[key] = round((depreciation[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(depreciation_percentage)
 
     # for Interest % calculation
@@ -288,8 +308,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             interest_percentage["Indicators"] = "Finance Costs / Interest %"
             continue
-        interest_percentage[key] = str(round((interest[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Interest % calculated successfully", style="bold green")
+        interest_percentage[key] = round((interest[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(interest_percentage)
     
     # for other income % calculation
@@ -298,19 +317,26 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
         if key == "Indicators":
             other_income_percentage["Indicators"] = "Other Income %"
             continue
-        other_income_percentage[key] = str(round((other_income[key] / total_income_from_operations[key]) * 100, 2)) + "%"
-    # console.print(f"Other Income % calculated successfully", style="bold green")
+        other_income_percentage[key] = round((other_income[key] / total_income_from_operations[key]) * 100, 3) 
     result.append(other_income_percentage)
     
     
     
     console.print(f"Profitability metrics calculated successfully", style="bold green")
+
+    
+    copy_of_total_income_from_operations = copy.deepcopy(total_income_from_operations)
+    copy_of_op_ebitda_percentage = copy.deepcopy(op_ebitda_percentage)
+    copy_of_op_ebit_percentage = copy.deepcopy(op_ebit_percentage)
+    copy_of_op_pbt = copy.deepcopy(op_pbt)
+    copy_of_pbt = copy.deepcopy(pbt)
+    
     return (result,{
-        "Revenue" : prepare_for_quarterly_dataframe(total_income_from_operations,company_name),
-        "Op. EBITDA %" : prepare_for_quarterly_dataframe(op_ebitda_percentage,company_name),
-        "Op. EBIT %" : prepare_for_quarterly_dataframe(op_ebit_percentage,company_name),
-        "Op. PBT" : prepare_for_quarterly_dataframe(op_pbt,company_name),
-        "PBT" : prepare_for_quarterly_dataframe(pbt,company_name),
+        "Revenue" : prepare_for_quarterly_dataframe(copy_of_total_income_from_operations,company_name),
+        "Op. EBITDA %" : prepare_for_quarterly_dataframe(copy_of_op_ebitda_percentage,company_name),
+        "Op. EBIT %" : prepare_for_quarterly_dataframe(copy_of_op_ebit_percentage,company_name),
+        "Op. PBT" : prepare_for_quarterly_dataframe(copy_of_op_pbt,company_name),
+        "PBT" : prepare_for_quarterly_dataframe(copy_of_pbt,company_name),
     })
             
 
@@ -362,11 +388,12 @@ def create_quarterly_dataframe(companies_data:dict) -> pd.DataFrame:
 
 
 def create_company_dataframe(data:dict,company_name:str="Company",save_checkpoint:bool=True) -> pd.DataFrame:
+    
     # STEP [ 1 ] ----------------- define columns of the dataframe -------------------------------------------------
     temp = data[0]
     init_data = { key : [] for key , value in temp.items() }
     df = pd.DataFrame(init_data)
-    console.print(f"Dataframe created with columns : {" ".join(list(df.columns))}", style="bold green")
+    # console.print(f"Dataframe created with columns : {" ".join(list(df.columns))}", style="bold green")
 
     # STEP [ 2 ] ----------------- add data to the dataframe -------------------------------------------------
     for item in data:
@@ -412,7 +439,7 @@ def scrape_quarterly_financials(url: str, headless: bool = True) -> List[Dict]:
         driver.get(url)
         
         # Wait for the page to load
-        time.sleep(5)
+        time.sleep(8)
         
         # Wait for the quarterly_results div to be present
         # console.print("Waiting for quarterly_results div...", style="bold yellow")
@@ -511,33 +538,20 @@ def scrape_quarterly_financials(url: str, headless: bool = True) -> List[Dict]:
 
 
 
-def save_to_excel(df1: pd.DataFrame, companies_df: list[pd.DataFrame], filename: str = "quarterly_financials.xlsx"):
+def save_companies_to_excel(companies_df: list[tuple[str,pd.DataFrame]], filename: str):
     """
     Saves the scraped data to an Excel file.
     
     Args:
-        data: List of dictionaries containing the scraped data
+        companies_df: List of dataframes containing the scraped data
         filename: Output filename for the Excel file
     """
     try:
-        # Generating workbook and writer engine
-        excel_workbook = load_workbook("xl_file.xlsx")
-        writer = pd.ExcelWriter("xl_file.xlsx", engine='openpyxl')
-        writer.book = excel_workbook
+        writer = pd.ExcelWriter(filename, engine='openpyxl')
 
-        # Creating dataframes with different values
-        data_1 = {'Column1': [11, 22, 33], 'Column2': ['value11', 'value22', 'value33']}
-        data_2 = {'A': [111, 222, 333], 'B': ['X', 'Y', 'Z']}
-        df_1 = pd.DataFrame(data_1)
-        df_2 = pd.DataFrame(data_2)
+        for company_name, company_df in companies_df:
+            company_df.to_excel(writer, sheet_name=company_name, index=False)
 
-        # Adding dataframes to Excel as new sheets
-        df_1.to_excel(writer, sheet_name='Quarterly Financials', index=False)
-        for company_df in companies_df:
-            company_df.to_excel(writer, sheet_name=company_df['Company Name'], index=False)
-
-        # Saving changes and closing writer
-        writer.save()
         writer.close()
     except Exception as e:
         console.print(f"Error saving to file: {e}", style="bold red")
@@ -545,32 +559,15 @@ def save_to_excel(df1: pd.DataFrame, companies_df: list[pd.DataFrame], filename:
 
 
 
-companies = {
-
-    "Wipro" : "https://www.moneycontrol.com/markets/financials/quarterly-results/wipro-w/",
-    "TCS" : "https://www.moneycontrol.com/markets/financials/quarterly-results/tataconsultancyservices-TCS/",
-    "Infosys" : "https://www.moneycontrol.com/markets/financials/quarterly-results/infosys-IT/",
-    "LTIMindtree" : "https://www.moneycontrol.com/markets/financials/quarterly-results/ltimindtree-LI12/",
-    "HCL Technologies" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hcltechnologies-HCL02/",
-    "Persistent systems" : "https://www.moneycontrol.com/markets/financials/quarterly-results/persistentsystems-PS15/", 
-    "Tech Mahindra" : "https://www.moneycontrol.com/markets/financials/quarterly-results/techmahindra-tm4/",
-    "Cyient" : "https://www.moneycontrol.com/markets/financials/quarterly-results/cyientdlm-CD02/",
-    "LT Technology" : "https://www.moneycontrol.com/markets/financials/quarterly-results/lttechnologyservices-lts/",
-    "Services Coforge" : "https://www.moneycontrol.com/markets/financials/quarterly-results/coforge-NII02/",
-    "mphasis" : "https://www.moneycontrol.com/markets/financials/quarterly-results/mphasis-mb02/",
-    "zensar" : "https://www.moneycontrol.com/markets/financials/nine-months-results/zensartechnologies-zt02/",
-    "Hexaware" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hexawaretechnologies-HTL03/",
-    "Birlasoft" : "https://www.moneycontrol.com/markets/financials/quarterly-results/birlasoft-kpi02/",
-}
-
-
 def add_more_headings(heading_data:dict) -> dict:
+
+    
     # adding revenue growth % 
     heading_data["Revenue Growth Rate"] = []
     revenue = heading_data["Revenue"]
     for company_data in revenue:
         new_company_data = { "Company Name" : company_data["Company Name"] }
-        last_seen = company_data[list(company_data.keys())[-1]]
+        last_seen = None
         for key in reversed(list(company_data.keys())):
             if key == "Company Name":
                 continue
@@ -578,9 +575,170 @@ def add_more_headings(heading_data:dict) -> dict:
                 value = int(company_data[key].replace(",", ""))
             else:
                 value = company_data[key]
-            new_company_data[key] = str(round((last_seen - value) / last_seen * 100, 2)) + "%"
+            
+            if last_seen is None:
+                # First quarter (most recent) - no growth to calculate
+                new_company_data[key] = "N/A"
+                last_seen = value
+                continue
+            
+            if last_seen == 0:
+                new_company_data[key] = "0.000%"
+                last_seen = value
+                continue
+            # Growth formula: (Current - Previous) / Previous * 100
+            new_company_data[key] = str(round((value - last_seen) / last_seen * 100, 3)) + "%"
             last_seen = value
-        heading_data["Revenue Growth Rate"].append(new_company_data)
+        
+        #resetting the quarter keys to original order
+        formatted_new_company_data = {"Company Name" : new_company_data["Company Name"]}
+        for key in reversed(list(new_company_data.keys())):
+            if key == "Company Name":
+                continue
+            formatted_new_company_data[key] = new_company_data[key]
+        heading_data["Revenue Growth Rate"].append(formatted_new_company_data)
+    
+    # adding Op. EBITDA Growth (Bps)
+    heading_data["Op. EBITDA Growth (Bps)"] = []
+    op_ebitda_percent = heading_data["Op. EBITDA %"]
+    for company_data in op_ebitda_percent:
+        new_company_data = { "Company Name" : company_data["Company Name"] }
+        last_seen = None
+        for key in reversed(list(company_data.keys())):
+            if key == "Company Name":
+                continue
+            value = company_data[key]
+            
+            if last_seen is None:
+                # First quarter (most recent) - no growth to calculate
+                new_company_data[key] = "N/A"
+                last_seen = value
+                continue
+            
+            if last_seen == 0:
+                new_company_data[key] = "0.000"
+                last_seen = value
+                continue
+            # Calculate basis points change: (current - previous) * 100
+            # Since input is already a percentage, basis points = percentage change * 100
+            bps_value = round((value - last_seen) * 100, 3)
+            new_company_data[key] = str(bps_value)
+            last_seen = value
+        
+        #resetting the quarter keys to original order
+        formatted_new_company_data = {"Company Name" : new_company_data["Company Name"]}
+        for key in reversed(list(new_company_data.keys())):
+            if key == "Company Name":
+                continue
+            formatted_new_company_data[key] = new_company_data[key]
+        heading_data["Op. EBITDA Growth (Bps)"].append(formatted_new_company_data)
+    
+    # adding Op. EBIT Growth (Bps)
+    heading_data["Op. EBIT Growth (Bps)"] = []
+    op_ebit_percent = heading_data["Op. EBIT %"]
+    for company_data in op_ebit_percent:
+        new_company_data = { "Company Name" : company_data["Company Name"] }
+        last_seen = None
+        for key in reversed(list(company_data.keys())):
+            if key == "Company Name":
+                continue
+            value = company_data[key]
+            
+            if last_seen is None:
+                # First quarter (most recent) - no growth to calculate
+                new_company_data[key] = "N/A"
+                last_seen = value
+                continue
+            
+            if last_seen == 0:
+                new_company_data[key] = "0.000"
+                last_seen = value
+                continue
+            # Calculate basis points change: (current - previous) * 100
+            # Since input is already a percentage, basis points = percentage change * 100
+            bps_value = round((value - last_seen) * 100, 3)
+            new_company_data[key] = str(bps_value)
+            last_seen = value
+        
+        #resetting the quarter keys to original order
+        formatted_new_company_data = {"Company Name" : new_company_data["Company Name"]}
+        for key in reversed(list(new_company_data.keys())):
+            if key == "Company Name":
+                continue
+            formatted_new_company_data[key] = new_company_data[key]
+        heading_data["Op. EBIT Growth (Bps)"].append(formatted_new_company_data)
+    
+    # adding Op. PBT growth
+    heading_data["Op. PBT growth"] = []
+    op_pbt = heading_data["Op. PBT"]
+    for company_data in op_pbt:
+        new_company_data = { "Company Name" : company_data["Company Name"] }
+        last_seen = None
+        for key in reversed(list(company_data.keys())):
+            if key == "Company Name":
+                continue
+            if isinstance(company_data[key], str):
+                value = int(company_data[key].replace(",", ""))
+            else:
+                value = company_data[key]
+            
+            if last_seen is None:
+                # First quarter (most recent) - no growth to calculate
+                new_company_data[key] = "N/A"
+                last_seen = value
+                continue
+            
+            if last_seen == 0:
+                new_company_data[key] = "0.000%"
+                last_seen = value
+                continue
+            # Growth formula: (Current - Previous) / Previous * 100
+            new_company_data[key] = str(round((value - last_seen) / last_seen * 100, 3)) + "%"
+            last_seen = value
+        
+        #resetting the quarter keys to original order
+        formatted_new_company_data = {"Company Name" : new_company_data["Company Name"]}
+        for key in reversed(list(new_company_data.keys())):
+            if key == "Company Name":
+                continue
+            formatted_new_company_data[key] = new_company_data[key]
+        heading_data["Op. PBT growth"].append(formatted_new_company_data)
+    
+    # adding PBT growth
+    heading_data["PBT growth"] = []
+    pbt = heading_data["PBT"]
+    for company_data in pbt:
+        new_company_data = { "Company Name" : company_data["Company Name"] }
+        last_seen = None
+        for key in reversed(list(company_data.keys())):
+            if key == "Company Name":
+                continue
+            if isinstance(company_data[key], str):
+                value = int(company_data[key].replace(",", ""))
+            else:
+                value = company_data[key]
+            
+            if last_seen is None:
+                # First quarter (most recent) - no growth to calculate
+                new_company_data[key] = "N/A"
+                last_seen = value
+                continue
+            
+            if last_seen == 0:
+                new_company_data[key] = "0.000%"
+                last_seen = value
+                continue
+            # Growth formula: (Current - Previous) / Previous * 100
+            new_company_data[key] = str(round((value - last_seen) / last_seen * 100, 3)) + "%"
+            last_seen = value
+
+        #resetting the quarter keys to original order
+        formatted_pbt_growth = {"Company Name" : new_company_data["Company Name"]}
+        for key in reversed(list(new_company_data.keys())):
+            if key == "Company Name":
+                continue
+            formatted_pbt_growth[key] = new_company_data[key]
+        heading_data["PBT growth"].append(formatted_pbt_growth)
     
     
     return heading_data
@@ -620,9 +778,43 @@ def write_row( row_no : int , data:list[tuple] , worksheet:worksheet.Worksheet ,
         i+=1
     return
 
-def create_excel_skeleton(heading_data:dict) -> None:
+def calculate_cagr(first_value: float, last_value: float, num_quarters: int) -> float:
+    """
+    Calculate annualized CAGR using the formula: ((Last Quarter Value / First Quarter Value)^(4/N)) - 1
+    where N = number of quarter periods between first and last
+    The formula is annualized by multiplying the exponent by 4 (quarters per year)
+    
+    Args:
+        first_value: Value from the oldest quarter (beginning period)
+        last_value: Value from the newest quarter (ending period)
+        num_quarters: Number of quarter periods between first and last (N-1 for N quarters)
+        
+    Returns:
+        Annualized CAGR as a decimal (multiply by 100 for percentage)
+    """
+    if first_value == 0 or num_quarters == 0:
+        return 0.0
+    if last_value < 0 and first_value > 0:
+        # Handle negative to positive transition
+        return 0.0
+    if first_value < 0 and last_value < 0:
+        # Both negative, calculate absolute CAGR
+        ratio = abs(last_value) / abs(first_value)
+    else:
+        ratio = last_value / first_value
+    
+    if ratio <= 0:
+        return 0.0
+    
+    # Annualized CAGR: (ratio ^ (4 / num_quarters)) - 1
+    # This annualizes the quarterly growth rate
+    cagr = (ratio ** (4.0 / num_quarters)) - 1
+    # console.print(f"first quarter : {first_value} last quarter : {last_value} num_quarters : {num_quarters}  CAGR: {cagr}  ", style="bold green")
+    return cagr
+
+def create_consolidated_excel(heading_data:dict,excel_file_name:str) -> None:
     # STEP [ 1 ] ----------------- create a workbook with the quarterly financials sheet-------------------------------------------------
-    workbook = Workbook()
+    workbook = load_workbook(excel_file_name)
     workbook.create_sheet("Quarterly Financials")
     current_sheet = workbook["Quarterly Financials"]
     
@@ -641,7 +833,7 @@ def create_excel_skeleton(heading_data:dict) -> None:
         return (0, 0)
     
     all_quarters_sorted = sorted(all_quarters, key=sort_quarter_key)
-    quarter_columns = all_quarters_sorted[:6]  # Get only the 6 most recent quarters
+    quarter_columns = all_quarters_sorted  # Get all quarters
     console.print(f"Quarter columns: {quarter_columns}", style="bold green")
 
     # STEP [ 2 ] ----------------- Get companies list-------------------------------------------------
@@ -688,8 +880,8 @@ def create_excel_skeleton(heading_data:dict) -> None:
     col = 3  # Start from column C
     for metric in financial_metrics:
         start_col = col
-        # Merge cells for this metric (6 quarters)
-        end_col = start_col + 5
+        # Merge cells for this metric (all quarters)
+        end_col = start_col + len(quarter_columns) - 1
         current_sheet.merge_cells(start_row=PRIMARY_HEADER_ROW, start_column=start_col, 
                                   end_row=PRIMARY_HEADER_ROW, end_column=end_col)
         cell = current_sheet.cell(row=PRIMARY_HEADER_ROW, column=start_col)
@@ -716,8 +908,8 @@ def create_excel_skeleton(heading_data:dict) -> None:
         col = sep_col + 1
     
     # Calculate total columns for top block
-    # 5 metrics × 6 quarters + 4 separators = 34 columns, plus column B = 35 total columns
-    total_top_cols = 2 + (5 * 6) + 4  # Column B + 5 metrics × 6 quarters + 4 separators
+    # 5 metrics × N quarters + 4 separators, plus column B
+    total_top_cols = 2 + (5 * len(quarter_columns)) + 4  # Column B + 5 metrics × N quarters + 4 separators
     
     # Apply borders to header rows
     for row in [PRIMARY_HEADER_ROW, SECONDARY_HEADER_ROW]:
@@ -746,7 +938,7 @@ def create_excel_skeleton(heading_data:dict) -> None:
                     cell.value = value
                     cell.border = thin_border
                     if isinstance(value, (int, float)):
-                        cell.number_format = '#,##0'
+                        # cell.number_format = '#,##0'
                         cell.alignment = Alignment(horizontal='right', vertical='center')
                     elif isinstance(value, str) and '%' in value:
                         cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -788,11 +980,11 @@ def create_excel_skeleton(heading_data:dict) -> None:
         cell.border = thin_border
         cell.alignment = Alignment(horizontal='left', vertical='center')
     
-    # Write primary headers for growth metrics (7 columns: 6 quarters + CAGR)
+    # Write primary headers for growth metrics (N quarters + CAGR)
     col = 3
     for metric in growth_metrics:
         start_col = col
-        end_col = start_col + 6  # 6 quarters + 1 CAGR = 7 columns
+        end_col = start_col + len(quarter_columns)  # N quarters + 1 CAGR
         current_sheet.merge_cells(start_row=BOTTOM_PRIMARY_HEADER_ROW, start_column=start_col,
                                   end_row=BOTTOM_PRIMARY_HEADER_ROW, end_column=end_col)
         cell = current_sheet.cell(row=BOTTOM_PRIMARY_HEADER_ROW, column=start_col)
@@ -802,7 +994,7 @@ def create_excel_skeleton(heading_data:dict) -> None:
         cell.alignment = center_alignment
         cell.border = thin_border
         
-        # Write secondary headers (6 quarters + CAGR)
+        # Write secondary headers (N quarters + CAGR)
         for q_idx, quarter in enumerate(quarter_columns):
             q_col = start_col + q_idx
             q_cell = current_sheet.cell(row=BOTTOM_SECONDARY_HEADER_ROW, column=q_col)
@@ -812,7 +1004,7 @@ def create_excel_skeleton(heading_data:dict) -> None:
             q_cell.border = thin_border
         
         # Add CAGR header
-        cagr_col = start_col + 6
+        cagr_col = start_col + len(quarter_columns)
         cagr_cell = current_sheet.cell(row=BOTTOM_SECONDARY_HEADER_ROW, column=cagr_col)
         cagr_cell.value = "CAGR"
         cagr_cell.font = bold_font
@@ -827,8 +1019,8 @@ def create_excel_skeleton(heading_data:dict) -> None:
         col = sep_col + 1
     
     # Calculate total columns for bottom block
-    # 5 metrics × 7 columns (6 quarters + CAGR) + 4 separators = 39 columns, plus column B = 40 total columns
-    total_bottom_cols = 2 + (5 * 7) + 4  # Column B + 5 metrics × 7 columns + 4 separators
+    # 5 metrics × (N quarters + CAGR) + 4 separators, plus column B
+    total_bottom_cols = 2 + (5 * (len(quarter_columns) + 1)) + 4  # Column B + 5 metrics × (N quarters + 1) + 4 separators
     
     # Apply borders to bottom header rows
     for row in [BOTTOM_PRIMARY_HEADER_ROW, BOTTOM_SECONDARY_HEADER_ROW]:
@@ -888,15 +1080,62 @@ def create_excel_skeleton(heading_data:dict) -> None:
                     else:
                         cell.alignment = Alignment(horizontal='right', vertical='center')
                     col += 1
-                # Write CAGR (empty for now, can be calculated later)
+                
+                # Calculate and write CAGR
+                # Map growth metric to base metric for CAGR calculation
+                base_metric_key = None
+                if metric == "Revenue Growth":
+                    base_metric_key = "Revenue"
+                elif metric == "Op. EBITDA Growth (Bps)":
+                    base_metric_key = "Op. EBITDA %"
+                elif metric == "Op. EBIT Growth (Bps)":
+                    base_metric_key = "Op. EBIT %"
+                elif metric == "Op. PBT growth":
+                    base_metric_key = "Op. PBT"
+                elif metric == "PBT growth":
+                    base_metric_key = "PBT"
+                
+                cagr_value = ""
+                if base_metric_key and base_metric_key in heading_data and len(quarter_columns) > 1:
+                    # Find company's base metric data
+                    base_company_data = None
+                    for item in heading_data[base_metric_key]:
+                        if item.get("Company Name") == company:
+                            base_company_data = item
+                            break
+                    
+                    if base_company_data:
+                        # Get first and last quarter values (quarters are sorted most recent first)
+                        last_quarter = quarter_columns[0]  # Most recent
+                        first_quarter = quarter_columns[-1]  # Oldest
+                        
+                        first_value = base_company_data.get(first_quarter)
+                        last_value = base_company_data.get(last_quarter)
+                        
+                        # Convert to float if needed
+                        if first_value is not None and last_value is not None:
+                            try:
+                                if isinstance(first_value, str):
+                                    first_value = float(first_value.replace(",", "").replace("%", ""))
+                                if isinstance(last_value, str):
+                                    last_value = float(last_value.replace(",", "").replace("%", ""))
+                                
+                                num_quarters = len(quarter_columns) - 1  # Number of periods between first and last
+                                if num_quarters > 0:
+                                    cagr_decimal = calculate_cagr(first_value, last_value, num_quarters)
+                                    cagr_value = str(round(cagr_decimal * 100, 3)) + "%"
+                            except (ValueError, TypeError):
+                                # If conversion fails, leave CAGR empty
+                                pass
+                
                 cell = current_sheet.cell(row=data_row, column=col)
-                cell.value = ""
+                cell.value = cagr_value
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 col += 1
             else:
                 # Fill empty cells
-                for _ in range(7):  # 6 quarters + CAGR
+                for _ in range(len(quarter_columns) + 1):  # N quarters + CAGR
                     cell = current_sheet.cell(row=data_row, column=col)
                     cell.border = thin_border
                     cell.alignment = Alignment(horizontal='center', vertical='center')
@@ -909,45 +1148,105 @@ def create_excel_skeleton(heading_data:dict) -> None:
         cell = current_sheet.cell(row=row, column=2)
         cell.border = thin_border
     
-    workbook.save("Formatted_quarterly_financials.xlsx")
+    workbook.save(excel_file_name)
     
+companies = {
 
+    "Wipro" : "https://www.moneycontrol.com/markets/financials/quarterly-results/wipro-w/",
+    "TCS" : "https://www.moneycontrol.com/markets/financials/quarterly-results/tataconsultancyservices-TCS/",
+    "Infosys" : "https://www.moneycontrol.com/markets/financials/quarterly-results/infosys-IT/",
+    "LTIMindtree" : "https://www.moneycontrol.com/markets/financials/quarterly-results/ltimindtree-LI12/",
+    "HCL Technologies" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hcltechnologies-HCL02/",
+    "Persistent systems" : "https://www.moneycontrol.com/markets/financials/quarterly-results/persistentsystems-PS15/", 
+    "Tech Mahindra" : "https://www.moneycontrol.com/markets/financials/quarterly-results/techmahindra-tm4/",
+    "Cyient" : "https://www.moneycontrol.com/markets/financials/quarterly-results/cyientdlm-CD02/",
+    "LT Technology" : "https://www.moneycontrol.com/markets/financials/quarterly-results/lttechnologyservices-lts/",
+    "Services Coforge" : "https://www.moneycontrol.com/markets/financials/quarterly-results/coforge-NII02/",
+    "mphasis" : "https://www.moneycontrol.com/markets/financials/quarterly-results/mphasis-mb02/",
+    "zensar" : "https://www.moneycontrol.com/markets/financials/nine-months-results/zensartechnologies-zt02/",
+    "Hexaware" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hexawaretechnologies-HTL03/",
+    "Birlasoft" : "https://www.moneycontrol.com/markets/financials/quarterly-results/birlasoft-kpi02/",
+}
 
+def main(companies:dict[str,str]) -> None:
+    try:
+        # STEP [ 1 ] ----------------- Get selected companies from user input -------------------------------------------------
+        console.print("\n[bold cyan]Available Companies:[/bold cyan]")
+        company_list = list(companies.keys())
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("No.", style="dim", width=6)
+        table.add_column("Company Name", style="cyan")
+        
+        for idx, company_name in enumerate(company_list, 1):
+            table.add_row(str(idx), company_name)
+        
+        console.print(table)
+        console.print("\n[bold yellow]Enter company numbers to scrape (comma-separated, e.g., 1,3,5 or 'all' for all companies):[/bold yellow]")
+        
+        selection = Prompt.ask("Selection", default="all").strip().lower()
+        
+        selected_companies = {}
+        if selection == "all":
+            selected_companies = companies.copy()
+        else:
+            try:
+                indices = [int(x.strip()) for x in selection.split(",")]
+                for idx in indices:
+                    if 1 <= idx <= len(company_list):
+                        company_name = company_list[idx - 1]
+                        selected_companies[company_name] = companies[company_name]
+                    else:
+                        console.print(f"[bold red]Warning: Invalid index {idx}, skipping[/bold red]")
+                
+                if not selected_companies:
+                    console.print("[bold red]No valid companies selected. Exiting.[/bold red]")
+                    return
+            except ValueError:
+                console.print("[bold red]Invalid input. Please enter numbers separated by commas or 'all'.[/bold red]")
+                return
+        
+        console.print(f"\n[bold green]Selected {len(selected_companies)} company/companies: {', '.join(selected_companies.keys())}[/bold green]")
+        
+        # STEP [ 2 ] ----------------- Get output file path for consolidated data -------------------------------------------------
+        console.print("\n[bold cyan]Enter output file path for consolidated data (Excel file):[/bold cyan]")
+        console.print("[dim]Example: C:\\Users\\HP\\Desktop\\consolidated_data.xlsx or just 'consolidated_data.xlsx' for current directory[/dim]")
+        file_name = Prompt.ask("Consolidated file path", default="Consolidated_quarterly_financials.xlsx")
+        
+        companies_df= []
+        consolidated_data = {
+            "Revenue" : [],
+            "Op. EBITDA %" : [],
+            "Op. EBIT %" : [],
+            "Op. PBT" : [],
+            "PBT" : [],
+        }
+        
+        for company_name, url in selected_companies.items():
+            console.print(f"\n[bold blue]Scraping data for {company_name}...[/bold blue]")
+            # Scrape the quarterly financials
+            quarterly_data = scrape_quarterly_financials(url, headless=True)
+            result_from_parse = parse_data(quarterly_data,company_name)
+            company_df = create_company_dataframe(result_from_parse[0],company_name,save_checkpoint=False)
+            companies_df.append((company_name,company_df))
+            consolidated_data["Revenue"].append(result_from_parse[1]["Revenue"])
+            consolidated_data["Op. EBITDA %"].append(result_from_parse[1]["Op. EBITDA %"])
+            consolidated_data["Op. EBIT %"].append(result_from_parse[1]["Op. EBIT %"])
+            consolidated_data["Op. PBT"].append(result_from_parse[1]["Op. PBT"])
+            consolidated_data["PBT"].append(result_from_parse[1]["PBT"])
+        
+        consolidated_data = add_more_headings(consolidated_data)
+        
+        save_companies_to_excel(companies_df, file_name)
+        create_consolidated_excel(consolidated_data, file_name)
+        
+        console.print(f"\n[bold green]✓ Successfully created consolidated file: {file_name}[/bold green]")
+        console.print(f"[bold green]✓ Successfully created companies file: {file_name}[/bold green]")
+        
+    except Exception as e:
+        console.print(f"\n[bold red]Scraping failed: {e} , try again later[/bold red]")
+        raise
 
 
 if __name__ == "__main__":
-    try:
-        i=0
-        for company_name, url in companies.items():
-            if i == 5:
-                break
-            # Scrape the quarterly financials
-            quarterly_data = scrape_quarterly_financials(url, headless=True)
-            with open(f"{company_name}_quarterly_data.json", "w+") as f:
-                json.dump(quarterly_data, f, indent=2)
-            parsed_data = parse_data(quarterly_data,company_name)
-            company_df = create_company_dataframe(parsed_data[0],company_name)
-            heading_data["Revenue"].append(parsed_data[1]["Revenue"])
-            heading_data["Op. EBITDA %"].append(parsed_data[1]["Op. EBITDA %"])
-            heading_data["Op. EBIT %"].append(parsed_data[1]["Op. EBIT %"])
-            heading_data["Op. PBT"].append(parsed_data[1]["Op. PBT"])
-            heading_data["PBT"].append(parsed_data[1]["PBT"])
-            
-            i+=1
-
-        
-        heading_data = add_more_headings(heading_data)
-        # for testing 
-        with open("heading_data.json", "w+") as f:
-            json.dump(heading_data, f, indent=2)
-
-        # for testing
-        # with open("heading_data.json", "r") as f:
-        #     heading_data = json.load(f)
-        
-        create_excel_skeleton(heading_data)
-        
-    except Exception as e:
-        console.print(f"\nScraping failed: {e} , try again later ", style="bold red")
-        raise
     
+    main(companies)
