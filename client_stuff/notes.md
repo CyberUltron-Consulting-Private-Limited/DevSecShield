@@ -1,0 +1,1 @@
+Add support for looking for weird indicator names 

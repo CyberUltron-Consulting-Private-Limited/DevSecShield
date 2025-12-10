@@ -109,7 +109,7 @@ def parse_data(dict_data:list[dict] , company_name:str) -> dict:
             employee_cost = convert_values_to_int(item)
         if item["Indicators"] == "Other Expenses" :
             other_expenses = convert_values_to_int(item)
-        if item["Indicators"] == "Depreciation" :
+        if item["Indicators"] == "Depreciation" or item["Indicators"] == "Depreciation & Amortization" or item["Indicators"] == "depreciat":
             depreciation = convert_values_to_int(item)
         if item["Indicators"] == "Interest" :
             interest = convert_values_to_int(item)
