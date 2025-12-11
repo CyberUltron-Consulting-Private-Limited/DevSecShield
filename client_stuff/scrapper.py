@@ -1,4 +1,5 @@
 import copy
+import os
 from openpyxl.worksheet import worksheet
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -547,7 +548,10 @@ def save_companies_to_excel(companies_df: list[tuple[str,pd.DataFrame]], filenam
         filename: Output filename for the Excel file
     """
     try:
-        writer = pd.ExcelWriter(filename, engine='openpyxl')
+        if os.path.exists(filename):
+            writer = pd.ExcelWriter(filename, engine='openpyxl',if_sheet_exists='new',mode='a')
+        else:
+            writer = pd.ExcelWriter(filename, engine='openpyxl')
 
         for company_name, company_df in companies_df:
             company_df.to_excel(writer, sheet_name=company_name, index=False)
@@ -1152,20 +1156,20 @@ def create_consolidated_excel(heading_data:dict,excel_file_name:str) -> None:
     
 companies = {
 
-    "Wipro" : "https://www.moneycontrol.com/markets/financials/quarterly-results/wipro-w/",
-    "TCS" : "https://www.moneycontrol.com/markets/financials/quarterly-results/tataconsultancyservices-TCS/",
-    "Infosys" : "https://www.moneycontrol.com/markets/financials/quarterly-results/infosys-IT/",
-    "LTIMindtree" : "https://www.moneycontrol.com/markets/financials/quarterly-results/ltimindtree-LI12/",
-    "HCL Technologies" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hcltechnologies-HCL02/",
-    "Persistent systems" : "https://www.moneycontrol.com/markets/financials/quarterly-results/persistentsystems-PS15/", 
-    "Tech Mahindra" : "https://www.moneycontrol.com/markets/financials/quarterly-results/techmahindra-tm4/",
-    "Cyient" : "https://www.moneycontrol.com/markets/financials/quarterly-results/cyientdlm-CD02/",
-    "LT Technology" : "https://www.moneycontrol.com/markets/financials/quarterly-results/lttechnologyservices-lts/",
-    "Services Coforge" : "https://www.moneycontrol.com/markets/financials/quarterly-results/coforge-NII02/",
-    "mphasis" : "https://www.moneycontrol.com/markets/financials/quarterly-results/mphasis-mb02/",
-    "zensar" : "https://www.moneycontrol.com/markets/financials/nine-months-results/zensartechnologies-zt02/",
-    "Hexaware" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hexawaretechnologies-HTL03/",
-    "Birlasoft" : "https://www.moneycontrol.com/markets/financials/quarterly-results/birlasoft-kpi02/",
+    "Wipro" : "https://www.moneycontrol.com/markets/financials/quarterly-results/wipro-w/#quarterly_results",
+    "TCS" : "https://www.moneycontrol.com/markets/financials/quarterly-results/tataconsultancyservices-TCS/#quarterly_results",
+    "Infosys" : "https://www.moneycontrol.com/markets/financials/quarterly-results/infosys-IT/#quarterly_results",
+    "LTIMindtree" : "https://www.moneycontrol.com/markets/financials/quarterly-results/ltimindtree-LI12/#quarterly_results",
+    "HCL Technologies" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hcltechnologies-HCL02/#quarterly_results",
+    "Persistent systems" : "https://www.moneycontrol.com/markets/financials/quarterly-results/persistentsystems-PS15/#quarterly_results", 
+    "Tech Mahindra" : "https://www.moneycontrol.com/markets/financials/quarterly-results/techmahindra-tm4/#quarterly_results",
+    "Cyient" : "https://www.moneycontrol.com/markets/financials/quarterly-results/cyientdlm-CD02/#quarterly_results",
+    "LT Technology" : "https://www.moneycontrol.com/markets/financials/quarterly-results/lttechnologyservices-lts/#quarterly_results",
+    "Services Coforge" : "https://www.moneycontrol.com/markets/financials/quarterly-results/coforge-NII02/#quarterly_results",
+    "mphasis" : "https://www.moneycontrol.com/markets/financials/quarterly-results/mphasis-mb02/#quarterly_results",
+    "zensar" : "https://www.moneycontrol.com/markets/financials/quarterly-results/zensartechnologies-zt02/#quarterly_results",
+    "Hexaware" : "https://www.moneycontrol.com/markets/financials/quarterly-results/hexawaretechnologies-HTL03/#quarterly_results",
+    "Birlasoft" : "https://www.moneycontrol.com/markets/financials/quarterly-results/birlasoft-kpi02/#quarterly_results",
 }
 
 def main(companies:dict[str,str]) -> None:
@@ -1233,10 +1237,11 @@ def main(companies:dict[str,str]) -> None:
             consolidated_data["Op. EBIT %"].append(result_from_parse[1]["Op. EBIT %"])
             consolidated_data["Op. PBT"].append(result_from_parse[1]["Op. PBT"])
             consolidated_data["PBT"].append(result_from_parse[1]["PBT"])
+            save_companies_to_excel([(company_name,company_df)], file_name)
         
         consolidated_data = add_more_headings(consolidated_data)
         
-        save_companies_to_excel(companies_df, file_name)
+        
         create_consolidated_excel(consolidated_data, file_name)
         
         console.print(f"\n[bold green]✓ Successfully created consolidated file: {file_name}[/bold green]")
@@ -1244,7 +1249,7 @@ def main(companies:dict[str,str]) -> None:
         
     except Exception as e:
         console.print(f"\n[bold red]Scraping failed: {e} , try again later[/bold red]")
-        raise
+        # raise
 
 
 if __name__ == "__main__":

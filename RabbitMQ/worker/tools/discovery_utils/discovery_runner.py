@@ -12,37 +12,30 @@ from tools.discovery_utils.discovery import discover_agents
 from tools.discovery_utils.llm_service.llm import get_json_llm_response, MissingApiKeyError
 from tools.discovery_utils.llm_service.prompts.tool_detection import TOOL_DETECTION_PROMPT
 from tools.discovery_utils.llm_service.prompts.agent_risk import AGENT_RISK_PROMPT
-from git import Repo, GitCommandError
 from rich.console import Console
+from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
 
-def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
-
-def clone_repo(url: str) -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
-    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
-    try:
-        Repo.clone_from(url, tmp, depth=1)
-    except GitCommandError as e:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"Clone failed: {e}") from e
-    return tmp
 
 class DiscoveryService:
     """Service for discovering agents"""
     
     @staticmethod
-    def discover_agents_from_github(github_repo_url: str, PAT: str) -> List[Dict[str, Any]]:
+    def discover_agents_from_github(context : GithubContext | GitlabContext | BitbucketContext) -> List[Dict[str, Any]]:
         """Discover agents from GitHub repository"""
         temp_dir = None
         try:
             # Clone the repository
             Console().print(f"Starting Agent Discovery 🟨 🔍",style="bold yellow")
-            if github_repo_url and is_github_url(github_repo_url):
-                ind = github_repo_url.find("github.com")
-                repo = github_repo_url[ind:]
-                repo = f"https://{PAT}@{repo}"
-                temp_dir = clone_repo(repo)
+            if context and isinstance(context, GithubContext):
+                directory = clone_repo(context.repo_url)
+            elif context and isinstance(context, GitlabContext):
+                directory = clone_repo(context.repo_url)
+            elif context and isinstance(context, BitbucketContext):
+                directory = clone_repo(context.repo_url)
+            else : 
+                raise ValueError(f"Unsupported context: {context}")
+            
+            temp_dir = directory
             
             # Use existing discovery function
             discovery_result = discover_agents(temp_dir)
@@ -129,10 +122,9 @@ class DiscoveryService:
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-def run_discovery_scan(github_repo_url: str, PAT: str):
+def run_discovery_scan(context : GithubContext | GitlabContext | BitbucketContext):
     result = DiscoveryService.discover_agents_from_github(
-        github_repo_url="https://github.com/yacwagh/double-trust",
-        PAT="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",
+        context=context,
     )
     return result 
 

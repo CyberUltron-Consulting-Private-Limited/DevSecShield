@@ -6,31 +6,23 @@ import shutil
 from typing import Literal
 from git import Repo, GitCommandError
 from rich.console import Console
+from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
 
-def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
 
-def clone_repo(url: str) -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
-    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
+
+
+def run_iac_scan(
+    context : GithubContext | GitlabContext | BitbucketContext , 
+    mode : Literal["tfsec", "trivy"] = "tfsec") -> dict | str:
     try:
-        Repo.clone_from(url, tmp, depth=1)
-    except GitCommandError as e:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"Clone failed: {e}") from e
-    return tmp
-
-
-def run_iac_scan(repo_url: str | None = None, PAT: str | None = None , mode : Literal["tfsec", "trivy"] = "tfsec") -> dict | str:
-    try:
-        if repo_url and is_github_url(repo_url):
-            Console().print(f"Starting scan 🟨 🔍 Repo getting scanned for IAC vulnerabilities using {mode} mode",style="bold yellow")
-            ind = repo_url.find("github.com")
-            repo = repo_url[ind:]
-            repo = f"https://{PAT}@{repo}"
-            directory = clone_repo(repo)
-        else:
-            raise ValueError("Invalid repository URL")
+        if context and isinstance(context, GithubContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, GitlabContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, BitbucketContext):
+            directory = clone_repo(context.repo_url)
+        else : 
+            raise ValueError(f"Unsupported context: {context}")
         
 
         json_temp = tempfile.NamedTemporaryFile(delete=False,suffix=".json")

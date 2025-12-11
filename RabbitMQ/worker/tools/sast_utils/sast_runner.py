@@ -2,45 +2,14 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
-import shutil
-from git import Repo, GitCommandError
 from rich.console import Console
-# from utils.repo_utils import clone_and_return_directory
-
-def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
-
-def is_gitlab_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "gitlab.com" in url
-
-def is_bitbucket_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "bitbucket.org" in url
+from tools.context.Context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext
 
 
 
-def clone_repo(url: str) -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
-    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
-    try:
-        Repo.clone_from(url, tmp, depth=1)
-    except GitCommandError as e:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"Clone failed: {e}") from e
-    return tmp
-
-def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
-    try:
-        lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
-        return "\n".join(
-            f"{i+1:>5}| {lines[i]}" for i in range(start - 1, min(end, len(lines)))
-        )
-    except Exception as exc:
-        Console().print(f"Failed to read code snippet {fp}:{start}-{end} — {exc}",style="bold red")
-        return ""
-
-
-
-def run_sast_scan(repo_url: str | None = None, PAT: str | None = None , app_lang : str = "python") -> dict | str:
+def run_sast_scan(
+    context : GithubContext | GitlabContext | BitbucketContext ,
+    app_lang : str = "python") -> dict | str:
     """
     Run a SAST scan on a given directory.
     Args:
@@ -54,32 +23,41 @@ def run_sast_scan(repo_url: str | None = None, PAT: str | None = None , app_lang
     try:
         json_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         Console().print(f"Starting SAST scan 🟨 🔍 for {app_lang} application",style="bold yellow")
-        
-        if repo_url and is_github_url(repo_url):
-            Console().print(f"Cloning GitHub repository 🟨 🔍",style="bold blue1")
-            ind = repo_url.find("github.com")
-            repo = repo_url[ind:]
-            repo = f"https://{PAT}@{repo}"
-            directory = clone_repo(repo)
-        
-        elif repo_url and is_bitbucket_url(repo_url):
-            Console().print(f"Cloning Bitbucket repository 🟨 🔍",style="bold blue1")
-            ind = repo_url.find("bitbucket.org")
-            repo = repo_url[ind:]
-            repo = f"https://x-token-auth:{PAT}@{repo}"
-            directory = clone_repo(repo)
-        
-        elif repo_url and is_gitlab_url(repo_url):
-            Console().print(f"Cloning Gitlab repository 🟨 🔍",style="bold blue1")
-            ind = repo_url.find("gitlab.com")
-            repo = repo_url[ind:]
-            repo = f"https://oauth2:{PAT}@{repo}"
-            directory = clone_repo(repo)
-        
-        else:
-            raise ValueError(f"Unsupported URL: {repo_url}")
 
-        # directory = clone_and_return_directory(repo_url, PAT)
+        if context and isinstance(context, GithubContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, GitlabContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, BitbucketContext):
+            directory = clone_repo(context.repo_url)
+        else : 
+            raise ValueError(f"Unsupported context: {context}")
+        
+        # old method of cloning the repository
+        # if repo_url and is_github_url(repo_url):
+            # Console().print(f"Cloning GitHub repository 🟨 🔍",style="bold blue1")
+            # ind = repo_url.find("github.com")
+            # repo = repo_url[ind:]
+            # repo = f"https://{PAT}@{repo}"
+            # directory = clone_repo(context.repo_url)
+        
+        # elif repo_url and is_bitbucket_url(repo_url):
+        #     Console().print(f"Cloning Bitbucket repository 🟨 🔍",style="bold blue1")
+            # ind = repo_url.find("bitbucket.org")
+            # repo = repo_url[ind:]
+            # repo = f"https://x-token-auth:{PAT}@{repo}"
+            # directory = clone_repo(repo)
+        
+        # elif repo_url and is_gitlab_url(repo_url):
+        #     Console().print(f"Cloning Gitlab repository 🟨 🔍",style="bold blue1")
+            # ind = repo_url.find("gitlab.com")
+            # repo = repo_url[ind:]
+            # repo = f"https://oauth2:{PAT}@{repo}"
+            # directory = clone_repo(repo)
+        
+        # else:
+        #     raise ValueError(f"Unsupported URL: {repo_url}")
+
 
         if app_lang not in ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]:
             raise ValueError(f"Unsupported language: {app_lang}")

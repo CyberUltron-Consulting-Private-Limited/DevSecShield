@@ -13,6 +13,7 @@ from tools.gitleaks_utils.gitleaks_runner import run_gitleaks_scan
 from tools.discovery_utils.discovery_runner import run_discovery_scan
 from tools.llm_utils.llm_runner import run_garak_scan
 from tools.mcp_utils.mcp_runner import run_mcp_scan
+from tools.context.Context import validate_dict_with_context
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
@@ -41,17 +42,14 @@ try:
     # ------------------------------------------- SAST Scanning task -------------------------------------------------------------------------------------------
     @app.task
     def sast(
-        repo_url:str, 
-        PAT:str,
+        dict_context: dict , 
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
 
-        
-        if not repo_url or not PAT or not app_lang or ( app_lang not in ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] ) :
-            raise Exception("Arguments are invalid/incorrect")
+
+        context = validate_dict_with_context(dict_context)
 
         results = run_sast_scan(
-            repo_url=repo_url,
-            PAT=PAT,
+            context=context,
             app_lang=app_lang
         )  
         return results
@@ -61,16 +59,15 @@ try:
      # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
     @app.task
     def sbom_sca(
-        repo_url:str, 
-        PAT:str):
+        dict_context: dict , 
+        sbom_json_file: str | None = None):
 
         
-        if not repo_url or not PAT  :
-            raise Exception("Arguments are invalid/incorrect")
+        context = validate_dict_with_context(dict_context)
 
         results = run_sbom_scan(
-            repo_url=repo_url,
-            PAT=PAT,
+            context=context,
+            sbom_json_file=sbom_json_file,
         )  
         return results 
     Console().print(f"Registered SBOM SCA task",style="bold green")
@@ -79,34 +76,29 @@ try:
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
     @app.task
     def iac(
-        repo_url:str, 
-        PAT:str,
+        dict_context: dict , 
+        mode: Literal["tfsec", "trivy"] = "tfsec",
         ):
 
-        
-        if not repo_url or not PAT :
-            raise Exception("Arguments are invalid/incorrect")
 
+        context = validate_dict_with_context(dict_context)
         results = run_iac_scan(
-            repo_url=repo_url,
-            PAT=PAT,
+            context=context,
+            mode=mode,
         ) 
         return results 
-    Console().print(f"Registered IAC task",style="bold green")
+    Console().print(f"Registered IAC task with context pattern",style="bold green")
 
      # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
     @app.task
     def discovery(
-        repo_url:str, 
-        PAT:str):
+        dict_context: dict , 
+        ):
 
-        
-        if not repo_url or not PAT  :
-            raise Exception("Arguments are invalid/incorrect")
+        context = validate_dict_with_context(dict_context)
 
         results = run_discovery_scan(
-            github_repo_url=repo_url,
-            PAT=PAT,
+            context=context,
         )  
 
         return results
@@ -170,16 +162,12 @@ try:
      # ------------------------------------------- Gitleaks Scanning task -------------------------------------------------------------------------------------------
     @app.task
     def gitleaks(
-        repo_url:str, 
-        PAT:str,):
+        dict_context: dict , ):
 
-        
-        if not repo_url or not PAT  :
-            raise Exception("Arguments are invalid/incorrect")
+        context = validate_dict_with_context(dict_context)
 
         results = run_gitleaks_scan(
-            repo_url=repo_url,
-            PAT=PAT,
+            context=context,
         )  
         return results
     Console().print(f"Registered Gitleaks task",style="bold green")

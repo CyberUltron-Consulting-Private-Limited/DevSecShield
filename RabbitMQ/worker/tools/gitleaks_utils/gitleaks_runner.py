@@ -6,33 +6,10 @@ import tempfile
 import shutil
 from git import Repo, GitCommandError
 from rich.console import Console
-
-def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
-
-def clone_repo(url: str) -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
-    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
-    try:
-        Repo.clone_from(url, tmp, depth=1)
-    except GitCommandError as e:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"Clone failed: {e}") from e
-    return tmp
-
-def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
-    try:
-        lines = fp.read_text(encoding="utf-8", errors="ignore").splitlines()
-        return "\n".join(
-            f"{i+1:>5}| {lines[i]}" for i in range(start - 1, min(end, len(lines)))
-        )
-    except Exception as exc:
-        Console().print(f"Failed to read code snippet {fp}:{start}-{end} — {exc}",style="bold red")
-        return ""
+from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext , snippet_with_numbers
 
 
-
-def run_gitleaks_scan(repo_url: str | None = None, PAT: str | None = None ) -> dict | str:
+def run_gitleaks_scan(context : GithubContext | GitlabContext | BitbucketContext ) -> dict | str:
     """
     Run a Gitleaks scan on a given directory.
     Args:
@@ -45,11 +22,14 @@ def run_gitleaks_scan(repo_url: str | None = None, PAT: str | None = None ) -> d
     try:
         json_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         Console().print(f"Starting Gitleaks scan 🟨 🔍",style="bold yellow")
-        if repo_url and is_github_url(repo_url):
-            ind = repo_url.find("github.com")
-            repo = repo_url[ind:]
-            repo = f"https://{PAT}@{repo}"
-            directory = clone_repo(repo)
+        if context and isinstance(context, GithubContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, GitlabContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, BitbucketContext):
+            directory = clone_repo(context.repo_url)
+        else : 
+            raise ValueError(f"Unsupported context: {context}")
 
         print(os.listdir(os.path.dirname(__file__)))
         gitleaks = os.path.join(os.path.dirname(__file__), "gitleaks.exe")

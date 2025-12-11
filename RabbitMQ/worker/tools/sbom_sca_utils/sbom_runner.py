@@ -5,21 +5,11 @@ import tempfile
 import shutil
 from git import Repo, GitCommandError
 from rich.console import Console
+from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
 
-def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
-
-def clone_repo(url: str) -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
-    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
-    try:
-        Repo.clone_from(url, tmp, depth=1)
-    except GitCommandError as e:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"Clone failed: {e}") from e
-    return tmp
-
-def run_sbom_scan(repo_url: str | None = None, PAT: str | None = None, sbom_json_file: str | None = None) -> dict | str:
+def run_sbom_scan(
+    context : GithubContext | GitlabContext | BitbucketContext , 
+    sbom_json_file: str | None = None) -> dict | str:
     """
     Run a SBOM scan on a given directory.
     Or
@@ -53,23 +43,45 @@ def run_sbom_scan(repo_url: str | None = None, PAT: str | None = None, sbom_json
                 json_temp.name
             ]
 
-        if repo_url and is_github_url(repo_url):
-            Console().print(f"Starting scan 🟨 🔍 Repo getting scanned for SBOM vulnerabilities",style="bold yellow")
-            ind = repo_url.find("github.com")
-            repo = repo_url[ind:]
-            repo = f"https://{PAT}@{repo}"
-            directory = clone_repo(repo)
+        # old method of cloning the repository
+        # if repo_url and is_github_url(repo_url):
+        #     Console().print(f"Starting scan 🟨 🔍 Repo getting scanned for SBOM vulnerabilities",style="bold yellow")
+        #     ind = repo_url.find("github.com")
+        #     repo = repo_url[ind:]
+        #     repo = f"https://{PAT}@{repo}"
+        #     directory = clone_repo(repo)
 
-            cmd =[
-            "grype", 
-            f"dir:{directory}",
-            "--output",
-            "json", 
-            "--file", 
-            json_temp.name
-            ]
-
+        #     cmd =[
+        #     "grype", 
+        #     f"dir:{directory}",
+        #     "--output",
+        #     "json", 
+        #     "--file", 
+        #     json_temp.name
+        #     ]
+        directory = None
+        if context and isinstance(context, GithubContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, GitlabContext):
+            directory = clone_repo(context.repo_url)
+        elif context and isinstance(context, BitbucketContext):
+            directory = clone_repo(context.repo_url)
+        else : 
+            raise ValueError(f"Unsupported context: {context}")
         
+
+        if directory:
+            cmd =[
+                "grype", 
+                f"dir:{directory}",
+                "--output",
+                "json", 
+                "--file", 
+                json_temp.name
+            ]
+        else:
+            raise ValueError(f"Directory not provided")
+
         if cmd:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:

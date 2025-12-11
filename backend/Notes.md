@@ -8,7 +8,7 @@
 
 - Do a ``uv pip install -U "langchain[aws]"`` 
 
-- To create tables , from root directory run ``uv run python -m backnend.main``
+- To create tables , from root directory run ``uv run python -m backnend.init_db``
 
 - add branch selection to repo cloning 
 ``Repo.clone_from(url, tmp_dir, depth=1,branch="branch_name")``
