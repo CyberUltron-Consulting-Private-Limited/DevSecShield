@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from backend.ai_utils.chatbot import create_response
 from backend.ai_utils.export_generation import create_export_results
 from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception
-from backend.celery_connection import get_celery_app
+from backend.celery_connection import get_celery_app, get_status_and_update_db
 from backend.models import SASTConversation, User
 from backend.auth_utils.plans import plans
 import psycopg2
@@ -122,9 +122,11 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No conversations found")
                 console.print(f"Conversations with length: {len(conversations)} found for user: {user.id}" ,style="bold green")
                 conversations_data = []
-                for conversation in conversations:
+                for conversation in conversations:   #there is no logic here to update and check status of scan ( maybe will add later if required )
                     conversations_data.append({
                         "id": conversation.id,
+                        "repo_url": conversation.repo_url,
+                        "mode": conversation.mode,
                         "title": conversation.title,
                         "created_at": conversation.created_at,
                         "last_updated": conversation.last_updated,
@@ -203,25 +205,34 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             # 1. conversation_id ( mongo db conversation id )
             # 2. user_id ( user id )
 
+            CONVERSATION = None
+            SCAN_DATA = {}
 
-            # STEP [ 1 ] : =========== Check if scan has completed by checking the conversation status in the main db and get the results  ======================
-            SCAN_RESULTS = None
+
+            # STEP [ 1 ] : =========== Get the conversation from the main db ======================
             with Session(engine) as session:
                 conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
                 if not conversation:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-                if conversation.scan_status != "success" or conversation.scan_data == {} or conversation.scan_data == None or conversation.scan_status == "started" or conversation.scan_status == "failure":
-                    return EventSourceResponse(stream_text("Scan is not completed yet, please run the scan first"), media_type="text/event-stream")
-                SCAN_RESULTS = conversation.scan_data
+                CONVERSATION = conversation
             
-            if not conversation.conversation_id:
+
+            # STEP [ 2 ] : =========== Check if conversation can be updated with new status and scan data  ======================
+            if conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED" or conversation.scan_data == {}:
+                FETCHED_STATUS , FETCHED_SCAN_DATA , FETCHED_CONVERSATION = get_status_and_update_db(conversation_id, None, SASTConversation, engine)
+                CONVERSATION = FETCHED_CONVERSATION if FETCHED_CONVERSATION else CONVERSATION # update the conversation if it is not found in the main db
+                SCAN_DATA = FETCHED_SCAN_DATA if FETCHED_SCAN_DATA else SCAN_DATA # update the scan data if it is not found in the main db
+
+            if not CONVERSATION:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+            if not SCAN_DATA or SCAN_DATA == {} or FETCHED_STATUS == "pending" or FETCHED_STATUS == "NOT_STARTED" or FETCHED_STATUS != "success":
+                return EventSourceResponse(stream_text("Scan is not completed yet, please run the scan first"), media_type="text/event-stream")
+
             
-            
-            # STEP [ 2 ] : =========== Add the user message to the mongo db ====================== ⭐
+            # STEP [ 3 ] : =========== Add the user message to the mongo db ====================== ⭐
             message_collection = mongo_db["message_log"]
             message_instance = MessageLog(
-                conversation_id=conversation.conversation_id,
+                conversation_id=CONVERSATION.conversation_id,
                 user_id=user.id,
                 content=data.user_message,
                 type="message",
@@ -232,10 +243,10 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             user_message_id = str(result.inserted_id)
             console.print(f"User message added to mongo db" ,style="bold green")
         
-            # STEP [ 3 ] : =========== Add user message to the active context log ====================== ⭐
+            # STEP [ 4 ] : =========== Add user message to the active context log ====================== ⭐
             active_context_collection = mongo_db["active_context"]
             active_context_instance = ActiveContextLog(
-                conversation_id=conversation.conversation_id,
+                conversation_id=CONVERSATION.conversation_id,
                 user_id=user.id,
                 content=data.user_message,
                 type="message",
@@ -244,21 +255,17 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             )
             result = active_context_collection.insert_one(active_context_instance)
             active_context_message_id = str(result.inserted_id)
-            console.print(f"User message added to active context log" ,style="bold green")
+            console.print(f"User message added to active context log with id: {active_context_message_id}" ,style="bold green")
 
-            # STEP [ 4 ] : =========== Append the mongo db conversation with user message======================
+            # STEP [ 5 ] : =========== Append the mongo db conversation with user message======================
             conversation_collection = mongo_db["conversations"]
-            mongo_conversation = conversation_collection.find_one({"_id": ObjectId(conversation.conversation_id)})
+            mongo_conversation = conversation_collection.find_one({"_id": ObjectId(CONVERSATION.conversation_id)})
             if not mongo_conversation:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
             mongo_conversation["messages"].append(user_message_id) # APPENDED USER MESSAGE INTO CONVERSATION HISTORY LOG 
-            conversation_collection.update_one({"_id": ObjectId(conversation.conversation_id)}, {"$set": {"messages": mongo_conversation["messages"]}})
+            conversation_collection.update_one({"_id": ObjectId(CONVERSATION.conversation_id)}, {"$set": {"messages": mongo_conversation["messages"]}})
             mongo_conversation_id = str(mongo_conversation["_id"])
-            console.print(f"Mongo db conversation array updated with user message" ,style="bold green")
-
-
-
-            
+  
             
             
             # STEP [ 5 ] : =========== Get the conversation from the mongo db ======================
@@ -268,7 +275,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 user_id=user.id,
                 mongo_db=mongo_db,
                 scan_type="SAST",
-                scan_results=SCAN_RESULTS,
+                scan_results=SCAN_DATA,
                 content=data.user_message,
                 role="human",
                 max_history_length=MAX_ACTIVE_HISTORY_LENGTH,
@@ -303,51 +310,14 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
                 TASK_ID = conversation.task_id
                 SCAN_STATUS = conversation.scan_status
-
-            # STEP [ 2 ] : =================== Get the scan status from the celery worker ======================
-            if TASK_ID:
-                simple_app = get_celery_app()
-                if simple_app==None:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app , please try again later")
-                async_result : AsyncResult = simple_app.AsyncResult(TASK_ID)
-                SCAN_STATUS = str(async_result.state).lower()
-
-            # STEP [ 3 ] : =================== Update the main db conversation the scan status and data  ( only when changed )======================
-            with Session(engine) as session:
-                conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id)).first()
-                if not conversation:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-                # update the scan status only if it has changed
-                if SCAN_STATUS and conversation.scan_status != SCAN_STATUS:
-                    conversation.scan_status = SCAN_STATUS
-                    session.commit()
-                    session.refresh(conversation)
-                    console.print(f"Scan with id: {TASK_ID} status updated to {SCAN_STATUS} in main database" ,style="bold green")
-                else:
-                    console.print(f"Scan with id: {TASK_ID} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
-
-            # Get scan data 
-            if conversation.scan_status == "success":
-                console.print(f"Scan with id: {TASK_ID} status is success" ,style="bold green")
-                results = simple_app.AsyncResult(TASK_ID).result
-                with Session(engine) as session:
-                    conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id)).first()
-                    if not conversation:
-                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-                    # update the scan data only if it is not already set
-                    if not conversation.scan_data:
-                        console.print(f"Scan with id: {TASK_ID} scan data is not set, updating it" ,style="bold green")
-                        conversation.scan_data = results
-                        session.commit()
-                        session.refresh(conversation)
-                        console.print(f"Scan with id: {TASK_ID} scan data updated in main database" ,style="bold green")
-                    else:
-                        console.print(f"Scan with id: {TASK_ID} scan data is already set, not updating it" ,style="bold green")
                 SCAN_DATA = conversation.scan_data
-                
-            # Fetching messages if scan is completed
-            MESSAGES = get_messages_from_conversation(conversation_id, user.id, engine, mongo_db)
 
+            # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
+            if SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {}:
+                SCAN_STATUS , SCAN_DATA , conversation = get_status_and_update_db(conversation_id, TASK_ID, SASTConversation, engine)
+            
+            # STEP [ 3 ] : =================== Fetching messages if scan is completed ======================
+            MESSAGES = get_messages_from_conversation(conversation_id, user.id, engine, mongo_db)
 
 
             if not SCAN_STATUS :
@@ -376,17 +346,25 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             # start the sast scan for the user 🟨
             
             # STEP [ 1 ] : =========== Validate task  and user allowed to start this conversation ======================
+            
             if not data.repo_url or not data.PAT or not data.app_lang:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task input")
+
             if data.app_lang not in ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid app language")
+            
             with Session(engine) as session:
                 conversation = None
                 conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
                 if conversation==None:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found or User not allowed to start this conversation")
-                if conversation.scan_status == "success" or conversation.scan_data != {} or  conversation.scan_status == "started" or conversation.scan_status == "failure" :
+                if conversation.scan_status == "success" or conversation.scan_data != {} or  conversation.scan_status == "started" or conversation.scan_status == "failure":
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
+                if conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED":
+                    FETCHED_STATUS , FETCHED_DATA , FETCHED_CONVERSATION = get_status_and_update_db(conversation_id, None, SASTConversation, engine)
+                    if FETCHED_STATUS == "success" or FETCHED_STATUS == "started" or FETCHED_STATUS == "failure" or FETCHED_STATUS == "pending" or FETCHED_DATA != {} :
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
+            
             
             
             # STEP [ 2 ] : =========== Send the task to the celery worker ======================
@@ -412,6 +390,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 conversation.mode = data.mode
                 conversation.repo_url = data.repo_url
                 conversation.task_id = r.id
+                conversation.app_lang = data.app_lang
                 session.commit()
                 session.refresh(conversation)
                 return {

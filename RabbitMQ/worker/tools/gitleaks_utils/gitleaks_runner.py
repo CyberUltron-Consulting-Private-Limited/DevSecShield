@@ -88,7 +88,7 @@ def run_gitleaks_scan(context : GithubContext | GitlabContext | BitbucketContext
         return gitleaks_json
     except Exception as e:
         Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
-        return str(e)
+        raise e
 
 
 if __name__ == "__main__":

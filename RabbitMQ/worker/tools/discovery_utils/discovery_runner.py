@@ -114,6 +114,10 @@ class DiscoveryService:
                     
             return saved_agents
             
+        
+        except Exception as e:
+            Console().print(f"Error: {e}",style="bold red")
+            raise e
         finally:
             # for testing
             # with open("discovery_results.json", "w+") as f:

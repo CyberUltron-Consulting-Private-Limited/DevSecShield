@@ -33,7 +33,7 @@ import { SastConversation  , deleteSastConversation, getSastConversations, renam
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-type ScanStatus = "pending" | "started" | "retry" | "failure" | "success";
+type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
 
 export default function SASTPage() {
@@ -67,10 +67,11 @@ export default function SASTPage() {
   })
 
   const renameSastConversationMutation = useMutation({
-    mutationFn: renameSastConversation,
+    mutationFn: ({ conversation_id, title }: { conversation_id: number; title: string }) => 
+      renameSastConversation(conversation_id, title),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
-      toast.success('Sast conversation deleted successfully');
+      toast.success('Sast conversation renamed successfully');
     },
   })
 
@@ -89,6 +90,7 @@ export default function SASTPage() {
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {
+      not_started: { variant: "outline" as const, className: "text-zinc-500 dark:text-zinc-500" },
       pending: { variant: "outline" as const, className: "text-zinc-600 dark:text-zinc-400" },
       started: { variant: "secondary" as const, className: "bg-blue-500 hover:bg-blue-600 text-white" },
       retry: { variant: "secondary" as const, className: "bg-yellow-500 hover:bg-yellow-600 text-white" },
@@ -98,6 +100,7 @@ export default function SASTPage() {
 
     const config = variants[status];
     const labels = {
+      not_started: "Not Started",
       pending: "Pending",
       started: "Started",
       retry: "Retry",
@@ -193,7 +196,10 @@ export default function SASTPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[300px]">Conversation Name</TableHead>
+                    <TableHead>Repository URL</TableHead>
+                    <TableHead>Mode</TableHead>
                     <TableHead>Created At</TableHead>
+                    <TableHead>Last Updated</TableHead>
                     <TableHead>Scan Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -210,7 +216,30 @@ export default function SASTPage() {
                         </Link>
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        {conversation.repo_url ? (
+                          <a
+                            href={conversation.repo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline truncate block max-w-[200px]"
+                            title={conversation.repo_url}
+                          >
+                            {conversation.repo_url}
+                          </a>
+                        ) : (
+                          <span className="text-zinc-400 dark:text-zinc-500 italic">Not set</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        <Badge variant="outline" className="capitalize">
+                          {conversation.mode}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {formatDate(conversation.created_at)}
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        {formatDate(conversation.last_updated)}
                       </TableCell>
                       <TableCell>{getStatusBadge(conversation.scan_status as ScanStatus)}</TableCell>
                       <TableCell className="text-right">

@@ -35,6 +35,10 @@ except Exception as e :
 try:
     # app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
     app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend=mongo_url)
+    app.conf.update(
+        RESULT_PERSISTENT=True,
+        TASK_TRACK_STARTED=True,
+    )
     Console().print(f"Celery App instantiated",style="bold green")
 
 
@@ -46,13 +50,20 @@ try:
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
 
 
-        context = validate_dict_with_context(dict_context)
+        try :
+            
+            # STEP [ 1 ] : =========== Validate the context ======================
+            context = validate_dict_with_context(dict_context)
+            
+            # STEP [ 2 ] : =========== Run the sast scan ======================
+            results = run_sast_scan( context=context,app_lang=app_lang)  
 
-        results = run_sast_scan(
-            context=context,
-            app_lang=app_lang
-        )  
-        return results
+            # STEP [ 3 ] : =========== Return the results ======================
+            return results
+
+        except Exception as e:
+            Console().print(f"Error in sast task: {str(e)}",style="bold red")
+            raise e
     Console().print(f"Registered SAST task",style="bold green")
 
 

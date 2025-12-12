@@ -7,8 +7,11 @@ import { toast } from "sonner"
 
 export interface SastConversation {
     id: number
+    repo_url: string | null
+    mode: string
     title: string
     created_at: string
+    last_updated: string
     scan_status: string
 }
 

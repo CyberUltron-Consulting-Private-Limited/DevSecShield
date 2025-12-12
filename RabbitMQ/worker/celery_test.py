@@ -33,6 +33,10 @@ def test(
     try:
        
         r = simple_app.send_task(task_name, kwargs=kwargs)
+        simple_app.conf.update(
+        CELERY_RESULT_PERSISTENT=True,
+        CELERY_TRACK_STARTED=True,
+        )
         Console().print(f"{task_name} Task initiated",style="bold blue1")
         stop = False 
 
@@ -55,16 +59,17 @@ def test(
 
 
 #------------------------------------------ testing SAST , ✅ Tested and works with context pattern ✅ ---------------------------------------------------------------------------
-# dict_context = {
-#     "mode":"github",
-#     "repo_url":"https://github.com/CyberUltron-Nikhil/RiskPilot",
-#     "PAT":"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",
-# }
-# sast_kwargs = {
-#     "dict_context":dict_context,
-#     "app_lang":"javascript",
-# }
-# test(task_name="scan_worker.sast",kwargs=sast_kwargs,result_file_name="sast_results_testing.json")
+dict_context = {
+    "mode":"github",
+    "repo_url":"https://github.com/CyberUltron-Nikhil/RiskPilot",
+    "PAT":"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",
+}
+sast_kwargs = {
+    "dict_context":dict_context,
+    "app_lang":"javascript",
+}
+test(task_name="scan_worker.sast",kwargs=sast_kwargs,result_file_name="sast_results_testing.json")
+
 
 
 

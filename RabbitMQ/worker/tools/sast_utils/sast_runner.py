@@ -89,8 +89,8 @@ def run_sast_scan(
         with open(json_temp.name, "r", encoding="utf-8") as f:
             sast_json = json.load(f)
             # for testing
-            with open("sast_test.json", "w+", encoding="utf-8") as f:
-                json.dump(sast_json, f, indent=2)
+            # with open("sast_test.json", "w+", encoding="utf-8") as f:
+            #     json.dump(sast_json, f, indent=2)
             for i in range(len(sast_json["results"])):
                 result = sast_json["results"][i]
                 path = result["path"]
@@ -120,7 +120,7 @@ def run_sast_scan(
         return sast_json
     except Exception as e:
         Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
-        return str(e)
+        raise e
 
 
 if __name__ == "__main__":

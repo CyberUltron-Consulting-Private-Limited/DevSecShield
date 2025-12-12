@@ -139,7 +139,7 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
     
     except Exception as e:
         Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
-        return str(e)
+        raise e
 
 
 if __name__ == "__main__":

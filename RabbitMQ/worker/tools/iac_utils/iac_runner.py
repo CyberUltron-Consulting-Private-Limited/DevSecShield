@@ -76,7 +76,7 @@ def run_iac_scan(
         return results
     except Exception as e:
         Console().print(f"Error: {e} 🔴",style="bold red")
-        return str(e)
+        raise e
 
 
 if __name__ == "__main__":

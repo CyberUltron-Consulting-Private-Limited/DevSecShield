@@ -39,8 +39,9 @@ class SASTConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     user_id : int
     task_id : str | None = Field(default=None)
-    mode : Literal["github", "gitlab", "bitbucket"] = Field(default="github",sa_type=String)
+    mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
+    app_lang : Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] | None = Field(default=None,sa_type=String)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
     export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")

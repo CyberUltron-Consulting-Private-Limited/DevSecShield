@@ -6,7 +6,7 @@ services:
   #   image: worker:latest
   
   rabbitmq:
-    image: rabbitmq:latest
+    image: rabbitmq:4.1.6-management-alpine
     container_name: rabbitmq
     restart: always
     ports:
