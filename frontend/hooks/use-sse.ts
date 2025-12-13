@@ -3,10 +3,16 @@ import { Dispatch, SetStateAction, useEffect } from 'react';
 import { apiBaseURL, getAccessToken } from '@/utils/interceptors';
 import type { ChatMessage } from '@/components/ai/ChatWindow';
 import { toast } from 'sonner';
+import { showErrorToast } from '@/utils/error-handler';
 
-const streamChatbotResponse = async ( assistant_message_id: string, user_message: string , messages: ChatMessage[], setMessages: Dispatch<SetStateAction<ChatMessage[]>> ) => {
+const streamChatbotResponse = async ( 
+    assistant_message_id: number, 
+    user_message: string , 
+    messages: ChatMessage[], 
+    setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
+    conversation_id: number ) => {
 
-    const conversation_id = 1
+
     await fetchEventSource(`${apiBaseURL}/sast/conversation/${conversation_id}/message`, {
             method: "POST",
             headers: { 
@@ -61,8 +67,7 @@ const streamChatbotResponse = async ( assistant_message_id: string, user_message
                 console.log("Connection closed by the server");
             },
             onerror(err) {
-                toast.error("There was an error from server", err);
-                console.log("There was an error from server", err);
+                showErrorToast(err, "There was an error from server");
             },
           });
         };

@@ -1,5 +1,8 @@
 # TO DO 
+- User Input Guardrails scanning ( with logging and dashboard ) ( build REST API for integration )
 
+- fix bug in mcp results parsing ( list index out of range error )
+- look into how to scan a http or sse mcp server as well 
 - Add cleanup for temp dirs or files ⚠️
 
 - DAST inputs ( figure out how to do )

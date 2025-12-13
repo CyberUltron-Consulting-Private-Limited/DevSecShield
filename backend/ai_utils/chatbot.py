@@ -216,7 +216,7 @@ async def create_response(
             user_id=user_id,
             content=message,
             type="message",
-            sender="agent",
+            sender="assistant",
             created_at=datetime.datetime.now(datetime.timezone.utc),
         )
         assistant_message_result = messages_collection.insert_one(message_instance)
@@ -229,7 +229,7 @@ async def create_response(
             user_id=user_id,
             content=message,
             type="message",
-            sender="agent",
+            sender="assistant",
             created_at=datetime.datetime.now(datetime.timezone.utc),
         )
         assistant_active_context_result = active_context_collection.insert_one(active_context_instance)

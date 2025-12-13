@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { SASTOptionsSidebar } from "@/components/sast-options-sidebar";
 import ChatWindow from "@/components/ai/ChatWindow";
+import { useState } from "react";
 
 const dashboardCards = [
   {
@@ -50,8 +51,13 @@ interface SASTPageProps {
     conversation_id: string;
   };
 }
-
+export type AppLang = "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin"  | "unknown"
+export type Mode = "github" | "gitlab" | "bitbucket" | "not_initiated" | "unknown"
 export default function SASTPage({ params }: SASTPageProps) {
+  const [app_lang, setAppLang] = useState<AppLang>("unknown");
+  const [mode, setMode] = useState<Mode>("unknown");
+  const [repo_url, setRepoUrl] = useState<string>("");
+  const [PAT, setPAT] = useState<string>("");
   return (
     <div className="flex h-screen">
       {/* Main Content Area */}
@@ -62,7 +68,7 @@ export default function SASTPage({ params }: SASTPageProps) {
       </div>
 
       {/* Right Sidebar - SAST Options */}
-      <SASTOptionsSidebar />
+      <SASTOptionsSidebar app_lang={app_lang} setAppLang={setAppLang} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} />
     </div>
   );
 }

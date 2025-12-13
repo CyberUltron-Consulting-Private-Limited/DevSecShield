@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -29,19 +30,23 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { SastConversation  , deleteSastConversation, getSastConversations, renameSastConversation } from "@/utils/backend_api";
+import { SastConversation  , deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { showErrorToast } from "@/utils/error-handler";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
 
 export default function SASTPage() {
+  const router = useRouter();
   const [conversations, setConversations] = useState<SastConversation[]>([]);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<SastConversation | null>(null);
   const [newName, setNewName] = useState("");
+  const [newScanTitle, setNewScanTitle] = useState("");
   // Access the client
   const queryClient = useQueryClient()
 
@@ -53,7 +58,7 @@ export default function SASTPage() {
       setConversations(query.data);
     }
     if (query.error) {
-      toast.error('Error fetching sast conversations');
+      showErrorToast(query.error, 'Error fetching sast conversations');
     }
   }, [query.data , query.error]);
 
@@ -64,15 +69,33 @@ export default function SASTPage() {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
       toast.success('Sast conversation deleted successfully');
     },
+    onError: (error) => {
+      showErrorToast(error);
+    }
   })
 
   const renameSastConversationMutation = useMutation({
-    mutationFn: ({ conversation_id, title }: { conversation_id: number; title: string }) => 
-      renameSastConversation(conversation_id, title),
+    mutationFn: renameSastConversation,
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
       toast.success('Sast conversation renamed successfully');
     },
+    onError: (error) => {
+      showErrorToast(error);
+    }
+  })
+
+  const createSastConversationMutation = useMutation({
+    mutationFn: createSastConversation,
+    onSuccess: (conversationId, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
+      setCreateDialogOpen(false);
+      setNewScanTitle("");
+      router.push(`/home/sast/${conversationId}`);
+    },
+    onError: (error) => {
+      showErrorToast(error);
+    }
   })
 
 
@@ -145,6 +168,12 @@ export default function SASTPage() {
     }
   };
 
+  const confirmCreate = () => {
+    if (newScanTitle.trim()) {
+      createSastConversationMutation.mutate(newScanTitle.trim());
+    }
+  };
+
   return (
     <div className="flex h-full bg-white dark:bg-zinc-900">
       <div className="flex-1 p-8 overflow-auto">
@@ -160,12 +189,13 @@ export default function SASTPage() {
               </p>
             </div>
             <div className="flex flex-row items-center gap-2">
-              <Link href="/home/sast/new">
-                <Button className="bg-teal-600 hover:bg-teal-700 text-white">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Scan
-                </Button>
-              </Link>
+              <Button 
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Scan
+              </Button>
               <Button className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations'] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
@@ -183,12 +213,13 @@ export default function SASTPage() {
               <p className="text-zinc-600 dark:text-zinc-400 mb-4">
                 No scans yet. Create your first SAST scan to get started.
               </p>
-              <Link href="/home/sast/new">
-                <Button className="bg-teal-600 hover:bg-teal-700 text-white">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create New Scan
-                </Button>
-              </Link>
+              <Button 
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create New Scan
+              </Button>
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
@@ -345,6 +376,48 @@ export default function SASTPage() {
               onClick={confirmDelete}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Scan Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Scan</DialogTitle>
+            <DialogDescription>
+              Enter a title for your new SAST scan conversation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={newScanTitle}
+              onChange={(e) => setNewScanTitle(e.target.value)}
+              placeholder="Scan title"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  confirmCreate();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateDialogOpen(false);
+                setNewScanTitle("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmCreate}
+              disabled={!newScanTitle.trim() || createSastConversationMutation.isPending}
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+            >
+              {createSastConversationMutation.isPending ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

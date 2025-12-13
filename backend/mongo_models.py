@@ -15,7 +15,7 @@ ConversationType = Literal[
 
 # Message/Active context types
 MessageType = Literal["message", "tool"]
-SenderType = Literal["user", "agent"]
+SenderType = Literal["user", "assistant"]
 
 
 class Conversation(TypedDict, total=False):

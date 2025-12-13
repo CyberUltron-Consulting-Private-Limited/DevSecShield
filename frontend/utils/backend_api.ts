@@ -1,5 +1,5 @@
 import api from "@/utils/interceptors"
-import { handleApiError } from "./error-handler"
+import { showErrorToast } from "./error-handler"
 import { toast } from "sonner"
 
 
@@ -21,8 +21,6 @@ const getSastConversations = async (): Promise<SastConversation[]> => {
         toast.success("Sast conversations fetched successfully")
         return response.data
     } catch (error) {
-        console.error("Error fetching sast conversations:", error)
-        handleApiError(error)
         throw error
     }
 }
@@ -33,22 +31,75 @@ const deleteSastConversation = async (conversation_id: number) => {
         toast.success("Sast conversation deleted successfully")
         return response.data
     } catch (error) {
-        console.error("Error deleting sast conversation:", error)
-        handleApiError(error)
         throw error
     }
 }
 
-const renameSastConversation = async (conversation_id: number, title: string) => {
+const renameSastConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/sast/conversation/${conversation_id}`, { title: title })
         toast.success("Sast conversation renamed successfully")
         return response.data
     } catch (error) {
-        console.error("Error renaming sast conversation:", error)
-        handleApiError(error)
         throw error
     }
 }
 
-export { getSastConversations, deleteSastConversation, renameSastConversation }
+const createSastConversation = async (title: string) => {
+    try {
+        const response = await api.post("/sast/conversation", { title: title })
+        toast.success("Sast conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+interface SastConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}   
+interface SastConversationResponse {
+    scan_status: string
+    data: any
+    messages: SastConversationMessage[]
+}
+
+const getSastConversationMessages = async ({queryKey}: {queryKey: ['sast-conversation-data', number]}): Promise<SastConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/sast/conversation/${conversation_id}`)
+        toast.success("Sast conversation messages fetched successfully")
+        return response.data as SastConversationResponse
+    } catch (error) {
+        throw error
+    }
+}
+
+const startSastScan = async (
+    {
+        conversation_id, 
+        repo_url, 
+        PAT, 
+        app_lang,
+        mode
+    }: {
+            conversation_id: number, 
+            repo_url: string, 
+            PAT: string, 
+            app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin" , 
+            mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/sast/conversation/${conversation_id}/scan`, { repo_url: repo_url, PAT: PAT, app_lang: app_lang, mode: mode })
+        toast.success("Sast scan started successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+export { getSastConversations, deleteSastConversation, renameSastConversation, createSastConversation, getSastConversationMessages }

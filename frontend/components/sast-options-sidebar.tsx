@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -30,6 +30,8 @@ import {
   Server,
   Workflow,
 } from "lucide-react";
+import { AppLang } from "@/app/home/sast/[conversation_id]/page";
+import { Mode } from "@/app/home/sast/[conversation_id]/page";
 
 const cicdPlatforms = [
   { name: "Circle CI", icon: Circle },
@@ -57,8 +59,32 @@ const languages = [
   "javascript",
 ];
 
-export function SASTOptionsSidebar() {
-  const [selectedLanguage, setSelectedLanguage] = useState<string>("");
+export function SASTOptionsSidebar({
+  app_lang,
+  setAppLang,
+  mode,
+  setMode,
+  repo_url,
+  setRepoUrl,
+  PAT,
+  setPAT,
+}:{
+  app_lang: AppLang;
+  setAppLang: Dispatch<SetStateAction<AppLang>>;
+  mode: Mode;
+  setMode: Dispatch<SetStateAction<Mode>>;
+  repo_url: string;
+  setRepoUrl: Dispatch<SetStateAction<string>>;
+  PAT: string;
+  setPAT: Dispatch<SetStateAction<string>>;
+}) {
+  useEffect(() => {
+    setAppLang(app_lang);
+    setMode(mode);
+    setRepoUrl(repo_url);
+    setPAT(PAT);
+  }, [app_lang, mode, repo_url, PAT]);
+
   return (
     <ScrollArea className="w-80 h-screen bg-zinc-900 dark:bg-zinc-950 border-l border-zinc-800">
       <div className="p-6">
@@ -79,19 +105,19 @@ export function SASTOptionsSidebar() {
               <Label htmlFor="primary-language" className="text-zinc-300">
                 Application Primary Language
               </Label>
-              <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+              <Select value={app_lang} onValueChange={(value) => setAppLang(value as AppLang)}>
                 <SelectTrigger
                   id="primary-language"
-                  className="bg-zinc-800 border-zinc-700 text-white"
+                  className="bg-zinc-800 border-zinc-700 text-white focus:text-white cursor-pointer"
                 >
-                  <SelectValue className="text-white placeholder:text-zinc-400" placeholder="Select language" />
+                  {app_lang !== "unknown" ? <SelectValue className="text-white placeholder:text-zinc-400 focus:text-white " /> : <div className="text-zinc-400 placeholder:text-zinc-400 focus:text-zinc-400">Select Language</div>}
                 </SelectTrigger>
                 <SelectContent className="bg-zinc-800 border-zinc-700">
                   {languages.map((language) => (
                     <SelectItem
                       key={language}
                       value={language}
-                      className="text-white hover:bg-zinc-700 focus:bg-zinc-700"
+                      className="text-white hover:bg-zinc-700 focus:bg-zinc-700 focus:text-white cursor-pointer"
                     >
                       {language.charAt(0).toUpperCase() + language.slice(1)}
                     </SelectItem>
@@ -112,7 +138,7 @@ export function SASTOptionsSidebar() {
           <Accordion type="single" collapsible className="w-full">
             {/* GitHub Integration */}
             <AccordionItem value="github" className="border-zinc-800">
-              <AccordionTrigger className="text-zinc-300 hover:text-white">
+              <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
                 <div className="flex items-center gap-2">
                   <Github className="h-4 w-4" />
                   <span>GitHub</span>
@@ -127,6 +153,10 @@ export function SASTOptionsSidebar() {
                     id="github-repo-url"
                     placeholder="https://github.com/username/repo"
                     className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setMode("github");
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
@@ -138,6 +168,9 @@ export function SASTOptionsSidebar() {
                     type="password"
                     placeholder="Enter your GitHub token"
                     className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+                    onChange={(e) => {
+                      setPAT(e.target.value);
+                    }}
                   />
                 </div>
               </AccordionContent>
@@ -145,7 +178,7 @@ export function SASTOptionsSidebar() {
 
             {/* GitLab Integration */}
             <AccordionItem value="gitlab" className="border-zinc-800">
-              <AccordionTrigger className="text-zinc-300 hover:text-white">
+              <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
                 <div className="flex items-center gap-2">
                   <GitBranch className="h-4 w-4" />
                   <span>GitLab</span>
@@ -160,6 +193,10 @@ export function SASTOptionsSidebar() {
                     id="gitlab-repo-url"
                     placeholder="https://gitlab.com/username/repo"
                     className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setMode("gitlab");
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
@@ -171,6 +208,9 @@ export function SASTOptionsSidebar() {
                     type="password"
                     placeholder="Enter your GitLab token"
                     className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+                    onChange={(e) => {
+                      setPAT(e.target.value);
+                    }}
                   />
                 </div>
               </AccordionContent>
@@ -178,7 +218,7 @@ export function SASTOptionsSidebar() {
 
             {/* Bitbucket Integration */}
             <AccordionItem value="bitbucket" className="border-zinc-800">
-              <AccordionTrigger className="text-zinc-300 hover:text-white">
+              <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
                 <div className="flex items-center gap-2">
                   <GitCommit className="h-4 w-4" />
                   <span>Bitbucket</span>
@@ -193,6 +233,10 @@ export function SASTOptionsSidebar() {
                     id="bitbucket-repo-url"
                     placeholder="https://bitbucket.org/username/repo"
                     className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+                    onChange={(e) => {
+                      setRepoUrl(e.target.value);
+                      setMode("bitbucket");
+                    }}
                   />
                 </div>
                 <div className="space-y-2">

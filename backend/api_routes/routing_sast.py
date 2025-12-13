@@ -52,7 +52,7 @@ def stream_text(text: str):
     for word in text_array:
         data = {
                 "message_id": "Not_allowed_" + id,
-                "content": word,
+                "content": word + " ",
                 "reasoning": "",
             }
         yield json.dumps(data)
@@ -159,7 +159,6 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 conv_type="sast",
                 title=data.title,
                 messages=[],
-                message_limit=20,
                 created_at=datetime.datetime.now(datetime.timezone.utc),
             )
             new_conversation= conversation_collection.insert_one(conversation_instance)
@@ -206,6 +205,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             # 2. user_id ( user id )
 
             CONVERSATION = None
+            MESSAGE_LIMIT = None
             SCAN_DATA = {}
 
 
@@ -213,24 +213,36 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             with Session(engine) as session:
                 conversation = session.exec(select(SASTConversation).where(SASTConversation.id == conversation_id).where(SASTConversation.user_id == user.id)).first()
                 if not conversation:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+                    console.print(f"Conversation id: {conversation_id} not found in main database" ,style="bold red")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found ")
+                
+                MESSAGE_LIMIT = conversation.message_limit
                 CONVERSATION = conversation
+                SCAN_STATUS = conversation.scan_status
+                SCAN_DATA = conversation.scan_data
             
 
             # STEP [ 2 ] : =========== Check if conversation can be updated with new status and scan data  ======================
-            if conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED" or conversation.scan_data == {}:
-                FETCHED_STATUS , FETCHED_SCAN_DATA , FETCHED_CONVERSATION = get_status_and_update_db(conversation_id, None, SASTConversation, engine)
-                CONVERSATION = FETCHED_CONVERSATION if FETCHED_CONVERSATION else CONVERSATION # update the conversation if it is not found in the main db
-                SCAN_DATA = FETCHED_SCAN_DATA if FETCHED_SCAN_DATA else SCAN_DATA # update the scan data if it is not found in the main db
+            # if conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED" or conversation.scan_data == {}:
+            #     FETCHED_STATUS , FETCHED_SCAN_DATA , FETCHED_CONVERSATION = get_status_and_update_db(conversation_id, None, SASTConversation, engine)
+            #     CONVERSATION = FETCHED_CONVERSATION if FETCHED_CONVERSATION else CONVERSATION # update the conversation if it is not found in the main db
+            #     SCAN_DATA = FETCHED_SCAN_DATA if FETCHED_SCAN_DATA else SCAN_DATA # update the scan data if it is not found in the main db
+            #     SCAN_STATUS = FETCHED_STATUS if FETCHED_STATUS else SCAN_STATUS # update the scan status if it is not found in the main db
 
             if not CONVERSATION:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-            if not SCAN_DATA or SCAN_DATA == {} or FETCHED_STATUS == "pending" or FETCHED_STATUS == "NOT_STARTED" or FETCHED_STATUS != "success":
-                return EventSourceResponse(stream_text("Scan is not completed yet, please run the scan first"), media_type="text/event-stream")
+            if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS != "success":
+                return EventSourceResponse(stream_text("Scan status or scan data is not valid, please run the scan first"), media_type="text/event-stream")
 
             
             # STEP [ 3 ] : =========== Add the user message to the mongo db ====================== ⭐
             message_collection = mongo_db["message_log"]
+
+            #checking length of message log for this conversation 
+            message_log_length = message_collection.count_documents({"conversation_id": CONVERSATION.conversation_id})
+            if message_log_length + 2 >= MESSAGE_LIMIT:
+                return EventSourceResponse(stream_text("Message limit reached, please delete some messages to add new ones"), media_type="text/event-stream")
+
             message_instance = MessageLog(
                 conversation_id=CONVERSATION.conversation_id,
                 user_id=user.id,
@@ -277,7 +289,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 scan_type="SAST",
                 scan_results=SCAN_DATA,
                 content=data.user_message,
-                role="human",
+                role="human", # doesnt get saved to any db , jsut for functional clarity 
                 max_history_length=MAX_ACTIVE_HISTORY_LENGTH,
             ), media_type="text/event-stream")
 
@@ -302,6 +314,8 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             MESSAGES = None
             SCAN_DATA = None
             TASK_ID = None
+
+
             # STEP [ 1 ] : =========== Get task id ( for celery ) from the main db ======================
 
             with Session(engine) as session:
@@ -312,9 +326,13 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 SCAN_STATUS = conversation.scan_status
                 SCAN_DATA = conversation.scan_data
 
+
             # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
-            if SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {}:
-                SCAN_STATUS , SCAN_DATA , conversation = get_status_and_update_db(conversation_id, TASK_ID, SASTConversation, engine)
+            console.print(f"SCAN_STATUS: {SCAN_STATUS}, SCAN_DATA: {SCAN_DATA}, TASK_ID: {TASK_ID}",style="bold yellow")
+            if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {}) and (TASK_ID != None) and (TASK_ID != ""):
+                FETCHED_SCAN_STATUS , FETCHED_SCAN_DATA , conversation = get_status_and_update_db(conversation_id, TASK_ID, SASTConversation, engine)
+                SCAN_STATUS = FETCHED_SCAN_STATUS if FETCHED_SCAN_STATUS else SCAN_STATUS
+                SCAN_DATA = FETCHED_SCAN_DATA if FETCHED_SCAN_DATA else SCAN_DATA
             
             # STEP [ 3 ] : =================== Fetching messages if scan is completed ======================
             MESSAGES = get_messages_from_conversation(conversation_id, user.id, engine, mongo_db)

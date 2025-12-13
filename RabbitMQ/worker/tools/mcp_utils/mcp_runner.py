@@ -43,8 +43,8 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
         raw_scan_dict = json.loads(results[start_index:])
 
         # for testing
-        # with open("mcp_test_raw.json", "w+") as f:
-        #     json.dump(raw_scan_dict, f, indent=2)
+        with open("mcp_test_raw.json", "w+") as f:
+            json.dump(raw_scan_dict, f, indent=2)
 
         
         # STEP : ---------Creating a indexable list of tools inside an indexable list of servers for each mapping with issues and vulnerabilities found in the server-------------
@@ -143,7 +143,7 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
 
 
 if __name__ == "__main__":
-    json_data = json.load(open("C:\\Users\\HP\\Desktop\\DevSecShield\\tools\\mcp_utils\\test-server-mcp.json"))
+    json_data = json.load(open("C:\\Users\\HP\\Desktop\\MCPTest\\mcp_http.json"))
     string_json = str(json_data)
     string_json = string_json.replace("'", '"')
     Console().print(f"String json: {string_json} 🟩",style="bold green")

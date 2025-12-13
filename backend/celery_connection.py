@@ -59,8 +59,8 @@ def get_status_and_update_db(
         
         
         # STEP [ 1 ] : =================== Get celery app and status of task  =======================
+        simple_app = get_celery_app()
         if task_id:
-            simple_app = get_celery_app()
             if simple_app==None:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app , please try again later")
             async_result : AsyncResult = simple_app.AsyncResult(task_id)
@@ -96,7 +96,7 @@ def get_status_and_update_db(
         return (SCAN_STATUS , SCAN_DATA , CONVERSATION)
 
     except Exception as e:
-        console.print(f"Error in getting status and updating db: {e}" ,style="bold red")
+        console.print(f"{e}" ,style="dim red")
         if isinstance(e,HTTPException):
             raise e
         if isinstance(e,psycopg2.Error):
