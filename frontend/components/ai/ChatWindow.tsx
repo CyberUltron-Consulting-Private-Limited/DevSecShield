@@ -28,7 +28,7 @@ import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai
 import { DisplaySuggestions } from '@/components/ai/DisplaySuggestions';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { MicIcon, PaperclipIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
+import { ChevronRightIcon, MicIcon, PaperclipIcon, RefreshCcwIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { type FormEventHandler, useCallback, useEffect, useState } from 'react';
 import streamChatbotResponse from '@/hooks/use-sse';
@@ -38,6 +38,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSastConversationMessages } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
+import { SastConversationResponse } from '@/utils/backend_api';
+import { UseQueryResult } from '@tanstack/react-query';
+
 export type ChatMessage = {
   id: number;
   content: string;
@@ -48,30 +51,22 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
-const Example = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 0,
-      content: "Hello! I'm your SAST AI assistant. I can help you analyze your SAST Scan results . Please run a scan first to get started.",
-      role: 'assistant',
-      timestamp: new Date().toISOString(),
-    }
-  ]);
+const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse> }) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   
+  
+
+
   const conversation_id = parseInt(usePathname().split('/').pop() || '0');
   if (!conversation_id) {
     toast.error("Conversation id not found");
     return
   } 
-
-  const queryClient = useQueryClient();
-  const query = useQuery({queryKey: ['sast-conversation-data', conversation_id] , queryFn : getSastConversationMessages});
-
 
   const handleSuggestionClick = useCallback((suggestion: string) => {
     setInputValue(suggestion);
@@ -130,9 +125,10 @@ const Example = () => {
 
   }, [inputValue, isTyping]);
 
-  const run_scan = useCallback(() => {
-    console.log("Running scan");
-  }, []);
+  const queryClient = useQueryClient();
+  const refreshQuery = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', conversation_id] });
+  }, [queryClient, conversation_id]);
 
  
   return (
@@ -142,18 +138,15 @@ const Example = () => {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm">SAST Scan Assistant</span>
+            <ChevronRightIcon className="size-4 text-zinc-500" />
+            <span className="text-teal-700 font-medium">{query.data?.title}</span>
           </div>
           <div className="h-4 w-px bg-border" />
           <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
         </div>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={run_scan}
-          className="h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
-        >
-          <ScanIcon className="size-4" />
-          <span className="ml-1">Run Scan</span>
+        <Button onClick={refreshQuery} className='bg-teal-600 hover:bg-teal-700 text-white cursor-pointer'>
+          <RefreshCcwIcon className="size-4" />
+          Refresh
         </Button>
       </div>
       {/* Conversation Area */}
@@ -225,4 +218,4 @@ const Example = () => {
     </div>
   );
 };
-export default Example;
+export default ChatWindow;

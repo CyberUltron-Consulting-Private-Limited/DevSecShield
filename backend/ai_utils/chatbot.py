@@ -61,7 +61,7 @@ def chatbot_response(
 
     load_dotenv()
     system_prompt = f"""
-    You are a Cybersecurity Expert who has just run a {scan_type} scan . Keeping the results of the scan in mind , answer any question the user asks.
+    You are a Cybersecurity Expert who has just run a {scan_type} scan . Keeping the results of the scan in mind , answer any question the user asks. ( Sidenote : Do not generate a Markdown response , the response can at most use bullets and numbering )
     ## Scan Results :
     {scan_results} 
     """
@@ -154,7 +154,7 @@ async def create_response(
             Message = None
             if item["sender"] == "user":
                 Message = HumanMessage(item["content"])
-            elif item["sender"] == "agent":
+            elif item["sender"] == "assistant":
                 Message = AIMessage(item["content"])
             history.append(Message)
         console.print(f"Active context history of length {len(history)} found for conversation {mongo_conversation_id}",style="bold green")

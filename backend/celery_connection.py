@@ -78,7 +78,7 @@ def get_status_and_update_db(
             if conversation.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
                 conversation.scan_status = SCAN_STATUS
                 console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
-            if SCAN_STATUS == "success" and conversation.scan_data == {} or not conversation.scan_data:
+            if SCAN_STATUS == "success":
                 results = simple_app.AsyncResult(task_id).result 
                 if not results:
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")

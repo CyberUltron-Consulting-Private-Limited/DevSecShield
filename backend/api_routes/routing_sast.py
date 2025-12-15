@@ -328,7 +328,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
 
             # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
-            console.print(f"SCAN_STATUS: {SCAN_STATUS}, SCAN_DATA: {SCAN_DATA}, TASK_ID: {TASK_ID}",style="bold yellow")
+            console.print(f"SCAN_STATUS: {SCAN_STATUS} TASK_ID: {TASK_ID}",style="bold yellow")
             if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {}) and (TASK_ID != None) and (TASK_ID != ""):
                 FETCHED_SCAN_STATUS , FETCHED_SCAN_DATA , conversation = get_status_and_update_db(conversation_id, TASK_ID, SASTConversation, engine)
                 SCAN_STATUS = FETCHED_SCAN_STATUS if FETCHED_SCAN_STATUS else SCAN_STATUS
@@ -342,6 +342,8 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan status or scan data or messages not found")
             
             return {
+                "title": conversation.title,
+                "repo_url": conversation.repo_url,
                 "scan_status": SCAN_STATUS.lower(),
                 "data": SCAN_DATA,
                 "messages": MESSAGES,
@@ -378,7 +380,7 @@ def sast_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found or User not allowed to start this conversation")
                 if conversation.scan_status == "success" or conversation.scan_data != {} or  conversation.scan_status == "started" or conversation.scan_status == "failure":
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
-                if conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED":
+                if conversation.scan_status == "pending" :
                     FETCHED_STATUS , FETCHED_DATA , FETCHED_CONVERSATION = get_status_and_update_db(conversation_id, None, SASTConversation, engine)
                     if FETCHED_STATUS == "success" or FETCHED_STATUS == "started" or FETCHED_STATUS == "failure" or FETCHED_STATUS == "pending" or FETCHED_DATA != {} :
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")

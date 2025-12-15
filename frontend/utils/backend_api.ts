@@ -55,14 +55,16 @@ const createSastConversation = async (title: string) => {
     }
 }
 
-interface SastConversationMessage {
+export interface SastConversationMessage {
     id: number
     content: string
     role: "user" | "assistant"
     timestamp: string
     is_streaming: boolean
 }   
-interface SastConversationResponse {
+export interface SastConversationResponse {
+    title: string
+    repo_url: string | null 
     scan_status: string
     data: any
     messages: SastConversationMessage[]
@@ -102,4 +104,30 @@ const startSastScan = async (
     }
 }
 
-export { getSastConversations, deleteSastConversation, renameSastConversation, createSastConversation, getSastConversationMessages }
+export interface ExportResults {
+    vulnerabilities: Array<{
+        name: string;
+        description: string;
+        code_snippet_or_location?: string | null;
+        cves: Array<{
+            cve_id: string;
+            description: string;
+            severity: "Low" | "Medium" | "High" | "Critical";
+        }>;
+        severity: "Low" | "Medium" | "High" | "Critical";
+        fix: string;
+    }>;
+}
+
+const getExportResults = async (conversation_id: number): Promise<ExportResults> => {
+    try {   
+        const response = await api.get(`/sast/conversation/${conversation_id}/export`)
+        toast.success("Sast export results fetched successfully")
+        console.log("response.data", response.data.data);
+        return response.data.data as ExportResults
+    } catch (error) {
+        throw error
+    }
+}
+
+export { getSastConversations, deleteSastConversation, renameSastConversation, createSastConversation, getSastConversationMessages, startSastScan, getExportResults }
