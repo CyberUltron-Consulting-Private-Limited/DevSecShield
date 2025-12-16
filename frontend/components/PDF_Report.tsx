@@ -107,7 +107,17 @@ const chunkArray = <T,>(array: T[], chunkSize: number): T[][] => {
 };
 
 // PDF Document Component
-export const SASTPDFDocument = ({ data, repoUrl, scanDate }: { data: ExportResults; repoUrl?: string | null; scanDate?: string }) => {
+export const PDFDocument = ({ 
+  data, 
+  scanType = "Security Scan",
+  scanTarget,
+  scanDate 
+}: { 
+  data: ExportResults; 
+  scanType?: string;
+  scanTarget?: string | null; 
+  scanDate?: string 
+}) => {
   // Debug: Log data to verify structure
   console.log("PDF Data:", JSON.stringify(data, null, 2));
   
@@ -130,8 +140,12 @@ export const SASTPDFDocument = ({ data, repoUrl, scanDate }: { data: ExportResul
       <Page size="A4" style={tw("p-10")}>
         {/* Header */}
         <View style={tw("mb-8 pb-5 border-b-2 border-teal-500")}>
-          <Text style={tw("text-3xl font-bold text-teal-500 mb-2")}>SAST Security Scan Report</Text>
-          <Text style={tw("text-sm text-gray-500 mb-1")}>Repository: {repoUrl || "N/A"}</Text>
+          <Text style={tw("text-3xl font-bold text-teal-500 mb-2")}>{scanType} Report</Text>
+          {scanTarget && (
+            <Text style={tw("text-sm text-gray-500 mb-1")}>
+              {scanType.includes("SAST") ? "Repository" : scanType.includes("LLM") ? "Model" : "Target"}: {scanTarget}
+            </Text>
+          )}
           <Text style={tw("text-sm text-gray-500 mb-1")}>Scan Date: {scanDate || new Date().toLocaleDateString()}</Text>
         </View>
 
@@ -223,16 +237,22 @@ export const SASTPDFDocument = ({ data, repoUrl, scanDate }: { data: ExportResul
 // Function to generate and download PDF
 export const generateAndDownloadPDF = async (
   data: ExportResults,
-  repoUrl?: string | null,
+  scanType: string = "Security Scan",
+  scanTarget?: string | null,
   scanDate?: string
 ) => {
   try {
-    const doc = <SASTPDFDocument data={data} repoUrl={repoUrl} scanDate={scanDate} />;
+    const doc = <PDFDocument data={data} scanType={scanType} scanTarget={scanTarget} scanDate={scanDate} />;
     const blob = await pdf(doc).toBlob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `SAST_Scan_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+    const fileName = scanType.includes("SAST") 
+      ? `SAST_Scan_Report_${new Date().toISOString().split("T")[0]}.pdf`
+      : scanType.includes("LLM")
+      ? `LLM_Scan_Report_${new Date().toISOString().split("T")[0]}.pdf`
+      : `Security_Scan_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

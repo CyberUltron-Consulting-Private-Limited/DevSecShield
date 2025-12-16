@@ -1,11 +1,6 @@
 import datetime
-import os
-import sys
 from typing import Annotated, Literal
 from bson import ObjectId
-from celery import Celery
-from celery.result import AsyncResult
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header, status
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
@@ -16,9 +11,7 @@ from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exceptio
 from backend.celery_connection import get_celery_app, get_status_and_update_db
 from backend.models import SASTConversation, User
 from backend.auth_utils.plans import plans
-import psycopg2
 from rich.console import Console
-from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 from pymongo.database import Database
 import json

@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SastConversation  , deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -160,9 +160,7 @@ export default function SASTPage() {
 
   const confirmDelete = () => {
     if (selectedConversation) {
-      setConversations(
-        conversations.filter((conv) => conv.id !== selectedConversation.id)
-      );
+      deleteSastConversationMutation.mutate(selectedConversation.id);
       setDeleteDialogOpen(false);
       setSelectedConversation(null);
     }
@@ -175,7 +173,7 @@ export default function SASTPage() {
   };
 
   return (
-    <div className="flex h-full bg-white dark:bg-zinc-900">
+    <div className="flex h-screen bg-white dark:bg-zinc-900">
       <div className="flex-1 p-8 overflow-auto">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
@@ -204,9 +202,15 @@ export default function SASTPage() {
           </div>
 
           {/* Conversations Table */}
-          {query.isLoading ? (
+          { query.isError ? (
             <div className="text-center py-12">
-              <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>
+              <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+                Error in fetching conversations , please try again later
+              </p>
+            </div>
+          ) : query.isLoading ? (
+            <div className="flex h-full items-center justify-center">
+                <Loader2 className="size-10 animate-spin text-teal-600" />
             </div>
           ) : conversations.length === 0 ? (
             <div className="text-center py-12">
@@ -292,7 +296,7 @@ export default function SASTPage() {
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => deleteSastConversationMutation.mutate(conversation.id)}
+                              onClick={() => handleDelete(conversation)}
                               variant="destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />

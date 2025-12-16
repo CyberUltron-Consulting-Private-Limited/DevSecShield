@@ -14,6 +14,7 @@ from tools.discovery_utils.discovery_runner import run_discovery_scan
 from tools.llm_utils.llm_runner import run_garak_scan
 from tools.mcp_utils.mcp_runner import run_mcp_scan
 from tools.context.Context import validate_dict_with_context
+import json
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
@@ -44,7 +45,14 @@ try:
 
 
     # ------------------------------------------- SAST Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    """
+    You can add track_started=True to the task decorator to track the start time of the task.
+    example : @app.task(track_started=True)
+
+    If you are enabling this , then make sure the frontend polls even status is "started" , becase as of now it only polls when status is "pending".
+    """
+    
+    @app.task()
     def sast(
         dict_context: dict , 
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
@@ -134,18 +142,25 @@ try:
         if (model_type not in ["openai", "anthropic", "gemini","custom"]):
             raise Exception("Arguments are invalid/incorrect")
 
-        results = run_garak_scan(
-            model_type=model_type,
-            model_name=model_name,
-            probes=probes,
-            api_key=api_key,
-            headers=headers,
-            request_template=request_template,
-            response_json_field=response_json_field,
-            generations=generations,
-            method=method,
-            model_uri=model_uri,
-        ) 
+        # results = run_garak_scan(
+        #     model_type=model_type,
+        #     model_name=model_name,
+        #     probes=probes,
+        #     api_key=api_key,
+        #     headers=headers,
+        #     request_template=request_template,
+        #     response_json_field=response_json_field,
+        #     generations=generations,
+        #     method=method,
+        #     model_uri=model_uri,
+        # ) 
+
+        # for testing purposes , using a mock result
+        for i in range(10):
+            Console().print(f"Sleeping {i} ....",style="bold yellow")
+            time.sleep(1)
+        with open("mock_result.json", "r") as f:
+            results = json.load(f)
 
         return results 
     Console().print(f"Registered LLM task",style="bold green")

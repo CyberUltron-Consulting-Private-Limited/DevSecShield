@@ -6,6 +6,7 @@ import {
   Shield,
   TrendingUp,
   Search,
+  Loader2,
 } from "lucide-react";
 import { SASTOptionsSidebar } from "@/components/sast-options-sidebar";
 import ChatWindow, { ChatMessage } from "@/components/ai/ChatWindow";
@@ -14,6 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSastConversationMessages } from "@/utils/backend_api";
 import { useParams, usePathname } from "next/navigation";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const dashboardCards = [
   {
@@ -77,7 +79,7 @@ export default function SASTPage({ params }: SASTPageProps) {
         queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', conversation_id] });
       }, 6 * 1000);
     }
-  }, [query.data?.scan_status, conversation_id, queryClient]);
+  }, [query.dataUpdatedAt, conversation_id, queryClient]);
 
   useEffect(() => {
     setScanStatus(query.data?.scan_status || "unknown");
@@ -85,6 +87,18 @@ export default function SASTPage({ params }: SASTPageProps) {
   }, [query.data]);
 
 
+  if (query.isError) {
+    return <div className="flex h-screen w-full items-center justify-center">
+      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+        Error in fetching conversation data , please try again later
+      </p>
+    </div>
+  }
+  if (query.isLoading) {
+    return <div className="flex h-screen w-full items-center justify-center">
+      <Loader2 className="size-10 animate-spin text-teal-600" />
+    </div>;
+  }
   return (
     <div className="flex h-screen">
       {/* Main Content Area */}

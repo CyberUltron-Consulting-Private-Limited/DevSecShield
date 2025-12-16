@@ -35,7 +35,7 @@ import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSastConversationMessages } from '@/utils/backend_api';
+import { getSastConversationMessages, LLMConversationResponse } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
@@ -51,7 +51,7 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
-const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse> }) => {
+const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [inputValue, setInputValue] = useState('');
@@ -88,8 +88,27 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
     }
   }, [query.data , query.error]);
 
+  // check type of conversation
+  let type: 'sast' | 'llm' | undefined;
+  const paths = usePathname().split('/');
+  // console.log(paths);
+  if (paths[2] === 'sast') {
+      type = 'sast';
+  }
+  else if (paths[2] === 'llm') {
+      type = 'llm';
+  }
+  else {
+      toast.error('Invalid conversation type');
+  }
+
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback( async (event) => {
     event.preventDefault();
+
+    if (!type) {
+      toast.error('Invalid conversation type');
+      return;
+    }
     
     if (!inputValue.trim() || isTyping) return;
     // Add user message
@@ -116,9 +135,10 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
     console.log(`assistantMessage id ${assistantMessageId}`);
     setMessages(prev => [...prev, assistantMessage]);
     setStreamingMessageId(assistantMessageId);
-    
+
+
     // Start streaming response from the chatbot
-    await streamChatbotResponse(assistantMessageId, inputValue.trim(), messages, setMessages, conversation_id );
+    await streamChatbotResponse(assistantMessageId, inputValue.trim(), messages, setMessages, conversation_id, type );
 
     setIsTyping(false);
     setStreamingMessageId(null);
@@ -127,17 +147,33 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
 
   const queryClient = useQueryClient();
   const refreshQuery = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', conversation_id] });
+    if (type === 'sast') {
+      queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', conversation_id] });
+    }
+    else if (type === 'llm') {
+      queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', conversation_id] });
+    }
+    else {
+      toast.error('Invalid conversation type');
+    }
   }, [queryClient, conversation_id]);
 
  
+  const valid_types = ['sast', 'llm'];
+  let Heading: string = '';
+  if (type && valid_types.includes(type)) {
+    Heading = type.toUpperCase()
+  }
+  else {
+    Heading = 'Unknown';
+  }
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden rounded-xl border bg-background shadow-sm ">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">SAST Scan Assistant</span>
+            <span className="font-medium text-sm">{Heading}</span>
             <ChevronRightIcon className="size-4 text-zinc-500" />
             <span className="text-teal-700 font-medium">{query.data?.title}</span>
           </div>

@@ -4,6 +4,7 @@ from typing import Annotated
 
 from celery import Celery
 from rich.console import Console
+from backend.api_routes.routing_scan import scan_routes
 from backend.auth_utils.auth_utils import get_hashed_password, get_user_from_header_or_raise_exception
 from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from sqlmodel import Session, SQLModel, create_engine
@@ -17,13 +18,7 @@ from fastapi_throttle import RateLimiter
 from dotenv import load_dotenv
 import psycopg2
 from pymongo import MongoClient
-from backend.api_routes.routing_dast import dast_routes
-from backend.api_routes.routing_discovery import discovery_routes
-from backend.api_routes.routing_gitleaks import gitleaks_routes
-from backend.api_routes.routing_iac import iac_routes
-from backend.api_routes.routing_mcp import mcp_routes
 from backend.api_routes.routing_sast import sast_routes
-from backend.api_routes.routing_sca_sbom import sca_sbom_routes
 from backend.api_routes.routing_llm import llm_routes
 
 
@@ -94,14 +89,9 @@ BASE_MEDIA_PATH = "uploads\\"
 auth_api_routes(app,engine)
 admin_routes(app,engine)
 
-discovery_routes(app,engine)
-sast_routes(app,engine,get_mongo_client_db())
-dast_routes(app,engine)
-iac_routes(app,engine)
-sca_sbom_routes(app,engine)
-gitleaks_routes(app,engine)
-llm_routes(app,engine)
-mcp_routes(app,engine)
+# sast_routes(app,engine,get_mongo_client_db())
+# llm_routes(app,engine,get_mongo_client_db())
+scan_routes(app,engine,get_mongo_client_db())
 
 
 

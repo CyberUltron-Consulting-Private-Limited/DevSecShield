@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "alembic>=1.17.2",
     "celery>=5.5.3",
     "fastapi-throttle>=0.1.8",
     "fastapi[standard]>=0.121.1",
@@ -22,6 +23,12 @@ dependencies = [
     "semgrep>=1.79.0",
     "sqlmodel>=0.0.27",
     "zaproxy>=0.4.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "alembic_migrations",
+    "rabbitmq/guardrails_worker",
 ]
 
 

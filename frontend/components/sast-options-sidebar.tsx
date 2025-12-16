@@ -39,7 +39,7 @@ import { useMutation, useQuery, useQueryClient, UseQueryResult } from "@tanstack
 import { SastConversationResponse, startSastScan, getExportResults } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams } from "next/navigation";
-import { generateAndDownloadPDF } from "@/components/SAST_PDF_Report";
+import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
 const cicdPlatforms = [
   { name: "Circle CI", icon: Circle },
@@ -394,6 +394,7 @@ export function SASTOptionsSidebar({
                 if (exportResults) {
                   generateAndDownloadPDF(
                     exportResults,
+                    "SAST Security Scan",
                     query.data?.repo_url || null,
                     new Date().toLocaleDateString()
                   );

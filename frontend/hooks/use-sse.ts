@@ -4,16 +4,22 @@ import { apiBaseURL, getAccessToken } from '@/utils/interceptors';
 import type { ChatMessage } from '@/components/ai/ChatWindow';
 import { toast } from 'sonner';
 import { showErrorToast } from '@/utils/error-handler';
+import { usePathname } from 'next/navigation';
 
 const streamChatbotResponse = async ( 
     assistant_message_id: number, 
     user_message: string , 
     messages: ChatMessage[], 
     setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
-    conversation_id: number ) => {
+    conversation_id: number ,
+    type: string
+) => {
+    
+    if (type !== 'sast' && type !== 'llm') {
+        throw new Error('Invalid conversation type');
+    }
 
-
-    await fetchEventSource(`${apiBaseURL}/sast/conversation/${conversation_id}/message`, {
+    await fetchEventSource(`${apiBaseURL}/${type}/conversation/${conversation_id}/message`, {
             method: "POST",
             headers: { 
                 Authorization: `Bearer ${getAccessToken()}`,

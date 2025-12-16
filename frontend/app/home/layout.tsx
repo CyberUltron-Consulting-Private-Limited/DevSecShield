@@ -99,7 +99,7 @@ export default function HomeLayout({
                           className={
                             isActive
                               ? "bg-teal-600 text-white hover:bg-teal-600 data-[active=true]:bg-teal-600"
-                              : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                              : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-teal-800 active:text-white"
                           }
                         >
                           <Link href={item.href}>

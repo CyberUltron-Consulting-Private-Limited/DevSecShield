@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import psycopg2
 from rich.console import Console
 import os
-from backend.models import SASTConversation
+from backend.models import LLMBenchmarkingConversation, SASTConversation
 from fastapi import HTTPException, status
 from celery.result import AsyncResult
 from sqlmodel import Session, select
@@ -31,7 +31,7 @@ def get_celery_app():
 def get_status_and_update_db(
     conversation_id: int,
     task_id: str,
-    table: SASTConversation , 
+    table: SASTConversation | LLMBenchmarkingConversation, 
     engine: Engine,
      ):
     """
@@ -56,7 +56,7 @@ def get_status_and_update_db(
         SCAN_STATUS = None
         SCAN_DATA = {}
         CONVERSATION = None
-        
+        console.print(f"Getting status and updating db for conversation id: {conversation_id} and task id: {task_id}" ,style="bold magenta2")
         
         # STEP [ 1 ] : =================== Get celery app and status of task  =======================
         simple_app = get_celery_app()
@@ -84,7 +84,7 @@ def get_status_and_update_db(
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
                 SCAN_DATA = results
                 conversation.scan_data = SCAN_DATA
-                console.print(f"Scan with id: {task_id} scan data updated to {SCAN_DATA} in main database" ,style="bold green")
+                console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
             else:
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
             

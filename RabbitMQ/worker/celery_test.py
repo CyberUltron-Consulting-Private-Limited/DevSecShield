@@ -50,7 +50,7 @@ def test(
                 # for testing
                 with open(result_file_name, "w+") as f:
                     json.dump(results , f, indent=2)
-            if status.state != "PENDING":
+            if status.state == "FAILED" or status.state == "RETRY":
                 stop = True
        
     except Exception as e:
@@ -59,16 +59,16 @@ def test(
 
 
 #------------------------------------------ testing SAST , ✅ Tested and works with context pattern ✅ ---------------------------------------------------------------------------
-# dict_context = {
-#     "mode":"github",
-#     "repo_url":"https://github.com/CyberUltron-Nikhil/RiskPilot",
-#     "PAT":"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",
-# }
-# sast_kwargs = {
-#     "dict_context":dict_context,
-#     "app_lang":"javascript",
-# }
-# test(task_name="scan_worker.sast",kwargs=sast_kwargs,result_file_name="sast_results_testing.json")
+dict_context = {
+    "mode":"github",
+    "repo_url":"https://github.com/CyberUltron-Nikhil/RiskPilot",
+    "PAT":"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",
+}
+sast_kwargs = {
+    "dict_context":dict_context,
+    "app_lang":"javascript",
+}
+test(task_name="scan_worker.sast",kwargs=sast_kwargs,result_file_name="sast_results_testing.json")
 
 
 
@@ -86,14 +86,14 @@ def test(
 
 
 #------------------------------------------ testing MCP , ✅ Tested and works ( doesn't need context pattern ) ✅---------------------------------------------------------------------------
-json_data = json.load(open("C:\\Users\\HP\\Desktop\\DevSecShield\\rabbitmq\\worker\\tools\\mcp_utils\\test-server-mcp.json"))
-http_server_config = json.load(open("C:\\Users\\HP\\Desktop\\MCPTest\\mcp_http.json"))
-string_json = str(json_data)
-string_json = string_json.replace("'", '"')
-mcp_kwargs = {
-    "server_config_json":string_json
-}
-test(task_name="scan_worker.mcp",kwargs=mcp_kwargs,result_file_name="mcp_results_testing.json")
+# json_data = json.load(open("C:\\Users\\HP\\Desktop\\DevSecShield\\rabbitmq\\worker\\tools\\mcp_utils\\test-server-mcp.json"))
+# http_server_config = json.load(open("C:\\Users\\HP\\Desktop\\MCPTest\\mcp_http.json"))
+# string_json = str(json_data)
+# string_json = string_json.replace("'", '"')
+# mcp_kwargs = {
+#     "server_config_json":string_json
+# }
+# test(task_name="scan_worker.mcp",kwargs=mcp_kwargs,result_file_name="mcp_results_testing.json")
 
 #------------------------------------------ testing SBOM , ✅ Tested and works with context pattern ✅ ---------------------------------------------------------------------------
 # dict_context = {

@@ -1,6 +1,6 @@
 import datetime
-from typing import Dict, Literal, Optional
-from sqlmodel import JSON, Column, DateTime, Field, Session, SQLModel, String, create_engine, select
+from typing import Dict, List, Literal, Optional
+from sqlmodel import JSON, Column, DateTime, Field, Integer, Session, SQLModel, String, create_engine, select
 from pydantic import BaseModel
 from backend.auth_utils.plans import plans
 
@@ -54,3 +54,22 @@ class SASTConversation(SQLModel,table=True):
     class Config:
         arbitrary_types_allowed = True
     
+class LLMBenchmarkingConversation(SQLModel,table=True):
+    id : int | None = Field(default=None,primary_key=True)
+    user_id : int
+    task_id : str | None = Field(default=None)
+    model_type : Literal["openai", "anthropic", "gemini", "custom"] | None = Field(default=None,sa_type=String)
+    model_name : str | None
+    probes : List[str] | None = Field(default_factory=list,sa_column=Column(JSON))
+    generations : int | None = Field(default=1,sa_type=Integer)
+    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
+    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+    title : str = Field(default="New SAST Conversation")
+    conversation_id : str
+    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+    message_limit : int
+
+    class Config:
+        arbitrary_types_allowed = True
