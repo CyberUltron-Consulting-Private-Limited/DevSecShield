@@ -66,6 +66,7 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
             if error in server or server["signature"]==None:
                 error_messages.append(f"Server {server_name} encountered an error : {server['error']['message']} ")
                 Console().print(f"Server {server_name} encountered an error : {server['error']['message']} 🟥",style="magenta2")
+                list_of_tools_per_server.append([])  # Add empty list to maintain index alignment
                 continue
             tools = server["signature"]["tools"]
             for tool in tools:
@@ -80,6 +81,8 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
                 }
                 server_tools.append(tool)
             list_of_tools_per_server.append(server_tools)
+        
+        Console().print(f"List of tools per server: {list_of_tools_per_server} 🟩",style="bold green")
 
         # STEP : ------------------------------Mapping the tools with the issues and vulnerabilities found in the server----------------------------------------
         Console().print(f"Mapping the tools with the issues and vulnerabilities found in the server 🟨",style="bold yellow")
@@ -88,14 +91,26 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
         Console().print(f"Number of issues found : {len(issues)} 🟩",style="bold green")
         for issue in issues:
             if issue["extra_data"] == None:
-                Console().print(f"Issue {issue['code']} found , mapping to tool {list_of_tools_per_server[issue['reference'][0]][issue['reference'][1]]} 🟩",style="bold green")
+                Console().print(f"Issue reference 0: {issue['reference'][0]} 1: {issue['reference'][1]} 🟩",style="bold green")
+                
+                server_idx = issue['reference'][0]
+                tool_idx = issue['reference'][1]
+                
+                # Handle cases where reference[1] is None (server-level issue, not tool-level)
+                if tool_idx is None:
+                    tool_info = None
+                else:
+                    server_tools = list_of_tools_per_server[server_idx] if server_idx < len(list_of_tools_per_server) else []
+                    tool_info = server_tools[tool_idx] if tool_idx < len(server_tools) else None
+                
+                Console().print(f"Issue {issue['code']} found , mapping to tool {tool_info} 🟩",style="bold green")
                 
                 issue_dict = {
                         "issue_code": issue["code"],
                         "issue_message": issue["message"],
                         "issue_type": "unknown",
-                        "server": servers[issue["reference"][0]]["name"],
-                        "tool": list_of_tools_per_server[issue["reference"][0]][issue["reference"][1]],
+                        "server": servers[server_idx]["name"] if server_idx < len(servers) else "unknown",
+                        "tool": tool_info,
                         "issue_severity": "unknown"
                     }
                 final_issues.append(issue_dict)
@@ -118,12 +133,22 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
                         issue_severity = "critical"
                     else:
                         issue_severity = "unknown"
+                    server_idx = item["reference"][0]
+                    tool_idx = item["reference"][1]
+                    
+                    # Handle cases where tool_idx is None or out of range
+                    if tool_idx is None:
+                        tool_info = None
+                    else:
+                        server_tools = list_of_tools_per_server[server_idx] if server_idx < len(list_of_tools_per_server) else []
+                        tool_info = server_tools[tool_idx] if tool_idx < len(server_tools) else None
+                    
                     issue_dict = {
                         "issue_code": issue_code,
                         "issue_message": issue_message,
                         "issue_type": issue_type,
-                        "server": servers[item["reference"][0]]["name"],
-                        "tool": list_of_tools_per_server[item["reference"][0]][item["reference"][1]],
+                        "server": servers[server_idx]["name"] if server_idx < len(servers) else "unknown",
+                        "tool": tool_info,
                         "issue_severity": issue_severity
                     }
                     final_issues.append(issue_dict)
@@ -143,11 +168,14 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
 
 
 if __name__ == "__main__":
-    json_data = json.load(open("C:\\Users\\HP\\Desktop\\MCPTest\\mcp_http.json"))
+    json_data = json.load(open("C:\\Users\\HP\\Desktop\\DevSecShield\\rabbitmq\\worker\\tools\\mcp_utils\\remote_mcp.json"))
+    # json_data = json.load(open("C:\\Users\\HP\\Desktop\\DevSecShield\\rabbitmq\\worker\\tools\\mcp_utils\\test-server-mcp.json"))
     string_json = str(json_data)
     string_json = string_json.replace("'", '"')
     Console().print(f"String json: {string_json} 🟩",style="bold green")
     results = run_mcp_scan(string_json)
+    with open("mcp_test_results.json", "w+") as f:
+        json.dump(results, f, indent=2)
     # print(results["final_issues"][-1]) if type(results) == dict else print(results)
     # print(results["error_messages"]) if type(results) == dict else None
 

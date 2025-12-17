@@ -40,6 +40,7 @@ import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
+import { MCPConversationResponse } from '@/utils/backend_api';
 
 export type ChatMessage = {
   id: number;
@@ -51,7 +52,7 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
-const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> }) => {
+const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [inputValue, setInputValue] = useState('');
@@ -89,7 +90,7 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
   }, [query.data , query.error]);
 
   // check type of conversation
-  let type: 'sast' | 'llm' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | undefined;
   const paths = usePathname().split('/');
   // console.log(paths);
   if (paths[2] === 'sast') {
@@ -97,6 +98,9 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
   }
   else if (paths[2] === 'llm') {
       type = 'llm';
+  }
+  else if (paths[2] === 'mcp') {
+      type = 'mcp';
   }
   else {
       toast.error('Invalid conversation type');
@@ -153,13 +157,16 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
     else if (type === 'llm') {
       queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', conversation_id] });
     }
+    else if (type === 'mcp') {
+      queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', conversation_id] });
+    }
     else {
       toast.error('Invalid conversation type');
     }
   }, [queryClient, conversation_id]);
 
  
-  const valid_types = ['sast', 'llm'];
+  const valid_types = ['sast', 'llm', 'mcp'];
   let Heading: string = '';
   if (type && valid_types.includes(type)) {
     Heading = type.toUpperCase()

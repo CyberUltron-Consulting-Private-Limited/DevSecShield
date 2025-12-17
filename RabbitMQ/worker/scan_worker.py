@@ -52,7 +52,7 @@ try:
     If you are enabling this , then make sure the frontend polls even status is "started" , becase as of now it only polls when status is "pending".
     """
     
-    @app.task()
+    @app.task(track_started=True)
     def sast(
         dict_context: dict , 
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
@@ -76,7 +76,7 @@ try:
 
 
      # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    @app.task(track_started=True)
     def sbom_sca(
         dict_context: dict , 
         sbom_json_file: str | None = None):
@@ -93,7 +93,7 @@ try:
 
 
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    @app.task(track_started=True)
     def iac(
         dict_context: dict , 
         mode: Literal["tfsec", "trivy"] = "tfsec",
@@ -109,7 +109,7 @@ try:
     Console().print(f"Registered IAC task with context pattern",style="bold green")
 
      # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    @app.task(track_started=True)
     def discovery(
         dict_context: dict , 
         ):
@@ -125,7 +125,7 @@ try:
 
 
      # ------------------------------------------- LLM benchmark Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    @app.task(track_started=True)
     def llm_benchmark(
         model_type: Literal["openai", "anthropic", "gemini","custom"],
         model_name: str,
@@ -167,7 +167,7 @@ try:
 
 
      # ------------------------------------------- MCP Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    @app.task(track_started=True)
     def mcp(
         server_config_json:str
         ):
@@ -186,7 +186,7 @@ try:
 
 
      # ------------------------------------------- Gitleaks Scanning task -------------------------------------------------------------------------------------------
-    @app.task
+    @app.task(track_started=True)  
     def gitleaks(
         dict_context: dict , ):
 

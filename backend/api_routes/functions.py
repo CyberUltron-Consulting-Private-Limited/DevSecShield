@@ -9,7 +9,7 @@ from backend.ai_utils.chatbot import create_response
 from backend.ai_utils.export_generation import create_export_results
 from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception
 from backend.celery_connection import get_celery_app, get_status_and_update_db
-from backend.models import SASTConversation, User , LLMBenchmarkingConversation
+from backend.models import SASTConversation, User , LLMBenchmarkingConversation, MCPConversation
 from backend.auth_utils.plans import plans
 from rich.console import Console
 from sse_starlette.sse import EventSourceResponse
@@ -57,10 +57,13 @@ class StartLLMBenchmarkingData(BaseModel):
     model_uri: str | None = None
     method: Literal["get", "post"] = "post"
 
+class StartMCPScanData(BaseModel):
+    server_config: str
 
 class StartScanData(BaseModel):
     sast : StartSastScanData | None = None
     llm : StartLLMBenchmarkingData | None = None
+    mcp : StartMCPScanData | None = None
 
 class UpdateScanConversationData(BaseModel):
     title: str
@@ -79,7 +82,7 @@ def stream_text(text: str):
         time.sleep(0.1)
 
 # ====================================================== functions for fetching data ===========================================================
-def get_Table_from_type(type: Literal["sast", "llm"]) -> SASTConversation | LLMBenchmarkingConversation:
+def get_Table_from_type(type: Literal["sast", "llm", "mcp"]) -> SASTConversation | LLMBenchmarkingConversation | MCPConversation:
     """
     Returns the table corresponding to the type. 
     If table not found , raise an exception.
@@ -88,11 +91,13 @@ def get_Table_from_type(type: Literal["sast", "llm"]) -> SASTConversation | LLMB
         return SASTConversation
     elif type == "llm":
         return LLMBenchmarkingConversation
+    elif type == "mcp":
+        return MCPConversation
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
 
 
-def get_messages_from_conversation(conversation_id: int,user_id: int, Table: SASTConversation | LLMBenchmarkingConversation, engine: Engine, mongo_db: Database):
+def get_messages_from_conversation(conversation_id: int,user_id: int, Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation, engine: Engine, mongo_db: Database):
     try:
 
         # STEP [ 1 ] : =========== get the conversation from the main db to get the conversation id ======================
@@ -137,14 +142,15 @@ def get_messages_from_conversation(conversation_id: int,user_id: int, Table: SAS
 
 
 def start_scan_and_update_db(
-    type: Literal["sast", "llm"],
-    table: SASTConversation | LLMBenchmarkingConversation, 
+    type: Literal["sast", "llm", "mcp"],
+    table: SASTConversation | LLMBenchmarkingConversation | MCPConversation, 
     engine: Engine, 
     mongo_db: Database,
     conversation_id: int,
     user_id: int,   
     sast_data: StartSastScanData | None = None,
     llm_data: StartLLMBenchmarkingData | None = None,
+    mcp_data: StartMCPScanData | None = None,
     ) -> None :
     try:
         
@@ -176,6 +182,11 @@ def start_scan_and_update_db(
                 "method":llm_data.method,
             }
             task_result = simple_app.send_task(name="scan_worker.llm_benchmark", kwargs=llm_kwargs)
+        elif type == "mcp":
+            mcp_kwargs={
+                "server_config_json":mcp_data.server_config,
+            }
+            task_result = simple_app.send_task(name="scan_worker.mcp", kwargs=mcp_kwargs)
         if not task_result:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending task to Scan worker , please try again later")
 
@@ -199,6 +210,9 @@ def start_scan_and_update_db(
                 conversation.model_type = llm_data.model_type
                 conversation.model_name = llm_data.model_name
                 conversation.probes = llm_data.probes
+            elif type == "mcp" and table == MCPConversation:
+                console.print(f"Updating conversation data for mcp scan with metadata" ,style="bold green")
+                # nothing to update here , because the server config is not stored in the database
             
             
             session.commit()
@@ -213,7 +227,7 @@ def start_scan_and_update_db(
 
 
 # ======================================= functions for assembling output data for different types of conversations ======================
-def return_conversations_list_for_type(type: Literal["sast", "llm"], sequence : Sequence[SASTConversation] | Sequence[LLMBenchmarkingConversation]):
+def return_conversations_list_for_type(type: Literal["sast", "llm", "mcp"], sequence : Sequence[SASTConversation] | Sequence[LLMBenchmarkingConversation] | Sequence[MCPConversation]):
     conversations_data = []
     match type:
         case "sast":
@@ -239,6 +253,15 @@ def return_conversations_list_for_type(type: Literal["sast", "llm"], sequence : 
                     "last_updated": conversation.last_updated,
                     "scan_status": conversation.scan_status.lower(),
                 })
+        case "mcp":
+            for conversation in sequence:
+                conversations_data.append({
+                    "id": conversation.id,
+                    "title": conversation.title,
+                    "created_at": conversation.created_at,
+                    "last_updated": conversation.last_updated,
+                    "scan_status": conversation.scan_status.lower(),
+                })
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
     return conversations_data
@@ -246,7 +269,7 @@ def return_conversations_list_for_type(type: Literal["sast", "llm"], sequence : 
 
 def return_conversation_data(
     conversation: SASTConversation | LLMBenchmarkingConversation , 
-    type: Literal["sast", "llm"],
+    type: Literal["sast", "llm", "mcp"],
     SCAN_STATUS: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"],
     SCAN_DATA: dict,
     MESSAGES: list[dict],
@@ -265,6 +288,13 @@ def return_conversation_data(
                 "title": conversation.title,
                 "model_type": conversation.model_type,
                 "model_name": conversation.model_name,
+                "scan_status": SCAN_STATUS.lower(),
+                "data": SCAN_DATA,
+                "messages": MESSAGES,
+            }
+        case "mcp":
+            return {
+                "title": conversation.title,
                 "scan_status": SCAN_STATUS.lower(),
                 "data": SCAN_DATA,
                 "messages": MESSAGES,

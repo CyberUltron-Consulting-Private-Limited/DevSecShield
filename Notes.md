@@ -1,11 +1,13 @@
 # TO DO 
-- User Input Guardrails scanning ( with logging and dashboard ) ( build REST API for integration )
+
+- Add support for started state in the frontend and only use that for polling for results
+
 
 - fix bug in mcp results parsing ( list index out of range error )
 - look into how to scan a http or sse mcp server as well 
 - Add cleanup for temp dirs or files ⚠️
-
 - DAST inputs ( figure out how to do )
+
 
 
 look at this for reference : 
@@ -25,11 +27,8 @@ look at this for reference :
     - travis 
 
 
-
-
 - make the scan results human readable and not JSON 
 
-# Notes
 - Dockerfile builds alright , test the compose of rabbit + worker later
 - Logic for chat summary : 
     - always only maintain an active history of length 3 ( or n )

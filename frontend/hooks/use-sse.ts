@@ -15,7 +15,7 @@ const streamChatbotResponse = async (
     type: string
 ) => {
     
-    if (type !== 'sast' && type !== 'llm') {
+    if (type !== 'sast' && type !== 'llm' && type !== 'mcp') {
         throw new Error('Invalid conversation type');
     }
 

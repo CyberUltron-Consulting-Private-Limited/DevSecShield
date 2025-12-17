@@ -26,7 +26,7 @@ console = Console()
 def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     @app.get("/{type}/conversations",summary="List all scan conversations")
-    async def list_scan_conversations(type: Literal["sast", "llm"], Authorization: Annotated[str | None, Header()] = None):
+    async def list_scan_conversations(type: Literal["sast", "llm", "mcp"], Authorization: Annotated[str | None, Header()] = None):
         """
         List all scan conversations.
         """
@@ -54,7 +54,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         
     
     @app.post("/{type}/conversation",summary="Create a new scan conversation")
-    async def create_scan_conversation( data: CreateScanConversationData, type: Literal["sast", "llm"], Authorization: Annotated[str | None, Header()] = None):
+    async def create_scan_conversation( data: CreateScanConversationData, type: Literal["sast", "llm", "mcp"], Authorization: Annotated[str | None, Header()] = None):
         """
         Create a new scan conversation.
         return the conversation id
@@ -104,7 +104,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.post("/{type}/conversation/{conversation_id}/message",summary="Send a message to a scan conversation")
-    async def send_message_to_scan_conversation(type: Literal["sast", "llm"], data: SendMessageToScanConversationData,conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def send_message_to_scan_conversation(type: Literal["sast", "llm" , "mcp"], data: SendMessageToScanConversationData,conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Send a message to a scan conversation.
         Note : 
@@ -146,7 +146,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
             if not CONVERSATION:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-            if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS != "success":
+            if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS == "started" or SCAN_STATUS != "success":
                 return EventSourceResponse(stream_text("Scan status or scan data is not valid, please run the scan first"), media_type="text/event-stream")
 
             
@@ -217,7 +217,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.get("/{type}/conversation/{conversation_id}",summary="Get the scan status of a scan conversation")
-    async def get_scan_conversation(type: Literal["sast", "llm"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def get_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Get the scan status of a scan conversation.
         """
@@ -244,7 +244,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
             # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
             console.print(f"SCAN_STATUS: {SCAN_STATUS} TASK_ID: {TASK_ID}",style="bold yellow")
-            if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {}) and (TASK_ID != None) and (TASK_ID != ""):
+            if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {} or SCAN_STATUS == "started") and (TASK_ID != None) and (TASK_ID != ""):
                 FETCHED_SCAN_STATUS , FETCHED_SCAN_DATA , conversation = get_status_and_update_db(
                     conversation_id=conversation_id,
                     task_id=TASK_ID,
@@ -283,10 +283,11 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     @app.post("/{type}/conversation/{conversation_id}/scan",summary="Start a scan")
     async def start_scan(
-        type: Literal["sast", "llm"],
+        type: Literal["sast", "llm" , "mcp"],
         conversation_id: int, 
         sast_data: StartSastScanData | None = None,
         llm_data: StartLLMBenchmarkingData | None = None,
+        mcp_data: StartMCPScanData | None = None,
         Authorization: Annotated[str | None, Header()] = None):
         """
         Start a scan.
@@ -303,9 +304,9 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 conversation = session.exec(select(Table).where(Table.id == conversation_id).where(Table.user_id == user.id)).first()
                 if conversation==None:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found or User not allowed to start this conversation")
-                if conversation.scan_status == "success" or conversation.scan_data != {} or  conversation.scan_status == "started" or conversation.scan_status == "failure":
+                if conversation.scan_status == "success" or conversation.scan_status == "started" or conversation.scan_data != {} or  conversation.scan_status == "started" or conversation.scan_status == "failure":
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
-                if (conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED") and (conversation.task_id != None) and (conversation.task_id != "") :
+                if (conversation.scan_status == "pending" or conversation.scan_status == "NOT_STARTED" or conversation.scan_status == "started") and (conversation.task_id != None) and (conversation.task_id != "") :
                     FETCHED_STATUS , FETCHED_DATA , FETCHED_CONVERSATION = get_status_and_update_db(
                         conversation_id=conversation_id,
                         task_id=conversation.task_id,
@@ -319,6 +320,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 start_scan_and_update_db(
                     sast_data=sast_data,
                     llm_data=llm_data,
+                    mcp_data=mcp_data,
                     conversation_id=conversation_id,
                     user_id=user.id,
                     engine=engine,
@@ -341,7 +343,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.delete("/{type}/conversation/{conversation_id}",summary="Delete a scan conversation")
-    async def delete_scan_conversation(type: Literal["sast", "llm"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def delete_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Delete a scan conversation.
         """
@@ -398,7 +400,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deleting conversation , please try again later")
     
     @app.put("/{type}/conversation/{conversation_id}",summary="Update a scan conversation . Use this for renaming the conversation")
-    async def update_scan_conversation(type: Literal["sast", "llm"], conversation_id: int, data: UpdateScanConversationData, Authorization: Annotated[str | None, Header()] = None):
+    async def update_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, data: UpdateScanConversationData, Authorization: Annotated[str | None, Header()] = None):
         """
         Update a scan conversation.
         """
@@ -425,7 +427,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating conversation , please try again later")
     
     @app.get("/{type}/conversation/{conversation_id}/export",summary="Export the results of a scan conversation")
-    async def export_scan_conversation(type: Literal["sast", "llm"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def export_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Export the results of a scan conversation.
         """

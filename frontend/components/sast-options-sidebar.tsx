@@ -147,10 +147,10 @@ export function SASTOptionsSidebar({
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
     }
-    if (query.data?.scan_status === "pending") {
+    if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
     }
-    if (query.data?.scan_status === "error") {
+    if (query.data?.scan_status === "failure") {
       setOptionsSidebarState("error");
     }
     if (query.data?.scan_status === "unknown") {

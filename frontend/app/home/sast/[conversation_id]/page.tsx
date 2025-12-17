@@ -74,7 +74,7 @@ export default function SASTPage({ params }: SASTPageProps) {
 
 
   useEffect(() => {
-    if (query.data?.scan_status === "pending") {
+    if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setTimeout(()=>{
         queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', conversation_id] });
       }, 6 * 1000);

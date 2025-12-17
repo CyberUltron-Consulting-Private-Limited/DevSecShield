@@ -32,7 +32,7 @@ export default function LLMPage({ params }: LLMPageProps) {
 
   useEffect(() => {
     console.log(query.data?.scan_status);
-    if (query.data?.scan_status === "pending") {
+    if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setTimeout(()=>{
         queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', conversation_id] });
       }, 6 * 1000);

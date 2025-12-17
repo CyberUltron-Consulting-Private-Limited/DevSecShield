@@ -17,6 +17,14 @@ const ScanStatusIndicator = ({ scan_status }: { scan_status: "success" | "failur
         </div>
         )
     }
+    if (scan_status === "started") {
+        return (
+        <div className='flex flex-row items-center gap-2'>
+            <div className="size-2 rounded-full bg-yellow-500 animate-pending duration-500" />
+            <span className="text-muted-foreground text-xs">Scan Started</span>
+        </div>
+        )
+    }
     if (scan_status === "pending") {
         return (
         <div className='flex flex-row items-center gap-2'>

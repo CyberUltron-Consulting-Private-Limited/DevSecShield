@@ -135,7 +135,14 @@ const getExportResults = async (conversation_id: number): Promise<ExportResults>
     }
 }
 
-export { getSastConversations, deleteSastConversation, renameSastConversation, createSastConversation, getSastConversationMessages, startSastScan, getExportResults }
+export { 
+    getSastConversations, 
+    deleteSastConversation, 
+    renameSastConversation, 
+    createSastConversation, 
+    getSastConversationMessages, 
+    startSastScan, 
+    getExportResults }
 
 // -------------------------------------------------------------- LLM API Routes --------------------------------------------------------------
 
@@ -274,4 +281,131 @@ const getLLMExportResults = async (conversation_id: number): Promise<ExportResul
     }
 }
 
-export { getLLMConversations, deleteLLMConversation, renameLLMConversation, createLLMConversation, getLLMConversationMessages, startLLMScan, getLLMExportResults }
+export { 
+    getLLMConversations, 
+    deleteLLMConversation, 
+    renameLLMConversation, 
+    createLLMConversation, 
+    getLLMConversationMessages, 
+    startLLMScan, 
+    getLLMExportResults }
+
+// -------------------------------------------------------------- MCP API Routes --------------------------------------------------------------
+
+interface MCPConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}
+
+export interface MCPConversationResponse {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+    messages: MCPConversationMessage[]
+}
+
+const getMCPConversationMessages = async ({queryKey}: {queryKey: ['mcp-conversation-data', number]}): Promise<MCPConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/mcp/conversation/${conversation_id}`)
+        toast.success("MCP conversation messages fetched successfully")
+        return response.data as MCPConversationResponse
+    } catch (error) {
+        throw error
+    }
+}
+
+export interface MCPConversation {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+}
+
+const getMCPConversations = async (): Promise<MCPConversation[]> => {
+    try {
+        const response = await api.get("/mcp/conversations")
+        toast.success("MCP conversations fetched successfully")
+        return response.data as MCPConversation[]
+    } catch (error) {
+        throw error
+    }
+}
+
+const deleteMCPConversation = async (conversation_id: number) => {
+    try {
+        const response = await api.delete(`/mcp/conversation/${conversation_id}`)
+        toast.success("MCP conversation deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameMCPConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/mcp/conversation/${conversation_id}`, { title: title })
+        toast.success("MCP conversation renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createMCPConversation = async (title: string) => {
+    try {
+        const response = await api.post("/mcp/conversation", { title: title })
+        toast.success("MCP conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+const startMCPScan = async (
+    {
+        conversation_id,
+        server_config
+    }: {
+        conversation_id: number,
+        server_config: string
+    }
+) => {
+
+    try {
+        const response = await api.post(`/mcp/conversation/${conversation_id}/scan`, { 
+            mcp_data: { server_config: server_config } ,
+            sast_data: null,
+            llm_data: null
+        })
+        toast.success("MCP scan started successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const getMCPExportResults = async (conversation_id: number): Promise<ExportResults> => {
+    try {   
+        const response = await api.get(`/mcp/conversation/${conversation_id}/export`)
+        toast.success("MCP export results fetched successfully")
+        return response.data.data as ExportResults
+    } catch (error) {
+        throw error
+    }
+}
+export { 
+    getMCPConversationMessages,
+    getMCPConversations,
+    deleteMCPConversation,
+    renameMCPConversation,
+    createMCPConversation,
+    getMCPExportResults,
+    startMCPScan
+}
