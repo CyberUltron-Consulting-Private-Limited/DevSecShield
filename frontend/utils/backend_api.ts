@@ -21,6 +21,7 @@ const getSastConversations = async (): Promise<SastConversation[]> => {
         toast.success("Sast conversations fetched successfully")
         return response.data
     } catch (error) {
+        showErrorToast(error,"Error fetching sast conversations")
         throw error
     }
 }
@@ -77,6 +78,7 @@ const getSastConversationMessages = async ({queryKey}: {queryKey: ['sast-convers
         toast.success("Sast conversation messages fetched successfully")
         return response.data as SastConversationResponse
     } catch (error) {
+        showErrorToast(error,"Error fetching sast conversation messages")
         throw error
     }
 }
@@ -99,7 +101,6 @@ const startSastScan = async (
         const response = await api.post(`/sast/conversation/${conversation_id}/scan`, 
             { 
                 sast_data : { repo_url: repo_url, PAT: PAT, app_lang: app_lang, mode: mode }, 
-                llm_data : null 
             } , 
         )
         toast.success("Sast scan started successfully")
@@ -131,6 +132,7 @@ const getExportResults = async (conversation_id: number): Promise<ExportResults>
         console.log("response.data", response.data.data);
         return response.data.data as ExportResults
     } catch (error) {
+        showErrorToast(error,"Error fetching sast export results")
         throw error
     }
 }
@@ -162,6 +164,7 @@ const getLLMConversations = async (): Promise<LLMConversation[]> => {
         toast.success("LLM conversations fetched successfully")
         return response.data
     } catch (error) {
+        showErrorToast(error,"Error fetching sast export results")
         throw error
     }
 }
@@ -219,6 +222,7 @@ const getLLMConversationMessages = async ({queryKey}: {queryKey: ['llm-conversat
         toast.success("LLM conversation messages fetched successfully")
         return response.data as LLMConversationResponse
     } catch (error) {
+        showErrorToast(error,"Error fetching llm conversation messages")
         throw error
     }
 }
@@ -261,7 +265,6 @@ const startLLMScan = async (
             response_json_field,
             model_uri
         },
-        sast_data : null
         }
     )
         toast.success("LLM scan started successfully")
@@ -277,6 +280,7 @@ const getLLMExportResults = async (conversation_id: number): Promise<ExportResul
         toast.success("LLM export results fetched successfully")
         return response.data.data as ExportResults
     } catch (error) {
+        showErrorToast(error,"Error fetching llm export results")
         throw error
     }
 }
@@ -316,6 +320,7 @@ const getMCPConversationMessages = async ({queryKey}: {queryKey: ['mcp-conversat
         toast.success("MCP conversation messages fetched successfully")
         return response.data as MCPConversationResponse
     } catch (error) {
+        showErrorToast(error,"Error fetching mcp conversation messages")
         throw error
     }
 }
@@ -334,6 +339,7 @@ const getMCPConversations = async (): Promise<MCPConversation[]> => {
         toast.success("MCP conversations fetched successfully")
         return response.data as MCPConversation[]
     } catch (error) {
+        showErrorToast(error,"Error fetching mcp conversations")
         throw error
     }
 }
@@ -379,11 +385,11 @@ const startMCPScan = async (
 ) => {
 
     try {
-        const response = await api.post(`/mcp/conversation/${conversation_id}/scan`, { 
-            mcp_data: { server_config: server_config } ,
-            sast_data: null,
-            llm_data: null
-        })
+        const response = await api.post(`/mcp/conversation/${conversation_id}/scan`, 
+            { 
+            mcp_data: { server_config: server_config } 
+            }
+        )
         toast.success("MCP scan started successfully")
         return response.data
     } catch (error) {
@@ -397,6 +403,7 @@ const getMCPExportResults = async (conversation_id: number): Promise<ExportResul
         toast.success("MCP export results fetched successfully")
         return response.data.data as ExportResults
     } catch (error) {
+        showErrorToast(error,"Error fetching mcp export results")
         throw error
     }
 }
@@ -408,4 +415,529 @@ export {
     createMCPConversation,
     getMCPExportResults,
     startMCPScan
+}
+
+// -------------------------------------------------------------- Auth API Routes --------------------------------------------------------------
+
+export interface UserProfile {
+    email: string
+    first_name: string
+    last_name: string
+    profile_photo: string | null
+}
+
+const getUserProfile = async (): Promise<UserProfile> => {
+    try {
+        const response = await api.get("/get_user")
+        return response.data as UserProfile
+    } catch (error) {
+        showErrorToast(error,"Error fetching user profile")
+        throw error
+    }
+}
+
+const logout = async () => {
+    try {
+        const response = await api.get("/logout")
+        toast.success("Logged out successfully")
+        // Clear tokens from localStorage
+        localStorage.removeItem("access_token")
+        localStorage.removeItem("refresh_token")
+        return response.data
+    } catch (error) {
+        // Clear tokens even if API call fails
+        localStorage.removeItem("access_token")
+        localStorage.removeItem("refresh_token")
+        throw error
+    }
+}
+
+export {
+    getUserProfile,
+    logout
+}
+
+// -------------------------------------------------------------- IAC API Routes --------------------------------------------------------------
+
+export interface IACConversation {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+}
+
+const getIACConversations = async (): Promise<IACConversation[]> => {
+    try {
+        const response = await api.get("/iac/conversations")
+        toast.success("IAC conversations fetched successfully")
+        return response.data as IACConversation[]
+    } catch (error) {
+        showErrorToast(error,"Error fetching iac conversations")
+        throw error
+    }
+}
+
+const deleteIACConversation = async (conversation_id: number) => {
+    try {
+        const response = await api.delete(`/iac/conversation/${conversation_id}`)
+        toast.success("IAC conversation deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameIACConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/iac/conversation/${conversation_id}`, { title: title })
+        toast.success("IAC conversation renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createIACConversation = async (title: string) => {
+    try {
+        const response = await api.post("/iac/conversation", { title: title })
+        toast.success("IAC conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+export interface IACConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}
+
+export interface IACConversationResponse {
+    title: string
+    repo_url: string | null
+    scan_status: string
+    data: any
+    messages: IACConversationMessage[]
+}
+
+const getIACConversationMessages = async ({queryKey}: {queryKey: ['iac-conversation-data', number]}): Promise<IACConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/iac/conversation/${conversation_id}`)
+        toast.success("IAC conversation messages fetched successfully")
+        return response.data as IACConversationResponse
+    } catch (error) {
+        showErrorToast(error,"Error fetching iac conversation messages")
+        throw error
+    }
+}
+
+const startIACScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {   
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/iac/conversation/${conversation_id}/scan`, { iac_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("IAC scan started successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const getIACExportResults = async (conversation_id: number): Promise<ExportResults> => {
+    try {   
+        const response = await api.get(`/iac/conversation/${conversation_id}/export`)
+        toast.success("IAC export results fetched successfully")
+        return response.data.data as ExportResults
+    } catch (error) {
+        showErrorToast(error,"Error fetching iac export results")
+        throw error
+    }
+}
+
+export { 
+    getIACConversations, 
+    deleteIACConversation, 
+    renameIACConversation, 
+    createIACConversation, 
+    getIACConversationMessages,
+    startIACScan,
+    getIACExportResults
+}
+
+// -------------------------------------------------------------- SCA + SBOM API Routes --------------------------------------------------------------
+
+export interface SCASBOMConversation {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+}
+
+const getSCASBOMConversations = async (): Promise<SCASBOMConversation[]> => {
+    try {
+        const response = await api.get("/sbom_sca/conversations")
+        toast.success("SCA + SBOM conversations fetched successfully")
+        return response.data as SCASBOMConversation[]
+    } catch (error) {
+        showErrorToast(error,"Error fetching sbom_sca conversations")
+        throw error
+    }
+}
+
+const deleteSCASBOMConversation = async (conversation_id: number) => {
+    try {
+        const response = await api.delete(`/sbom_sca/conversation/${conversation_id}`)
+        toast.success("SCA + SBOM conversation deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameSCASBOMConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/sbom_sca/conversation/${conversation_id}`, { title: title })
+        toast.success("SCA + SBOM conversation renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createSCASBOMConversation = async (title: string) => {
+    try {
+        const response = await api.post("/sbom_sca/conversation", { title: title })
+        toast.success("SCA + SBOM conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+export interface SCASBOMConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}
+
+export interface SCASBOMConversationResponse {
+    title: string
+    repo_url: string | null
+    scan_status: string
+    data: any
+    messages: SCASBOMConversationMessage[]
+}
+
+const getSCASBOMConversationMessages = async ({queryKey}: {queryKey: ['sbom_sca-conversation-data', number]}): Promise<SCASBOMConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/sbom_sca/conversation/${conversation_id}`)
+        toast.success("SCA + SBOM conversation messages fetched successfully")
+        return response.data as SCASBOMConversationResponse
+    } catch (error) {
+        showErrorToast(error,"Error fetching sbom_sca conversation messages")
+        throw error
+    }
+}
+
+const startSCASBOMScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/sbom_sca/conversation/${conversation_id}/scan`, { sbom_sca_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("SCA + SBOM scan started successfully")
+        return response.data
+    } catch (error) {
+        // console.log(error)
+        throw error
+    }
+}
+
+const getSCASBOMExportResults = async (conversation_id: number): Promise<ExportResults> => {
+    try {   
+        const response = await api.get(`/sbom_sca/conversation/${conversation_id}/export`)
+        toast.success("SCA + SBOM export results fetched successfully")
+        return response.data.data as ExportResults
+    } catch (error) {
+        showErrorToast(error,"Error fetching sbom_sca export results")
+        throw error
+    }
+}
+
+export { 
+    getSCASBOMConversations, 
+    deleteSCASBOMConversation, 
+    renameSCASBOMConversation, 
+    createSCASBOMConversation,
+    getSCASBOMConversationMessages,
+    startSCASBOMScan,
+    getSCASBOMExportResults
+}
+
+// -------------------------------------------------------------- Discovery API Routes --------------------------------------------------------------
+
+export interface DiscoveryConversation {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+}
+
+const getDiscoveryConversations = async (): Promise<DiscoveryConversation[]> => {
+    try {
+        const response = await api.get("/agent_discovery/conversations")
+        toast.success("Discovery conversations fetched successfully")
+        return response.data as DiscoveryConversation[]
+    } catch (error) {
+        showErrorToast(error,"Error fetching discovery conversations")
+        throw error
+    }
+}
+
+const deleteDiscoveryConversation = async (conversation_id: number) => {
+    try {
+        const response = await api.delete(`/agent_discovery/conversation/${conversation_id}`)
+        toast.success("Discovery conversation deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameDiscoveryConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/agent_discovery/conversation/${conversation_id}`, { title: title })
+        toast.success("Discovery conversation renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createDiscoveryConversation = async (title: string) => {
+    try {
+        const response = await api.post("/agent_discovery/conversation", { title: title })
+        toast.success("Discovery conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+export interface DiscoveryConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}
+
+export interface DiscoveryConversationResponse {
+    title: string
+    repo_url: string | null
+    scan_status: string
+    data: any
+    messages: DiscoveryConversationMessage[]
+}
+
+const getDiscoveryConversationMessages = async ({queryKey}: {queryKey: ['discovery-conversation-data', number]}): Promise<DiscoveryConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/agent_discovery/conversation/${conversation_id}`)
+        toast.success("Discovery conversation messages fetched successfully")
+        return response.data as DiscoveryConversationResponse
+    } catch (error) {
+        showErrorToast(error,"Error fetching discovery conversation messages")
+        throw error
+    }
+}
+
+const startDiscoveryScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/agent_discovery/conversation/${conversation_id}/scan`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("Discovery scan started successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const getDiscoveryExportResults = async (conversation_id: number): Promise<ExportResults> => {
+    try {   
+        const response = await api.get(`/agent_discovery/conversation/${conversation_id}/export`)
+        toast.success("Discovery export results fetched successfully")
+        return response.data.data as ExportResults
+    } catch (error) {
+        showErrorToast(error,"Error fetching discovery export results")
+        throw error
+    }
+}
+
+export { 
+    getDiscoveryConversations, 
+    deleteDiscoveryConversation, 
+    renameDiscoveryConversation, 
+    createDiscoveryConversation,
+    getDiscoveryConversationMessages,
+    startDiscoveryScan,
+    getDiscoveryExportResults
+}
+
+// -------------------------------------------------------------- Leakage API Routes --------------------------------------------------------------
+
+export interface LeakageConversation {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+}
+
+const getLeakageConversations = async (): Promise<LeakageConversation[]> => {
+    try {
+        const response = await api.get("/leakage/conversations")
+        toast.success("Leakage conversations fetched successfully")
+        return response.data as LeakageConversation[]
+    } catch (error) {
+        showErrorToast(error,"Error fetching leakage conversations")
+        throw error
+    }
+}
+
+const deleteLeakageConversation = async (conversation_id: number) => {
+    try {
+        const response = await api.delete(`/leakage/conversation/${conversation_id}`)
+        toast.success("Leakage conversation deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameLeakageConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/leakage/conversation/${conversation_id}`, { title: title })
+        toast.success("Leakage conversation renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createLeakageConversation = async (title: string) => {
+    try {
+        const response = await api.post("/leakage/conversation", { title: title })
+        toast.success("Leakage conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+export interface LeakageConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}
+
+export interface LeakageConversationResponse {
+    title: string
+    repo_url: string | null
+    scan_status: string
+    data: any
+    messages: LeakageConversationMessage[]
+}
+
+const getLeakageConversationMessages = async ({queryKey}: {queryKey: ['leakage-conversation-data', number]}): Promise<LeakageConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/leakage/conversation/${conversation_id}`)
+        toast.success("Leakage conversation messages fetched successfully")
+        return response.data as LeakageConversationResponse
+    } catch (error) {
+        showErrorToast(error,"Error fetching leakage conversation messages")
+        throw error
+    }
+}
+
+const startLeakageScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/leakage/conversation/${conversation_id}/scan`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("Leakage scan started successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const getLeakageExportResults = async (conversation_id: number): Promise<ExportResults> => {
+    try {   
+        const response = await api.get(`/leakage/conversation/${conversation_id}/export`)
+        toast.success("Leakage export results fetched successfully")
+        return response.data.data as ExportResults
+    } catch (error) {
+        showErrorToast(error,"Error fetching leakage export results")
+        throw error
+    }
+}
+
+export { 
+    getLeakageConversations, 
+    deleteLeakageConversation, 
+    renameLeakageConversation, 
+    createLeakageConversation,
+    getLeakageConversationMessages,
+    startLeakageScan,
+    getLeakageExportResults
 }

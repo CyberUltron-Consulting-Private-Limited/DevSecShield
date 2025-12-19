@@ -28,9 +28,16 @@ export const handleLogout = async () => {
 
 export const handleApiError = (error: unknown): ApiError => {
   if (error instanceof AxiosError) {
+    console.log(error);
     const status = error.response?.status;
     const message = error.response?.data?.message || error.response?.data?.detail || error.message;
     
+    if (status === 422) {
+      return {
+        message: 'Validation error. Please check your input.',
+        status: 422
+      };
+    }
     // Handle specific status codes
     if (status === 429) {
       return {

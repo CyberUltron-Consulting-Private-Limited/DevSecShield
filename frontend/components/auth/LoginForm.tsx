@@ -144,7 +144,7 @@ export default function LoginPage({
             toast.success("Logged in successfully")
             localStorage.setItem("access_token", response.data.access_token)
             localStorage.setItem("refresh_token", response.data.refresh_token)
-            router.push("/user/overview")
+            router.push("/home")
         }else{
             toast.error("Error while logging in",{description: response.data.detail})
         }

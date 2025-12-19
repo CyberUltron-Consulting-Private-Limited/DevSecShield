@@ -72,6 +72,13 @@ def run_iac_scan(
         # with open("iac_results.json", "w+") as f:
         #     json.dump(results, f)
         
+        try:
+            Console().print("Cleaning up temp directory",style="dim yellow")
+            shutil.rmtree(directory)
+        except Exception as e:
+            Console().print(f"Error: {e}",style="dim red")
+            pass
+
         Console().print(f"IAC scan completed successfully 🟢",style="bold green")
         return results
     except Exception as e:

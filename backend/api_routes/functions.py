@@ -1,6 +1,7 @@
 import datetime
 from typing import Annotated, Literal
 from bson import ObjectId
+from celery.result import AsyncResult
 from fastapi import FastAPI, HTTPException, Header, status
 from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
@@ -9,7 +10,7 @@ from backend.ai_utils.chatbot import create_response
 from backend.ai_utils.export_generation import create_export_results
 from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception
 from backend.celery_connection import get_celery_app, get_status_and_update_db
-from backend.models import SASTConversation, User , LLMBenchmarkingConversation, MCPConversation
+from backend.models import * 
 from backend.auth_utils.plans import plans
 from rich.console import Console
 from sse_starlette.sse import EventSourceResponse
@@ -21,7 +22,7 @@ import uuid
 
 
 console = Console()
-
+scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery"]
 
 # ============================================================ Request body models ===========================================================
 class CreateScanConversationData(BaseModel):
@@ -45,6 +46,18 @@ class StartSastScanData(BaseModel):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid app language")
         return self
 
+class StartGeneralScanData(BaseModel):
+    mode: Literal["github", "gitlab", "bitbucket"]
+    repo_url: str
+    PAT: str
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.repo_url or not self.PAT:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid sast scan input")
+        return self
+
+
 class StartLLMBenchmarkingData(BaseModel):
     model_type: Literal["openai", "anthropic", "gemini", "custom"]
     model_name: str
@@ -65,6 +78,12 @@ class StartScanData(BaseModel):
     llm : StartLLMBenchmarkingData | None = None
     mcp : StartMCPScanData | None = None
 
+    # these scans use the same context pattern 
+    iac : StartGeneralScanData | None = None
+    leakage : StartGeneralScanData | None = None
+    sbom_sca : StartGeneralScanData | None = None
+    agent_discovery : StartGeneralScanData | None = None
+
 class UpdateScanConversationData(BaseModel):
     title: str
 
@@ -82,7 +101,7 @@ def stream_text(text: str):
         time.sleep(0.1)
 
 # ====================================================== functions for fetching data ===========================================================
-def get_Table_from_type(type: Literal["sast", "llm", "mcp"]) -> SASTConversation | LLMBenchmarkingConversation | MCPConversation:
+def get_Table_from_type(type: scan_types) -> SASTConversation | LLMBenchmarkingConversation | MCPConversation:
     """
     Returns the table corresponding to the type. 
     If table not found , raise an exception.
@@ -93,11 +112,24 @@ def get_Table_from_type(type: Literal["sast", "llm", "mcp"]) -> SASTConversation
         return LLMBenchmarkingConversation
     elif type == "mcp":
         return MCPConversation
+    elif type == "iac":
+        return IACConversation
+    elif type == "leakage":
+        return GitleaksConversation
+    elif type == "sbom_sca":
+        return SBOM_SCAConversation
+    elif type == "agent_discovery":
+        return Agent_DiscoveryConversation
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
 
 
-def get_messages_from_conversation(conversation_id: int,user_id: int, Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation, engine: Engine, mongo_db: Database):
+def get_messages_from_conversation(
+    conversation_id: int,
+    user_id: int, 
+    Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation, 
+    engine: Engine, 
+    mongo_db: Database):
     try:
 
         # STEP [ 1 ] : =========== get the conversation from the main db to get the conversation id ======================
@@ -142,8 +174,8 @@ def get_messages_from_conversation(conversation_id: int,user_id: int, Table: SAS
 
 
 def start_scan_and_update_db(
-    type: Literal["sast", "llm", "mcp"],
-    table: SASTConversation | LLMBenchmarkingConversation | MCPConversation, 
+    type: scan_types,
+    table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation, 
     engine: Engine, 
     mongo_db: Database,
     conversation_id: int,
@@ -151,6 +183,10 @@ def start_scan_and_update_db(
     sast_data: StartSastScanData | None = None,
     llm_data: StartLLMBenchmarkingData | None = None,
     mcp_data: StartMCPScanData | None = None,
+    iac_data: StartGeneralScanData | None = None,
+    leakage_data: StartGeneralScanData | None = None,
+    sbom_sca_data: StartGeneralScanData | None = None,
+    agent_discovery_data: StartGeneralScanData | None = None,
     ) -> None :
     try:
         
@@ -187,17 +223,71 @@ def start_scan_and_update_db(
                 "server_config_json":mcp_data.server_config,
             }
             task_result = simple_app.send_task(name="scan_worker.mcp", kwargs=mcp_kwargs)
-        if not task_result:
+        elif type == "iac":
+            iac_kwargs={
+                "dict_context":{
+                    "mode":iac_data.mode,
+                    "repo_url":iac_data.repo_url,
+                    "PAT":iac_data.PAT,
+                },
+            }
+            task_result = simple_app.send_task(name="scan_worker.iac", kwargs=iac_kwargs)
+        elif type == "leakage":
+            leakage_kwargs={
+                "dict_context":{
+                    "mode":leakage_data.mode,
+                    "repo_url":leakage_data.repo_url,
+                    "PAT":leakage_data.PAT,
+                },
+            }
+            task_result = simple_app.send_task(name="scan_worker.gitleaks", kwargs=leakage_kwargs)
+        elif type == "sbom_sca":
+            sbom_sca_kwargs={
+                "dict_context":{
+                    "mode":sbom_sca_data.mode,
+                    "repo_url":sbom_sca_data.repo_url,
+                    "PAT":sbom_sca_data.PAT,
+                },
+            }
+            task_result = simple_app.send_task(name="scan_worker.sbom_sca", kwargs=sbom_sca_kwargs)
+        elif type == "agent_discovery":
+            agent_discovery_kwargs={
+                "dict_context":{
+                    "mode":agent_discovery_data.mode,
+                    "repo_url":agent_discovery_data.repo_url,
+                    "PAT":agent_discovery_data.PAT,
+                },
+            }
+            task_result = simple_app.send_task(name="scan_worker.discovery", kwargs=agent_discovery_kwargs)
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of scan")
+
+        
+        try: 
+            if not task_result:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending task to Scan worker , please try again later")
+            if not task_result.id:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending task to Scan worker , please try again later")
+        except Exception as e:
+            console.print(f"Error in checking task result: {e}",style="bold red")
+            if isinstance(e,HTTPException):
+                raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending task to Scan worker , please try again later")
 
 
-        # STEP [ 3 ] : =========== Update the main db conversation the task id ======================
+        # STEP [ 3 ] : =========== Update the main db conversation the task id and status of task======================
+        time.sleep(2) 
         with Session(engine) as session:
             conversation = None
             conversation = session.exec(select(table).where(table.id == conversation_id).where(table.user_id == user_id)).first()
             if conversation==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found or User not allowed to start this conversation")
             conversation.task_id = task_result.id
+
+            # getting the status of the task and adding it to the conversation in main db
+            async_result : AsyncResult = simple_app.AsyncResult(task_result.id)
+            SCAN_STATUS = str(async_result.state).lower()
+            conversation.scan_status = SCAN_STATUS
             
     
             if type == "sast" and table == SASTConversation:
@@ -214,6 +304,22 @@ def start_scan_and_update_db(
                 console.print(f"Updating conversation data for mcp scan with metadata" ,style="bold green")
                 # nothing to update here , because the server config is not stored in the database
             
+            elif type == "iac" and table == IACConversation:
+                console.print(f"Updating conversation data for iac scan with metadata" ,style="bold green")
+                conversation.mode = iac_data.mode
+                conversation.repo_url = iac_data.repo_url
+            elif type == "leakage" and table == GitleaksConversation:
+                console.print(f"Updating conversation data for leakage scan with metadata" ,style="bold green")
+                conversation.mode = leakage_data.mode
+                conversation.repo_url = leakage_data.repo_url
+            elif type == "sbom_sca" and table == SBOM_SCAConversation:
+                console.print(f"Updating conversation data for sbom_sca scan with metadata" ,style="bold green")
+                conversation.mode = sbom_sca_data.mode
+                conversation.repo_url = sbom_sca_data.repo_url
+            elif type == "agent_discovery" and table == Agent_DiscoveryConversation:
+                console.print(f"Updating conversation data for agent discovery scan with metadata" ,style="bold green")
+                conversation.mode = agent_discovery_data.mode
+                conversation.repo_url = agent_discovery_data.repo_url
             
             session.commit()
     except Exception as e:
@@ -227,11 +333,16 @@ def start_scan_and_update_db(
 
 
 # ======================================= functions for assembling output data for different types of conversations ======================
-def return_conversations_list_for_type(type: Literal["sast", "llm", "mcp"], sequence : Sequence[SASTConversation] | Sequence[LLMBenchmarkingConversation] | Sequence[MCPConversation]):
+def return_conversations_list_for_type(
+    type: scan_types, 
+    sequence : Sequence[SASTConversation] | Sequence[LLMBenchmarkingConversation] | Sequence[MCPConversation] | Sequence[IACConversation] | Sequence[GitleaksConversation] | Sequence[SBOM_SCAConversation] | Sequence[Agent_DiscoveryConversation]):
     conversations_data = []
+    conversations_to_update = []
     match type:
         case "sast":
             for conversation in sequence:
+                if (conversation.scan_status == "pending" or conversation.scan_status == "started") and conversation.task_id:
+                    conversations_to_update.append((conversation.id,conversation.task_id))
                 conversations_data.append({
                     "id": conversation.id,
                     "repo_url": conversation.repo_url,
@@ -243,7 +354,8 @@ def return_conversations_list_for_type(type: Literal["sast", "llm", "mcp"], sequ
                 })
         case "llm":
             for conversation in sequence:
-
+                if (conversation.scan_status == "pending" or conversation.scan_status == "started") and conversation.task_id:
+                    conversations_to_update.append((conversation.id,conversation.task_id))
                 conversations_data.append({
                     "id": conversation.id,
                     "model_type": conversation.model_type,
@@ -255,6 +367,8 @@ def return_conversations_list_for_type(type: Literal["sast", "llm", "mcp"], sequ
                 })
         case "mcp":
             for conversation in sequence:
+                if (conversation.scan_status == "pending" or conversation.scan_status == "started") and conversation.task_id:
+                    conversations_to_update.append((conversation.id,conversation.task_id))
                 conversations_data.append({
                     "id": conversation.id,
                     "title": conversation.title,
@@ -262,14 +376,28 @@ def return_conversations_list_for_type(type: Literal["sast", "llm", "mcp"], sequ
                     "last_updated": conversation.last_updated,
                     "scan_status": conversation.scan_status.lower(),
                 })
+        case "iac" | "leakage" | "sbom_sca" | "agent_discovery":
+            for conversation in sequence:
+                if (conversation.scan_status == "pending" or conversation.scan_status == "started") and conversation.task_id:
+                    conversations_to_update.append((conversation.id,conversation.task_id))
+                conversations_data.append({
+                    "id": conversation.id,
+                    "repo_url": conversation.repo_url,
+                    "mode": conversation.mode,
+                    "title": conversation.title,
+                    "created_at": conversation.created_at,
+                    "last_updated": conversation.last_updated,
+                    "scan_status": conversation.scan_status.lower(),
+                })
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
-    return conversations_data
+
+    return (conversations_data,conversations_to_update)
 
 
 def return_conversation_data(
-    conversation: SASTConversation | LLMBenchmarkingConversation , 
-    type: Literal["sast", "llm", "mcp"],
+    conversation: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation, 
+    type: scan_types,
     SCAN_STATUS: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"],
     SCAN_DATA: dict,
     MESSAGES: list[dict],
@@ -299,5 +427,38 @@ def return_conversation_data(
                 "data": SCAN_DATA,
                 "messages": MESSAGES,
             }
+        case "iac" | "leakage" | "sbom_sca" | "agent_discovery":
+            return {
+                "title": conversation.title,
+                "repo_url": conversation.repo_url,
+                "scan_status": SCAN_STATUS.lower(),
+                "data": SCAN_DATA,
+                "messages": MESSAGES,
+            }
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
+
+# ======================================================= background task for updating statuses of conversations in main db ======================================================
+def update_status_of_conversation_in_main_db(
+    conversations: list[(int,str)], 
+    user_id: int, 
+    type: scan_types, 
+    engine: Engine):
+    try:
+        console.print(f"Updating statuses of conversations " ,style="bold bright_cyan")
+        
+        
+        # get the table from the type
+        table = get_Table_from_type(type)
+
+
+        # cycle through the conversations and update the status of the conversation in main db
+        for conversation_id,task_id in conversations:
+            get_status_and_update_db(
+                conversation_id=conversation_id, 
+                task_id=task_id,
+                table=table, 
+                engine=engine)
+            console.print(f"Status of conversation: {conversation_id} updated in main db" ,style="bold green")
+    except Exception as e:
+        console.print(f"Error in update_status_of_conversation_in_main_db: {e}",style="bold red")

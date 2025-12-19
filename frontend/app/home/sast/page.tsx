@@ -188,13 +188,13 @@ export default function SASTPage() {
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Scan
               </Button>
-              <Button className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations'] })}>
+              <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations'] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
@@ -218,7 +218,7 @@ export default function SASTPage() {
                 No scans yet. Create your first SAST scan to get started.
               </p>
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -245,7 +245,7 @@ export default function SASTPage() {
                       <TableCell className="font-medium">
                         <Link
                           href={`/home/sast/${conversation.id}`}
-                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline"
+                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
                         </Link>
@@ -283,19 +283,21 @@ export default function SASTPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-8 w-8 cursor-pointer"
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
+                              className="cursor-pointer"
                               onClick={() => handleRename(conversation)}
                             >
                               <Pencil className="h-4 w-4 mr-2" />
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              className="cursor-pointer"
                               onClick={() => handleDelete(conversation)}
                               variant="destructive"
                             >
@@ -338,6 +340,7 @@ export default function SASTPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setRenameDialogOpen(false);
                 setNewName("");
@@ -348,7 +351,7 @@ export default function SASTPage() {
             <Button
               onClick={confirmRename}
               disabled={!newName.trim()}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
             >
               Save
             </Button>
@@ -368,6 +371,7 @@ export default function SASTPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setDeleteDialogOpen(false);
                 setSelectedConversation(null);
@@ -377,6 +381,7 @@ export default function SASTPage() {
             </Button>
             <Button
               variant="destructive"
+              className="cursor-pointer"
               onClick={confirmDelete}
             >
               Delete
@@ -409,6 +414,7 @@ export default function SASTPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setCreateDialogOpen(false);
                 setNewScanTitle("");
@@ -419,7 +425,7 @@ export default function SASTPage() {
             <Button
               onClick={confirmCreate}
               disabled={!newScanTitle.trim() || createSastConversationMutation.isPending}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
             >
               {createSastConversationMutation.isPending ? "Creating..." : "Create"}
             </Button>

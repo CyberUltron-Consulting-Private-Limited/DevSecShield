@@ -6,9 +6,14 @@
 
 ## Notes 
 
+- the last_updated field is updated on 3 occasions : 
+    - when the conversation is created
+    - when the conversation task status is fetched from the celery backend
+    - when new message is sent to the conversation
+
 - Do a ``uv pip install -U "langchain[aws]"`` 
 
-- To create tables , from root directory run ``uv run python -m backnend.init_db``
+- To create tables , from root directory run ``uv run python -m backnend.init_db`` ( no longer needed you can use alembic for this )
 
 - add branch selection to repo cloning 
 ``Repo.clone_from(url, tmp_dir, depth=1,branch="branch_name")``

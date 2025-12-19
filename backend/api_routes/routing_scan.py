@@ -1,7 +1,7 @@
 import datetime
 from typing import Annotated, Literal
 from bson import ObjectId
-from fastapi import FastAPI, HTTPException, Header, status
+from fastapi import FastAPI, HTTPException, Header, status, BackgroundTasks
 from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from pydantic import BaseModel
@@ -23,30 +23,39 @@ from backend.api_routes.functions import *
 
 console = Console()
 
+
+
+
 def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     @app.get("/{type}/conversations",summary="List all scan conversations")
-    async def list_scan_conversations(type: Literal["sast", "llm", "mcp"], Authorization: Annotated[str | None, Header()] = None):
+    async def list_scan_conversations(type: scan_types, background_tasks: BackgroundTasks, Authorization: Annotated[str | None, Header()] = None):
         """
         List all scan conversations.
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
 
             Table = get_Table_from_type(type)
+
 
             # STEP [ 1 ] : =========== get the conversations from the main db ======================
             with Session(engine) as session:
                 conversations = None
-                conversations = session.exec(select(Table).where(Table.user_id == user.id)).all()
+                conversations = session.exec(select(Table).where(Table.user_id == user.id).order_by(Table.created_at.desc())).all()
                 if conversations==None :
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No conversations found")
-                console.print(f"Conversations with length: {len(conversations)} found for user: {user.id}" ,style="bold green")
-                conversations_data = return_conversations_list_for_type(type, conversations)
+                console.print(f"{len(conversations)} {type} conversations found for user: {user.id}" ,style="bold green")
+                conversations_data,conversations_to_update = return_conversations_list_for_type(type, conversations)
+
+                if conversations_to_update:
+                    background_tasks.add_task(update_status_of_conversation_in_main_db, conversations_to_update, user.id, type, engine)
+                    console.print(f"Background task added to update statuses of conversations: {conversations_to_update}" ,style="bold green")
+                
                 return conversations_data
         except Exception as e:
-            console.print(f"Error in list_sast_scan_conversations: {e}",style="bold red")
+            console.print(f"Error in list_{type}_scan_conversations: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in fetching conversations , please try again later")
@@ -54,14 +63,14 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         
     
     @app.post("/{type}/conversation",summary="Create a new scan conversation")
-    async def create_scan_conversation( data: CreateScanConversationData, type: Literal["sast", "llm", "mcp"], Authorization: Annotated[str | None, Header()] = None):
+    async def create_scan_conversation( data: CreateScanConversationData, type: scan_types, Authorization: Annotated[str | None, Header()] = None):
         """
         Create a new scan conversation.
         return the conversation id
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
             
             
@@ -96,7 +105,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     }
             # create a new sast scan conversation for the user 🟨
         except Exception as e:
-            console.print(f"Error in send_messages_to_sast_scan_conversation: {e}",style="bold red")
+            console.print(f"Error in create_{type}_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending message , please try again later")
@@ -104,7 +113,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.post("/{type}/conversation/{conversation_id}/message",summary="Send a message to a scan conversation")
-    async def send_message_to_scan_conversation(type: Literal["sast", "llm" , "mcp"], data: SendMessageToScanConversationData,conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def send_message_to_scan_conversation(type: scan_types, data: SendMessageToScanConversationData,conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Send a message to a scan conversation.
         Note : 
@@ -113,8 +122,8 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             2. user_id ( user id )
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
 
             Table = get_Table_from_type(type)
 
@@ -130,6 +139,11 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 if not conversation:
                     console.print(f"Conversation id: {conversation_id} not found in main database" ,style="bold red")
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found ")
+                
+                #updating last_updated field
+                conversation.last_updated = datetime.datetime.now(datetime.timezone.utc)
+                session.commit()
+                session.refresh(conversation)
                 
                 MESSAGE_LIMIT = conversation.message_limit
                 CONVERSATION = conversation
@@ -147,7 +161,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             if not CONVERSATION:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
             if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS == "started" or SCAN_STATUS != "success":
-                return EventSourceResponse(stream_text("Scan status or scan data is not valid, please run the scan first"), media_type="text/event-stream")
+                return EventSourceResponse(stream_text("Scan has not run or hasn't completed yet, please wait for the scan to complete if it has been initiated or start the scan"), media_type="text/event-stream")
 
             
             # STEP [ 3 ] : =========== Add the user message to the mongo db ====================== ⭐
@@ -210,20 +224,20 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
            
         except Exception as e:
-            console.print(f"Error in send_message_to_scan_conversation: {e}",style="bold red")
+            console.print(f"Error in send_message_to_{type}_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in sending message , please try again later")
     
     
     @app.get("/{type}/conversation/{conversation_id}",summary="Get the scan status of a scan conversation")
-    async def get_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def get_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Get the scan status of a scan conversation.
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
             SCAN_STATUS = None
             MESSAGES = None
@@ -276,25 +290,29 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             )
             
         except Exception as e:
-            console.print(f"Error in get_scan_status_of_sast_scan_conversation: {e}",style="bold red")
+            console.print(f"Error in get_scan_status_of_{type}_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting scan status , please try again later")
     
     @app.post("/{type}/conversation/{conversation_id}/scan",summary="Start a scan")
     async def start_scan(
-        type: Literal["sast", "llm" , "mcp"],
+        type: scan_types,
         conversation_id: int, 
         sast_data: StartSastScanData | None = None,
         llm_data: StartLLMBenchmarkingData | None = None,
         mcp_data: StartMCPScanData | None = None,
+        iac_data: StartGeneralScanData | None = None,
+        leakage_data: StartGeneralScanData | None = None,
+        sbom_sca_data: StartGeneralScanData | None = None,
+        agent_discovery_data: StartGeneralScanData | None = None,
         Authorization: Annotated[str | None, Header()] = None):
         """
         Start a scan.
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
             
             # STEP [ 1 ] : =========== Validate getting the conversation from the main db ======================
@@ -321,6 +339,10 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     sast_data=sast_data,
                     llm_data=llm_data,
                     mcp_data=mcp_data,
+                    iac_data=iac_data,
+                    leakage_data=leakage_data,
+                    sbom_sca_data=sbom_sca_data,
+                    agent_discovery_data=agent_discovery_data,
                     conversation_id=conversation_id,
                     user_id=user.id,
                     engine=engine,
@@ -333,7 +355,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     "message": "Scan started successfully",
                 }
         except Exception as e:
-            console.print(f"Error in start_scan: {e}",style="bold red")
+            console.print(f"Error in start_{type}_scan: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")
@@ -343,13 +365,13 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.delete("/{type}/conversation/{conversation_id}",summary="Delete a scan conversation")
-    async def delete_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def delete_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Delete a scan conversation.
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
 
             # STEP [ 1 ] : =========== Delete the conversation from the main db ======================
@@ -394,19 +416,19 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             }
                 
         except Exception as e:
-            console.print(f"Error in delete_scan_conversation: {e}",style="bold red")
+            console.print(f"Error in delete_{type}_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deleting conversation , please try again later")
     
     @app.put("/{type}/conversation/{conversation_id}",summary="Update a scan conversation . Use this for renaming the conversation")
-    async def update_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, data: UpdateScanConversationData, Authorization: Annotated[str | None, Header()] = None):
+    async def update_scan_conversation(type: scan_types, conversation_id: int, data: UpdateScanConversationData, Authorization: Annotated[str | None, Header()] = None):
         """
         Update a scan conversation.
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
 
             # STEP [ 1 ] : =========== Update the main db conversation the title ======================
@@ -421,19 +443,19 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     "message": "Conversation title updated successfully",
                 }
         except Exception as e:
-            console.print(f"Error in update_scan_conversation: {e}",style="bold red")
+            console.print(f"Error in update_{type}_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating conversation , please try again later")
     
     @app.get("/{type}/conversation/{conversation_id}/export",summary="Export the results of a scan conversation")
-    async def export_scan_conversation(type: Literal["sast", "llm" , "mcp"], conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def export_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Export the results of a scan conversation.
         """
         try:
-            # user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            user = User(id=1) # for testing purposes
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
             
             export_results = None
@@ -470,7 +492,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             
         
         except Exception as e:
-            console.print(f"Error in export_scan_conversation: {e}",style="bold red")
+            console.print(f"Error in export_{type}_scan_conversation: {e}",style="bold red")
             if isinstance(e,HTTPException):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting conversation , please try again later")

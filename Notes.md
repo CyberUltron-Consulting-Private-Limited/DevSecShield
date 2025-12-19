@@ -1,13 +1,12 @@
 # TO DO 
 
-- Add support for started state in the frontend and only use that for polling for results
-
-
-- fix bug in mcp results parsing ( list index out of range error )
+- agent discovery uses openai 
+- react-pdf turbopack error 
+- aws bedrock structured outputs are not reliable . ( find a better way )
 - look into how to scan a http or sse mcp server as well 
-- Add cleanup for temp dirs or files ⚠️
-- DAST inputs ( figure out how to do )
+- mcp scanner from invariant labs is not working , too many requests error 
 
+- DAST inputs ( figure out how to do )
 
 
 look at this for reference : 

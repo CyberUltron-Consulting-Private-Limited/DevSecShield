@@ -188,13 +188,13 @@ export default function LLMPage() {
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Scan
               </Button>
-              <Button className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => queryClient.invalidateQueries({ queryKey: ['llm-conversations'] })}>
+              <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['llm-conversations'] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
@@ -218,7 +218,7 @@ export default function LLMPage() {
                 No scans yet. Create your first LLM scan to get started.
               </p>
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -245,7 +245,7 @@ export default function LLMPage() {
                       <TableCell className="font-medium">
                         <Link
                           href={`/home/llm/${conversation.id}`}
-                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline"
+                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
                         </Link>
@@ -277,19 +277,21 @@ export default function LLMPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-8 w-8 cursor-pointer"
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
+                              className="cursor-pointer"
                               onClick={() => handleRename(conversation)}
                             >
                               <Pencil className="h-4 w-4 mr-2" />
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              className="cursor-pointer"
                               onClick={() => handleDelete(conversation)}
                               variant="destructive"
                             >
@@ -332,6 +334,7 @@ export default function LLMPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setRenameDialogOpen(false);
                 setNewName("");
@@ -342,7 +345,7 @@ export default function LLMPage() {
             <Button
               onClick={confirmRename}
               disabled={!newName.trim()}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
             >
               Save
             </Button>
@@ -362,6 +365,7 @@ export default function LLMPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setDeleteDialogOpen(false);
                 setSelectedConversation(null);
@@ -371,6 +375,7 @@ export default function LLMPage() {
             </Button>
             <Button
               variant="destructive"
+              className="cursor-pointer"
               onClick={confirmDelete}
             >
               Delete
@@ -403,6 +408,7 @@ export default function LLMPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setCreateDialogOpen(false);
                 setNewScanTitle("");
@@ -413,7 +419,7 @@ export default function LLMPage() {
             <Button
               onClick={confirmCreate}
               disabled={!newScanTitle.trim() || createLLMConversationMutation.isPending}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
             >
               {createLLMConversationMutation.isPending ? "Creating..." : "Create"}
             </Button>

@@ -98,12 +98,18 @@ def run_sbom_scan(
         # with open("sbom_test.json", "w+") as f:
         #     json.dump(sbom_json, f, indent=2)
 
+        try:
+            Console().print("Cleaning up temp directory",style="dim yellow")
+            shutil.rmtree(directory)
+        except Exception as e:
+            Console().print(f"Error: {e}",style="dim red")
+            pass
+
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(sbom_json['matches'])}",style="bold green")
         return sbom_json
     except Exception as e:
-        Console().print(f"Error: {e}",style="bold red")
         Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
-        return str(e)
+        raise e
 
 
 if __name__ == "__main__":

@@ -83,7 +83,15 @@ def run_gitleaks_scan(context : GithubContext | GitlabContext | BitbucketContext
         # for testing
         # with open("gitleaks_test.json", "w+", encoding="utf-8") as f:
         #     json.dump(gitleaks_json, f, indent=2)
-        
+
+
+        try:
+            Console().print("Cleaning up temp directory",style="dim yellow")
+            shutil.rmtree(directory)
+        except Exception as e:
+            Console().print(f"Error: {e}",style="dim red")
+            pass
+
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(gitleaks_json)}",style="bold green")
         return gitleaks_json
     except Exception as e:

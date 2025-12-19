@@ -19,7 +19,11 @@ export default function MCPPage() {
   const conversation_id = parseInt(usePathname().split('/').pop() || '0');
   if (!conversation_id) {
     toast.error("Conversation id not found");
-    return;
+    return <div className="flex h-screen w-full items-center justify-center">
+      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+        Conversation id not found
+      </p>
+    </div>
   }
 
   const queryClient = useQueryClient();
@@ -34,7 +38,7 @@ export default function MCPPage() {
         queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', conversation_id] });
       }, 6 * 1000);
     }
-  }, [query.dataUpdatedAt, conversation_id, queryClient]);
+  }, [query.dataUpdatedAt, conversation_id]);
 
   useEffect(() => {
     setScanStatus(query.data?.scan_status || "unknown");

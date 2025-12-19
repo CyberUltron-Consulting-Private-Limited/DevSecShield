@@ -8,7 +8,8 @@ from fastapi import HTTPException, status
 from celery.result import AsyncResult
 from sqlmodel import Session, select
 from sqlalchemy.engine import Engine
-
+import datetime
+from datetime import timezone
 console = Console()
 
 def get_celery_app():
@@ -75,6 +76,10 @@ def get_status_and_update_db(
             if not conversation:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
             
+            #updating last_updated field
+            conversation.last_updated = datetime.datetime.now(timezone.utc)
+
+
             if conversation.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
                 conversation.scan_status = SCAN_STATUS
                 console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")

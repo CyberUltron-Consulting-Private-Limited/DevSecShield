@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { useParams } from "next/navigation";
 import ModelChoicePicker from "./ModelChoicePicker";
 import probeDescription from "@/garak_probes.json";
-import { generateAndDownloadPDF } from "@/components/PDF_Report";
+// import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
 // LLM Scan creation data interface
 type LLMScanCreateData = {
@@ -473,18 +473,19 @@ export function LLMOptionsSidebar({
               variant="ghost" 
               size="sm"
               onClick={async () => {
-                const exportResults = await exportMutation.mutateAsync(parseInt(conversation_id as string));
-                if (exportResults) {
-                  const modelInfo = query.data?.model_name 
-                    ? `${query.data.model_type || "LLM"}: ${query.data.model_name}`
-                    : null;
-                  generateAndDownloadPDF(
-                    exportResults,
-                    "LLM Security Scan",
-                    modelInfo,
-                    new Date().toLocaleDateString()
-                  );
-                }
+                toast.error("Downloading scan report is not available yet");
+                // const exportResults = await exportMutation.mutateAsync(parseInt(conversation_id as string));
+                // if (exportResults) {
+                //   const modelInfo = query.data?.model_name 
+                //     ? `${query.data.model_type || "LLM"}: ${query.data.model_name}`
+                //     : null;
+                //   generateAndDownloadPDF(
+                //     exportResults,
+                //     "LLM Security Scan",
+                //     modelInfo,
+                //     new Date().toLocaleDateString()
+                //   );
+                // }
               }}
               className="w-full h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
             >

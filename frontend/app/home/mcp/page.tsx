@@ -182,13 +182,13 @@ export default function MCPPage() {
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Scan
               </Button>
-              <Button className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => queryClient.invalidateQueries({ queryKey: ['mcp-conversations'] })}>
+              <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['mcp-conversations'] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
@@ -212,7 +212,7 @@ export default function MCPPage() {
                 No scans yet. Create your first MCP scan to get started.
               </p>
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white"
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -237,7 +237,7 @@ export default function MCPPage() {
                       <TableCell className="font-medium">
                         <Link
                           href={`/home/mcp/${conversation.id}`}
-                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline"
+                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
                         </Link>
@@ -255,19 +255,21 @@ export default function MCPPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="h-8 w-8 cursor-pointer"
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
+                              className="cursor-pointer"
                               onClick={() => handleRename(conversation)}
                             >
                               <Pencil className="h-4 w-4 mr-2" />
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              className="cursor-pointer"
                               onClick={() => handleDelete(conversation)}
                               variant="destructive"
                             >
@@ -310,6 +312,7 @@ export default function MCPPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setRenameDialogOpen(false);
                 setNewName("");
@@ -320,7 +323,7 @@ export default function MCPPage() {
             <Button
               onClick={confirmRename}
               disabled={!newName.trim()}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
             >
               Save
             </Button>
@@ -340,6 +343,7 @@ export default function MCPPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setDeleteDialogOpen(false);
                 setSelectedConversation(null);
@@ -349,6 +353,7 @@ export default function MCPPage() {
             </Button>
             <Button
               variant="destructive"
+              className="cursor-pointer"
               onClick={confirmDelete}
             >
               Delete
@@ -381,6 +386,7 @@ export default function MCPPage() {
           <DialogFooter>
             <Button
               variant="outline"
+              className="cursor-pointer"
               onClick={() => {
                 setCreateDialogOpen(false);
                 setNewScanTitle("");
@@ -391,7 +397,7 @@ export default function MCPPage() {
             <Button
               onClick={confirmCreate}
               disabled={!newScanTitle.trim() || createMCPConversationMutation.isPending}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
             >
               {createMCPConversationMutation.isPending ? "Creating..." : "Create"}
             </Button>

@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from rich.console import Console
-from tools.context.Context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext
+from tools.context.Context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext, validate_dict_with_context
 
 
 
@@ -115,6 +116,13 @@ def run_sast_scan(
         # for testing
         # with open("sast_test.json", "w+", encoding="utf-8") as f:
         #     json.dump(sast_json, f, indent=2)
+
+        try:
+            Console().print("Cleaning up temp directory",style="dim yellow")
+            shutil.rmtree(directory)
+        except Exception as e:
+            Console().print(f"Error: {e}",style="dim red")
+            pass
         
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(sast_json['results'])}",style="bold green")
         return sast_json
@@ -134,8 +142,17 @@ if __name__ == "__main__":
     #     PAT="glpat-j-kWHdSBppL5jfw-cMcWnm86MQp1OmowcnF2Cw.01.1207m75uw",
     #     app_lang="javascript",
     # )
+    dict_context = {
+    "mode":"github",
+    "repo_url":"https://github.com/CyberUltron-Nikhil/RiskPilot.git",
+    "PAT":"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",
+    }
+    sast_kwargs = {
+        "dict_context":dict_context,
+        "app_lang":"javascript",
+    }
+    context = validate_dict_with_context(dict_context)
     github_result = run_sast_scan(
-        repo_url="https://github.com/CyberUltron-Nikhil/RiskPilot",
-        PAT="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",
+        context=context,
         app_lang="javascript",
     )

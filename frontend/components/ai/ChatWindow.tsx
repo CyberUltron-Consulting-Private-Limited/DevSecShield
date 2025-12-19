@@ -35,7 +35,7 @@ import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSastConversationMessages, LLMConversationResponse } from '@/utils/backend_api';
+import { getSastConversationMessages, IACConversationResponse, LLMConversationResponse } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
@@ -52,7 +52,9 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
-const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> }) => {
+const ChatWindow = ({ 
+  query }: { 
+    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [inputValue, setInputValue] = useState('');
@@ -90,7 +92,7 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
   }, [query.data , query.error]);
 
   // check type of conversation
-  let type: 'sast' | 'llm' | 'mcp' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | undefined;
   const paths = usePathname().split('/');
   // console.log(paths);
   if (paths[2] === 'sast') {
@@ -101,6 +103,18 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
   }
   else if (paths[2] === 'mcp') {
       type = 'mcp';
+  }
+  else if (paths[2] === 'iac') {
+      type = 'iac';
+  }
+  else if (paths[2] === 'leakage') {
+      type = 'leakage';
+  }
+  else if (paths[2] === 'sbom_sca') {
+      type = 'sbom_sca';
+  }
+  else if (paths[2] === 'agent_discovery') {
+      type = 'agent_discovery';
   }
   else {
       toast.error('Invalid conversation type');
@@ -160,19 +174,51 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
     else if (type === 'mcp') {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', conversation_id] });
     }
+    else if (type === 'iac') {
+      queryClient.invalidateQueries({ queryKey: ['iac-conversation-data', conversation_id] });
+    }
+    else if (type === 'leakage') {
+      queryClient.invalidateQueries({ queryKey: ['leakage-conversation-data', conversation_id] });
+    }
+    else if (type === 'sbom_sca') {
+      queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversation-data', conversation_id] });
+    }
+    else if (type === 'agent_discovery') {
+      queryClient.invalidateQueries({ queryKey: ['agent_discovery-conversation-data', conversation_id] });
+    }
     else {
       toast.error('Invalid conversation type');
     }
   }, [queryClient, conversation_id]);
 
  
-  const valid_types = ['sast', 'llm', 'mcp'];
+  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery'];
   let Heading: string = '';
-  if (type && valid_types.includes(type)) {
-    Heading = type.toUpperCase()
-  }
-  else {
-    Heading = 'Unknown';
+  switch (type) {
+    case 'sast':
+      Heading = 'SAST';
+      break;
+    case 'llm':
+      Heading = 'LLM';
+      break;
+    case 'mcp':
+      Heading = 'MCP';
+      break;
+    case 'iac':
+      Heading = 'IAC';
+      break;
+    case 'leakage':
+      Heading = 'Data Leakage';
+      break;
+    case 'sbom_sca':
+      Heading = 'SCA + SBOM';
+      break;
+    case 'agent_discovery':
+      Heading = 'AI Agent Discovery';
+      break;
+    default:
+      Heading = 'Unknown';
+      break;
   }
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden rounded-xl border bg-background shadow-sm ">
@@ -246,7 +292,7 @@ const ChatWindow = ({ query }: { query: UseQueryResult<SastConversationResponse>
                 setShowSuggestions(true);
               }
             }}
-            placeholder="Ask me anything about development, coding, or technology..."
+            placeholder="Ask me anything about your scan ..."
             disabled={isTyping}
           />
           <PromptInputToolbar>

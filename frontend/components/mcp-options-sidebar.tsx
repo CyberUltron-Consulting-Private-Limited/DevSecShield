@@ -17,7 +17,7 @@ import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-que
 import { toast } from "sonner";
 import { useParams } from "next/navigation";
 import { startMCPScan, getMCPExportResults } from "@/utils/backend_api";
-import { generateAndDownloadPDF } from "@/components/PDF_Report";
+// import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
 // Placeholder response type - replace with actual type when backend API is created
 interface MCPConversationResponse {
@@ -156,21 +156,19 @@ export function MCPOptionsSidebar({
             </div>
 
             {/* Info box */}
-            <div className="bg-blue-500/10 border border-blue-500/50 rounded-lg p-3">
-              <p className="text-sm font-medium text-blue-400">ℹ️ Configuration Format</p>
-              <p className="text-xs text-blue-300 mt-1">
-                Paste the JSON configuration containing your MCP servers. This should include the server names, commands, and arguments.
-              </p>
+            <div className="text-sm text-blue-400/70">
+              <span className="font-medium">ℹ️</span> Paste the JSON configuration containing your MCP servers. This should include the server names, commands, and arguments.
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="serverConfig" className="text-zinc-300">Server Config JSON *</Label>
               <Textarea
-                className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500 font-mono text-sm min-h-[250px]"
+                className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500 font-mono text-sm min-h-[250px] resize-y w-full wrap-break-word"
                 id="serverConfig"
                 placeholder={exampleConfig}
                 value={serverConfigJson}
                 onChange={(e) => validateJson(e.target.value)}
+                style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
               />
               {jsonError && (
                 <div className="flex items-center gap-2 text-red-400 text-sm">
@@ -191,18 +189,15 @@ export function MCPOptionsSidebar({
               <summary className="text-zinc-400 cursor-pointer hover:text-zinc-300">
                 Show example configuration
               </summary>
-              <pre className="mt-2 p-3 bg-zinc-800 rounded-lg text-xs text-zinc-300 overflow-x-auto">
+              <pre className="mt-2 p-3 bg-zinc-800 rounded-lg text-xs text-zinc-300 wrap-break-word overflow-x-hidden">
                 {exampleConfig}
               </pre>
             </details>
           </div>
 
           {/* Warning */}
-          <div className="bg-amber-500/10 border border-amber-500/50 rounded-lg p-3">
-            <p className="text-sm font-medium text-amber-400">⚠️ Security Notice</p>
-            <p className="text-xs text-amber-500 mt-1">
-              MCP server scans will analyze the tools and capabilities exposed by your configured servers to identify potential security issues.
-            </p>
+          <div className="text-sm text-amber-400/70">
+            <span className="font-medium">⚠️</span> MCP server scans will analyze the tools and capabilities exposed by your configured servers to identify potential security issues.
           </div>
 
           <Button
@@ -243,15 +238,16 @@ export function MCPOptionsSidebar({
               variant="ghost"
               size="sm"
               onClick={async () => {
-                const exportResults = await exportMutation.mutateAsync(parseInt(conversation_id as string));
-                if (exportResults) {
-                  generateAndDownloadPDF(
-                    exportResults,
-                    "MCP Security Scan",
-                    query.data?.title || null,
-                    new Date().toLocaleDateString()
-                  );
-                }
+                toast.error("Downloading scan report is not available yet");
+                // const exportResults = await exportMutation.mutateAsync(parseInt(conversation_id as string));
+                // if (exportResults) {
+                //   generateAndDownloadPDF(
+                //     exportResults,
+                //     "MCP Security Scan",
+                //     query.data?.title || null,
+                //     new Date().toLocaleDateString()
+                //   );
+                // }
               }}
               className="w-full h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
             >

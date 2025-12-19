@@ -52,8 +52,12 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
         list_of_tools_per_server = []
         error_messages = []
 
-        if raw_scan_dict[server_config_path]["error"]:
-            raise Exception(f"Error: {raw_scan_dict[server_config_path]['error']['message']} , Exception: {raw_scan_dict[server_config_path]['error']['exception']}")
+        # Log top-level errors but continue processing (e.g., analysis API errors shouldn't stop server processing)
+        if raw_scan_dict[server_config_path].get("error"):
+            top_level_error = raw_scan_dict[server_config_path]["error"]
+            error_msg = f"Top-level scan error (non-fatal): {top_level_error.get('message', 'Unknown error')} - {top_level_error.get('category', 'unknown')}"
+            error_messages.append(error_msg)
+            Console().print(f"{error_msg} 🟨",style="bold yellow")
         
         servers = raw_scan_dict[server_config_path]["servers"]
         Console().print(f"Number of servers found : {len(servers)} 🟩",style="bold green")
@@ -63,9 +67,11 @@ def run_mcp_scan(server_config_json:str) -> list[dict] | str:
             Console().print(f"Server {server_name} found , fetching tools...🟩",style="bold orange3")
 
             #if server encountered an error , then skip to next server after saving error message
-            if error in server or server["signature"]==None:
-                error_messages.append(f"Server {server_name} encountered an error : {server['error']['message']} ")
-                Console().print(f"Server {server_name} encountered an error : {server['error']['message']} 🟥",style="magenta2")
+            # Skip server if it has an error or no signature (failed servers)
+            if (("error" in server and server["error"] is not None) or server.get("signature") is None):
+                error_msg = server.get("error", {}).get("message", "Unknown error") if server.get("error") else "No signature available"
+                error_messages.append(f"Server {server_name} encountered an error : {error_msg}")
+                Console().print(f"Server {server_name} encountered an error : {error_msg} 🟥",style="magenta2")
                 list_of_tools_per_server.append([])  # Add empty list to maintain index alignment
                 continue
             tools = server["signature"]["tools"]

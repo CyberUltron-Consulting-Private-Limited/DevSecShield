@@ -79,7 +79,8 @@ try:
     @app.task(track_started=True)
     def sbom_sca(
         dict_context: dict , 
-        sbom_json_file: str | None = None):
+        sbom_json_file: str | None = None # this is optional and only used for testing purposes
+        ):
 
         
         context = validate_dict_with_context(dict_context)
@@ -96,7 +97,7 @@ try:
     @app.task(track_started=True)
     def iac(
         dict_context: dict , 
-        mode: Literal["tfsec", "trivy"] = "tfsec",
+        mode: Literal["tfsec", "trivy"] = "tfsec", # this is optional and only used for testing purposes
         ):
 
 

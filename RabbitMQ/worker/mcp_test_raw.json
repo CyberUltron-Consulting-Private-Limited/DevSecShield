@@ -1,7 +1,7 @@
 {
-  "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpr72zor_w.json": {
-    "client": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpr72zor_w.json",
-    "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpr72zor_w.json",
+  "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpe8jqprp2.json": {
+    "client": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpe8jqprp2.json",
+    "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\tmpe8jqprp2.json",
     "servers": [
       {
         "name": "playwright",
@@ -840,32 +840,14 @@
         "error": {
           "message": "could not start server",
           "exception": "unhandled errors in a TaskGroup (1 sub-exception)",
-          "traceback": "  + Exception Group Traceback (most recent call last):\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\MCPScanner.py\", line 224, in scan_server\n  |     result.signature = await check_server(server.server, self.server_timeout, traffic_capture)\n  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 204, in check_server\n  |     result = await asyncio.wait_for(_check_server_pass(server_config, timeout, traffic_capture), timeout)\n  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\asyncio\\tasks.py\", line 507, in wait_for\n  |     return await fut\n  |            ^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 193, in _check_server_pass\n  |     return await _check_server()\n  |            ^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 141, in _check_server\n  |     async with get_client(server_config, timeout=timeout, traffic_capture=traffic_capture) as (read, write):\n  |                ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\contextlib.py\", line 235, in __aexit__\n  |     await self.gen.athrow(value)\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 109, in get_client\n  |     async with capturing_client(client_cm, traffic_capture) as streams:\n  |                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\contextlib.py\", line 235, in __aexit__\n  |     await self.gen.athrow(value)\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\traffic_capture.py\", line 186, in capturing_client\n  |     async with client_cm as (read, write):\n  |                ^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\contextlib.py\", line 235, in __aexit__\n  |     await self.gen.athrow(value)\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp\\client\\stdio\\__init__.py\", line 183, in stdio_client\n  |     anyio.create_task_group() as tg,\n  |     ~~~~~~~~~~~~~~~~~~~~~~~^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\anyio\\_backends\\_asyncio.py\", line 783, in __aexit__\n  |     raise BaseExceptionGroup(\n  |         \"unhandled errors in a TaskGroup\", self._exceptions\n  |     ) from None\n  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)\n  +-+---------------- 1 ----------------\n    | Exception Group Traceback (most recent call last):\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp\\client\\stdio\\__init__.py\", line 189, in stdio_client\n    |     yield read_stream, write_stream\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\traffic_capture.py\", line 187, in capturing_client\n    |     yield CapturingReadStream(read, capture), CapturingWriteStream(write, capture)\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 110, in get_client\n    |     yield streams\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 142, in _check_server\n    |     async with ClientSession(read, write) as session:\n    |                ~~~~~~~~~~~~~^^^^^^^^^^^^^\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp\\shared\\session.py\", line 218, in __aexit__\n    |     return await self._task_group.__aexit__(exc_type, exc_val, exc_tb)\n    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\anyio\\_backends\\_asyncio.py\", line 783, in __aexit__\n    |     raise BaseExceptionGroup(\n    |         \"unhandled errors in a TaskGroup\", self._exceptions\n    |     ) from None\n    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)\n    +-+---------------- 1 ----------------\n      | Traceback (most recent call last):\n      |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 143, in _check_server\n      |     meta = await session.initialize()\n      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^\n      |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp\\client\\session.py\", line 151, in initialize\n      |     result = await self.send_request(\n      |              ^^^^^^^^^^^^^^^^^^^^^^^^\n      |     ...<15 lines>...\n      |     )\n      |     ^\n      |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\N8dYiwBDMBtaRfg23eX2D\\Lib\\site-packages\\mcp\\shared\\session.py\", line 286, in send_request\n      |     raise McpError(response_or_error.error)\n      | mcp.shared.exceptions.McpError: Connection closed\n      +------------------------------------\n",
+          "traceback": "  + Exception Group Traceback (most recent call last):\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\MCPScanner.py\", line 224, in scan_server\n  |     result.signature = await check_server(server.server, self.server_timeout, traffic_capture)\n  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 204, in check_server\n  |     result = await asyncio.wait_for(_check_server_pass(server_config, timeout, traffic_capture), timeout)\n  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\asyncio\\tasks.py\", line 507, in wait_for\n  |     return await fut\n  |            ^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 193, in _check_server_pass\n  |     return await _check_server()\n  |            ^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 141, in _check_server\n  |     async with get_client(server_config, timeout=timeout, traffic_capture=traffic_capture) as (read, write):\n  |                ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\contextlib.py\", line 235, in __aexit__\n  |     await self.gen.athrow(value)\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 109, in get_client\n  |     async with capturing_client(client_cm, traffic_capture) as streams:\n  |                ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\contextlib.py\", line 235, in __aexit__\n  |     await self.gen.athrow(value)\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\traffic_capture.py\", line 186, in capturing_client\n  |     async with client_cm as (read, write):\n  |                ^^^^^^^^^\n  |   File \"C:\\Users\\HP\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\contextlib.py\", line 235, in __aexit__\n  |     await self.gen.athrow(value)\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp\\client\\stdio\\__init__.py\", line 183, in stdio_client\n  |     anyio.create_task_group() as tg,\n  |     ~~~~~~~~~~~~~~~~~~~~~~~^^\n  |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\anyio\\_backends\\_asyncio.py\", line 783, in __aexit__\n  |     raise BaseExceptionGroup(\n  |         \"unhandled errors in a TaskGroup\", self._exceptions\n  |     ) from None\n  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)\n  +-+---------------- 1 ----------------\n    | Exception Group Traceback (most recent call last):\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp\\client\\stdio\\__init__.py\", line 189, in stdio_client\n    |     yield read_stream, write_stream\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\traffic_capture.py\", line 187, in capturing_client\n    |     yield CapturingReadStream(read, capture), CapturingWriteStream(write, capture)\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 110, in get_client\n    |     yield streams\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 142, in _check_server\n    |     async with ClientSession(read, write) as session:\n    |                ~~~~~~~~~~~~~^^^^^^^^^^^^^\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp\\shared\\session.py\", line 218, in __aexit__\n    |     return await self._task_group.__aexit__(exc_type, exc_val, exc_tb)\n    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\anyio\\_backends\\_asyncio.py\", line 783, in __aexit__\n    |     raise BaseExceptionGroup(\n    |         \"unhandled errors in a TaskGroup\", self._exceptions\n    |     ) from None\n    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)\n    +-+---------------- 1 ----------------\n      | Traceback (most recent call last):\n      |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp_scan\\mcp_client.py\", line 143, in _check_server\n      |     meta = await session.initialize()\n      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^\n      |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp\\client\\session.py\", line 151, in initialize\n      |     result = await self.send_request(\n      |              ^^^^^^^^^^^^^^^^^^^^^^^^\n      |     ...<15 lines>...\n      |     )\n      |     ^\n      |   File \"C:\\Users\\HP\\AppData\\Local\\uv\\cache\\archive-v0\\tAeAsbcnGXY2W4HAsQv7G\\Lib\\site-packages\\mcp\\shared\\session.py\", line 286, in send_request\n      |     raise McpError(response_or_error.error)\n      | mcp.shared.exceptions.McpError: Connection closed\n      +------------------------------------\n",
           "is_failure": true,
           "category": "server_startup",
-          "server_output": ">>> SENT: SessionMessage(message=JSONRPCMessage(root=JSONRPCRequest(method='initialize', params={'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'mcp', 'version': '0.1.0'}}, jsonrpc='2.0', id=0)), metadata=None)\nSTDERR: npm error code ENOVERSIONS\nSTDERR: npm error No versions available for server-package\nSTDERR: npm error A complete log of this run can be found in: C:\\Users\\HP\\AppData\\Local\\npm-cache\\_logs\\2025-12-17T05_19_30_112Z-debug-0.log"
+          "server_output": ">>> SENT: SessionMessage(message=JSONRPCMessage(root=JSONRPCRequest(method='initialize', params={'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'mcp', 'version': '0.1.0'}}, jsonrpc='2.0', id=0)), metadata=None)\nSTDERR: npm error code ENOVERSIONS\nSTDERR: npm error No versions available for server-package\nSTDERR: npm error A complete log of this run can be found in: C:\\Users\\HP\\AppData\\Local\\npm-cache\\_logs\\2025-12-19T14_21_56_305Z-debug-0.log"
         }
       }
     ],
     "issues": [
-      {
-        "code": "W005",
-        "message": "The tool is not in our registry, even though the server is.",
-        "reference": [
-          0,
-          2
-        ],
-        "extra_data": null
-      },
-      {
-        "code": "W005",
-        "message": "The tool is not in our registry, even though the server is.",
-        "reference": [
-          0,
-          12
-        ],
-        "extra_data": null
-      },
       {
         "code": "W005",
         "message": "The tool is not in our registry, even though the server is.",
@@ -935,9 +917,16 @@
             {
               "reference": [
                 0,
+                19
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
                 20
               ],
-              "label_value": 1.0
+              "label_value": 2.0
             }
           ],
           "private_data_tool": [
@@ -952,13 +941,6 @@
               "reference": [
                 0,
                 4
-              ],
-              "label_value": 2.0
-            },
-            {
-              "reference": [
-                0,
-                5
               ],
               "label_value": 2.0
             },
@@ -989,13 +971,48 @@
                 15
               ],
               "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                20
+              ],
+              "label_value": 1.0
             }
           ],
           "public_sink_tool": [
             {
               "reference": [
                 0,
+                3
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                4
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
                 5
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                6
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                8
               ],
               "label_value": 2.0
             },
@@ -1009,9 +1026,37 @@
             {
               "reference": [
                 0,
+                10
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
                 13
               ],
               "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                16
+              ],
+              "label_value": 1.0
+            },
+            {
+              "reference": [
+                0,
+                17
+              ],
+              "label_value": 1.0
+            },
+            {
+              "reference": [
+                0,
+                19
+              ],
+              "label_value": 1.0
             }
           ]
         }
@@ -1067,9 +1112,16 @@
             {
               "reference": [
                 0,
+                19
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
                 20
               ],
-              "label_value": 1.0
+              "label_value": 2.0
             }
           ],
           "destructive_tool": [
@@ -1083,6 +1135,13 @@
             {
               "reference": [
                 0,
+                3
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
                 4
               ],
               "label_value": 3.0
@@ -1090,21 +1149,42 @@
             {
               "reference": [
                 0,
-                7
+                5
               ],
-              "label_value": 2.0
+              "label_value": 3.0
             },
             {
               "reference": [
                 0,
-                8
+                6
               ],
               "label_value": 1.0
             },
             {
               "reference": [
                 0,
+                7
+              ],
+              "label_value": 1.0
+            },
+            {
+              "reference": [
+                0,
+                8
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
                 9
+              ],
+              "label_value": 2.0
+            },
+            {
+              "reference": [
+                0,
+                10
               ],
               "label_value": 1.0
             },
@@ -1114,6 +1194,13 @@
                 13
               ],
               "label_value": 3.0
+            },
+            {
+              "reference": [
+                0,
+                14
+              ],
+              "label_value": 1.0
             },
             {
               "reference": [
@@ -1177,38 +1264,20 @@
           "private_data": 2.0
         },
         {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 3.0,
-          "untrusted_content": 2.0,
-          "private_data": 2.0
-        },
-        {
           "is_public_sink": 2.0,
-          "destructive": 0.0,
-          "untrusted_content": 0.0,
-          "private_data": 2.0
-        },
-        {
-          "is_public_sink": 0.0,
-          "destructive": 0.0,
-          "untrusted_content": 0.0,
-          "private_data": 0.0
-        },
-        {
-          "is_public_sink": 0.0,
           "destructive": 2.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
         },
         {
-          "is_public_sink": 0.0,
-          "destructive": 1.0,
+          "is_public_sink": 2.0,
+          "destructive": 3.0,
+          "untrusted_content": 2.0,
+          "private_data": 2.0
+        },
+        {
+          "is_public_sink": 2.0,
+          "destructive": 3.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
         },
@@ -1220,7 +1289,25 @@
         },
         {
           "is_public_sink": 0.0,
-          "destructive": 0.0,
+          "destructive": 1.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 2.0,
+          "destructive": 2.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 2.0,
+          "destructive": 2.0,
+          "untrusted_content": 0.0,
+          "private_data": 0.0
+        },
+        {
+          "is_public_sink": 2.0,
+          "destructive": 1.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
         },
@@ -1244,7 +1331,7 @@
         },
         {
           "is_public_sink": 0.0,
-          "destructive": 0.0,
+          "destructive": 1.0,
           "untrusted_content": 1.0,
           "private_data": 2.0
         },
@@ -1255,13 +1342,13 @@
           "private_data": 2.0
         },
         {
-          "is_public_sink": 0.0,
+          "is_public_sink": 1.0,
           "destructive": 2.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
         },
         {
-          "is_public_sink": 0.0,
+          "is_public_sink": 1.0,
           "destructive": 2.0,
           "untrusted_content": 0.0,
           "private_data": 0.0
@@ -1273,16 +1360,16 @@
           "private_data": 0.0
         },
         {
-          "is_public_sink": 0.0,
+          "is_public_sink": 1.0,
           "destructive": 1.0,
-          "untrusted_content": 0.0,
+          "untrusted_content": 2.0,
           "private_data": 0.0
         },
         {
           "is_public_sink": 0.0,
           "destructive": 1.0,
-          "untrusted_content": 1.0,
-          "private_data": 0.0
+          "untrusted_content": 2.0,
+          "private_data": 1.0
         },
         {
           "is_public_sink": 0.0,
