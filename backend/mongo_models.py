@@ -54,7 +54,7 @@ class GuardrailLogs(TypedDict, total=False):
     _id: str  # MongoDB ObjectId as string (auto-generated, always present when reading)
     integration_id: str  
     task_id: str # celery task id ( has to be created when the task is initiated or log created )
-    status: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"]
+    status: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = "NOT_STARTED"
     user_id: int
     input_prompt: str
     created_at: datetime
