@@ -941,3 +941,95 @@ export {
     startLeakageScan,
     getLeakageExportResults
 }
+
+// -------------------------------------------------------------- Guardrails API Routes --------------------------------------------------------------
+
+export interface GuardrailsIntegration {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    api_key: string
+}
+
+// Mock data for development
+const mockGuardrailsIntegrations: GuardrailsIntegration[] = [
+    {
+        id: 1,
+        title: "Production API Guardrails",
+        created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
+        last_updated: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
+        api_key: "gr_sk_live_1234567890abcdefghijklmnopqrstuvwxyz"
+    },
+    {
+        id: 2,
+        title: "Staging Environment",
+        created_at: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
+        last_updated: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
+        api_key: "gr_sk_test_abcdefghijklmnopqrstuvwxyz1234567890"
+    },
+    {
+        id: 3,
+        title: "Development Guardrails",
+        created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
+        last_updated: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), // 5 hours ago
+        api_key: "gr_sk_dev_9876543210zyxwvutsrqponmlkjihgfedcba"
+    }
+];
+
+const getGuardrailsIntegrations = async (): Promise<GuardrailsIntegration[]> => {
+    try {
+        // Mock API call - simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Return mock data
+        toast.success("Guardrails integrations fetched successfully")
+        return [...mockGuardrailsIntegrations]
+    } catch (error) {
+        showErrorToast(error,"Error fetching guardrails integrations")
+        throw error
+    }
+}
+
+const deleteGuardrailsIntegration = async (integration_id: number) => {
+    try {
+        // Mock API call - simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Remove from mock data
+        const index = mockGuardrailsIntegrations.findIndex(integration => integration.id === integration_id);
+        if (index !== -1) {
+            mockGuardrailsIntegrations.splice(index, 1);
+        }
+        
+        toast.success("Guardrails integration deleted successfully")
+        return { success: true, message: "Integration deleted" }
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameGuardrailsIntegration = async ({integration_id, title}: {integration_id: number, title: string}) => {
+    try {
+        // Mock API call - simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Update mock data
+        const integration = mockGuardrailsIntegrations.find(integration => integration.id === integration_id);
+        if (integration) {
+            integration.title = title;
+            integration.last_updated = new Date().toISOString();
+        }
+        
+        toast.success("Guardrails integration renamed successfully")
+        return { success: true, message: "Integration renamed" }
+    } catch (error) {
+        throw error
+    }
+}
+
+export { 
+    getGuardrailsIntegrations, 
+    deleteGuardrailsIntegration, 
+    renameGuardrailsIntegration
+}

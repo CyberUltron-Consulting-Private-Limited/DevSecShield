@@ -162,3 +162,34 @@ class Agent_DiscoveryConversation(SQLModel,table=True):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+# ========================================= Guardrails Integration =========================================
+"""
+threshold should not be 0 or it will fail the scan ( add validation for this )
+"""
+default_settings = {
+    "anonymize": None,
+    "toxicity": None,
+    "tokenlimit": None,
+    "promptinjection": None,
+    "regex": None,
+    "code": None,
+    "secrets": None
+}
+
+class GuardrailsIntegration(SQLModel,table=True):
+    id : int | None = Field(default=None,primary_key=True)
+    user_id : int
+    api_key : str
+    title : str = Field(default="New Guardrails Integration")
+    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+
+    # scanner settings 
+    settings : Dict | None = Field(default=default_settings,sa_column=Column(JSON))
+
+
+
+    class Config:
+        arbitrary_types_allowed = True

@@ -1,7 +1,16 @@
-## To do 
+## Guardrails API 
 
-- SAST : add a field in the SAST Conversation table to store the table_data ( which we will be allowing the user to export as a PDF )
-- SAST : connect UI to backend after above is done
+Public API Routes : 
+1. route to send input prompt to guardrails and start the scan
+2. route to get the scan task status / results 
+
+Dashboard API Routes : 
+1. route to create a new integration 
+2. route to get all integrations for a user
+3. route to delete an integration
+4. route to update an integration ( renaming , adding/ deleting scanners , modifying scanner settings )
+5. route to get a specific integration dashboard data
+6. route to get the integration settings of all the scanners in the integration
 
 
 ## Notes 
@@ -13,7 +22,8 @@
 
 - Do a ``uv pip install -U "langchain[aws]"`` 
 
-- To create tables , from root directory run ``uv run python -m backnend.init_db`` ( no longer needed you can use alembic for this )
+- To create mongo db tables , from root directory run ``uv run python -m backnend.init_mongo_db`` ( for MONGO DB ) 
+- To create postgres db tables , use alembic 
 
 - add branch selection to repo cloning 
 ``Repo.clone_from(url, tmp_dir, depth=1,branch="branch_name")``

@@ -49,7 +49,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 console.print(f"{len(conversations)} {type} conversations found for user: {user.id}" ,style="bold green")
                 conversations_data,conversations_to_update = return_conversations_list_for_type(type, conversations)
 
-                if conversations_to_update:
+                if len(conversations_to_update) > 0:
                     background_tasks.add_task(update_status_of_conversation_in_main_db, conversations_to_update, user.id, type, engine)
                     console.print(f"Background task added to update statuses of conversations: {conversations_to_update}" ,style="bold green")
                 

@@ -6,25 +6,25 @@ from .models import *
 
 
 
-def create_db_and_tables():
-    try:
-        console = Console()
-        # creating the SQL engine to communicate to the db
-        sqlite_file_name = os.path.join(os.path.dirname(__file__),"database.db")
-        sqlite_url = f"sqlite:///{sqlite_file_name}"
-        db_url = sqlite_url
+# def create_db_and_tables():
+#     try:
+#         console = Console()
+#         # creating the SQL engine to communicate to the db
+#         sqlite_file_name = os.path.join(os.path.dirname(__file__),"database.db")
+#         sqlite_url = f"sqlite:///{sqlite_file_name}"
+#         db_url = sqlite_url
 
-        # creating the PostgreSQL database url
-        # load_dotenv()
-        # postgres_url = os.environ['DATABASE_URL']
-        # db_url = postgres_url
+#         # creating the PostgreSQL database url
+#         # load_dotenv()
+#         # postgres_url = os.environ['DATABASE_URL']
+#         # db_url = postgres_url
 
-        engine = create_engine(db_url)
-        SQLModel.metadata.create_all(engine)
-        console.print(f"main database tables created",style="bold green")
-    except Exception as e:
-        console = Console()
-        console.print(f"error creating tables: {e}",style="bold red")
+#         engine = create_engine(db_url)
+#         SQLModel.metadata.create_all(engine)
+#         console.print(f"main database tables created",style="bold green")
+#     except Exception as e:
+#         console = Console()
+#         console.print(f"error creating tables: {e}",style="bold red")
 
 def mongo_db_create_collections_and_documents():
     try:
@@ -36,15 +36,27 @@ def mongo_db_create_collections_and_documents():
         collections = db.list_collection_names()
         console = Console()
         console.print(f"collections: {collections}",style="bold green")
+
+        # conversations collection
         if 'conversations' not in collections:
             db.create_collection('conversations')
             console.print(f"conversations collection created",style="bold green")
+
+        # message_log collection
         if 'message_log' not in collections:
             db.create_collection('message_log')
             console.print(f"message_log collection created",style="bold green")
+
+        # active_context collection
         if 'active_context' not in collections:
             db.create_collection('active_context')
             console.print(f"active_context collection created",style="bold green")
+
+        # guardrail_logs collection
+        if 'guardrail_logs' not in collections:
+            db.create_collection('guardrail_logs')
+            console.print(f"guardrail_logs collection created",style="bold green")
+        
         console.print(f"collections created",style="bold green")
         console.print(f"list of collections: {db.list_collection_names()}",style="bold green")
     except Exception as e:
@@ -53,5 +65,5 @@ def mongo_db_create_collections_and_documents():
 
 
 if __name__=="__main__":
-    create_db_and_tables()
+    # create_db_and_tables()
     mongo_db_create_collections_and_documents()

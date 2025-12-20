@@ -17,6 +17,7 @@ import {
   Database,
   Box,
   Server,
+  Shield,
 } from "lucide-react";
 import {
   Sidebar,
@@ -67,6 +68,7 @@ const toolsItems = [
 
 const workflowItems = [
   { name: "Integration", href: "/home/integration", icon: Link2 },
+  { name: "Guardrails", href: "/home/guardrails", icon: Shield },
 ];
 
 function UserFooter() {

@@ -5,7 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13.5"
 dependencies = [
+    "celery>=5.6.0",
     "llm-guard>=0.3.16",
     "pip>=25.3",
+    "pymongo>=4.15.5",
+    "python-dotenv>=1.2.1",
     "rich>=14.2.0",
 ]
