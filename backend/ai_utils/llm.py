@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from rich.console import Console
 from fastapi import HTTPException, status
-import os
+import instructor
 from dotenv import load_dotenv
 from openai import OpenAI
 import base64
@@ -56,15 +56,16 @@ def generate_structured_response_bedrock(input_prompt: str, system_prompt: str, 
     """
     try :
         load_dotenv()
-        model = ChatBedrock(
-            model="anthropic.claude-3-haiku-20240307-v1:0",
-            region="ap-south-1",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+        client = instructor.from_provider("bedrock/anthropic.claude-3-haiku-20240307-v1:0")
+        response = client.create(
+            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            messages=[
+                {"role": "user", "content": input_prompt},
+            ],
+            response_model=output_model,
         )
-        structured_model = model.with_structured_output(output_model)
-        result = structured_model.invoke([SystemMessage(content=system_prompt) , HumanMessage(content=input_prompt)])
-        return result
+
+        return response
     except Exception as e:
         console.print(f"Error in generate_structured_response: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating structured response , please try again later")

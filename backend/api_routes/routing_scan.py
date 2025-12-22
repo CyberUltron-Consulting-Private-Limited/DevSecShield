@@ -497,3 +497,55 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting conversation , please try again later")
     
+
+    @app.get("/{type}/conversation/{conversation_id}/dashboard_data",summary="Get the dashboard data of a scan conversation")
+    async def get_dashboard_data(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+        """
+        Get the dashboard data of a scan conversation.
+        """
+        try:
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
+            Table = get_Table_from_type(type)
+            
+            dashboard_data = None
+
+            # STEP [ 1 ] : ======================= Get the conversation from main db and check if dashboard data is already populated ========================================
+            conversation = None
+            with Session(engine) as session:
+                conversation = session.exec(select(Table).where(Table.id == conversation_id).where(Table.user_id == user.id)).first()
+                if not conversation:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+                if conversation.dashboard_data:
+                    dashboard_data = conversation.dashboard_data
+
+                if not dashboard_data:
+                    dashboard_data = create_export_results(conversation.scan_data)
+                    conversation.dashboard_data = dashboard_data
+                    session.commit()
+                    session.refresh(conversation)
+                    console.print(f"Dashboard data for conversation id: {conversation.id} updated in main database" ,style="bold green")
+
+            # STEP [ 2 ] : ======================= Calculate some metrics  ======================
+
+            high_risk_vulnerabilities = 0
+            medium_risk_vulnerabilities = 0
+            low_risk_vulnerabilities = 0
+            total_vulnerabilities = 0
+
+            for vulnerability in dashboard_data["vulnerabilities"]:
+                if vulnerability["severity"] == "high":
+                    high_risk_vulnerabilities += 1
+                elif vulnerability["severity"] == "medium":
+                    medium_risk_vulnerabilities += 1
+                elif vulnerability["severity"] == "low":
+                    low_risk_vulnerabilities += 1
+                total_vulnerabilities += 1
+                
+            return {"data": dashboard_data}
+        
+        except Exception as e:
+            console.print(f"Error in get_dashboard_data_{type}_scan_conversation: {e}",style="bold red")
+            if isinstance(e,HTTPException):
+                raise e
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting dashboard data , please try again later")

@@ -6,7 +6,7 @@ import tempfile
 import shutil
 from git import Repo, GitCommandError
 from rich.console import Console
-from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext , snippet_with_numbers
+from tools.context.scan_context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext , snippet_with_numbers
 
 
 def run_gitleaks_scan(context : GithubContext | GitlabContext | BitbucketContext ) -> dict | str:

@@ -5,7 +5,7 @@ import tempfile
 import shutil
 from git import Repo, GitCommandError
 from rich.console import Console
-from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
+from tools.context.scan_context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
 
 def run_sbom_scan(
     context : GithubContext | GitlabContext | BitbucketContext , 

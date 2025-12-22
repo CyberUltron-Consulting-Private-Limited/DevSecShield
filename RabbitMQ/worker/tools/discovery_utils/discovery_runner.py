@@ -13,7 +13,7 @@ from tools.discovery_utils.llm_service.llm import get_json_llm_response, Missing
 from tools.discovery_utils.llm_service.prompts.tool_detection import TOOL_DETECTION_PROMPT
 from tools.discovery_utils.llm_service.prompts.agent_risk import AGENT_RISK_PROMPT
 from rich.console import Console
-from tools.context.Context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
+from tools.context.scan_context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
 
 
 class DiscoveryService:

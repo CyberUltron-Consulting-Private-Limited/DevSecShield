@@ -23,4 +23,5 @@ dependencies = [
     "sse-starlette>=3.0.3",
     "selenium>=4.39.0",
     "alembic>=1.17.2",
+    "instructor[bedrock]>=1.13.0",
 ]

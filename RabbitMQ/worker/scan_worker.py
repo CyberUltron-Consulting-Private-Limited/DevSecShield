@@ -13,7 +13,7 @@ from tools.gitleaks_utils.gitleaks_runner import run_gitleaks_scan
 from tools.discovery_utils.discovery_runner import run_discovery_scan
 from tools.llm_utils.llm_runner import run_garak_scan
 from tools.mcp_utils.mcp_runner import run_mcp_scan
-from tools.context.Context import validate_dict_with_context
+from tools.context.scan_context import validate_dict_with_context
 import json
 #====================================== Setting credentials to connect to broker ================================================================
 try:

@@ -4,7 +4,8 @@ import shutil
 import subprocess
 import tempfile
 from rich.console import Console
-from tools.context.Context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext, validate_dict_with_context
+from tools.context.scan_context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext, validate_dict_with_context
+from parsers.utils import parse_scan_results
 
 
 
@@ -125,6 +126,8 @@ def run_sast_scan(
             pass
         
         Console().print(f"Scan completed 🟩 ✅ Vulnerabilities found: {len(sast_json['results'])}",style="bold green")
+
+        # sast_json = parse_scan_results(sast_json, scan_type="sast")
         return sast_json
     except Exception as e:
         Console().print(f"Scan failed 🟥 ❌ with error: {e}",style="bold red")
