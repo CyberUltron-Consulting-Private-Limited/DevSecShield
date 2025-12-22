@@ -6,7 +6,6 @@ from typing import Literal
 
 class AnonymizeContext(BaseModel):
     preamble: str = Field(description="Directs the LLM to bypass specific content." , default="")
-    hidden_names: list[str] = Field(description="Transforms specified names to formats like [REDACTED_CUSTOM_1]." , default=[])
     threshold: float = Field(description="Sets the acceptance threshold (Default: 0).",default=0)
     allowed_names: list[str] = Field(description="List of names to be allowed to be present in the output.",default=[])
 
@@ -61,8 +60,6 @@ class GuardrailContext(BaseModel):
         if self.anonymize_context:
             if self.anonymize_context.threshold == 0 or self.anonymize_context.threshold == None:
                 self.anonymize_context.threshold = 0.1
-            if self.anonymize_context.hidden_names == []:
-                self.anonymize_context.hidden_names = None
             if self.anonymize_context.allowed_names == []:
                 self.anonymize_context.allowed_names = None
             if self.anonymize_context.preamble == None :

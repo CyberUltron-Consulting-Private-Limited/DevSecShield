@@ -23,18 +23,19 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         List all guardrails integrations.
         """
         try:
-            user = get_user_from_header_or_raise_exception(Authorization)
+            user = await get_user_from_header_or_raise_exception(engine , Authorization)
             
             with Session(engine) as session:
                 statement = select(GuardrailsIntegration).where(GuardrailsIntegration.user_id == user.id)
                 integrations = session.exec(statement).all()
             
             response_data = []
+            
             for integration in integrations:
                 response_data.append({
                     "id": integration.id,
                     "title": integration.title,
-                    "scanners_enabled": integration.settings.keys(),
+                    "scanners_enabled": list(integration.settings.keys()),
                     "api_key": integration.api_key,
                     "created_at": integration.created_at,
                     "last_updated": integration.last_updated
@@ -52,16 +53,21 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         Create a new guardrails integration.
         """
         try:
-            user = get_user_from_header_or_raise_exception(Authorization)
+            user = await get_user_from_header_or_raise_exception(engine , Authorization)
             with Session(engine) as session:
-                api_key = create_api_key()
+                api_key = create_api_key(user.id)
                 new_integration = GuardrailsIntegration(
                     user_id=user.id,
                     title=data.title,
                     api_key=api_key,
-                    settings=data.settings.model_dump()
                 )
                 session.add(new_integration)
+                session.commit()
+                session.refresh(new_integration)
+                return {
+                    "message": "Guardrails integration created successfully",
+                    "integration_id": new_integration.id
+                }
         except Exception as e:
             console.print(f"Error creating guardrails integration: {str(e)}", style="bold red")
             if isinstance(e, HTTPException):
@@ -69,13 +75,13 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error creating guardrails integration")
 
     @app.get("/guardrails/integration/{integration_id}",summary="Get a guardrails integration")
-    async def get_guardrails_integration(integration_id: str, Authorization: Annotated[str | None, Header()] = None):
+    async def get_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Get a guardrails integration dashboard data
         Run a scan status update for all the scans in this integration 
         """
         try:
-            user = get_user_from_header_or_raise_exception(Authorization)
+            user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
             # STEP [ 1 ] : ==================================== Get the integration from the main database ====================================
             with Session(engine) as session:
@@ -85,19 +91,32 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             
             # STEP [ 2 ] : ==================================== Get the integration logs from the mongo db ====================================
             guardrails_logs_collection = mongo_db["guardrails_logs"]
-            guardrails_logs = guardrails_logs_collection.find({"integration_id": integration_id})
+            guardrails_logs = guardrails_logs_collection.find(
+                {"$and": [{"integration_id": integration_id}, {"status": {"$in": ["pending", "started", "NOT_STARTED" , "success"]}}]}
+            ) # including success because sometimes the scan  might have comepleted quickly and we might need to get results after status is success            
+        
             
 
             # STEP [ 3 ] : ======================================= Cycle through the logs and see if there are any tasks that need status update =======================================
             celery_app = get_celery_app()
             result , status = None, None
             for log in guardrails_logs:
-                if log["status"] == "pending" or log["status"] == "started" or log["status"] == "NOT_STARTED":
+                console.print(f"Guardrails log {log['_id']} , status: {log['status']} , results is None: {log['results']==None}", style="bold yellow")
+
+                # update status if not success
+                if log["status"] != "success":
+                    console.print(f"Guardrails log {log['_id']}", style="bold yellow")
                     task_id = log["task_id"]
                     status = AsyncResult(task_id, app=celery_app).status.lower()
-                    if status == "success":
-                        result = AsyncResult(task_id, app=celery_app).result
+
+
+                # get results if not already got and status is success
+                if log["results"] == None and (status == "success" or log["status"] == "success"):
+                    console.print(f"Guardrails log {log['_id']} is success, getting results", style="bold green")
+                    result = AsyncResult(log["task_id"], app=celery_app).result
                 
+
+                # update the log in the mongo db
                 if result and status:
                     log["results"] = result
                     log["status"] = status
@@ -107,17 +126,37 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     log["status"] = status
                     guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"status": status}})
                     console.print(f"Guardrails log {log['_id']} updated with status {status}", style="bold green")
+                if result:
+                    log["results"] = result
+                    guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"results": result}})
+                    console.print(f"Guardrails log {log['_id']} updated with results {result}", style="bold green") 
             
-            # STEP [ 4 ] : ======================================== Fetch all integration logs again ==========================================================
-            guardrails_logs = guardrails_logs_collection.find({"integration_id": integration_id})
 
-            # STEP [ 5 ] : ========================================= Calculate Metrics =======================================================================
-            total_logs = len(guardrails_logs)
-            successful_logs = len([log for log in guardrails_logs if log["status"] == "success"])
-            failed_logs = len([log for log in guardrails_logs if log["status"] == "failed"])
-            pending_logs = len([log for log in guardrails_logs if log["status"] == "pending"])
-            started_logs = len([log for log in guardrails_logs if log["status"] == "started"])
-            not_started_logs = len([log for log in guardrails_logs if log["status"] == "NOT_STARTED"])
+
+            # STEP [ 4 ] : =========================================Fetch and Calculate Metrics =======================================================================
+            total_logs , successful_logs , failed_logs , pending_logs , started_logs , not_started_logs = 0 , 0 , 0 , 0 , 0 , 0 
+            log_data = []
+            with guardrails_logs_collection.find({"integration_id": integration_id}) as cursor:
+                for log in cursor:
+                    total_logs += 1
+                    log_data.append({
+                        "id": str(log["_id"]),
+                        "status": log["status"],
+                        "created_at": log["created_at"],
+                        "input_prompt": log["input_prompt"],
+                        "results": log["results"],
+                    })
+                    if log["status"] == "success":
+                        successful_logs += 1
+                    elif log["status"] == "failed":
+                        failed_logs += 1
+                    elif log["status"] == "pending":
+                        pending_logs += 1
+                    elif log["status"] == "started":
+                        started_logs += 1
+                    elif log["status"] == "NOT_STARTED":
+                        not_started_logs += 1
+                        
 
             return {
                 "total_logs": total_logs,
@@ -125,7 +164,10 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 "failed_logs": failed_logs,
                 "pending_logs": pending_logs,
                 "started_logs": started_logs,
-                "not_started_logs": not_started_logs
+                "not_started_logs": not_started_logs,
+                "api_key": integration.api_key,
+                "log_data": log_data,
+                "settings": integration.settings
             }
         
         except Exception as e:
@@ -135,19 +177,22 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error getting guardrails integration")
 
     @app.put("/guardrails/integration/{integration_id}",summary="Update a guardrails integration")
-    async def update_guardrails_integration(integration_id: str, data: UpdateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None):
+    async def update_guardrails_integration(integration_id: int, data: UpdateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None):
         """
         Update a guardrails integration.
         """
         try:
-            user = get_user_from_header_or_raise_exception(Authorization)
+            user = await get_user_from_header_or_raise_exception(engine , Authorization)
             
 
             with Session(engine) as session:
                 integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
                 if integration == None or not integration.id:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
-                integration.settings = data.settings.model_dump()
+                if data.title is not None:
+                    integration.title = data.title
+                if data.settings is not None:
+                    integration.settings = data.settings.model_dump()
                 session.add(integration)
                 session.commit()
                 return {
@@ -160,12 +205,12 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error updating guardrails integration")
 
     @app.delete("/guardrails/integration/{integration_id}",summary="Delete a guardrails integration")
-    async def delete_guardrails_integration(integration_id: str, Authorization: Annotated[str | None, Header()] = None):
+    async def delete_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Delete a guardrails integration.
         """
         try:
-            user = get_user_from_header_or_raise_exception(Authorization)
+            user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
             # deleting the integration from the main database
             with Session(engine) as session:
@@ -178,8 +223,8 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
             # deleting the integration logs from the mongo db
             guardrails_logs_collection = mongo_db["guardrails_logs"]
-            guardrails_logs_collection.delete_many({"integration_id": integration_id})
-            console.print(f"Guardrails integration logs {integration_id} deleted from mongo db", style="bold green")
+            response = guardrails_logs_collection.delete_many({"integration_id": integration_id})
+            console.print(f"Guardrails integration logs {integration_id} deleted from mongo db {response.deleted_count} logs deleted", style="bold green")
 
             return {
                 "message": f"Guardrails integration {integration_id} deleted successfully"
@@ -192,12 +237,12 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error deleting guardrails integration")
 
     @app.get("/guardrails/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration")
-    async def get_guardrails_integration_settings(integration_id: str, Authorization: Annotated[str | None, Header()] = None):
+    async def get_guardrails_integration_settings(integration_id: int, Authorization: Annotated[str | None, Header()] = None):
         """
         Get the integration settings of all the scanners in the integration.
         """
         try:
-            user = get_user_from_header_or_raise_exception(Authorization)
+            user = await  get_user_from_header_or_raise_exception(engine , Authorization)
             with Session(engine) as session:
                 integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
                 if integration == None or not integration.id:

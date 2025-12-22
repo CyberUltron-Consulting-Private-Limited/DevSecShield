@@ -8,6 +8,12 @@
 6. Code 
 7. Secrets
 
+## Meaning of the results : 
+
+is_valid : Whether the input prompt was flagged by this scanner or not .
+risk_score : The risk score of the input prompt.
+sanitized_prompt : The sanitized prompt that was returned by the scanner.
+
 # Inputs for each scanner : 
 
 ### Note : 

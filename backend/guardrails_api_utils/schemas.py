@@ -7,7 +7,6 @@ input_scanners = Literal["anonymize", "toxicity", "tokenlimit", "promptinjection
 
 class AnonymizeContext(BaseModel):
     preamble: str = Field(description="Directs the LLM to bypass specific content." , default="")
-    hidden_names: list[str] = Field(description="Transforms specified names to formats like [REDACTED_CUSTOM_1]." , default=[])
     threshold: float = Field(description="Sets the acceptance threshold (Default: 0).",default=0)
     allowed_names: list[str] = Field(description="List of names to be allowed to be present in the output.",default=[])
 
@@ -46,11 +45,10 @@ class SettingsData(BaseModel):
 
 
 class CreateGuardrailsIntegrationData(BaseModel):
-    name: str
-    settings: SettingsData
+    title: str
 
 
 
 class UpdateGuardrailsIntegrationData(BaseModel):
-    name: str | None = None
+    title: str | None = None
     settings: SettingsData | None = None

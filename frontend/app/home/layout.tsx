@@ -18,6 +18,8 @@ import {
   Box,
   Server,
   Shield,
+  Infinity,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -67,7 +69,7 @@ const toolsItems = [
 ];
 
 const workflowItems = [
-  { name: "Integration", href: "/home/integration", icon: Link2 },
+  { name: "CI / CD", href: "/home/ci_cd", icon: Link2 },
   { name: "Guardrails", href: "/home/guardrails", icon: Shield },
 ];
 
@@ -178,13 +180,19 @@ export default function HomeLayout({
     return (
     <QueryClientProvider client={queryClient}>
     <SidebarProvider>
-      <Sidebar className="border-r border-zinc-800 ">
+      <Sidebar className="border-r border-teal-600 ">
           <SidebarHeader>
             <div className="px-3 pt-4 pb-2">
-              <h1 className="text-lg font-medium text-white">DevSec Shield</h1>
-              <p className="text-xs text-zinc-400 mt-1">
-                AI-powered DevSecOps Platform
-              </p>
+              <div className="flex flex- row items-center gap-2">
+                <ShieldCheck className="size-9 bg-teal-600 rounded-md p-2" />
+                <div className="flex flex-col">
+                    <h1 className="text-lg font-medium text-white">DevSec Shield</h1>
+                    <p className="text-xs text-zinc-400 w-full text-nowrap">
+                      AI-powered DevSecOps Platform
+                    </p>
+                </div>
+              </div>
+              
             </div>
           </SidebarHeader>
 

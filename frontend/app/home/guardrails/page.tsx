@@ -26,21 +26,42 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Copy, Check } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Copy, Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { GuardrailsIntegration, deleteGuardrailsIntegration, getGuardrailsIntegrations, renameGuardrailsIntegration } from "@/utils/backend_api";
+import { GuardrailsIntegration, deleteGuardrailsIntegration, getGuardrailsIntegrations, renameGuardrailsIntegration, createGuardrailsIntegration, SettingsData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+
+const defaultLanguages = ["ARM Assembly", "AppleScript", "C", "C#", "C++", "COBOL", "Erlang", "Fortran", "Go", "Java", "JavaScript", "Kotlin", "Lua", "Mathematica/Wolfram Language", "PHP", "Pascal", "Perl", "PowerShell", "Python", "R", "Ruby", "Rust", "Scala", "Swift", "Visual Basic .NET", "jq"];
 
 export default function GuardrailsPage() {
   const router = useRouter();
   const [integrations, setIntegrations] = useState<GuardrailsIntegration[]>([]);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedIntegration, setSelectedIntegration] = useState<GuardrailsIntegration | null>(null);
   const [newName, setNewName] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
+  
+  // Form state
+  const [formTitle, setFormTitle] = useState("");
+  const [formSettings, setFormSettings] = useState<SettingsData>({
+    anonymize_context: { preamble: "", threshold: 0.1, allowed_names: [] },
+    toxicity_context: { threshold: 0.1 },
+    tokenlimit_context: { max_tokens: 2000 },
+    promptinjection_context: { threshold: 0.1 },
+    regex_context: { regex_patterns: [], redact: false },
+    code_context: { languages: defaultLanguages, is_blocked: true },
+    secrets_context: { redact_mode: "REDACT_PARTIAL" },
+  });
+  
   const queryClient = useQueryClient();
 
   const query = useQuery({ queryKey: ['guardrails-integrations'], queryFn: getGuardrailsIntegrations });
@@ -76,6 +97,28 @@ export default function GuardrailsPage() {
     }
   });
 
+  const createGuardrailsIntegrationMutation = useMutation({
+    mutationFn: createGuardrailsIntegration,
+    onSuccess: (data: { integration_id: number }) => {
+      queryClient.invalidateQueries({ queryKey: ['guardrails-integrations'] });
+      setCreateDialogOpen(false);
+      setFormTitle("");
+      setFormSettings({
+        anonymize_context: { preamble: "", threshold: 0.1, allowed_names: [] },
+        toxicity_context: { threshold: 0.1 },
+        tokenlimit_context: { max_tokens: 2000 },
+        promptinjection_context: { threshold: 0.1 },
+        regex_context: { regex_patterns: [], redact: false },
+        code_context: { languages: defaultLanguages, is_blocked: true },
+        secrets_context: { redact_mode: "REDACT_PARTIAL" },
+      });
+      router.push(`/home/guardrails/${data.integration_id}`);
+    },
+    onError: (error) => {
+      showErrorToast(error);
+    }
+  });
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
@@ -88,13 +131,10 @@ export default function GuardrailsPage() {
   };
 
   const redactApiKey = (apiKey: string) => {
-    if (apiKey.length <= 8) {
-      return "•".repeat(apiKey.length);
-    }
     // Show first 4 and last 4 characters, redact the middle
     const start = apiKey.substring(0, 4);
     const end = apiKey.substring(apiKey.length - 4);
-    return `${start}${"•".repeat(Math.max(8, apiKey.length - 8))}${end}`;
+    return `${start}${"*******"}${end}`;
   };
 
   const copyApiKey = async (apiKey: string, integrationId: number) => {
@@ -159,6 +199,13 @@ export default function GuardrailsPage() {
               >
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
+              </Button>
+              <Button 
+                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Integration
               </Button>
             </div>
           </div>
@@ -337,6 +384,70 @@ export default function GuardrailsPage() {
               onClick={confirmDelete}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Guardrails Integration</DialogTitle>
+            <DialogDescription>
+              Enter a name for your guardrails integration. You can configure settings later from the integration dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="space-y-2">
+              <Label htmlFor="title" className="cursor-pointer">Title *</Label>
+              <Input
+                id="title"
+                value={formTitle}
+                onChange={(e) => setFormTitle(e.target.value)}
+                placeholder="Integration name"
+                required
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && formTitle.trim()) {
+                    createGuardrailsIntegrationMutation.mutate({
+                      title: formTitle.trim(),
+                    });
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => {
+                setCreateDialogOpen(false);
+                setFormTitle("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!formTitle.trim()) {
+                  toast.error("Title is required");
+                  return;
+                }
+                
+                createGuardrailsIntegrationMutation.mutate({
+                  title: formTitle.trim(),
+                });
+              }}
+              disabled={!formTitle.trim() || createGuardrailsIntegrationMutation.isPending}
+              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+            >
+              {createGuardrailsIntegrationMutation.isPending && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Create
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -46,7 +46,7 @@ try:
         {
             "input_prompt": "The input prompt to be scanned",
             "context": {
-                "anonymize_context": { "preamble": "", "hidden_names": [], "threshold": 0.1, "allowed_names": [] },
+                "anonymize_context": { "preamble": "", "threshold": 0.1, "allowed_names": [] },
                 "toxicity_context": { "threshold": 0.1 },
                 "tokenlimit_context": { "max_tokens": 2000 },
                 "promptinjection_context": { "threshold": 0.1 },

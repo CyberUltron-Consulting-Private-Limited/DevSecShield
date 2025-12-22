@@ -12,14 +12,15 @@ from starlette.responses import JSONResponse
 from backend.models import *
 from backend.api_routes.routing_admin import admin_routes
 from backend.api_routes.routing_auth import auth_api_routes
+from backend.api_routes.routing_guardrails import guardrails_routes
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from fastapi_throttle import RateLimiter
 from dotenv import load_dotenv
 import psycopg2
 from pymongo import MongoClient
-from backend.api_routes.routing_sast import sast_routes
-from backend.api_routes.routing_llm import llm_routes
+from backend.get_db import get_db
+from backend.api_routes.gurardrails_api import guardrails_api_routes
 
 
 #fast api app
@@ -45,17 +46,7 @@ app = FastAPI(middleware=[
 # Limit to 5 requests per minute
 limiter = RateLimiter(times=20, seconds=30)
 
-# creating the SQL engine to communicate to the db
-sqlite_file_name = os.path.join(os.path.dirname(__file__),"database.db")
-sqlite_url = f"sqlite:///{sqlite_file_name}"
-db_url = sqlite_url
-
-# creating the PostgreSQL database url
-# load_dotenv()
-# postgres_url = os.environ['DATABASE_URL']
-# db_url = postgres_url
-
-engine = create_engine(db_url)
+engine = get_db(dev_environment=True)
 
 def create_user():
     with Session(engine) as session:
@@ -89,14 +80,13 @@ BASE_MEDIA_PATH = "uploads\\"
 auth_api_routes(app,engine)
 admin_routes(app,engine)
 
-# sast_routes(app,engine,get_mongo_client_db())
-# llm_routes(app,engine,get_mongo_client_db())
-scan_routes(app,engine,get_mongo_client_db())
 
+scan_routes(app,engine,get_mongo_client_db())
+guardrails_routes(app,engine,get_mongo_client_db())
+guardrails_api_routes(app,engine,get_mongo_client_db())
 
 
     
 if __name__=="__main__":
-    # create_user()
-    # make_admin()
+
     Console().print("Ran main.py ✔️",style="bold green")

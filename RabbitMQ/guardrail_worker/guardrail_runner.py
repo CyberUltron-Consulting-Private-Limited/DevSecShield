@@ -36,7 +36,6 @@ def run_guardrail(
             scanners.append(Anonymize(
                 vault=vault,
                 preamble=context.anonymize_context.preamble,
-                hidden_names=context.anonymize_context.hidden_names,
                 threshold=context.anonymize_context.threshold,
                 allowed_names=context.anonymize_context.allowed_names,
             ))

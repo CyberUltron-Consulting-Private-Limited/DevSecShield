@@ -129,7 +129,6 @@ const getExportResults = async (conversation_id: number): Promise<ExportResults>
     try {   
         const response = await api.get(`/sast/conversation/${conversation_id}/export`)
         toast.success("Sast export results fetched successfully")
-        console.log("response.data", response.data.data);
         return response.data.data as ExportResults
     } catch (error) {
         showErrorToast(error,"Error fetching sast export results")
@@ -429,6 +428,7 @@ export interface UserProfile {
 const getUserProfile = async (): Promise<UserProfile> => {
     try {
         const response = await api.get("/get_user")
+        toast.success("User profile fetched successfully")
         return response.data as UserProfile
     } catch (error) {
         showErrorToast(error,"Error fetching user profile")
@@ -674,7 +674,6 @@ const startSCASBOMScan = async (
         toast.success("SCA + SBOM scan started successfully")
         return response.data
     } catch (error) {
-        // console.log(error)
         throw error
     }
 }
@@ -950,41 +949,14 @@ export interface GuardrailsIntegration {
     created_at: string
     last_updated: string
     api_key: string
+    scanners_enabled?: string[]
 }
-
-// Mock data for development
-const mockGuardrailsIntegrations: GuardrailsIntegration[] = [
-    {
-        id: 1,
-        title: "Production API Guardrails",
-        created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
-        last_updated: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
-        api_key: "gr_sk_live_1234567890abcdefghijklmnopqrstuvwxyz"
-    },
-    {
-        id: 2,
-        title: "Staging Environment",
-        created_at: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
-        last_updated: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-        api_key: "gr_sk_test_abcdefghijklmnopqrstuvwxyz1234567890"
-    },
-    {
-        id: 3,
-        title: "Development Guardrails",
-        created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
-        last_updated: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), // 5 hours ago
-        api_key: "gr_sk_dev_9876543210zyxwvutsrqponmlkjihgfedcba"
-    }
-];
 
 const getGuardrailsIntegrations = async (): Promise<GuardrailsIntegration[]> => {
     try {
-        // Mock API call - simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Return mock data
+        const response = await api.get("/guardrails/integrations")
         toast.success("Guardrails integrations fetched successfully")
-        return [...mockGuardrailsIntegrations]
+        return response.data as GuardrailsIntegration[]
     } catch (error) {
         showErrorToast(error,"Error fetching guardrails integrations")
         throw error
@@ -993,37 +965,156 @@ const getGuardrailsIntegrations = async (): Promise<GuardrailsIntegration[]> => 
 
 const deleteGuardrailsIntegration = async (integration_id: number) => {
     try {
-        // Mock API call - simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // Remove from mock data
-        const index = mockGuardrailsIntegrations.findIndex(integration => integration.id === integration_id);
-        if (index !== -1) {
-            mockGuardrailsIntegrations.splice(index, 1);
-        }
-        
+        const response = await api.delete(`/guardrails/integration/${integration_id}`)
         toast.success("Guardrails integration deleted successfully")
-        return { success: true, message: "Integration deleted" }
+        return response.data
     } catch (error) {
+        showErrorToast(error,"Error deleting guardrails integration")
         throw error
     }
 }
 
 const renameGuardrailsIntegration = async ({integration_id, title}: {integration_id: number, title: string}) => {
     try {
-        // Mock API call - simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // Update mock data
-        const integration = mockGuardrailsIntegrations.find(integration => integration.id === integration_id);
-        if (integration) {
-            integration.title = title;
-            integration.last_updated = new Date().toISOString();
-        }
-        
+        const response = await api.put(`/guardrails/integration/${integration_id}`, { title: title })
         toast.success("Guardrails integration renamed successfully")
-        return { success: true, message: "Integration renamed" }
+        return response.data
     } catch (error) {
+        showErrorToast(error,"Error renaming guardrails integration")
+        throw error
+    }
+}
+
+export interface GuardrailsIntegrationLog {
+    id: string
+    status: "success" | "failure" | "pending" | "started" | "NOT_STARTED" | "retry"
+    created_at: string
+    input_prompt: string
+    results: {
+        sanitized_prompt: string
+        anonymize?: {
+            valid: boolean , 
+            score : number
+        } | null , 
+        toxicity?: {
+            valid: boolean , 
+            score : number
+        } | null 
+        tokenlimit?: {
+            valid: boolean , 
+            score : number
+        } | null 
+        promptinjection?: {
+            valid: boolean , 
+            score : number
+        } | null 
+        regex?: {
+            valid: boolean , 
+            score : number
+        } | null 
+        code? : {
+            valid: boolean , 
+            score : number
+        } | null 
+        secrets?: {
+            valid: boolean , 
+            score : number
+        } | null 
+    } | null
+}
+
+export interface AnonymizeContext {
+    preamble?: string
+    threshold?: number
+    allowed_names?: string[]
+}
+
+export interface ToxicityContext {
+    threshold?: number
+}
+
+export interface TokenLimitContext {
+    max_tokens?: number
+}
+
+export interface PromptInjectionContext {
+    threshold?: number
+}
+
+export interface RegexContext {
+    regex_patterns?: string[]
+    redact?: boolean
+}
+
+export interface CodeContext {
+    languages?: string[]
+    is_blocked?: boolean
+}
+
+export interface SecretsContext {
+    redact_mode?: "REDACT_PARTIAL" | "REDACT_ALL" | "REDACT_HASH"
+}
+
+export interface SettingsData {
+    anonymize_context?: AnonymizeContext
+    toxicity_context?: ToxicityContext
+    tokenlimit_context?: TokenLimitContext
+    promptinjection_context?: PromptInjectionContext
+    regex_context?: RegexContext
+    code_context?: CodeContext
+    secrets_context?: SecretsContext
+}
+export interface GuardrailsIntegrationDashboard {
+    total_logs: number
+    successful_logs: number
+    failed_logs: number
+    pending_logs: number
+    started_logs: number
+    not_started_logs: number
+    api_key: string
+    log_data: GuardrailsIntegrationLog[]
+    settings: SettingsData
+}
+
+const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string]}): Promise<GuardrailsIntegrationDashboard> => {
+    const integration_id = queryKey[1]
+    try {
+        const response = await api.get(`/guardrails/integration/${integration_id}`)
+        toast.success("Guardrails integration dashboard fetched successfully")
+        return response.data as GuardrailsIntegrationDashboard
+    } catch (error) {
+        showErrorToast(error,"Error fetching guardrails integration dashboard")
+        throw error
+    }
+}
+
+export interface CreateGuardrailsIntegrationData {
+    title: string
+}
+
+const createGuardrailsIntegration = async (data: CreateGuardrailsIntegrationData) => {
+    try {
+        const response = await api.post("/guardrails/integration", data)
+        toast.success("Guardrails integration created successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error creating guardrails integration")
+        throw error
+    }
+}
+
+export interface UpdateGuardrailsIntegrationData {
+    title?: string
+    settings?: SettingsData
+}
+
+const updateGuardrailsIntegration = async (integration_id: number, data: UpdateGuardrailsIntegrationData) => {
+    try {
+        const response = await api.put(`/guardrails/integration/${integration_id}`, data)
+        toast.success("Guardrails integration updated successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error updating guardrails integration")
         throw error
     }
 }
@@ -1031,5 +1122,8 @@ const renameGuardrailsIntegration = async ({integration_id, title}: {integration
 export { 
     getGuardrailsIntegrations, 
     deleteGuardrailsIntegration, 
-    renameGuardrailsIntegration
+    renameGuardrailsIntegration,
+    getGuardrailsIntegrationDashboard,
+    createGuardrailsIntegration,
+    updateGuardrailsIntegration
 }
