@@ -50,7 +50,7 @@ def test(
             if status.state == "SUCCESS" or status.state == "FAILURE" :
                 results = simple_app.AsyncResult(r.id).result
                 Console().print(f"{task_name} completed",style="bold green")
-                results = parse_scan_results(results, scan_type=scan_type)
+                # results = parse_scan_results(results, scan_type=scan_type)
                 # for testing
                 with open(result_file_name, "w+") as f:
                     json.dump(results , f, indent=2)

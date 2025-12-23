@@ -1,0 +1,473 @@
+{
+  "version": "1.136.0",
+  "results": [
+    {
+      "check_id": "python.fastapi.file.tainted-path-traversal-stdlib-fastapi.tainted-path-traversal-stdlib-fastapi",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+      "start": {
+        "line": 79,
+        "col": 23,
+        "offset": 2728
+      },
+      "end": {
+        "line": 79,
+        "col": 27,
+        "offset": 2732
+      },
+      "extra": {
+        "metavars": {
+          "$1": {
+            "start": {
+              "line": 1,
+              "col": 1,
+              "offset": 0
+            },
+            "end": {
+              "line": 1,
+              "col": 5,
+              "offset": 4
+            },
+            "abstract_content": "post"
+          },
+          "$APP": {
+            "start": {
+              "line": 56,
+              "col": 6,
+              "offset": 1583
+            },
+            "end": {
+              "line": 56,
+              "col": 9,
+              "offset": 1586
+            },
+            "abstract_content": "app"
+          },
+          "$ROUTE": {
+            "start": {
+              "line": 56,
+              "col": 10,
+              "offset": 1587
+            },
+            "end": {
+              "line": 56,
+              "col": 14,
+              "offset": 1591
+            },
+            "abstract_content": "post"
+          },
+          "$ROUTESTRING": {
+            "start": {
+              "line": 56,
+              "col": 16,
+              "offset": 1593
+            },
+            "end": {
+              "line": 56,
+              "col": 48,
+              "offset": 1625
+            },
+            "abstract_content": "/create/normal_system/pre_upload"
+          },
+          "$FUNC": {
+            "start": {
+              "line": 57,
+              "col": 15,
+              "offset": 1675
+            },
+            "end": {
+              "line": 57,
+              "col": 28,
+              "offset": 1688
+            },
+            "abstract_content": "upload_images"
+          },
+          "$SINK": {
+            "start": {
+              "line": 79,
+              "col": 23,
+              "offset": 2728
+            },
+            "end": {
+              "line": 79,
+              "col": 27,
+              "offset": 2732
+            },
+            "abstract_content": "path",
+            "propagated_value": {
+              "svalue_start": {
+                "line": 75,
+                "col": 20,
+                "offset": 2594
+              },
+              "svalue_end": {
+                "line": 75,
+                "col": 53,
+                "offset": 2627
+              },
+              "svalue_abstract_content": "os.path.join(curpath unique_path)"
+            }
+          }
+        },
+        "message": "The application builds a file path from potentially untrusted data, which can lead to a path traversal vulnerability. An attacker can manipulate the path which the application uses to access files. If the application does not validate user input and sanitize file paths, sensitive files such as configuration or user data can be accessed, potentially creating or overwriting files. In FastAPI apps, consider using the Starlette `:path` annotation in the route declaration to automatically sanitize paths and filenames.",
+        "metadata": {
+          "likelihood": "MEDIUM",
+          "impact": "HIGH",
+          "confidence": "HIGH",
+          "category": "security",
+          "subcategory": [
+            "vuln"
+          ],
+          "cwe": [
+            "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+          ],
+          "cwe2020-top25": true,
+          "cwe2021-top25": true,
+          "cwe2022-top25": true,
+          "display-name": "Path Traversal with FastAPI",
+          "functional-categories": [
+            "file::sink::file-access::fileinput",
+            "file::sink::file-access::io",
+            "file::sink::file-access::linecache",
+            "file::sink::file-access::os",
+            "file::sink::file-access::shutil",
+            "file::sink::file-access::stdlib",
+            "file::sink::file-access::stdlib2",
+            "file::sink::file-access::stdlib3",
+            "file::sink::file-access::tempfile",
+            "web::source::cookie::fastapi",
+            "web::source::form-data::fastapi",
+            "web::source::header::fastapi",
+            "web::source::http-body::fastapi",
+            "web::source::url-path-params::fastapi",
+            "web::source::url-query-string::fastapi"
+          ],
+          "owasp": [
+            "A01:2021 - Broken Access Control",
+            "A05:2017 - Broken Access Control"
+          ],
+          "references": [
+            "https://fastapi.palletsprojects.com/en/2.3.x/patterns/fileuploads/",
+            "https://fastapi.tiangolo.com/tutorial/path-params/#path-parameters-containing-paths",
+            "https://owasp.org/Top10/A01_2021-Broken_Access_Control",
+            "https://owasp.org/www-community/attacks/Path_Traversal",
+            "https://portswigger.net/web-security/file-path-traversal",
+            "https://werkzeug.palletsprojects.com/en/3.0.x/utils/#werkzeug.utils.secure_filename"
+          ],
+          "technology": [
+            "codecs",
+            "fastapi",
+            "fileaccess",
+            "fileinput",
+            "io",
+            "linecache",
+            "os",
+            "shutil",
+            "stdlib",
+            "stdlib2",
+            "stdlib3",
+            "tempfile",
+            "web"
+          ],
+          "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+          "vulnerability_class": [
+            "Path Traversal"
+          ],
+          "source": "https://semgrep.dev/r/python.fastapi.file.tainted-path-traversal-stdlib-fastapi.tainted-path-traversal-stdlib-fastapi",
+          "shortlink": "https://sg.run/WA92Z",
+          "semgrep.dev": {
+            "rule": {
+              "origin": "pro_rules",
+              "r_id": 133297,
+              "rule_id": "ZqUQRZB",
+              "rv_id": 1152459,
+              "url": "https://semgrep.dev/playground/r/BjTp4r1/python.fastapi.file.tainted-path-traversal-stdlib-fastapi.tainted-path-traversal-stdlib-fastapi",
+              "version_id": "BjTp4r1"
+            }
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "bc4715e842948704d5b5d2b574dbdc6b1cd9a5c0422923d482495d402c3ff9f3970db51dc365e18767657057c5c25bb461be3cda767ef9ca8ef47519717d1f08_0",
+        "lines": "            with open(path,\"wb\") as file:",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "dataflow_trace": {
+          "taint_source": [
+            "CliLoc",
+            [
+              {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+                "start": {
+                  "line": 57,
+                  "col": 29,
+                  "offset": 1689
+                },
+                "end": {
+                  "line": 57,
+                  "col": 39,
+                  "offset": 1699
+                }
+              },
+              "image_file"
+            ]
+          ],
+          "intermediate_vars": [
+            {
+              "location": {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+                "start": {
+                  "line": 57,
+                  "col": 29,
+                  "offset": 1689
+                },
+                "end": {
+                  "line": 57,
+                  "col": 39,
+                  "offset": 1699
+                }
+              },
+              "content": "image_file"
+            },
+            {
+              "location": {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+                "start": {
+                  "line": 74,
+                  "col": 13,
+                  "offset": 2493
+                },
+                "end": {
+                  "line": 74,
+                  "col": 24,
+                  "offset": 2504
+                }
+              },
+              "content": "unique_path"
+            },
+            {
+              "location": {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+                "start": {
+                  "line": 75,
+                  "col": 13,
+                  "offset": 2587
+                },
+                "end": {
+                  "line": 75,
+                  "col": 17,
+                  "offset": 2591
+                }
+              },
+              "content": "path"
+            }
+          ],
+          "taint_sink": [
+            "CliLoc",
+            [
+              {
+                "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+                "start": {
+                  "line": 79,
+                  "col": 23,
+                  "offset": 2728
+                },
+                "end": {
+                  "line": 79,
+                  "col": 27,
+                  "offset": 2732
+                }
+              },
+              "path"
+            ]
+          ]
+        },
+        "engine_kind": "OSS"
+      },
+      "snippet": "   79|             with open(path,\"wb\") as file:"
+    }
+  ],
+  "errors": [
+    {
+      "code": 3,
+      "level": "warn",
+      "type": "Syntax error",
+      "message": "Syntax error at line C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\runner_function.py:473:\n missing element",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\runner_function.py"
+    },
+    {
+      "code": 2,
+      "level": "warn",
+      "type": "Timeout",
+      "rule_id": "python.lang.hardcoded.headers.hardcoded-basic-token.hardcoded-basic-token",
+      "message": "Timeout when running python.lang.hardcoded.headers.hardcoded-basic-token.hardcoded-basic-token on C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\mcpscan_phase2.py:\n ",
+      "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\mcpscan_phase2.py"
+    }
+  ],
+  "paths": {
+    "scanned": [
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\__init__.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_admin.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_llm_scan.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_mcp_scan.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\auth_schema.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\auth_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\graph.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\html_email.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\llm_scan_utils\\garak_scan.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\llm_scan_utils\\llm_scan_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\main.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\__init__.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\extract_description.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\lang_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\llm_bridge.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\runner.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\runner_function.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\semgrep_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\source_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\mcpscan_phase2.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\models.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\analyze_image.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\analyze_repo.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\attack_diagram.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\consolidate.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\get_threat_model.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\infographics.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\prompts.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\plans.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\routing_auth.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\test.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\utilities.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\virus_scan_utils.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backup.py",
+      "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\main.py"
+    ],
+    "skipped": [
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\core\\runner_function.py",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\mcpscan_phase2.py",
+        "reason": "analysis_failed_parser_or_internal_error"
+      },
+      {
+        "path": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\uploads\\1\\Blue-Logo.png",
+        "reason": "exceeded_size_limit"
+      }
+    ]
+  },
+  "time": {
+    "rules": [],
+    "rules_parse_time": 9.373085260391235,
+    "profiling_times": {
+      "config_time": 79.95213389396667,
+      "core_time": 118.10998630523682,
+      "ignores_time": 0.0066568851470947266,
+      "total_time": 198.07035422325134
+    },
+    "parsing_time": {
+      "total_time": 0.0,
+      "per_file_time": {
+        "mean": 0.0,
+        "std_dev": 0.0
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_files": []
+    },
+    "scanning_time": {
+      "total_time": 104.46720933914185,
+      "per_file_time": {
+        "mean": 2.9018669260872745,
+        "std_dev": 5.245259587281093
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.863579883748222,
+        "count_ratio": 0.5555555555555556
+      },
+      "very_slow_files": [
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backup.py",
+          "ftime": 5.07100772857666
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\analyze_repo.py",
+          "ftime": 5.144665956497192
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_llm_scan.py",
+          "ftime": 5.164478778839111
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_normal_sys.py",
+          "ftime": 5.531380891799927
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\llm_scan_utils\\garak_scan.py",
+          "ftime": 5.721063852310181
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\api_routes\\routing_mcp_scan.py",
+          "ftime": 5.91338586807251
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\normal_scan_utils\\get_threat_model.py",
+          "ftime": 5.945101976394653
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\auth_utils.py",
+          "ftime": 5.993155479431152
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\routing_auth.py",
+          "ftime": 8.101245641708374
+        },
+        {
+          "fpath": "C:\\Users\\HP\\AppData\\Local\\Temp\\repo_l5daylbi\\backend\\mcpscan_utils\\mcpscan_phase2.py",
+          "ftime": 8.546566009521484
+        }
+      ]
+    },
+    "matching_time": {
+      "total_time": 0.0,
+      "per_file_and_rule_time": {
+        "mean": 0.0,
+        "std_dev": 0.0
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_files": []
+    },
+    "tainting_time": {
+      "total_time": 0.0,
+      "per_def_and_rule_time": {
+        "mean": 0.0,
+        "std_dev": 0.0
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_defs": []
+    },
+    "fixpoint_timeouts": [],
+    "prefiltering": {
+      "project_level_time": 0.0,
+      "file_level_time": 0.0,
+      "rules_with_project_prefilters_ratio": 0.0,
+      "rules_with_file_prefilters_ratio": 0.9936548223350253,
+      "rules_selected_ratio": 0.06105873821609862,
+      "rules_matched_ratio": 0.06105873821609862
+    },
+    "targets": [],
+    "total_bytes": 0,
+    "max_memory_bytes": 4829225216
+  },
+  "engine_requested": "OSS",
+  "interfile_languages_used": [],
+  "skipped_rules": []
+}
