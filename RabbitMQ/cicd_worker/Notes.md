@@ -1,0 +1,1 @@
+- so far SAST is the only tool that uses Zip files as input 

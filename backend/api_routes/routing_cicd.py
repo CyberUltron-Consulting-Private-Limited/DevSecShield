@@ -30,8 +30,8 @@ console = Console()
 def cicd_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
 
-    @app.post("/cicd/{type}/conversation",summary="Create a new cicd conversation")
-    async def create_cicd_conversation(type: scan_types, data: CreateCicdConversationData,):
+    @app.post("/cicd/{type}/scan",summary="Run a new cicd scan")
+    async def run_cicd_scan(type: scan_types, data: CreateCicdConversationData,):
         """
         Submit a Zip file containing the code of the project to be scanned . 
         This route will create a new cicd scan on this project and poll it with a fixed timeout . 

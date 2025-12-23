@@ -1,0 +1,17 @@
+{
+    "mcpServers": {
+      "playwright": {
+        "command": "npx",
+        "args": [
+          "@playwright/mcp@latest"
+        ]
+      } ,
+      "howtocook-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "howtocook-mp"
+      ]
+    }
+    }
+  }

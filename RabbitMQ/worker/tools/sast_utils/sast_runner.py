@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 from rich.console import Console
 from tools.context.scan_context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext, validate_dict_with_context
-from parsers.utils import parse_scan_results
 
 
 

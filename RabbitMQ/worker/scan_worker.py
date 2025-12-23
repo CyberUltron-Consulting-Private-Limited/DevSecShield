@@ -46,7 +46,7 @@ try:
 
     # ------------------------------------------- SAST Scanning task -------------------------------------------------------------------------------------------
     """
-    You can add track_started=True to the task decorator to track the start time of the task.
+    You can add track_started=True to the task decorator to track the start time of the task. i.e. "STARTED" state will be used to track the start time of the task.
     example : @app.task(track_started=True)
 
     If you are enabling this , then make sure the frontend polls even status is "started" , becase as of now it only polls when status is "pending".

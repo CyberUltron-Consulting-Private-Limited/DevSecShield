@@ -1,0 +1,27 @@
+{
+    "rest": {
+       "RestGenerator": {
+          "name": "gemini",
+          "request_timeout": 10000,
+          "uri": "https://generativelanguage.googleapis.com/v1beta/models/<MODEL_NAME>:generateContent",
+          "method": "post",
+          "headers": {
+             "x-goog-api-key": "<API_KEY>",
+             "Content-Type": "application/json"
+          },
+          "req_template_json_object": {
+            "contents": [
+              {
+                "parts": [
+                  {
+                    "text": "$INPUT"
+                  }
+                ]
+              }
+            ]
+          },
+          "response_json": true,
+          "response_json_field": "$.candidates[0].content.parts[0].text"
+       }
+    }
+ }
