@@ -9,6 +9,7 @@ export interface SastConversation {
     id: number
     repo_url: string | null
     mode: string
+    app_lang: string
     title: string
     created_at: string
     last_updated: string
@@ -110,26 +111,13 @@ const startSastScan = async (
     }
 }
 
-export interface ExportResults {
-    vulnerabilities: Array<{
-        name: string;
-        description: string;
-        code_snippet_or_location?: string | null;
-        cves: Array<{
-            cve_id: string;
-            description: string;
-            severity: "Low" | "Medium" | "High" | "Critical";
-        }>;
-        severity: "Low" | "Medium" | "High" | "Critical";
-        fix: string;
-    }>;
-}
 
-const getExportResults = async (conversation_id: number): Promise<ExportResults> => {
+
+const getExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/sast/conversation/${conversation_id}/export`)
         toast.success("Sast export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching sast export results")
         throw error
@@ -273,11 +261,11 @@ const startLLMScan = async (
     }
 }
 
-const getLLMExportResults = async (conversation_id: number): Promise<ExportResults> => {
+const getLLMExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/llm/conversation/${conversation_id}/export`)
         toast.success("LLM export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching llm export results")
         throw error
@@ -396,11 +384,11 @@ const startMCPScan = async (
     }
 }
 
-const getMCPExportResults = async (conversation_id: number): Promise<ExportResults> => {
+const getMCPExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/mcp/conversation/${conversation_id}/export`)
         toast.success("MCP export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching mcp export results")
         throw error
@@ -557,11 +545,11 @@ const startIACScan = async (
     }
 }
 
-const getIACExportResults = async (conversation_id: number): Promise<ExportResults> => {
+const getIACExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/iac/conversation/${conversation_id}/export`)
         toast.success("IAC export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching iac export results")
         throw error
@@ -678,11 +666,11 @@ const startSCASBOMScan = async (
     }
 }
 
-const getSCASBOMExportResults = async (conversation_id: number): Promise<ExportResults> => {
+const getSCASBOMExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/sbom_sca/conversation/${conversation_id}/export`)
         toast.success("SCA + SBOM export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching sbom_sca export results")
         throw error
@@ -799,11 +787,11 @@ const startDiscoveryScan = async (
     }
 }
 
-const getDiscoveryExportResults = async (conversation_id: number): Promise<ExportResults> => {
+const getDiscoveryExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/agent_discovery/conversation/${conversation_id}/export`)
         toast.success("Discovery export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching discovery export results")
         throw error
@@ -920,11 +908,11 @@ const startLeakageScan = async (
     }
 }
 
-const getLeakageExportResults = async (conversation_id: number): Promise<ExportResults> => {
+const getLeakageExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/leakage/conversation/${conversation_id}/export`)
         toast.success("Leakage export results fetched successfully")
-        return response.data.data as ExportResults
+        return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching leakage export results")
         throw error

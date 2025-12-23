@@ -2,6 +2,7 @@
 
 - agent discovery uses openai 
 - react-pdf turbopack error 
+- remove full temp repo path and only from the temp folder name onwards for all cloned repos 
 - aws bedrock structured outputs are not reliable . ( find a better way )
 - look into how to scan a http or sse mcp server as well 
 - mcp scanner from invariant labs is not working , too many requests error 

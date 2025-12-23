@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2 } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LLMConversation, deleteLLMConversation, getLLMConversations, renameLLMConversation, createLLMConversation } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -283,6 +283,15 @@ export default function LLMPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {conversation.scan_status === "success" && (
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                onClick={() => router.push(`/home/llm/${conversation.id}/results?origin=list`)}
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Results
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               className="cursor-pointer"
                               onClick={() => handleRename(conversation)}

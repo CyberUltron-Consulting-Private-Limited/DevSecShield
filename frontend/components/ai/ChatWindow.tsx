@@ -28,11 +28,11 @@ import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai
 import { DisplaySuggestions } from '@/components/ai/DisplaySuggestions';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ChevronRightIcon, MicIcon, PaperclipIcon, RefreshCcwIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
+import { ChevronRightIcon, EyeIcon, MicIcon, PaperclipIcon, RefreshCcwIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { type FormEventHandler, useCallback, useEffect, useState } from 'react';
 import streamChatbotResponse from '@/hooks/use-sse';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSastConversationMessages, IACConversationResponse, LLMConversationResponse } from '@/utils/backend_api';
@@ -56,7 +56,7 @@ const ChatWindow = ({
   query }: { 
     query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  
+  const router = useRouter();
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
@@ -220,23 +220,28 @@ const ChatWindow = ({
       Heading = 'Unknown';
       break;
   }
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden rounded-xl border bg-background shadow-sm ">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">{Heading}</span>
+            <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/home/${type}`)}>{Heading}</span>
             <ChevronRightIcon className="size-4 text-zinc-500" />
             <span className="text-teal-700 font-medium">{query.data?.title}</span>
           </div>
           <div className="h-4 w-px bg-border" />
           <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
         </div>
-        <Button onClick={refreshQuery} className='bg-teal-600 hover:bg-teal-700 text-white cursor-pointer'>
-          <RefreshCcwIcon className="size-4" />
-          Refresh
-        </Button>
+
+        <div className="flex flex-row justify-end items-center gap-3">
+            {/* Refresh Button */}
+            <Button onClick={refreshQuery} className='bg-teal-600 hover:bg-teal-700 text-white cursor-pointer'>
+              <RefreshCcwIcon className="size-4" />
+              Refresh
+            </Button>
+        </div>
       </div>
       {/* Conversation Area */}
       <Conversation className="flex-1">

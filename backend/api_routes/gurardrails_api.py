@@ -14,6 +14,7 @@ from backend.mongo_models import GuardrailLogs
 from sqlmodel import Session, select
 from fastapi import HTTPException, status
 from rich.console import Console
+from fastapi_throttle import RateLimiter
 
 class StartScanData(BaseModel):
     input_prompt: str
@@ -22,8 +23,9 @@ console = Console()
 
 def guardrails_api_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
+    limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
     @app.post("/public/guardrails/start_scan", summary="Start a new guardrails scan")
-    async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id)):
+    async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)]):
         """
         developer notes : 
         1. start guardrails scan and get task id 
@@ -96,7 +98,7 @@ def guardrails_api_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error starting guardrails scan")
 
     @app.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan")
-    async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id)):
+    async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)] ):
         """
         developer notes : 
         1. validate the scan_id , check if it is a valid mongo db object id 

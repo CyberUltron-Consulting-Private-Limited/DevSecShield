@@ -2,7 +2,8 @@ from rich.console import Console
 from fastapi import HTTPException, status
 from pydantic import BaseModel , Field
 from enum import Enum
-from llm import generate_structured_response, generate_structured_response_bedrock
+from backend.ai_utils.llm import generate_structured_response, generate_structured_response_bedrock
+from backend.ai_utils.mock_export import mock_export_results
 
 console = Console()
 
@@ -30,61 +31,7 @@ class ExportResults(BaseModel):
     vulnerabilities : list[Vulnerability] = Field(description="The list of Vulnerabilities found in the System overall")
 
 
-
-mock_export_results = {
-    "vulnerabilities": [
-        {
-            "name": "Vulnerability 1",
-            "description": "This vulnerability is a high severity vulnerability that is caused by a path traversal vulnerability in the system.",
-            "cves": [
-                {
-                    "cve_id": "CVE-2021-1234",
-                    "description": "This vulnerability is a high severity vulnerability that is caused by a path traversal vulnerability in the system.",
-                    "severity": "HIGH"
-                }
-            ],
-            "code_snippet_or_location":None,
-            "severity": "HIGH",
-            "fix": "Fix for Vulnerability 1"
-        },
-        {
-            "name": "Vulnerability 2",
-            "description": "This vulnerability is a medium severity vulnerability that is caused by a path traversal vulnerability in the system.",
-            "cves": [
-                {
-                    "cve_id": "CVE-2021-1235",
-                    "description": "This vulnerability is a medium severity vulnerability that is caused by a path traversal vulnerability in the system.",
-                    "severity": "MEDIUM"
-                }
-            ],
-            "code_snippet_or_location": """
-            with open(path,"rb") as file:
-                file.read()
-            """,
-            "severity": "MEDIUM",
-            "fix": "Fix for Vulnerability 2"
-        },
-        {
-            "name": "Vulnerability 3",
-            "description": "This vulnerability is a low severity vulnerability that is caused by a path traversal vulnerability in the system.",
-            "cves": [
-                {
-                    "cve_id": "CVE-2021-1236",
-                    "description": "This vulnerability is a low severity vulnerability that is caused by a path traversal vulnerability in the system.",
-                    "severity": "LOW"
-                },
-                {
-                    "cve_id": "CVE-2021-1237",
-                    "description": "This vulnerability is a low severity vulnerability that is caused by a path traversal vulnerability in the system.",
-                    "severity": "LOW"
-                }
-            ],
-            "code_snippet_or_location": "\\backend\\api_routes\\routing_normal_sys.py:79",
-            "severity": "LOW",
-            "fix": "Fix for Vulnerability 3"
-        }
-    ]
-}   
+   
 
 def create_export_results(scan_data:dict):
     """
@@ -100,20 +47,20 @@ def create_export_results(scan_data:dict):
         prompt = f"""
         Scan Data: {scan_data}
         """
-        response = generate_structured_response_bedrock(input_prompt=prompt,system_prompt=system_prompt,output_model=ExportResults)
+        # response = generate_structured_response_bedrock(input_prompt=prompt,system_prompt=system_prompt,output_model=ExportResults)
 
-        final_response = []
-        for item in response.model_dump()["vulnerabilities"]:
-            final_response.append({
-                "name": item["name"],
-                "description": item["description"],
-                "cves": [{"cve_id": cve["cve_id"], "description": cve["description"], "severity": cve["severity"].value} for cve in item["cves"]],
-                "code_snippet_or_location": item["code_snippet_or_location"],
-                "severity": item["severity"].value,
-                "fix": item["fix"]
-            })
+        # final_response = []
+        # for item in response.model_dump()["vulnerabilities"]:
+        #     final_response.append({
+        #         "name": item["name"],
+        #         "description": item["description"],
+        #         "cves": [{"cve_id": cve["cve_id"], "description": cve["description"], "severity": cve["severity"].value} for cve in item["cves"]],
+        #         "code_snippet_or_location": item["code_snippet_or_location"],
+        #         "severity": item["severity"].value,
+        #         "fix": item["fix"]
+        #     })
         
-        return final_response
+        return mock_export_results
     except Exception as e:
         console.print(f"Error in create_export_results: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating export results , please try again later")

@@ -1,7 +1,10 @@
 import datetime
+import os
+import tempfile
 from typing import Annotated, Literal
 from bson import ObjectId
-from fastapi import FastAPI, HTTPException, Header, status, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, status, BackgroundTasks, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from pydantic import BaseModel
@@ -19,6 +22,14 @@ import time
 from backend.mongo_models import ActiveContextLog, Conversation, MessageLog
 import uuid
 from backend.api_routes.functions import * 
+from backend.pdf_utils.sast_pdf import generate_pdf as generate_sast_pdf
+from backend.pdf_utils.llm_pdf import generate_pdf as generate_llm_pdf
+from backend.pdf_utils.mcp_pdf import generate_pdf as generate_mcp_pdf
+from backend.pdf_utils.iac_pdf import generate_pdf as generate_iac_pdf
+from backend.pdf_utils.gitleaks_pdf import generate_pdf as generate_gitleaks_pdf
+from backend.pdf_utils.sbom_sca_pdf import generate_pdf as generate_sbom_sca_pdf
+from backend.pdf_utils.agent_discovery_pdf import generate_pdf as generate_agent_discovery_pdf
+from fastapi_throttle import RateLimiter
 
 
 console = Console()
@@ -27,9 +38,11 @@ console = Console()
 
 
 def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
+
+    limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
     
     @app.get("/{type}/conversations",summary="List all scan conversations")
-    async def list_scan_conversations(type: scan_types, background_tasks: BackgroundTasks, Authorization: Annotated[str | None, Header()] = None):
+    async def list_scan_conversations(type: scan_types, background_tasks: BackgroundTasks, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         List all scan conversations.
         """
@@ -63,7 +76,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         
     
     @app.post("/{type}/conversation",summary="Create a new scan conversation")
-    async def create_scan_conversation( data: CreateScanConversationData, type: scan_types, Authorization: Annotated[str | None, Header()] = None):
+    async def create_scan_conversation( data: CreateScanConversationData, type: scan_types, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Create a new scan conversation.
         return the conversation id
@@ -113,7 +126,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.post("/{type}/conversation/{conversation_id}/message",summary="Send a message to a scan conversation")
-    async def send_message_to_scan_conversation(type: scan_types, data: SendMessageToScanConversationData,conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def send_message_to_scan_conversation(type: scan_types, data: SendMessageToScanConversationData,conversation_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Send a message to a scan conversation.
         Note : 
@@ -231,7 +244,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.get("/{type}/conversation/{conversation_id}",summary="Get the scan status of a scan conversation")
-    async def get_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def get_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Get the scan status of a scan conversation.
         """
@@ -306,7 +319,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         leakage_data: StartGeneralScanData | None = None,
         sbom_sca_data: StartGeneralScanData | None = None,
         agent_discovery_data: StartGeneralScanData | None = None,
-        Authorization: Annotated[str | None, Header()] = None):
+        Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Start a scan.
         """
@@ -365,7 +378,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
     
     
     @app.delete("/{type}/conversation/{conversation_id}",summary="Delete a scan conversation")
-    async def delete_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def delete_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Delete a scan conversation.
         """
@@ -422,7 +435,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deleting conversation , please try again later")
     
     @app.put("/{type}/conversation/{conversation_id}",summary="Update a scan conversation . Use this for renaming the conversation")
-    async def update_scan_conversation(type: scan_types, conversation_id: int, data: UpdateScanConversationData, Authorization: Annotated[str | None, Header()] = None):
+    async def update_scan_conversation(type: scan_types, conversation_id: int, data: UpdateScanConversationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Update a scan conversation.
         """
@@ -449,7 +462,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating conversation , please try again later")
     
     @app.get("/{type}/conversation/{conversation_id}/export",summary="Export the results of a scan conversation")
-    async def export_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def export_scan_conversation(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)] ):
         """
         Export the results of a scan conversation.
         """
@@ -458,7 +471,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             # user = User(id=1) # for testing purposes
             Table = get_Table_from_type(type)
             
-            export_results = None
+            scan_data = None
             
             # STEP [ 1 ] : ======================= Get the conversation from main db and check if export_results is already populated ========================================
             conversation = None
@@ -466,86 +479,41 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 conversation = session.exec(select(Table).where(Table.id == conversation_id).where(Table.user_id == user.id)).first()
                 if not conversation:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-                if conversation.export_results:
-                    export_results = conversation.export_results
+                if conversation.scan_status not in ["success"]:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
+                if conversation.scan_data:
+                    scan_data = conversation.scan_data
 
-                
-            # STEP [ 2 ] : ======================= Export the results of the conversation if export data is not already populated ========================================
-            if not export_results:
-                export_results = create_export_results(conversation.scan_data)
             
-                # STEP [ 3 ] : ======================= Update the main db conversation the export_results ======================
-                with Session(engine) as session:
-                    conversation = session.exec(select(Table).where(Table.id == conversation_id).where(Table.user_id == user.id)).first()
-                    if not conversation:
-                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not allowed to export this conversation")
-                    conversation.export_results = export_results
-                    session.commit()
-                    session.refresh(conversation)
-                    console.print(f"Export results for conversation id: {conversation.id} updated in main database" ,style="bold green")
-                    
             
-            if export_results:
-                return {"data": export_results}
+            # STEP [ 2 ] : =========================== create a temp pdf file to create the exported scan data pdf ========================================
+            temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf",mode="w+",delete=False)
+            temp_pdf_file.close()
+            if type == "sast":
+                generate_sast_pdf(scan_data, temp_pdf_file.name)
+            elif type == "llm":
+                generate_llm_pdf(scan_data, temp_pdf_file.name)
+            elif type == "mcp":
+                generate_mcp_pdf(scan_data, temp_pdf_file.name)
+            elif type == "iac":
+                generate_iac_pdf(scan_data, temp_pdf_file.name)
+            elif type == "leakage":
+                generate_gitleaks_pdf(scan_data, temp_pdf_file.name)
+            elif type == "sbom_sca":
+                generate_sbom_sca_pdf(scan_data, temp_pdf_file.name)
+            elif type == "agent_discovery":
+                generate_agent_discovery_pdf(scan_data, temp_pdf_file.name)
             else:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export results not found")
-            
+
+
+            # STEP [ 4 ] : =========================== return the pdf file as a response ========================================
+            return FileResponse(temp_pdf_file.name, media_type="application/pdf")
         
         except Exception as e:
             console.print(f"Error in export_{type}_scan_conversation: {e}",style="bold red")
-            if isinstance(e,HTTPException):
+            if isinstance(e,HTTPException) or isinstance(e,FileNotFoundError):
                 raise e
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting conversation , please try again later")
-    
-
-    @app.get("/{type}/conversation/{conversation_id}/dashboard_data",summary="Get the dashboard data of a scan conversation")
-    async def get_dashboard_data(type: scan_types, conversation_id: int, Authorization: Annotated[str | None, Header()] = None):
-        """
-        Get the dashboard data of a scan conversation.
-        """
-        try:
-            user = await get_user_from_header_or_raise_exception(engine, Authorization)
-            # user = User(id=1) # for testing purposes
-            Table = get_Table_from_type(type)
-            
-            dashboard_data = None
-
-            # STEP [ 1 ] : ======================= Get the conversation from main db and check if dashboard data is already populated ========================================
-            conversation = None
-            with Session(engine) as session:
-                conversation = session.exec(select(Table).where(Table.id == conversation_id).where(Table.user_id == user.id)).first()
-                if not conversation:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-                if conversation.dashboard_data:
-                    dashboard_data = conversation.dashboard_data
-
-                if not dashboard_data:
-                    dashboard_data = create_export_results(conversation.scan_data)
-                    conversation.dashboard_data = dashboard_data
-                    session.commit()
-                    session.refresh(conversation)
-                    console.print(f"Dashboard data for conversation id: {conversation.id} updated in main database" ,style="bold green")
-
-            # STEP [ 2 ] : ======================= Calculate some metrics  ======================
-
-            high_risk_vulnerabilities = 0
-            medium_risk_vulnerabilities = 0
-            low_risk_vulnerabilities = 0
-            total_vulnerabilities = 0
-
-            for vulnerability in dashboard_data["vulnerabilities"]:
-                if vulnerability["severity"] == "high":
-                    high_risk_vulnerabilities += 1
-                elif vulnerability["severity"] == "medium":
-                    medium_risk_vulnerabilities += 1
-                elif vulnerability["severity"] == "low":
-                    low_risk_vulnerabilities += 1
-                total_vulnerabilities += 1
-                
-            return {"data": dashboard_data}
-        
-        except Exception as e:
-            console.print(f"Error in get_dashboard_data_{type}_scan_conversation: {e}",style="bold red")
-            if isinstance(e,HTTPException):
-                raise e
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting dashboard data , please try again later")
+        finally:
+            temp_pdf_file.close()

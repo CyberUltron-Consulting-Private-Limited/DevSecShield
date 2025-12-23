@@ -347,6 +347,7 @@ def return_conversations_list_for_type(
                     "id": conversation.id,
                     "repo_url": conversation.repo_url,
                     "mode": conversation.mode,
+                    "app_lang": conversation.app_lang,
                     "title": conversation.title,
                     "created_at": conversation.created_at,
                     "last_updated": conversation.last_updated,

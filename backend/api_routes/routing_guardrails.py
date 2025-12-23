@@ -1,7 +1,7 @@
 import datetime
 from typing import Annotated, Literal
 from bson import ObjectId
-from fastapi import FastAPI, HTTPException, Header, status, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, status, BackgroundTasks, Depends
 from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from backend.auth_utils.plans import plans
@@ -11,14 +11,16 @@ import uuid
 from backend.api_routes.functions import * 
 from backend.guardrails_api_utils.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
 from backend.guardrails_api_utils.auth import *
+from fastapi_throttle import RateLimiter
 
 console = Console()
 
 
 def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
-    
+
+    limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
     @app.get("/guardrails/integrations",summary="List all guardrails conversations")
-    async def list_guardrails_integrations( background_tasks: BackgroundTasks, Authorization: Annotated[str | None, Header()] = None):
+    async def list_guardrails_integrations( background_tasks: BackgroundTasks, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         List all guardrails integrations.
         """
@@ -48,7 +50,7 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error fetching guardrails integrations")
 
     @app.post("/guardrails/integration",summary="Create a new guardrails integration")
-    async def create_guardrails_integration(data: CreateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None):
+    async def create_guardrails_integration(data: CreateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Create a new guardrails integration.
         """
@@ -75,7 +77,7 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error creating guardrails integration")
 
     @app.get("/guardrails/integration/{integration_id}",summary="Get a guardrails integration")
-    async def get_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def get_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Get a guardrails integration dashboard data
         Run a scan status update for all the scans in this integration 
@@ -177,7 +179,7 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error getting guardrails integration")
 
     @app.put("/guardrails/integration/{integration_id}",summary="Update a guardrails integration")
-    async def update_guardrails_integration(integration_id: int, data: UpdateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None):
+    async def update_guardrails_integration(integration_id: int, data: UpdateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Update a guardrails integration.
         """
@@ -205,7 +207,7 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error updating guardrails integration")
 
     @app.delete("/guardrails/integration/{integration_id}",summary="Delete a guardrails integration")
-    async def delete_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def delete_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Delete a guardrails integration.
         """
@@ -237,7 +239,7 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=500, detail="Error deleting guardrails integration")
 
     @app.get("/guardrails/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration")
-    async def get_guardrails_integration_settings(integration_id: int, Authorization: Annotated[str | None, Header()] = None):
+    async def get_guardrails_integration_settings(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)] ):
         """
         Get the integration settings of all the scanners in the integration.
         """

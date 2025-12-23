@@ -19,12 +19,13 @@ import {
   ScanIcon,
   Download,
   Loader2,
+  Eye,
 } from "lucide-react";
 import { Mode } from "@/app/home/sast/[conversation_id]/page";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { IACConversationResponse, startIACScan, getIACExportResults } from "@/utils/backend_api";
 import { toast } from "sonner";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
 export function IACOptionsSidebar({
@@ -78,6 +79,7 @@ export function IACOptionsSidebar({
   };
 
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { conversation_id } = useParams();
   const startScanMutation = useMutation({
     mutationFn: handleStartScan,
@@ -107,11 +109,20 @@ export function IACOptionsSidebar({
 
   const exportMutation = useMutation({
     mutationFn: getIACExportResults,
-    onSuccess: () => {
-      toast.success("Export results fetched successfully");
+    onSuccess: (data, variables , context) => {
+      const blob = new Blob([data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      // download the pdf file
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${query.data?.title}_scan_report.pdf`;
+      a.click();
+
+      setOptionsSidebarState("done");
     },
     onError: () => {
-      toast.error("Failed to fetch export results");
+      setOptionsSidebarState("error");
     }
   });
 
@@ -304,19 +315,21 @@ export function IACOptionsSidebar({
             <Button 
               variant="ghost" 
               size="sm"
-              onClick={async () => {
-                toast.error("Downloading scan report is not available yet");
-                // const exportResults = await exportMutation.mutateAsync(parseInt(conversation_id as string));
-                // if (exportResults) {
-                //   generateAndDownloadPDF(
-                //     exportResults,
-                //     "IAC Security Scan",
-                //     query.data?.repo_url || null,
-                //     new Date().toLocaleDateString()
-                //   );
-                // }
+              onClick={() => {
+                router.push(`/home/iac/${conversation_id}/results?origin=chat`);
               }}
               className="w-full h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+            >
+              <Eye className="size-4" />
+              <span className="ml-1">View Results</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={async () => {
+                exportMutation.mutate(parseInt(conversation_id as string));
+              }}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
               <Download className="size-4" />
               <span className="ml-1">Download Scan Report</span>
@@ -333,7 +346,10 @@ export function IACOptionsSidebar({
           <Button 
             variant="ghost" 
             size="sm"
-            onClick={() => setOptionsSidebarState("ready")}
+            onClick={() => {
+              // refresh the entire page to reset the state
+              window.location.reload();
+            }}
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
