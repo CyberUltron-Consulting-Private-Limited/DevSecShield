@@ -22,7 +22,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 interface Location {
   line?: number;
@@ -168,12 +168,24 @@ interface SASTResultsProps {
 
 export default function SASTResults({ data, conversationId }: SASTResultsProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const origin = searchParams.get("origin") || "chat";
   const [searchQuery, setSearchQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [checkFilter, setCheckFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("severity");
+
+  // Check if we're in CI/CD context and extract integration_id
+  const isCicdContext = pathname.includes("ci_cd");
+  let integrationId: string | null = null;
+  if (isCicdContext) {
+    const pathParts = pathname.split('/').filter(Boolean);
+    const cicdIndex = pathParts.indexOf('ci_cd');
+    if (cicdIndex !== -1 && cicdIndex + 1 < pathParts.length) {
+      integrationId = pathParts[cicdIndex + 1];
+    }
+  }
 
   // Parse path to show only from repo_xxxxxxx onwards
   const getRelativePath = (path?: string): string => {
@@ -322,14 +334,23 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {conversationId && (
+          {(conversationId || isCicdContext) && (
             <Button
               variant="outline"
               size="icon"
               onClick={() => {
-                const backRoute = origin === "list" 
-                  ? `/home/sast` 
-                  : `/home/sast/${conversationId}`;
+                let backRoute: string;
+                if (isCicdContext && integrationId) {
+                  // Navigate back to CI/CD integration dashboard
+                  backRoute = `/home/ci_cd/${integrationId}`;
+                } else if (conversationId) {
+                  // Navigate back to SAST conversation page
+                  backRoute = origin === "list" 
+                    ? `/home/sast` 
+                    : `/home/sast/${conversationId}`;
+                } else {
+                  backRoute = `/home/sast`;
+                }
                 router.push(backRoute);
               }}
               className="cursor-pointer"
@@ -341,8 +362,6 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Static Application Security Testing results
-              {data.version && ` • Version ${data.version}`}
-              {data.engine_requested && ` • Engine: ${data.engine_requested}`}
             </p>
           </div>
         </div>

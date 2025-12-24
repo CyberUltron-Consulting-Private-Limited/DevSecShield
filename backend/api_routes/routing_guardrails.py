@@ -90,6 +90,10 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
                 if integration == None or not integration.id:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
+                integration.last_updated = datetime.datetime.now(datetime.timezone.utc)
+                session.add(integration)
+                session.commit()
+                session.refresh(integration)
             
             # STEP [ 2 ] : ==================================== Get the integration logs from the mongo db ====================================
             guardrails_logs_collection = mongo_db["guardrails_logs"]
@@ -138,7 +142,7 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             # STEP [ 4 ] : =========================================Fetch and Calculate Metrics =======================================================================
             total_logs , successful_logs , failed_logs , pending_logs , started_logs , not_started_logs = 0 , 0 , 0 , 0 , 0 , 0 
             log_data = []
-            with guardrails_logs_collection.find({"integration_id": integration_id}) as cursor:
+            with guardrails_logs_collection.find({"integration_id": integration_id}).sort("created_at", -1) as cursor:
                 for log in cursor:
                     total_logs += 1
                     log_data.append({

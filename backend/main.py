@@ -21,6 +21,7 @@ import psycopg2
 from pymongo import MongoClient
 from backend.get_db import get_db
 from backend.api_routes.gurardrails_api import guardrails_api_routes
+from backend.api_routes.routing_cicd import cicd_routes
 
 
 #fast api app
@@ -84,6 +85,7 @@ admin_routes(app,engine)
 scan_routes(app,engine,get_mongo_client_db())
 guardrails_routes(app,engine,get_mongo_client_db())
 guardrails_api_routes(app,engine,get_mongo_client_db())
+cicd_routes(app,engine,get_mongo_client_db())
 
 
     

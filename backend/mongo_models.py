@@ -66,5 +66,21 @@ class GuardrailLogs(TypedDict, total=False):
     results: dict | None = None
 
     # calculated fields
-    check_passed: bool | None = None
-    
+    # check_passed: bool | None = None  # not in use ( maybe remove this )
+
+
+class CicdLogs(TypedDict, total=False):
+
+    _id: str  # MongoDB ObjectId as string (auto-generated, always present when reading)
+    ci_cd_integration_id: str # ObjectId as string of guardrails integration collection document 
+    user_id: int
+    task_id: str # celery task id ( has to be created when the task is initiated or log created )
+    status: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = "NOT_STARTED"
+    created_at: datetime
+
+    # zip file details
+    zip_file_bucket: str | None = None
+    zip_file_key: str | None = None
+
+    # results
+    results: dict | None = None

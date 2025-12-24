@@ -1,0 +1,32 @@
+name: SAST Check
+on:
+  push:
+    branches: [ main ]  # Adjust this to your master branch name
+  pull_request:
+    branches: [ main ]  # Optionally run on PRs
+jobs:
+  sast-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Create project zip
+        run: |
+          zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
+      
+      - name: Perform SAST Scan
+        id: sast
+        run: |
+          RESPONSE=$(curl -X POST       -H "cicd-api-key: ${{ secrets.CICD_API_KEY }}"                         -F "zip_file=@project.zip"             -F "app_lang=python"             https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)          
+          
+          
+          # Check for error in response
+          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
+          if [ ! -z "$ERROR" ]; then
+            echo "Error: $ERROR"
+            exit 1
+          else
+            VULNS=$(echo "$RESPONSE" | jq -r '.vulnerabilities')
+            echo "Vulnerabilities:"
+            echo "$VULNS"
+          fi

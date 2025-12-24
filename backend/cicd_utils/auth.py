@@ -12,16 +12,16 @@ def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
     try:
         engine = get_db(dev_environment=True)
         with Session(engine) as session:
-            integration = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.api_key == api_key)).first()
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.api_key == api_key)).first()
             if not integration:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
             return (integration.user_id, integration.id)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
 
-api_key_header = APIKeyHeader(name="gr-api-key")
+api_key_header = APIKeyHeader(name="cicd-api-key")
 
 def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
     """
@@ -33,17 +33,17 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
     Raises:
         HTTPException: 401 if the API key is missing or invalid
     Example:
-        >>> user = get_user("gr1-weasjdfbwejf12313ksdnc")
+        >>> user = get_user("cicd1-weasjdfbwejf12313ksdnc")
         >>> print(user.email)
         >>> nikhil@cyberultron.com
     """
     try:
-        api_key = api_key_header.split(" ")[1]
+        api_key = api_key_header.strip()
         user_id, integration_id = get_user_and_integration_from_api_key(api_key)
         if not user_id or not integration_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
         
-        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[:-6]}", style="bold yellow")
+        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
         return {
             "user_id": user_id,
             "integration_id": integration_id
@@ -51,7 +51,7 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
 
 
 
@@ -70,8 +70,8 @@ def create_api_key(user_id: int) -> str:
         >>> gr1-weasjdfbwejf12313ksdnc
     """
     try:
-        return "gr" + str(user_id) + "-" + secrets.token_hex(64) # example : gr1-weasjdfbwejf12313ksdnc
+        return "cicd" + str(user_id) + "-" + secrets.token_hex(64) # example : cicd1-weasjdfbwejf12313ksdnc
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Error creating Guardrails API key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Error creating CI/CD API key")

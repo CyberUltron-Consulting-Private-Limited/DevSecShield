@@ -53,9 +53,14 @@ def mongo_db_create_collections_and_documents():
             console.print(f"active_context collection created",style="bold green")
 
         # guardrail_logs collection
-        if 'guardrail_logs' not in collections:
-            db.create_collection('guardrail_logs')
-            console.print(f"guardrail_logs collection created",style="bold green")
+        if 'guardrails_logs' not in collections:
+            db.create_collection('guardrails_logs')
+            console.print(f"guardrails_logs collection created",style="bold green")
+        
+        # cicd_logs collection
+        if 'cicd_logs' not in collections:
+            db.create_collection('cicd_logs')
+            console.print(f"cicd_logs collection created",style="bold green")
         
         console.print(f"collections created",style="bold green")
         console.print(f"list of collections: {db.list_collection_names()}",style="bold green")

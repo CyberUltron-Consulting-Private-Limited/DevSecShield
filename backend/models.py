@@ -193,3 +193,25 @@ class GuardrailsIntegration(SQLModel,table=True):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+# ========================================= CI/CD Integration =========================================
+scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery"]
+
+class CicdIntegration(SQLModel,table=True):
+    id : int | None = Field(default=None,primary_key=True)
+    user_id : int
+    api_key : str
+    title : str = Field(default="New CI/CD Integration")
+    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+
+    # settings
+    scan_type : scan_types | None= Field(default=None,sa_type=String)
+
+
+    # results
+    results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+
+    class Config:
+        arbitrary_types_allowed = True

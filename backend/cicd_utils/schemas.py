@@ -1,14 +1,14 @@
 from pydantic import BaseModel
+from backend.api_routes.functions import scan_types
+from typing import Literal
 
-class CreateCicdConversationData(BaseModel):
-    title: str
-    description: str
-    repository_url: str
-    repository_type: str
-    repository_branch: str
-    repository_commit: str
-    repository_commit_message: str
-    repository_commit_author: str
-    repository_commit_author_email: str
-    repository_commit_author_date: str
-    repository_commit_author_time: str
+class CreateCicdIntegrationData(BaseModel):
+    title: str | None = None
+    scan_type: scan_types | None = None
+
+class UpdateCicdIntegrationData(BaseModel):
+    title: str | None = None
+
+class RunCicdScanData(BaseModel):
+    app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] | None = None
+

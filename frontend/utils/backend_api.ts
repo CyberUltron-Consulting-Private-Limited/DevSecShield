@@ -1115,3 +1115,105 @@ export {
     createGuardrailsIntegration,
     updateGuardrailsIntegration
 }
+
+// -------------------------------------------------------------- CI/CD API Routes --------------------------------------------------------------
+
+export interface CicdIntegration {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_type: "sast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    api_key: string
+}
+
+const getCicdIntegrations = async (): Promise<CicdIntegration[]> => {
+    try {
+        const response = await api.get("/cicd/integrations")
+        toast.success("CI/CD integrations fetched successfully")
+        return response.data as CicdIntegration[]
+    } catch (error) {
+        showErrorToast(error,"Error fetching CI/CD integrations")
+        throw error
+    }
+}
+
+export interface CreateCicdIntegrationData {
+    title: string
+    scan_type: "sast"
+}
+
+const createCicdIntegration = async (data: CreateCicdIntegrationData) => {
+    try {
+        const response = await api.post("/cicd/integration", data)
+        toast.success("CI/CD integration created successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error creating CI/CD integration")
+        throw error
+    }
+}
+
+export interface CicdLog {
+    id: string
+    created_at: string
+    last_updated: string
+    status: "pending" | "started" | "NOT_STARTED" | "success" | "failure" | "retry"
+    results: any | null
+}
+
+export interface CicdIntegrationDashboard {
+    cicd_integration_id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_type: "sast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    api_key: string
+    logs: CicdLog[]
+}
+
+const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string]}): Promise<CicdIntegrationDashboard> => {
+    const integration_id = queryKey[1]
+    try {
+        const response = await api.get(`/cicd/integration/${integration_id}`)
+        toast.success("CI/CD integration dashboard fetched successfully")
+        return response.data as CicdIntegrationDashboard
+    } catch (error) {
+        showErrorToast(error,"Error fetching CI/CD integration dashboard")
+        throw error
+    }
+}
+
+const deleteCicdIntegration = async (integration_id: number) => {
+    try {
+        const response = await api.delete(`/cicd/integration/${integration_id}`)
+        toast.success("CI/CD integration deleted successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error deleting CI/CD integration")
+        throw error
+    }
+}
+
+export interface UpdateCicdIntegrationData {
+    title: string
+}
+
+const renameCicdIntegration = async ({integration_id, title}: {integration_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/cicd/integration/${integration_id}`, { title: title })
+        toast.success("CI/CD integration renamed successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error renaming CI/CD integration")
+        throw error
+    }
+}
+
+export { 
+    getCicdIntegrations,
+    createCicdIntegration,
+    getCicdIntegrationDashboard,
+    deleteCicdIntegration,
+    renameCicdIntegration
+}

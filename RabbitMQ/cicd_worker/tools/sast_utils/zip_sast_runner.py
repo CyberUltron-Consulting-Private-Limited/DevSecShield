@@ -34,7 +34,7 @@ def run_sast_scan(
 
         
         # create a temporary directory
-        directory = tempfile.mkdtemp()
+        directory = tempfile.mkdtemp(prefix="repo_")
         
         # extract the zip file to a temporary directory
         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:

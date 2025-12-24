@@ -65,7 +65,7 @@ const toolsItems = [
   { name: "IAC", href: "/home/iac", icon: FileText },
   { name: "Data Leakage", href: "/home/leakage", icon: Database },
   { name: "AI Agent Discovery", href: "/home/agent_discovery", icon: ScanLine },
-  { name: "DAST coming soon...", href: "/home/dast", icon: Globe },
+  // { name: "DAST ", href: "/home/dast", icon: Globe },
 ];
 
 const workflowItems = [
@@ -188,7 +188,7 @@ export default function HomeLayout({
                 <div className="flex flex-col">
                     <h1 className="text-lg font-medium text-white">DevSec Shield</h1>
                     <p className="text-xs text-zinc-400 w-full text-nowrap">
-                      AI-powered DevSecOps Platform
+                      DevSecOps Assistant
                     </p>
                 </div>
               </div>
@@ -255,7 +255,7 @@ export default function HomeLayout({
 
               <SidebarGroup>
                 <SidebarGroupLabel className="text-zinc-400 text-xs font-semibold px-2 py-2">
-                  Workflows
+                  Integrations
                 </SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>

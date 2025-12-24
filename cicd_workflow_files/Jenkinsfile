@@ -1,0 +1,62 @@
+pipeline {
+    agent any
+
+    environment {
+        CICD_API_KEY = '${CICD_API_KEY}'
+        SAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/sast/scan'
+        APP_LANG = 'javascript'
+    }
+
+    stages {
+        stage('Clean Up Old Files') {
+            steps {
+                script {
+                    sh 'rm -rf venv'
+                    sh 'rm -rf project.zip'
+                    sh 'rm -rf *.json'
+                    sh 'rm -rf *.csv'
+                    sh 'rm -rf *.sh'
+                }
+            }
+        }
+
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Create ZIP Files') {
+            steps {
+                script {
+                    sh 'rm -rf project_folder'
+                    sh 'mkdir project_folder'
+                    sh 'find . -maxdepth 1 -not -name "." -not -name ".." -not -name ".git" -not -name "venv" -not -name "project_folder" -exec mv {} project_folder/ \;'
+                    sh 'zip -r project.zip project_folder'
+                }
+            }
+        }
+
+
+        stage('Perform SAST Scan') {
+            steps {
+                script {
+                    def response = sh(script: """
+                        #!/bin/bash
+                        curl -v -X POST                         -H "cicd-api-key: ${CICD_API_KEY}"                         -F "zip_file=@project.zip"                         -F "app_lang=${APP_LANG}"                         "${SAST_API_URL}"
+                    """, returnStdout: true).trim()
+
+                    def jsonResponse = readJSON(text: response)
+                    def vulnerabilities = jsonResponse.vulnerabilities
+
+                    echo "Vulnerabilities found during SAST:"
+                    echo "${vulnerabilities}"
+
+                    env.VULNERABILITIES = vulnerabilities.toString()
+                }
+            }
+        }
+
+        // Additional stages (e.g., deploy) can be added here
+    }
+}
