@@ -7,5 +7,6 @@ requires-python = ">=3.13.5"
 dependencies = [
     "python-dotenv>=1.2.1",
     "rich>=14.2.0",
+    "wapiti3>=3.2.10",
     "zaproxy>=0.4.0",
 ]
