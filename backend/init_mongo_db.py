@@ -3,6 +3,8 @@ from sqlmodel import SQLModel, create_engine
 from pymongo import MongoClient
 from rich.console import Console
 from .models import *
+import argparse
+from dotenv import load_dotenv
 
 
 
@@ -26,10 +28,20 @@ from .models import *
 #         console = Console()
 #         console.print(f"error creating tables: {e}",style="bold red")
 
-def mongo_db_create_collections_and_documents():
+def mongo_db_create_collections_and_documents(dev_environment: bool = False):
+    """
+    Mongo connection url format : 
+    mongodb://<username>:<password>@<host>:<port>
+    """
+    load_dotenv()
     try:
-        # mongo_url = f"mongodb://{os.environ['MONGO_USERNAME']}:{os.environ['MONGO_PASSWORD']}@{os.environ['MONGO_HOST']}:{os.environ['MONGO_PORT']}"
-        mongo_url = "mongodb://localhost:27017/"
+        console = Console()
+        console.print(f"dev_environment: {dev_environment}",style="bold green")
+        if dev_environment:
+            mongo_url = "mongodb://localhost:27017/"
+        else: 
+            mongo_url = f"mongodb://{os.environ['MONGO_INITDB_ROOT_USERNAME']}:{os.environ['MONGO_INITDB_ROOT_PASSWORD']}@13.203.233.15:27017/"
+        
         # mongo_url = "mongodb://Nikhil:testing123@localhost:27018/"
         mongo_client = MongoClient(mongo_url)
         db = mongo_client['devsecshield_backend_server_db']
@@ -71,4 +83,10 @@ def mongo_db_create_collections_and_documents():
 
 if __name__=="__main__":
     # create_db_and_tables()
-    mongo_db_create_collections_and_documents()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dev", action="store_true", default=False, help="Run in development environment")
+    args = parser.parse_args()
+    if args.dev:
+        mongo_db_create_collections_and_documents(dev_environment=True)
+    else:
+        mongo_db_create_collections_and_documents(dev_environment=False)

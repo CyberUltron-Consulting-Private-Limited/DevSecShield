@@ -1,0 +1,21 @@
+services:
+    
+
+  db:
+    image: postgres:15-alpine
+    container_name: devsecshield-postgres
+    volumes:
+      - devsecshield_postgres_data:/var/lib/postgresql/data/
+    expose:
+      - 5432
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_PASSWORD=${PG_USER_PASS}
+      - POSTGRES_DB=${PG_DB}
+    # command: -p 5433 # use this to use a specific port 
+  
+volumes: 
+  devsecshield_postgres_data:
+    driver: local

@@ -1,7 +1,7 @@
 import axios from "axios";
 // Base URL can be configured via env; falls back to local FastAPI server
 export const apiBaseURL = "http://127.0.0.1:8081"; // for local development
-// const apiBaseURL = "http://13.203.233.15:8081";
+// const apiBaseURL = "http://13.203.233.15:8082";
 
 const api = axios.create({
   baseURL: apiBaseURL,

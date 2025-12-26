@@ -1,0 +1,73 @@
+name: devsecshield-infra-services
+services:
+  
+  
+  rabbitmq:
+    image: rabbitmq:4.1.6-management-alpine
+    container_name: devsecshield-rabbitmq
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_ADMIN_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_ADMIN_PASSWORD}
+    configs:
+      - source: rabbitmq-plugins
+        target: /etc/rabbitmq/enabled_plugins
+    volumes:
+      - rabbitmq-lib:/var/lib/rabbitmq/
+      - rabbitmq-log:/var/log/rabbitmq
+
+  
+  mongodb:
+    container_name: devsecshield-mongodb
+    image: mongo:8.0.6
+    env_file: .env
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+      - ./db_confs/mongod.conf:/etc/mongo/mongod.conf
+    command: [ "mongod", "--config", "/etc/mongo/mongod.conf" ]
+    networks:
+      - app-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: devsecshield-postgres
+    volumes:
+      - devsecshield_postgres_data:/var/lib/postgresql/data/
+    expose:
+      - 5432
+    ports:
+      - 5433:5432
+    environment:
+      - POSTGRES_USER=${PG_USER}
+      - POSTGRES_PASSWORD=${PG_USER_PASS}
+      - POSTGRES_DB=${PG_DB}
+    # command: -p 5433 # use this to use a specific port 
+  
+
+
+configs:
+  rabbitmq-plugins:
+    content: "[rabbitmq_management]."  
+
+networks:
+  app-network:
+    driver: bridge
+
+
+volumes:
+  rabbitmq-lib:
+    driver: local
+  rabbitmq-log:
+    driver: local
+  mongo_data:
+    driver: local
+  devsecshield_postgres_data:
+    driver: local

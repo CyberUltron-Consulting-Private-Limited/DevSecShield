@@ -15,32 +15,54 @@ from tools.llm_utils.llm_runner import run_garak_scan
 from tools.mcp_utils.mcp_runner import run_mcp_scan
 from tools.context.scan_context import validate_dict_with_context
 import json
+
+console = Console()
+
+os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
-    username = os.getenv("RABBIT_ADMIN_USERNAME")
-    password = os.getenv("RABBIT_ADMIN_PASSWORD")
-    mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
-    if not username or not password : 
-        raise Exception()
+    is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
+    if is_docker_container and is_docker_container == "True":
+        username = os.getenv("RABBIT_ADMIN_USERNAME")
+        password = os.getenv("RABBIT_ADMIN_PASSWORD")
+
+        mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+        mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+        mongo_host = "13.203.233.15"
+        mongo_port = "27017"
+        mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        if not username or not password  or not mongo_username or not mongo_password: 
+            raise Exception("Username, password or mongo username or password not set")
+        
+        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+    else:
+        username = os.getenv("RABBIT_ADMIN_USERNAME")
+        password = os.getenv("RABBIT_ADMIN_PASSWORD")
+
+
+        mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
+        if not username or not password or not mongo_url: 
+            raise Exception("Username, password or mongo url not set")
+
+        broker_url = f"amqp://{username}:{password}@localhost:5672"
+    
 except Exception as e :
-    Console().print("Set username and password env variables to access broker",style="bold red")
+    console.print(f"Error in getting credentials: {e}",style="dim red")
     sys.exit()
-
-
-
-
 
 #============================================================== Registering tasks to worker ==================================================================== 
 
 try:
     # app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
-    app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend=mongo_url)
+    # app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend=mongo_url)
+    app = Celery('worker', broker=broker_url,backend=mongo_url)
     app.conf.update(
         RESULT_PERSISTENT=True,
         TASK_TRACK_STARTED=True,
     )
-    Console().print(f"Celery App instantiated",style="bold green")
+    console.print(f"Celery App instantiated",style="bold green")
 
 
 
@@ -70,9 +92,9 @@ try:
             return results
 
         except Exception as e:
-            Console().print(f"Error in sast task: {str(e)}",style="bold red")
+            console.print(f"Error in sast task: {str(e)}",style="bold red")
             raise e
-    Console().print(f"Registered SAST task",style="bold green")
+    console.print(f"Registered SAST task",style="bold green")
 
 
      # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
@@ -90,7 +112,7 @@ try:
             sbom_json_file=sbom_json_file,
         )  
         return results 
-    Console().print(f"Registered SBOM SCA task",style="bold green")
+    console.print(f"Registered SBOM SCA task",style="bold green")
 
 
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
@@ -107,7 +129,7 @@ try:
             mode=mode,
         ) 
         return results 
-    Console().print(f"Registered IAC task with context pattern",style="bold green")
+    console.print(f"Registered IAC task with context pattern",style="bold green")
 
      # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True)
@@ -122,7 +144,7 @@ try:
         )  
 
         return results
-    Console().print(f"Registered Agent discovery task",style="bold green")
+    console.print(f"Registered Agent discovery task",style="bold green")
 
 
      # ------------------------------------------- LLM benchmark Scanning task -------------------------------------------------------------------------------------------
@@ -158,13 +180,13 @@ try:
 
         # for testing purposes , using a mock result
         for i in range(10):
-            Console().print(f"Sleeping {i} ....",style="bold yellow")
+            console.print(f"Sleeping {i} ....",style="bold yellow")
             time.sleep(1)
         with open("mock_result.json", "r") as f:
             results = json.load(f)
 
         return results 
-    Console().print(f"Registered LLM task",style="bold green")
+    console.print(f"Registered LLM task",style="bold green")
 
 
      # ------------------------------------------- MCP Scanning task -------------------------------------------------------------------------------------------
@@ -183,7 +205,7 @@ try:
 
         return results 
 
-    Console().print(f"Registered MCP task",style="bold green")
+    console.print(f"Registered MCP task",style="bold green")
 
 
      # ------------------------------------------- Gitleaks Scanning task -------------------------------------------------------------------------------------------
@@ -197,7 +219,7 @@ try:
             context=context,
         )  
         return results
-    Console().print(f"Registered Gitleaks task",style="bold green")
+    console.print(f"Registered Gitleaks task",style="bold green")
 
 except Exception as e:
-    Console().print(f"Error occured while registering tasks : {str(e)}",style="bold red")
+    console.print(f"Error occured while registering tasks : {str(e)}",style="bold red")

@@ -17,14 +17,16 @@ import json
 import re
 
 def get_llm_response(content: str, system_prompt: str = "") -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise MissingApiKeyError("Missing OPENAI_API_KEY for LLM usage (env not set)")
-    
+
     # Set the API key as an environment variable for the OpenAI client
-    os.environ["OPENAI_API_KEY"] = api_key
+    api_key = os.getenv("BEDROCK_OPENAI_API_KEY")
+    if not api_key:
+        raise MissingApiKeyError("Missing BEDROCK_OPENAI_API_KEY for LLM usage (env not set)")
     
-    client = OpenAI()
+    client = OpenAI(
+    base_url="https://bedrock-runtime.ap-south-1.amazonaws.com/openai/v1", 
+    api_key=api_key # Replace with actual API key
+)
 
     messages = []
     if system_prompt:
@@ -40,7 +42,7 @@ def get_llm_response(content: str, system_prompt: str = "") -> str:
 
     # OpenRouter recommends including referer/title via standard headers; the OpenAI SDK
     # used through OpenRouter doesn't expose header injection here, so prefer llm_json for JSON.
-    completion = client.chat.completions.create(model="gpt-4.1-nano", messages=messages, temperature=0.1,response_format={"type": "json_object"})
+    completion = client.chat.completions.create(model="openai.gpt-oss-20b-1:0", messages=messages, temperature=0.1,response_format={"type": "json_object"})
     return completion.choices[0].message.content
 
 def get_json_llm_response(content: str, system_prompt: str) -> dict:

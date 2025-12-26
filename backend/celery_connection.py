@@ -13,21 +13,61 @@ from datetime import timezone
 console = Console()
 
 def get_celery_app():
-    load_dotenv()
-    username = os.getenv("RABBIT_ADMIN_USERNAME")
-    password = os.getenv("RABBIT_ADMIN_PASSWORD")
-    mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
-    if not username or not password or not mongo_url:
-        console.print(f"Username, password or mongo url not set",style="bold red")
-        return None
-    simple_app = Celery('task_sender',
-                    broker=f"amqp://{username}:{password}@localhost:5672",
-                    backend=mongo_url)
-    simple_app.conf.update(
-        CELERY_RESULT_PERSISTENT=True,
-        CELERY_TRACK_STARTED=True,
-    )
-    return simple_app
+    try:
+
+        load_dotenv()
+
+        is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
+
+        if is_docker_container and is_docker_container == "True":
+            console.print("Getting celery app in docker container",style="bold green")
+            # broker url
+            username = os.getenv("RABBIT_ADMIN_USERNAME")
+            password = os.getenv("RABBIT_ADMIN_PASSWORD")
+            if not username or not password:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
+            broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+
+            # mongo 
+            mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+            mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+            if not mongo_username or not mongo_password:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Mongo username or password not set")
+            mongo_host = "13.203.233.15"
+            mongo_port = "27017"
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        
+        
+        else:
+            console.print("Getting celery app in local environment",style="bold green")
+            # broker url
+            username = os.getenv("RABBIT_ADMIN_USERNAME")
+            password = os.getenv("RABBIT_ADMIN_PASSWORD")
+            if not username or not password:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
+            broker_url = f"amqp://{username}:{password}@localhost:5672"
+
+            # mongo 
+            mongo_url = f"mongodb://localhost:27017/"
+
+        # console.print(f"Broker url: {broker_url}",style="bold blue1")
+        # console.print(f"Mongo url: {mongo_url}",style="bold blue1")
+        simple_app = Celery('task_sender',
+                        broker=broker_url,
+                        backend=mongo_url)
+        simple_app.conf.update(
+            CELERY_RESULT_PERSISTENT=True,
+            CELERY_TRACK_STARTED=True,
+        )
+        console.print("Celery app instantiated",style="bold green")
+        return simple_app
+    
+
+    except Exception as e:
+        console.print(f"Error in getting celery app: {e}" ,style="dim red")
+        if isinstance(e,HTTPException):
+            raise e
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app, please try again later")
 
 def get_status_and_update_db(
     conversation_id: int,
