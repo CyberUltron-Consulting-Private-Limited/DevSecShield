@@ -22,7 +22,7 @@ import uuid
 
 
 console = Console()
-scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery"]
+scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery" , "dast"]
 
 # ============================================================ Request body models ===========================================================
 class CreateScanConversationData(BaseModel):
@@ -73,6 +73,67 @@ class StartLLMBenchmarkingData(BaseModel):
 class StartMCPScanData(BaseModel):
     server_config: str
 
+
+class HeaderCookieSchema(BaseModel):
+    name: str
+    value: str
+
+class HeaderCookieDASTSchema(BaseModel):
+    target_url: str
+    attack_modules: list[Literal["common", "all", "backup", "brute_login_form", "buster", "cms", "crlf", "csrf", "exec", "file", "htaccess", "htp", "ldap", "log4shell", "methods", "network_device", "nikto", "permanentxss", "redirect", "shellshock", "spring4shell", "sql", "ssl", "ssrf", "takeover", "timesql", "upload", "wapp", "wp_enum", "xss", "xxe"]] = ["common"]
+    max_scan_time: int = 60
+    user_agent: str | None = None
+    headers: list[HeaderCookieSchema] | None = None
+    cookies: list[HeaderCookieSchema] | None = None
+    scan_force: Literal["paranoid", "sneaky", "polite", "normal", "aggressive", "insane"] = "normal"
+    exclude_url_patterns: list[str] | None = None
+
+class FormBasedDASTSchema(BaseModel):
+    target_url: str
+    login_url: str
+    include_urls: list[str] | None = None
+    exclude_urls: list[str] | None = None
+    mode: Literal["St-Low-Th-High", "API", "API-Minimal", "Pen Test", "QA Standard"] | None = None
+    timeout_durations_mins: int = 20
+    poll_durations_seconds: int = 5
+    username_value: str | None = None
+    password_value: str | None = None
+    username_key: str | None = None
+    password_key: str | None = None
+    logged_in_regex: str | None = None
+    logged_out_regex: str | None = None
+    
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.target_url or not self.login_url:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target URL and Login URL are required")
+        if not self.include_urls:
+            self.include_urls = []
+        if not self.exclude_urls:
+            self.exclude_urls = []
+        if not self.username_value or not self.password_value:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and Password are required")
+        if not self.username_key or not self.password_key:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and Password key are required")
+        if not self.logged_in_regex or not self.logged_out_regex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logged in and Logged out regex are required")
+        return self
+
+class StartDASTScanData(BaseModel):
+    auth_mode: Literal["header_cookie_based" , "form_based"]
+    header_cookie_based: HeaderCookieDASTSchema | None = None
+    form_based: FormBasedDASTSchema | None = None
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if self.auth_mode == "header_cookie_based":
+            if not self.header_cookie_based:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Header cookie based data is required")
+        elif self.auth_mode == "form_based":
+            if not self.form_based:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Form based data is required")
+        return self
+
 class StartScanData(BaseModel):
     sast : StartSastScanData | None = None
     llm : StartLLMBenchmarkingData | None = None
@@ -83,6 +144,7 @@ class StartScanData(BaseModel):
     leakage : StartGeneralScanData | None = None
     sbom_sca : StartGeneralScanData | None = None
     agent_discovery : StartGeneralScanData | None = None
+    dast : StartDASTScanData | None = None
 
 class UpdateScanConversationData(BaseModel):
     title: str
@@ -120,6 +182,8 @@ def get_Table_from_type(type: scan_types) -> SASTConversation | LLMBenchmarkingC
         return SBOM_SCAConversation
     elif type == "agent_discovery":
         return Agent_DiscoveryConversation
+    elif type == "dast":
+        return DASTConversation
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
 
@@ -127,7 +191,7 @@ def get_Table_from_type(type: scan_types) -> SASTConversation | LLMBenchmarkingC
 def get_messages_from_conversation(
     conversation_id: int,
     user_id: int, 
-    Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation, 
+    Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation | DASTConversation, 
     engine: Engine, 
     mongo_db: Database):
     try:
@@ -175,7 +239,7 @@ def get_messages_from_conversation(
 
 def start_scan_and_update_db(
     type: scan_types,
-    table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation, 
+    table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation | DASTConversation, 
     engine: Engine, 
     mongo_db: Database,
     conversation_id: int,
@@ -187,6 +251,7 @@ def start_scan_and_update_db(
     leakage_data: StartGeneralScanData | None = None,
     sbom_sca_data: StartGeneralScanData | None = None,
     agent_discovery_data: StartGeneralScanData | None = None,
+    dast_data: StartDASTScanData | None = None,
     ) -> None :
     try:
         
@@ -259,6 +324,36 @@ def start_scan_and_update_db(
                 },
             }
             task_result = simple_app.send_task(name="scan_worker.discovery", kwargs=agent_discovery_kwargs)
+        elif type == "dast":
+            if dast_data.auth_mode == "header_cookie_based":
+                dast_kwargs={
+                    "target_url":dast_data.header_cookie_based.target_url,
+                    "attack_modules":dast_data.header_cookie_based.attack_modules,
+                    "max_scan_time":dast_data.header_cookie_based.max_scan_time,
+                    "user_agent":dast_data.header_cookie_based.user_agent,
+                    "headers":[{"name": header.name, "value": header.value} for header in dast_data.header_cookie_based.headers] if dast_data.header_cookie_based.headers else [],
+                    "cookies":[{"name": cookie.name, "value": cookie.value} for cookie in dast_data.header_cookie_based.cookies] if dast_data.header_cookie_based.cookies else [],
+                    "scan_force":dast_data.header_cookie_based.scan_force,
+                    "exclude_url_patterns":dast_data.header_cookie_based.exclude_url_patterns,
+                }
+                task_result = simple_app.send_task(name="dast_worker.wapiti_dast", kwargs=dast_kwargs)
+            elif dast_data.auth_mode == "form_based":
+                dast_kwargs={
+                    "target_url":dast_data.form_based.target_url,
+                    "login_url":dast_data.form_based.login_url,
+                    "include_urls":dast_data.form_based.include_urls,
+                    "exclude_urls":dast_data.form_based.exclude_urls,
+                    "mode":dast_data.form_based.mode,
+                    "timeout_durations_mins":dast_data.form_based.timeout_durations_mins,
+                    "poll_durations_seconds":dast_data.form_based.poll_durations_seconds,
+                    "username_value":dast_data.form_based.username_value,
+                    "password_value":dast_data.form_based.password_value,
+                    "username_key":dast_data.form_based.username_key,
+                    "password_key":dast_data.form_based.password_key,
+                    "logged_in_regex":dast_data.form_based.logged_in_regex,
+                    "logged_out_regex":dast_data.form_based.logged_out_regex,
+                }
+                task_result = simple_app.send_task(name="dast_worker.zap_dast", kwargs=dast_kwargs)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of scan")
 
@@ -320,7 +415,13 @@ def start_scan_and_update_db(
                 console.print(f"Updating conversation data for agent discovery scan with metadata" ,style="bold green")
                 conversation.mode = agent_discovery_data.mode
                 conversation.repo_url = agent_discovery_data.repo_url
-            
+            elif type == "dast" and table == DASTConversation:
+                console.print(f"Updating conversation data for dast scan with metadata" ,style="bold green")
+                conversation.auth_mode = dast_data.auth_mode
+                if dast_data.auth_mode == "header_cookie_based":
+                    conversation.target_url = dast_data.header_cookie_based.target_url
+                elif dast_data.auth_mode == "form_based":
+                    conversation.target_url = dast_data.form_based.target_url
             session.commit()
     except Exception as e:
         console.print(f"Error in start_scan: {e}",style="bold red")
@@ -335,7 +436,7 @@ def start_scan_and_update_db(
 # ======================================= functions for assembling output data for different types of conversations ======================
 def return_conversations_list_for_type(
     type: scan_types, 
-    sequence : Sequence[SASTConversation] | Sequence[LLMBenchmarkingConversation] | Sequence[MCPConversation] | Sequence[IACConversation] | Sequence[GitleaksConversation] | Sequence[SBOM_SCAConversation] | Sequence[Agent_DiscoveryConversation]):
+    sequence : Sequence[SASTConversation] | Sequence[LLMBenchmarkingConversation] | Sequence[MCPConversation] | Sequence[IACConversation] | Sequence[GitleaksConversation] | Sequence[SBOM_SCAConversation] | Sequence[Agent_DiscoveryConversation] | Sequence[DASTConversation]):
     conversations_data = []
     conversations_to_update = []
     match type:
@@ -390,6 +491,19 @@ def return_conversations_list_for_type(
                     "last_updated": conversation.last_updated,
                     "scan_status": conversation.scan_status.lower(),
                 })
+        case "dast":
+            for conversation in sequence:
+                if (conversation.scan_status == "pending" or conversation.scan_status == "started") and conversation.task_id:
+                    conversations_to_update.append((conversation.id,conversation.task_id))
+                conversations_data.append({
+                    "id": conversation.id,
+                    "target_url": conversation.target_url,
+                    "auth_mode": conversation.auth_mode,
+                    "title": conversation.title,
+                    "created_at": conversation.created_at,
+                    "last_updated": conversation.last_updated,
+                    "scan_status": conversation.scan_status.lower(),
+                })
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of conversation")
 
@@ -397,7 +511,7 @@ def return_conversations_list_for_type(
 
 
 def return_conversation_data(
-    conversation: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation, 
+    conversation: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation | DASTConversation, 
     type: scan_types,
     SCAN_STATUS: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"],
     SCAN_DATA: dict,
@@ -432,6 +546,15 @@ def return_conversation_data(
             return {
                 "title": conversation.title,
                 "repo_url": conversation.repo_url,
+                "scan_status": SCAN_STATUS.lower(),
+                "data": SCAN_DATA,
+                "messages": MESSAGES,
+            }
+        case "dast":
+            return {
+                "title": conversation.title,
+                "target_url": conversation.target_url,
+                "auth_mode": conversation.auth_mode,
                 "scan_status": SCAN_STATUS.lower(),
                 "data": SCAN_DATA,
                 "messages": MESSAGES,

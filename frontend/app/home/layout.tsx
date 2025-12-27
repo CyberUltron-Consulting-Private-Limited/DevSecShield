@@ -65,7 +65,7 @@ const toolsItems = [
   { name: "IAC", href: "/home/iac", icon: FileText },
   { name: "Data Leakage", href: "/home/leakage", icon: Database },
   { name: "AI Agent Discovery", href: "/home/agent_discovery", icon: ScanLine },
-  // { name: "DAST ", href: "/home/dast", icon: Globe },
+  { name: "DAST ", href: "/home/dast", icon: Globe },
 ];
 
 const workflowItems = [

@@ -1,113 +1,117 @@
+import json
 import subprocess
 import tempfile
-import json
-import os
-from typing import List, Optional, Dict
+from typing import Literal
+from urllib.parse import quote
+
+from rich.console import Console
+
+console = Console()
 
 
-def run_wapiti_dast_scan(
-    target_url: str,
-    auth_url: str,
-    username_key: str,
-    password_key: str,
-    username_value: str,
-    password_value: str,
-    auth_http_method: str = "POST",
-    session_key: Optional[str] = None,
-    csrf_token: Optional[str] = None,
-    attacks: Optional[List[str]] = None,
-) -> Dict:
-    """
-    Run an authenticated DAST scan using Wapiti and return results as a dict.
-    """
+def run_wapiti(
+    target_url:str,
+    attack_modules : list[Literal[
+        "common", "all", "backup", "brute_login_form", "buster", "cms", "crlf", "csrf",
+        "exec", "file", "htaccess", "htp", "ldap", "log4shell", "methods", "network_device",
+        "nikto", "permanentxss", "redirect", "shellshock", "spring4shell", "sql", "ssl",
+        "ssrf", "takeover", "timesql", "upload", "wapp", "wp_enum", "xss", "xxe"
+    ]] = ["common"], 
+    max_scan_time : int = 60,
+    user_agent : str | None = None,
+    headers : list[dict] | None = None,
+    cookies : list[dict] | None = None,
+    scan_force : Literal[ "paranoid", "sneaky", "polite", "normal", "aggressive", "insane"] = "normal",
+    exclude_url_patterns : list[str] | None = None,
+):
+    try :
+        console.print(f"Running wapiti for the target url: {target_url}")
+        # STEP [ 1 ] ==================== Building the basic command with output configured ============================================\
+        temp_json_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        attack_modules_string = ",".join(attack_modules) if len(attack_modules) > 1 else attack_modules[0]
+        cmd = [
+            "uv",
+            "run",
+            "wapiti",
+            "-u", target_url,
+            "-f", "json",
+            "-o", temp_json_file.name,
+            "-m", attack_modules_string,
+            "--flush-attacks",
+            "--max-scan-time", str(max_scan_time),
 
-    auth_http_method = auth_http_method.lower()
-    if auth_http_method not in ("post", "get"):
-        raise ValueError("auth_http_method must be POST or GET")
+        ]
 
-    # -------------------------------
-    # Build authentication payload
-    # -------------------------------
-    auth_data_parts = [
-        f"{username_key}={username_value}",
-        f"{password_key}={password_value}",
-    ]
+        # STEP [ 2 ] ==================== Adding user agent, scan force and other basic options if provided ============================================
+        if user_agent:
+            console.print(f"Adding user agent: {user_agent}")
+            cmd.extend(["--user-agent", user_agent])
+        if scan_force:
+            console.print(f"Adding scan force: {scan_force}")
+            cmd.extend(["--scan-force", scan_force])
+        
 
-    if csrf_token:
-        auth_data_parts.append(f"{csrf_token}={{token}}")
+        # STEP [ 3 ] ==================== Adding headers and cookies if provided ============================================
+        if headers and len(headers) > 0:
+            header_string = []
+            for header in headers:
+                console.print(f"Adding header: {header}")
+                header_string.append(f"{header['name']}: {header['value']}")
+            
+            if len(header_string) > 1:
+                cmd.extend(["--header", ";".join(header_string)])
+            else:
+                cmd.extend(["--header", header_string[0]])
 
-    auth_data = "&".join(auth_data_parts)
 
-    # -------------------------------
-    # Create temp JSON output file
-    # -------------------------------
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp_file:
-        output_file = tmp_file.name
+        if cookies and len(cookies) > 0:
+            cookie_string = []
+            for cookie in cookies:
+                console.print(f"Adding cookie: {cookie}")
+                cookie_string.append(f"{cookie['name']}={cookie['value']}")
+            
+            if len(cookie_string) > 1:
+                cmd.extend(["--cookie", ";".join(cookie_string)])
+            else:
+                cmd.extend(["--cookie", cookie_string[0]])
 
-    # -------------------------------
-    # Build Wapiti command
-    # -------------------------------
-    command = [
-        "wapiti",
-        "-u", target_url,
-        "-f", "json",
-        "-o", output_file,
-        "--form-data", auth_data,
-        "--form-url", auth_url,
-        "--flush-session",
-    ]
+        # STEP [ 4 ] ==================== Adding exclude url patterns if provided ============================================
+        if exclude_url_patterns and len(exclude_url_patterns) > 0:
+            for pattern in exclude_url_patterns:
+                console.print(f"Adding exclude url pattern: {pattern}")
+                cmd.extend(["-x", pattern])
+            
 
-    # Optional: attack modules
-    if attacks:
-        command.extend(["-m", ",".join(attacks)])
+        # STEP [ 5 ] ==================== Running the command ============================================
+        console.print(f"Running the command: {cmd}")
+        result = subprocess.run(cmd)
 
-    # Optional: session cookie
-    if session_key:
-        command.extend(["--cookie", session_key])
 
-    # -------------------------------
-    # Execute scan
-    # -------------------------------
-    try:
-        subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        os.unlink(output_file)
-        raise RuntimeError(f"Wapiti scan failed: {e.stderr}") from e
+        # STEP [ 6 ] =================== Read the results from the temporary json file ============================================
+        with open(temp_json_file.name, "r", encoding="utf-8", errors="ignore") as f:
+            wapiti_json = json.load(f)
 
-    # -------------------------------
-    # Read JSON results
-    # -------------------------------
-    try:
-        with open(output_file, "r", encoding="utf-8") as f:
-            results = json.load(f)
-    finally:
-        os.unlink(output_file)
 
-    return results
+        return wapiti_json
+    except Exception as e :
+        raise Exception(f"Error in running wapiti: {e}")
+    finally :
+        temp_json_file.close()
 
 
 if __name__ == "__main__":
-    results = run_wapiti_dast_scan(
-        target_url="http://localhost:8090/bodgeit",
-        auth_url=" http://localhost:8090/bodgeit/register.jsp",
-        username_key="username",
-        password_key="password",
-        username_value="shivanathnikhil@gmail.com",
-        password_value="Testing@123",
-        auth_http_method="POST",
-        # session_key="session_key",
-        # csrf_token="csrf_token",
-        attacks=["sql_injection", "xss", "file_upload"],
+    wapiti_json = run_wapiti(
+        target_url="http://localhost:8000/api/items",
+        attack_modules=["all"],
+        max_scan_time=60,
+        headers=[
+            {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJOaWtoaWwiLCJleHAiOjE3NjY4MjIxNjYsInR5cGUiOiJhY2Nlc3MifQ.01Ks9UqErlQbuMohGFgwK8puOcXH38Y26HMe0NgqEyE"
+            }
+        ],
+        user_agent="Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36 SE 2.X MetaSr 1.0",
+        scan_force="insane",
     )
-    print(results)  
-
-    """
-    Example command :
-    wapiti -u http://localhost:8090/bodgeit -f json -o output.json --form-data "username=shivanathnikhil@gmail.com&password=Testing@123" --form-url "http://localhost:8090/bodgeit/register.jsp" -m sql_injection,xss,file_upload --cookie session_key --csrf-token csrf_token
-    """
+    with open("wapiti_test.json", "w+", encoding="utf-8") as f:
+        json.dump(wapiti_json, f, indent=2)

@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import psycopg2
 from rich.console import Console
 import os
-from backend.models import LLMBenchmarkingConversation, SASTConversation
+from backend.models import LLMBenchmarkingConversation, SASTConversation, DASTConversation, Agent_DiscoveryConversation, SBOM_SCAConversation, IACConversation, GitleaksConversation, MCPConversation
 from fastapi import HTTPException, status
 from celery.result import AsyncResult
 from sqlmodel import Session, select
@@ -50,8 +50,6 @@ def get_celery_app():
             # mongo 
             mongo_url = f"mongodb://localhost:27017/"
 
-        # console.print(f"Broker url: {broker_url}",style="bold blue1")
-        # console.print(f"Mongo url: {mongo_url}",style="bold blue1")
         simple_app = Celery('task_sender',
                         broker=broker_url,
                         backend=mongo_url)
@@ -72,7 +70,7 @@ def get_celery_app():
 def get_status_and_update_db(
     conversation_id: int,
     task_id: str,
-    table: SASTConversation | LLMBenchmarkingConversation, 
+    table: SASTConversation | LLMBenchmarkingConversation | DASTConversation | Agent_DiscoveryConversation | SBOM_SCAConversation | IACConversation | GitleaksConversation | MCPConversation, 
     engine: Engine,
      ):
     """
@@ -130,7 +128,7 @@ def get_status_and_update_db(
                 SCAN_DATA = results
                 conversation.scan_data = SCAN_DATA
                 console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
-            else:
+            else:  
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
             
             session.commit()

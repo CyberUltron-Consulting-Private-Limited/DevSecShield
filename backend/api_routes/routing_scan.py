@@ -16,6 +16,7 @@ from backend.models import SASTConversation, User , LLMBenchmarkingConversation
 from backend.auth_utils.plans import plans
 from rich.console import Console
 from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import StreamingResponse
 from pymongo.database import Database
 import json
 import time
@@ -319,6 +320,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
         leakage_data: StartGeneralScanData | None = None,
         sbom_sca_data: StartGeneralScanData | None = None,
         agent_discovery_data: StartGeneralScanData | None = None,
+        dast_data: StartDASTScanData | None = None,
         Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
         """
         Start a scan.
@@ -356,6 +358,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                     leakage_data=leakage_data,
                     sbom_sca_data=sbom_sca_data,
                     agent_discovery_data=agent_discovery_data,
+                    dast_data=dast_data,
                     conversation_id=conversation_id,
                     user_id=user.id,
                     engine=engine,

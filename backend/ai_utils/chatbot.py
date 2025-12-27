@@ -186,6 +186,7 @@ async def create_response(
 
         # STEP [ 3 ] ======================================== Generate Response =========================================================================================
         message = ""
+        console.print(f"Content being sent to chatbot_response : {content}",style="bold blue1")
         for data in  chatbot_response(
             mongo_conversation_id=mongo_conversation_id,
             user_id=user_id,

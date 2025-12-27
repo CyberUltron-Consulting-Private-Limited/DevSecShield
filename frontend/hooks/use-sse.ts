@@ -15,7 +15,7 @@ const streamChatbotResponse = async (
     type: string
 ) => {
 
-    const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery'];
+    const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast'];
     if (!valid_types.includes(type)) {
         throw new Error('Invalid conversation type');
     }

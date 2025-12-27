@@ -1116,6 +1116,167 @@ export {
     updateGuardrailsIntegration
 }
 
+// -------------------------------------------------------------- DAST API Routes --------------------------------------------------------------
+
+export interface DASTConversation {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+    target_url: string | null
+    attack_modules: string[] | null
+    scan_force: string | null
+}
+
+const getDASTConversations = async (): Promise<DASTConversation[]> => {
+    try {
+        const response = await api.get("/dast/conversations")
+        toast.success("DAST conversations fetched successfully")
+        return response.data as DASTConversation[]
+    } catch (error) {
+        showErrorToast(error,"Error fetching dast conversations")
+        throw error
+    }
+}
+
+const deleteDASTConversation = async (conversation_id: number) => {
+    try {
+        const response = await api.delete(`/dast/conversation/${conversation_id}`)
+        toast.success("DAST conversation deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameDASTConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+    try {
+        const response = await api.put(`/dast/conversation/${conversation_id}`, { title: title })
+        toast.success("DAST conversation renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createDASTConversation = async (title: string) => {
+    try {
+        const response = await api.post("/dast/conversation", { title: title })
+        toast.success("DAST conversation created successfully")
+        return response.data.conversation_id as number  
+    } catch (error) {
+        throw error
+    }
+}
+
+export interface DASTConversationMessage {
+    id: number
+    content: string
+    role: "user" | "assistant"
+    timestamp: string
+    is_streaming: boolean
+}
+
+export interface DASTConversationResponse {
+    title: string
+    target_url: string | null
+    auth_mode: "form_based" | "header_cookie_based" | null
+    attack_modules: string[] | null
+    scan_force: string | null
+    exclude_url_patterns: string[] | null
+    scan_status: string
+    data: any
+    messages: DASTConversationMessage[]
+}
+
+const getDASTConversationMessages = async ({queryKey}: {queryKey: ['dast-conversation-data', number]}): Promise<DASTConversationResponse> => {
+    const conversation_id = queryKey[1]
+    try {
+        const response = await api.get(`/dast/conversation/${conversation_id}`)
+        toast.success("DAST conversation messages fetched successfully")
+        return response.data as DASTConversationResponse
+    } catch (error) {
+        showErrorToast(error,"Error fetching dast conversation messages")
+        throw error
+    }
+}
+
+export interface FormBasedDASTScanData {
+    target_url: string
+    login_url: string
+    include_urls?: string[]
+    exclude_urls?: string[]
+    mode?: "St-Low-Th-High" | "API" | "API-Minimal" | "Pen Test" | "QA Standard"
+    timeout_durations_mins?: number
+    poll_durations_seconds?: number
+    username_value: string
+    password_value: string
+    username_key: string
+    password_key: string
+    logged_in_regex: string
+    logged_out_regex: string
+}
+
+export interface HeaderCookieDASTScanData {
+    target_url: string
+    attack_modules?: string[]
+    max_scan_time?: number
+    user_agent?: string
+    headers?: { name: string; value: string }[]
+    cookies?: { name: string; value: string }[]
+    scan_force?: "paranoid" | "sneaky" | "polite" | "normal" | "aggressive" | "insane"
+    exclude_url_patterns?: string[]
+}
+
+const startDASTScan = async (
+    {
+        conversation_id,
+        auth_mode,
+        form_based,
+        header_cookie_based
+    }: {   
+        conversation_id: number,
+        auth_mode: "form_based" | "header_cookie_based",
+        form_based?: FormBasedDASTScanData,
+        header_cookie_based?: HeaderCookieDASTScanData
+    }) => {
+    try {
+        const response = await api.post(`/dast/conversation/${conversation_id}/scan`, { 
+            dast_data: {
+                auth_mode,
+                form_based: form_based || null,
+                header_cookie_based: header_cookie_based || null
+            }
+        })
+        toast.success("DAST scan started successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const getDASTExportResults = async (conversation_id: number): Promise<any> => {
+    try {   
+        const response = await api.get(`/dast/conversation/${conversation_id}/export`)
+        toast.success("DAST export results fetched successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error fetching dast export results")
+        throw error
+    }
+}
+
+export { 
+    getDASTConversations, 
+    deleteDASTConversation, 
+    renameDASTConversation, 
+    createDASTConversation, 
+    getDASTConversationMessages,
+    startDASTScan,
+    getDASTExportResults
+}
+
 // -------------------------------------------------------------- CI/CD API Routes --------------------------------------------------------------
 
 export interface CicdIntegration {

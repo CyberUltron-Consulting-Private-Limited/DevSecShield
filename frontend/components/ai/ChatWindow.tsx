@@ -35,12 +35,13 @@ import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSastConversationMessages, IACConversationResponse, LLMConversationResponse } from '@/utils/backend_api';
+import { DASTConversationResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
 import { MCPConversationResponse } from '@/utils/backend_api';
+import ReactMarkdown from 'react-markdown';
 
 export type ChatMessage = {
   id: number;
@@ -54,7 +55,7 @@ export type ChatMessage = {
 
 const ChatWindow = ({ 
   query }: { 
-    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> }) => {
+    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const router = useRouter();
   const [inputValue, setInputValue] = useState('');
@@ -92,7 +93,7 @@ const ChatWindow = ({
   }, [query.data , query.error]);
 
   // check type of conversation
-  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | undefined;
   const paths = usePathname().split('/');
   // console.log(paths);
   if (paths[2] === 'sast') {
@@ -115,6 +116,9 @@ const ChatWindow = ({
   }
   else if (paths[2] === 'agent_discovery') {
       type = 'agent_discovery';
+  }
+  else if (paths[2] === 'dast') {
+      type = 'dast';
   }
   else {
       toast.error('Invalid conversation type');
@@ -186,13 +190,16 @@ const ChatWindow = ({
     else if (type === 'agent_discovery') {
       queryClient.invalidateQueries({ queryKey: ['agent_discovery-conversation-data', conversation_id] });
     }
+    else if (type === 'dast') {
+      queryClient.invalidateQueries({ queryKey: ['dast-conversation-data', conversation_id] });
+    }
     else {
       toast.error('Invalid conversation type');
     }
   }, [queryClient, conversation_id]);
 
  
-  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery'];
+  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast'];
   let Heading: string = '';
   switch (type) {
     case 'sast':
@@ -215,6 +222,9 @@ const ChatWindow = ({
       break;
     case 'agent_discovery':
       Heading = 'AI Agent Discovery';
+      break;
+    case 'dast':
+      Heading = 'DAST';
       break;
     default:
       Heading = 'Unknown';
@@ -256,7 +266,7 @@ const ChatWindow = ({
                       <span className="text-muted-foreground text-sm">Thinking...</span>
                     </div>
                   ) : (
-                    message.content
+                    <ReactMarkdown >{message.content}</ReactMarkdown>
                   )}
                 </MessageContent>
                 <MessageAvatar  

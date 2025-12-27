@@ -43,9 +43,8 @@ class SASTConversation(SQLModel,table=True):
     repo_url : str | None = Field(default=None)
     app_lang : Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] | None = Field(default=None,sa_type=String)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
@@ -63,9 +62,8 @@ class LLMBenchmarkingConversation(SQLModel,table=True):
     probes : List[str] | None = Field(default_factory=list,sa_column=Column(JSON))
     generations : int | None = Field(default=1,sa_type=Integer)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
@@ -80,9 +78,8 @@ class MCPConversation(SQLModel,table=True):
     user_id : int
     task_id : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
@@ -98,9 +95,8 @@ class IACConversation(SQLModel,table=True):
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
@@ -116,9 +112,8 @@ class GitleaksConversation(SQLModel,table=True):
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
@@ -134,9 +129,8 @@ class SBOM_SCAConversation(SQLModel,table=True):
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
@@ -152,9 +146,29 @@ class Agent_DiscoveryConversation(SQLModel,table=True):
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    export_results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+
     title : str = Field(default="New SAST Conversation")
-    conversation_id : str
+    conversation_id : str #mongo db conversation id
+    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+    message_limit : int
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class DASTConversation(SQLModel,table=True):
+    id : int | None = Field(default=None,primary_key=True)
+    user_id : int
+    task_id : str | None = Field(default=None)
+
+    auth_mode : Literal["form_based" , "header_cookie_based"] | None = Field(default=None,sa_type=String)
+    target_url : str | None = Field(default=None)
+    
+    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)  
+    title : str = Field(default="New DAST Conversation")
+    conversation_id : str #mongo db conversation id
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
