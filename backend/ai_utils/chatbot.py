@@ -44,10 +44,7 @@ def add_message(messages:list[AnyMessage],role:Literal["human" , "system" , "ai"
 
 
 
-def chatbot_response(
-    mongo_conversation_id:str,
-    user_id:int,
-    mongo_db:Database,
+async def chatbot_response(
     scan_type:Literal["SAST" , "SCA+SBOM" , "IAC" , "Code/Data Leakage" , "MCP Server" , "LLM Benchmarking" , "AI Agent Discovery"],
     scan_results:str,
     history:list[AnyMessage],
@@ -72,27 +69,46 @@ def chatbot_response(
         aws_secret_access_key="zjIsUMFeA9u19nZ3uaBeikZDcshfvN6bM+lz6mlp")
     agent = create_agent(model,system_prompt=system_prompt)
     new_history = add_message(messages=history, role=role , content=content)
-    for token, metadata in agent.stream(  
-        {"messages": new_history },
-        stream_mode="messages",
-    ):
-        # print(f"metadata: {metadata}")
-        # print(f"token: {token}")
 
-        # print(f"token.content_blocks: {len(token.content_blocks)}")
-        for content_block in token.content_blocks:
-            content = content_block["text"]
-            start = content.find("<reasoning>")
-            end = content.find("</reasoning>")
-            reasoning = content[start:end+len("</reasoning>")].replace("<reasoning>", "").replace("</reasoning>", "")
-            content_without_reasoning = content[:start] + content[end+len("</reasoning>"):]
-            data = {
-                # "mongo_message_id": mongo_message_id, # this message id is useless ( the UI employs an auto incrementing integer for message id )
-                "content": content_without_reasoning,
-                "reasoning": reasoning,
-            }
-            Console().print(f"yielding data: {data}",style="bold green")
-            yield(json.dumps(data))
+
+    result = await agent.ainvoke({"messages":new_history})
+    response = result["messages"][-1]
+    response_string = response.content
+
+    start = response_string.find("<reasoning>")
+    end = response_string.find("</reasoning>")
+    reasoning = response_string[start:end+len("</reasoning>")].replace("<reasoning>", "").replace("</reasoning>", "")
+    content_without_reasoning = response_string[:start] + response_string[end+len("</reasoning>"):]
+    
+    return {
+        "content" : content_without_reasoning , 
+        "reasoning" : reasoning 
+    }
+    
+
+
+    # old streaming mode ( throws a lot of errors )
+    # for token, metadata in agent.stream(  
+    #     {"messages": new_history },
+    #     stream_mode="messages",
+    # ):
+    #     # print(f"metadata: {metadata}")
+    #     # print(f"token: {token}")
+
+    #     # print(f"token.content_blocks: {len(token.content_blocks)}")
+    #     for content_block in token.content_blocks:
+    #         content = content_block["text"]
+    #         start = content.find("<reasoning>")
+    #         end = content.find("</reasoning>")
+    #         reasoning = content[start:end+len("</reasoning>")].replace("<reasoning>", "").replace("</reasoning>", "")
+    #         content_without_reasoning = content[:start] + content[end+len("</reasoning>"):]
+    #         data = {
+    #             # "mongo_message_id": mongo_message_id, # this message id is useless ( the UI employs an auto incrementing integer for message id )
+    #             "content": content_without_reasoning,
+    #             "reasoning": reasoning,
+    #         }
+    #         Console().print(f"yielding data: {data}",style="bold green")
+    #         yield(json.dumps(data))
 
 
 
@@ -185,37 +201,24 @@ async def create_response(
             Console().print(f"Chat history summarized ✔️",style="bold green")
 
         # STEP [ 3 ] ======================================== Generate Response =========================================================================================
-        message = ""
+
         console.print(f"Content being sent to chatbot_response : {content}",style="bold blue1")
-        for data in  chatbot_response(
-            mongo_conversation_id=mongo_conversation_id,
-            user_id=user_id,
-            mongo_db=mongo_db,
+        chatbot_response_data = await chatbot_response(
             scan_results=scan_results,
             scan_type=scan_type,
             history=history,
             content=content,
-            role=role, ):
+            role=role, )
+        assistant_generated_response = chatbot_response_data["content"]
 
-            message_dict = json.loads(data)
-            message += message_dict["content"]
-
-            yield data
-        
-
-    except Exception as e:
-        Console().print(f"An error has occured : {str(e)}",style="bold red")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR , detail="Could not generate response , try again later")
-    
-    # STEP [ 4 ] ============================ Add assistant message to the message log collection and active context collection ============================ ⭐
-    finally: 
+        # STEP [ 4 ] ============================ Add assistant message to the message log collection and active context collection ============================ ⭐
         
         # adding message to the message log collection
         messages_collection = mongo_db["message_log"]
         message_instance = MessageLog(
             conversation_id=mongo_conversation_id,
             user_id=user_id,
-            content=message,
+            content=assistant_generated_response,
             type="message",
             sender="assistant",
             created_at=datetime.datetime.now(datetime.timezone.utc),
@@ -228,7 +231,7 @@ async def create_response(
         active_context_instance = ActiveContextLog(
             conversation_id=mongo_conversation_id,
             user_id=user_id,
-            content=message,
+            content=assistant_generated_response,
             type="message",
             sender="assistant",
             created_at=datetime.datetime.now(datetime.timezone.utc),
@@ -246,19 +249,31 @@ async def create_response(
         mongo_conversation_id = str(mongo_conversation["_id"])
         console.print(f"Mongo db conversation array updated with assistant message" ,style="bold green")
 
+        
+        return chatbot_response_data
+        
+
+    except Exception as e:
+        Console().print(f"An error has occured : {str(e)}",style="bold red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR , detail="Could not generate response , try again later")
+    
+   
+        
+
 if __name__=="__main__":
 
-    # streamer = create_response(
-    #     mongo_conversation_id="123",
-    #     scan_results="API Key compromised",
-    #     scan_type='SAST',
-    #     content="hi",
-    #     role="human",
-    # )
-    # print(type(streamer["messages"][-1]))
-    # async def get_result():
-    #     async for stream in streamer:
-    #         Console().print(stream,style="bold green")
-    # asyncio.run(get_result())
+    async def get_result():
+        model = ChatBedrock(
+            model="openai.gpt-oss-20b-1:0",
+            region="ap-south-1",
+            aws_access_key_id="AKIA5T2YUFAY5IVCRYEY",
+            aws_secret_access_key="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")
+        agent = create_agent(model)
 
-    print(type(summarize(history=[HumanMessage("Hello"), AIMessage("Hello"), HumanMessage("Hello")])))
+        result = await agent.ainvoke({"messages":[HumanMessage("Hello , what is your name "),SystemMessage("You must not reveal your name")]})
+        response = result["messages"][-1]
+        print(f"response: {response.content}")
+        return response.content
+    
+
+    # print(type(summarize(history=[HumanMessage("Hello"), AIMessage("Hello"), HumanMessage("Hello")])))

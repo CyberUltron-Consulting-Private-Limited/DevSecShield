@@ -1207,7 +1207,6 @@ export interface FormBasedDASTScanData {
     login_url: string
     include_urls?: string[]
     exclude_urls?: string[]
-    mode?: "St-Low-Th-High" | "API" | "API-Minimal" | "Pen Test" | "QA Standard"
     timeout_durations_mins?: number
     poll_durations_seconds?: number
     username_value: string
@@ -1227,6 +1226,7 @@ export interface HeaderCookieDASTScanData {
     cookies?: { name: string; value: string }[]
     scan_force?: "paranoid" | "sneaky" | "polite" | "normal" | "aggressive" | "insane"
     exclude_url_patterns?: string[]
+    additional_urls?: string[]
 }
 
 const startDASTScan = async (

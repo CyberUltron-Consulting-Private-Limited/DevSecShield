@@ -11,6 +11,7 @@ console = Console()
 
 def run_wapiti(
     target_url:str,
+    additional_urls : list[str] = [],
     attack_modules : list[Literal[
         "common", "all", "backup", "brute_login_form", "buster", "cms", "crlf", "csrf",
         "exec", "file", "htaccess", "htp", "ldap", "log4shell", "methods", "network_device",
@@ -41,6 +42,7 @@ def run_wapiti(
             "--max-scan-time", str(max_scan_time),
 
         ]
+
 
         # STEP [ 2 ] ==================== Adding user agent, scan force and other basic options if provided ============================================
         if user_agent:
@@ -80,14 +82,21 @@ def run_wapiti(
             for pattern in exclude_url_patterns:
                 console.print(f"Adding exclude url pattern: {pattern}")
                 cmd.extend(["-x", pattern])
+
+        
+        # STEP [ 5 ] ==================== Adding additional urls if provided ============================================
+        if additional_urls and len(additional_urls) > 0:
+            for url in additional_urls:
+                console.print(f"Adding additional url: {url}")
+                cmd.extend(["-s", url])
             
 
-        # STEP [ 5 ] ==================== Running the command ============================================
+        # STEP [ 6 ] ==================== Running the command ============================================
         console.print(f"Running the command: {cmd}")
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd , timeout=1000)
 
 
-        # STEP [ 6 ] =================== Read the results from the temporary json file ============================================
+        # STEP [ 7 ] =================== Read the results from the temporary json file ============================================
         with open(temp_json_file.name, "r", encoding="utf-8", errors="ignore") as f:
             wapiti_json = json.load(f)
 
@@ -102,6 +111,11 @@ def run_wapiti(
 if __name__ == "__main__":
     wapiti_json = run_wapiti(
         target_url="http://localhost:8000/api/items",
+        additional_urls=[
+            "http://localhost:8000/api/items/1",
+            "http://localhost:8000/api/items/2",
+            "http://localhost:8000/api/items/3",
+        ],
         attack_modules=["all"],
         max_scan_time=60,
         headers=[

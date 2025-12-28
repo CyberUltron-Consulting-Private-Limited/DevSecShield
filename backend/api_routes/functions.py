@@ -87,13 +87,13 @@ class HeaderCookieDASTSchema(BaseModel):
     cookies: list[HeaderCookieSchema] | None = None
     scan_force: Literal["paranoid", "sneaky", "polite", "normal", "aggressive", "insane"] = "normal"
     exclude_url_patterns: list[str] | None = None
+    additional_urls: list[str] | None = None
 
 class FormBasedDASTSchema(BaseModel):
     target_url: str
     login_url: str
     include_urls: list[str] | None = None
     exclude_urls: list[str] | None = None
-    mode: Literal["St-Low-Th-High", "API", "API-Minimal", "Pen Test", "QA Standard"] | None = None
     timeout_durations_mins: int = 20
     poll_durations_seconds: int = 5
     username_value: str | None = None
@@ -335,7 +335,9 @@ def start_scan_and_update_db(
                     "cookies":[{"name": cookie.name, "value": cookie.value} for cookie in dast_data.header_cookie_based.cookies] if dast_data.header_cookie_based.cookies else [],
                     "scan_force":dast_data.header_cookie_based.scan_force,
                     "exclude_url_patterns":dast_data.header_cookie_based.exclude_url_patterns,
+                    "additional_urls":dast_data.header_cookie_based.additional_urls,
                 }
+                console.print(f"Sending task to wapiti dast worker with kwargs: {dast_kwargs}",style="bold green")
                 task_result = simple_app.send_task(name="dast_worker.wapiti_dast", kwargs=dast_kwargs)
             elif dast_data.auth_mode == "form_based":
                 dast_kwargs={
@@ -343,7 +345,6 @@ def start_scan_and_update_db(
                     "login_url":dast_data.form_based.login_url,
                     "include_urls":dast_data.form_based.include_urls,
                     "exclude_urls":dast_data.form_based.exclude_urls,
-                    "mode":dast_data.form_based.mode,
                     "timeout_durations_mins":dast_data.form_based.timeout_durations_mins,
                     "poll_durations_seconds":dast_data.form_based.poll_durations_seconds,
                     "username_value":dast_data.form_based.username_value,
@@ -353,6 +354,7 @@ def start_scan_and_update_db(
                     "logged_in_regex":dast_data.form_based.logged_in_regex,
                     "logged_out_regex":dast_data.form_based.logged_out_regex,
                 }
+                console.print(f"Sending task to zap dast worker with kwargs: {dast_kwargs}",style="bold green")
                 task_result = simple_app.send_task(name="dast_worker.zap_dast", kwargs=dast_kwargs)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of scan")

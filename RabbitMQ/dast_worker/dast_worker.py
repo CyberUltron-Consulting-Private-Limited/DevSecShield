@@ -63,6 +63,7 @@ try:
     @app.task(track_started=True)
     def wapiti_dast(
         target_url: str,
+        additional_urls: list[str] = [],
         attack_modules: list[Literal["common", "all", "backup", "brute_login_form", "buster", "cms", "crlf", "csrf", "exec", "file", "htaccess", "htp", "ldap", "log4shell", "methods", "network_device", "nikto", "permanentxss", "redirect", "shellshock", "spring4shell", "sql", "ssl", "ssrf", "takeover", "timesql", "upload", "wapp", "wp_enum", "xss", "xxe"]] = ["common"],
         max_scan_time: int = 60,
         user_agent: str | None = None,
@@ -90,6 +91,7 @@ try:
         try:
             results = run_wapiti(
                 target_url=target_url,
+                additional_urls=additional_urls,
                 attack_modules=attack_modules,
                 max_scan_time=max_scan_time,
                 user_agent=user_agent,
@@ -112,7 +114,6 @@ try:
         login_url: str,
         include_urls: list[str] = [],
         exclude_urls: list[str] = [],
-        mode: Literal["St-Low-Th-High", "API", "API-Minimal", "Pen Test", "QA Standard"] = "Pen Test",
         timeout_durations_mins: int = 20,
         poll_durations_seconds: int = 5,
         username_value: str = "test@example.com",
@@ -131,7 +132,6 @@ try:
                 login_url=login_url,
                 include_urls=include_urls,
                 exclude_urls=exclude_urls,
-                mode=mode,
                 timeout_durations_mins=timeout_durations_mins,
                 poll_durations_seconds=poll_durations_seconds,
                 username_value=username_value,

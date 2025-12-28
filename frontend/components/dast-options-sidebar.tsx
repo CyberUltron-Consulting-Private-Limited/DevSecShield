@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -27,11 +28,20 @@ import {
   Eye,
   Shield,
   Key,
+  Info,
 } from "lucide-react";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { DASTConversationResponse, startDASTScan, getDASTExportResults, FormBasedDASTScanData, HeaderCookieDASTScanData } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export function DASTOptionsSidebar({
   query,
@@ -47,7 +57,6 @@ export function DASTOptionsSidebar({
   const [formExcludeUrls, setFormExcludeUrls] = useState<string[]>([]);
   const [formIncludeUrlInput, setFormIncludeUrlInput] = useState("");
   const [formExcludeUrlInput, setFormExcludeUrlInput] = useState("");
-  const [formMode, setFormMode] = useState<"St-Low-Th-High" | "API" | "API-Minimal" | "Pen Test" | "QA Standard">("Pen Test");
   const [formTimeoutMins, setFormTimeoutMins] = useState(20);
   const [formPollSeconds, setFormPollSeconds] = useState(5);
   const [formUsernameValue, setFormUsernameValue] = useState("");
@@ -66,8 +75,11 @@ export function DASTOptionsSidebar({
   const [headerCookies, setHeaderCookies] = useState<{ name: string; value: string }[]>([]);
   const [headerScanForce, setHeaderScanForce] = useState<"paranoid" | "sneaky" | "polite" | "normal" | "aggressive" | "insane">("normal");
   const [headerExcludePatterns, setHeaderExcludePatterns] = useState<string[]>([]);
+  const [headerAdditionalUrls, setHeaderAdditionalUrls] = useState<string[]>([]);
+  const [headerAdditionalUrlInput, setHeaderAdditionalUrlInput] = useState("");
 
   const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
+  const [infoDialogOpen, setInfoDialogOpen] = useState(false);
 
   const handleStartScan = ({
     conversation_id,
@@ -198,6 +210,79 @@ export function DASTOptionsSidebar({
     setFormExcludeUrls(formExcludeUrls.filter((_, i) => i !== index));
   };
 
+  // Additional URLs handlers for header/cookie-based
+  const addHeaderAdditionalUrl = () => {
+    if (headerAdditionalUrlInput.trim()) {
+      setHeaderAdditionalUrls([...headerAdditionalUrls, headerAdditionalUrlInput.trim()]);
+      setHeaderAdditionalUrlInput("");
+    }
+  };
+
+  const removeHeaderAdditionalUrl = (index: number) => {
+    setHeaderAdditionalUrls(headerAdditionalUrls.filter((_, i) => i !== index));
+  };
+
+  // Attack modules handlers
+  const attackModulesList = [
+    "all",
+    "common",
+    "backup",
+    "buster",
+    "cms",
+    "crlf",
+    "csrf",
+    "exec",
+    "file",
+    "htaccess",
+    "htp",
+    "ldap",
+    "log4shell",
+    "methods",
+    "network_device",
+    "nikto",
+    "permanentxss",
+    "redirect",
+    "shellshock",
+    "spring4shell",
+    "sql",
+    "ssl",
+    "ssrf",
+    "takeover",
+    "timesql",
+    "upload",
+    "wapp",
+    "wp_enum",
+    "xss",
+    "xxe"
+  ] as const;
+
+  const toggleAttackModule = (module: string) => {
+    if (module === "all") {
+      // If "all" is being checked, set only ["all"]
+      if (headerAttackModules.includes("all")) {
+        // Unchecking "all", default to ["common"]
+        setHeaderAttackModules(["common"]);
+      } else {
+        // Checking "all", remove all other modules
+        setHeaderAttackModules(["all"]);
+      }
+    } else {
+      // If "all" is currently selected, remove it and start fresh
+      let newModules = headerAttackModules.includes("all") 
+        ? [module]
+        : headerAttackModules.includes(module)
+        ? headerAttackModules.filter(m => m !== module)
+        : [...headerAttackModules, module];
+      
+      // If no modules selected, default to ["common"]
+      if (newModules.length === 0) {
+        newModules = ["common"];
+      }
+      
+      setHeaderAttackModules(newModules);
+    }
+  };
+
   // Update include URLs when target URL changes
   useEffect(() => {
     if (formTargetUrl && authMode === "form_based") {
@@ -227,7 +312,6 @@ export function DASTOptionsSidebar({
           login_url: formLoginUrl,
           include_urls: finalIncludeUrls.length > 0 ? finalIncludeUrls : [formTargetUrl],
           exclude_urls: formExcludeUrls.length > 0 ? formExcludeUrls : undefined,
-          mode: formMode,
           timeout_durations_mins: formTimeoutMins,
           poll_durations_seconds: formPollSeconds,
           username_value: formUsernameValue,
@@ -255,6 +339,7 @@ export function DASTOptionsSidebar({
           cookies: headerCookies.length > 0 ? headerCookies.filter(c => c.name && c.value) : undefined,
           scan_force: headerScanForce,
           exclude_url_patterns: headerExcludePatterns.length > 0 ? headerExcludePatterns : undefined,
+          additional_urls: headerAdditionalUrls.length > 0 ? headerAdditionalUrls : undefined,
         }
       });
     }
@@ -276,9 +361,115 @@ export function DASTOptionsSidebar({
           <div className="p-6 w-full max-w-full overflow-hidden box-border" style={{ width: '100%', maxWidth: '320px', boxSizing: 'border-box', overflowX: 'hidden' }}>
             {/* Authentication Mode Selection */}
             <div className="mb-8 w-full">
-              <h3 className="text-sm font-semibold text-zinc-300 mb-4 flex flex-row items-center gap-2">
-                Authentication Mode <p className="text-red-500">*</p>
-              </h3>
+              <div className="flex flex-row items-center gap-2 mb-4">
+                <h3 className="text-sm font-semibold text-zinc-300 flex flex-row items-center gap-2">
+                  Authentication Mode <p className="text-red-500">*</p>
+                </h3>
+                <Dialog open={infoDialogOpen} onOpenChange={setInfoDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 w-5 p-0 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+                    >
+                      <Info className="h-4 w-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-2xl max-h-[80vh]">
+                    <DialogHeader>
+                      <DialogTitle className="text-xl font-bold text-white">
+                        Authentication Mode Selection Guide
+                      </DialogTitle>
+                      <DialogDescription className="text-zinc-400 pt-4">
+                        Choose the authentication method that best matches your application type.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <ScrollArea className="max-h-[60vh] pr-4">
+                      <div className="space-y-6 pt-4">
+                        <div className="space-y-3">
+                          <h4 className="text-lg font-semibold text-teal-400 flex items-center gap-2">
+                            <Key className="h-5 w-5" />
+                            Form Based Authentication
+                          </h4>
+                          <p className="text-zinc-300 text-sm">
+                            Best suited for:
+                          </p>
+                          <div className="space-y-3 ml-4">
+                            <div>
+                              <p className="text-zinc-300 font-medium text-sm mb-1">
+                                1. Traditional web applications
+                              </p>
+                              <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
+                                <li>Server-rendered apps</li>
+                                <li>Classic login forms</li>
+                              </ul>
+                              <p className="text-zinc-400 text-sm mt-2 ml-4">
+                                <span className="font-medium">Examples:</span>
+                              </p>
+                              <ul className="text-zinc-400 text-sm ml-8 space-y-1 list-disc">
+                                <li>PHP (Laravel, CodeIgniter)</li>
+                                <li>Java (Spring MVC, JSP)</li>
+                                <li>Python (Django, Flask)</li>
+                                <li>Ruby on Rails</li>
+                                <li>.NET MVC</li>
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="text-zinc-300 font-medium text-sm mb-1">
+                                2. Admin panels / dashboards
+                              </p>
+                              <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
+                                <li>Internal tools</li>
+                                <li>Enterprise portals</li>
+                                <li>CMS systems (WordPress, Drupal, custom admin UIs)</li>
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="text-zinc-300 font-medium text-sm mb-1">
+                                3. Apps using cookie-based sessions
+                              </p>
+                              <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
+                                <li>Session ID stored in cookies</li>
+                                <li>Auth handled server-side</li>
+                              </ul>
+                            </div>
+                          </div>
+                          <div className="mt-4 pt-4 border-t border-zinc-700">
+                            <p className="text-zinc-300 text-sm mb-2">
+                             Not useful for:
+                            </p>
+                            <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
+                              <li>Modern SPAs (React / Angular / Vue)</li>
+                              <li>Login handled via XHR / fetch</li>
+                              <li>JWT in localStorage</li>
+                              <li>OAuth redirects</li>
+                              <li>Mobile-first APIs</li>
+                              <li>Pure REST APIs</li>
+                              <li>Bearer token authentication</li>
+                            </ul>
+                          </div>
+                        </div>
+                        <div className="space-y-3 pt-4 border-t border-zinc-700">
+                          <h4 className="text-lg font-semibold text-teal-400 flex items-center gap-2">
+                            <Shield className="h-5 w-5" />
+                            Header/Cookie Based Authentication
+                          </h4>
+                          <p className="text-zinc-300 text-sm">
+                            Best suited for:
+                          </p>
+                          <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
+                            <li>APIs and other services that use JWTs</li>
+                            <li>Cookie-based authenticated states</li>
+                            <li>RESTful APIs with token-based authentication</li>
+                            <li>GraphQL APIs</li>
+                            <li>Microservices with bearer tokens</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </DialogContent>
+                </Dialog>
+              </div>
               <Select value={authMode} onValueChange={(value: "form_based" | "header_cookie_based") => setAuthMode(value)}>
                 <SelectTrigger className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
                   <SelectValue>
@@ -427,23 +618,6 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2 w-full">
-                      <Label htmlFor="form-mode" className="text-zinc-300">
-                        Scan Mode
-                      </Label>
-                      <Select value={formMode} onValueChange={(value: any) => setFormMode(value)}>
-                        <SelectTrigger className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-zinc-800 border-zinc-700 w-[280px]">
-                          <SelectItem value="Pen Test" className="text-white hover:bg-zinc-700 cursor-pointer">Pen Test</SelectItem>
-                          <SelectItem value="St-Low-Th-High" className="text-white hover:bg-zinc-700 cursor-pointer">St-Low-Th-High</SelectItem>
-                          <SelectItem value="API" className="text-white hover:bg-zinc-700 cursor-pointer">API</SelectItem>
-                          <SelectItem value="API-Minimal" className="text-white hover:bg-zinc-700 cursor-pointer">API-Minimal</SelectItem>
-                          <SelectItem value="QA Standard" className="text-white hover:bg-zinc-700 cursor-pointer">QA Standard</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2 w-full">
                       <Label htmlFor="form-timeout" className="text-zinc-300">
                         Timeout (minutes)
                       </Label>
@@ -566,6 +740,29 @@ export function DASTOptionsSidebar({
                       />
                     </div>
                     <div className="space-y-2 w-full">
+                      <Label className="text-zinc-300">Attack Modules</Label>
+                      <ScrollArea className="h-48 w-full rounded-md border border-zinc-700 bg-zinc-800 p-4">
+                        <div className="space-y-2">
+                          {attackModulesList.map((module) => (
+                            <div key={module} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`attack-module-${module}`}
+                                checked={headerAttackModules.includes(module)}
+                                onCheckedChange={() => toggleAttackModule(module)}
+                                className="border-zinc-600 data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
+                              />
+                              <Label
+                                htmlFor={`attack-module-${module}`}
+                                className="text-sm text-zinc-300 cursor-pointer font-normal"
+                              >
+                                {module === "all" ? "All" : module.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                    <div className="space-y-2 w-full">
                       <Label htmlFor="header-scan-force" className="text-zinc-300">
                         Scan Force
                       </Label>
@@ -683,6 +880,49 @@ export function DASTOptionsSidebar({
                       >
                         + Add Cookie
                       </Button>
+                    </div>
+                    <div className="space-y-2 w-full">
+                      <Label className="text-zinc-300">Additional URLs (Optional)</Label>
+                      <div className="flex gap-2 w-full" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                        <Input
+                          placeholder="https://example.com/path"
+                          className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
+                          style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
+                          value={headerAdditionalUrlInput}
+                          onChange={(e) => setHeaderAdditionalUrlInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addHeaderAdditionalUrl();
+                            }
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={addHeaderAdditionalUrl}
+                          className="bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer flex-shrink-0"
+                        >
+                          Add
+                        </Button>
+                      </div>
+                      {headerAdditionalUrls.length > 0 && (
+                        <div className="space-y-1 mt-2">
+                          {headerAdditionalUrls.map((url, index) => (
+                            <div key={index} className="flex items-center gap-2 bg-zinc-800 rounded p-2">
+                              <span className="text-xs text-zinc-300 flex-1 truncate">{url}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeHeaderAdditionalUrl(index)}
+                                className="text-red-400 hover:text-red-300 cursor-pointer flex-shrink-0 w-6 h-6 p-0"
+                              >
+                                ×
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </AccordionContent>
                 </AccordionItem>

@@ -175,7 +175,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             if not CONVERSATION:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
             if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS == "started" or SCAN_STATUS != "success":
-                return EventSourceResponse(stream_text("Scan has not run or hasn't completed yet, please wait for the scan to complete if it has been initiated or start the scan"), media_type="text/event-stream")
+                return { "content" : "Scan has not run or hasn't completed yet, please wait for the scan to complete if it has been initiated or start the scan" }
 
             
             # STEP [ 3 ] : =========== Add the user message to the mongo db ====================== ⭐
@@ -184,7 +184,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             #checking length of message log for this conversation 
             message_log_length = message_collection.count_documents({"conversation_id": CONVERSATION.conversation_id})
             if message_log_length + 2 >= MESSAGE_LIMIT:
-                return EventSourceResponse(stream_text("Message limit reached, please delete some messages to add new ones"), media_type="text/event-stream")
+                return { "content" : "Message limit reached, please delete some messages to add new ones" }
 
             message_instance = MessageLog(
                 conversation_id=CONVERSATION.conversation_id,
@@ -225,7 +225,7 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             
             # STEP [ 5 ] : =========== Get the conversation from the mongo db ======================
             MAX_ACTIVE_HISTORY_LENGTH = 4
-            return EventSourceResponse(create_response(
+            AI_RESPONSE = await create_response(
                 mongo_conversation_id=mongo_conversation_id,
                 user_id=user.id,
                 mongo_db=mongo_db,
@@ -234,7 +234,9 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 content=data.user_message,
                 role="human", # doesnt get saved to any db , jsut for functional clarity 
                 max_history_length=MAX_ACTIVE_HISTORY_LENGTH,
-            ), media_type="text/event-stream")
+            )
+
+            return AI_RESPONSE
 
            
         except Exception as e:
@@ -506,6 +508,14 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 generate_sbom_sca_pdf(scan_data, temp_pdf_file.name)
             elif type == "agent_discovery":
                 generate_agent_discovery_pdf(scan_data, temp_pdf_file.name)
+            elif type == "dast" and isinstance(conversation,DASTConversation):
+                if conversation.auth_mode=="form_based":
+                    #zap pdf 
+                    pass
+                elif conversation.auth_mode=="header_cookie_based":
+                    #wapiti pdf
+                    pass
+
             else:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export results not found")
 

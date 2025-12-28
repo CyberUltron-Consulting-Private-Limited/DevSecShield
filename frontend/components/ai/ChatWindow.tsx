@@ -42,6 +42,7 @@ import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
 import { MCPConversationResponse } from '@/utils/backend_api';
 import ReactMarkdown from 'react-markdown';
+import api, { apiBaseURL } from '@/utils/interceptors';
 
 export type ChatMessage = {
   id: number;
@@ -158,9 +159,31 @@ const ChatWindow = ({
     setMessages(prev => [...prev, assistantMessage]);
     setStreamingMessageId(assistantMessageId);
 
+    
+    // add getting response and set it to the assistant message id  ( TEST IT )
+    try { 
+      const response = await api.post(`${apiBaseURL}/${type}/conversation/${conversation_id}/message`, {
+        message_id: assistantMessageId,
+        user_message: inputValue.trim(),
+      });
+      const data = await response.data;
+      setMessages((prev)=>{
+        return prev.map(msg => {
+          if (msg.id === assistantMessageId) {
+            return {
+              ...msg,
+              content: msg.content + data.content,
+            };
+          }
+          return msg;
+        });
+      });
+    } catch(error) { 
+      showErrorToast(error);
+    }
 
-    // Start streaming response from the chatbot
-    await streamChatbotResponse(assistantMessageId, inputValue.trim(), messages, setMessages, conversation_id, type );
+    // Start streaming response from the chatbot ( removed )
+    // await streamChatbotResponse(assistantMessageId, inputValue.trim(), messages, setMessages, conversation_id, type );
 
     setIsTyping(false);
     setStreamingMessageId(null);
