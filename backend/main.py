@@ -55,7 +55,7 @@ def make_admin():
         session.commit()
 
 # setting the environment variable to False for local development
-os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 engine = get_db(dev_environment=True)
 mongo_client_db = get_mongo_client_db(dev_environment=True)
 

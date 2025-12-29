@@ -23,7 +23,7 @@ console = Console()
 
 def guardrails_api_routes(app: FastAPI, engine: Engine , mongo_db: Database):
 
-    limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
+    limiter = RateLimiter(times=2, seconds=10) # 2 requests per 60 seconds
     @app.post("/public/guardrails/start_scan", summary="Start a new guardrails scan")
     async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)]):
         """

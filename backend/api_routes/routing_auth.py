@@ -198,6 +198,7 @@ def auth_api_routes(app: FastAPI, engine: Engine):
                 "profile_photo": user.profile_photo
             }
         except Exception as e:
+            Console().print(f"error in get_user: {e} 🔴", style="bold red")
             if isinstance(e,psycopg2.Error):
                 raise HTTPException(status_code=500, detail="Server is busy, please try again later")
             if isinstance(e,HTTPException):
@@ -216,7 +217,7 @@ def auth_api_routes(app: FastAPI, engine: Engine):
                 "message": "Verification code sent to user"
             }, 200
         except Exception as e:
-            print(f"error in send_verification_code: {e} 🔴")
+            Console().print(f"error in send_verification_code: {e} 🔴", style="bold red")
             if isinstance(e,psycopg2.Error):
                 raise HTTPException(status_code=500, detail="Server is busy, please try again later")
             if isinstance(e,HTTPException):
@@ -236,7 +237,7 @@ def auth_api_routes(app: FastAPI, engine: Engine):
             with Session(engine) as session:
                 verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()
             if verification_code is None:
-                print("invalid verification code 🔴")
+                Console().print("invalid verification code 🔴", style="bold red")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid verification code"
@@ -247,7 +248,6 @@ def auth_api_routes(app: FastAPI, engine: Engine):
                 session.exec(update(User).where(User.email == data.email).values(password=get_hashed_password(data.password)))
                 session.commit()
                 user = session.exec(select(User).where(User.email == data.email)).first()
-                print(f"password updated successfully 🟩 ,  new password is {user.password}")
             return {
                 "message": f"Password reset successfully for user {user.email}"
             }

@@ -11,10 +11,20 @@ from langchain.messages import AnyMessage, HumanMessage , SystemMessage , AIMess
 from pymongo.database import Database
 from rich.console import Console
 from dotenv import load_dotenv
+import os
 
 from backend.mongo_models import ActiveContextLog, MessageLog
 
 console = Console()
+
+load_dotenv()
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_DEFAULT_REGION")
+if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY or not AWS_REGION:
+    raise Exception("AWS credentials not found")
+else: 
+    console.print(f"AWS credentials found",style="bold green")
 
 def add_message(messages:list[AnyMessage],role:Literal["human" , "system" , "ai"]=None,content:str=None ):
     
@@ -64,9 +74,10 @@ async def chatbot_response(
     """
     model = ChatBedrock(
         model="openai.gpt-oss-20b-1:0",
-        region="ap-south-1",
-        aws_access_key_id="AKIA5T2YUFAY5IVCRYEY",
-        aws_secret_access_key="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")
+        region=AWS_REGION or "ap-south-1",
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    )
     agent = create_agent(model,system_prompt=system_prompt)
     new_history = add_message(messages=history, role=role , content=content)
 

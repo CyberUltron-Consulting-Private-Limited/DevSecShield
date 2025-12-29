@@ -47,17 +47,17 @@ interface Metadata {
   confidence?: string;
   category?: string;
   subcategory?: string[];
-  cwe?: string[];
+  cwe?: Array<string | { min_version?: string; rule_id?: string; this_version?: string; [key: string]: any }>;
   cwe2020_top25?: boolean;
   cwe2021_top25?: boolean;
   cwe2022_top25?: boolean;
   "display-name"?: string;
   "functional-categories"?: string[];
-  owasp?: string[];
-  references?: string[];
+  owasp?: Array<string | { [key: string]: any }>;
+  references?: Array<string | { [key: string]: any }>;
   technology?: string[];
   license?: string;
-  vulnerability_class?: string[];
+  vulnerability_class?: Array<string | { [key: string]: any }>;
   source?: string;
   shortlink?: string;
   semgrep?: {
@@ -123,7 +123,7 @@ interface SASTResult {
 interface SASTError {
   code?: number;
   level?: string;
-  type?: string;
+  type?: string | [string, { min_version?: string; rule_id?: string; this_version?: string; [key: string]: any }];
   message?: string;
   path?: string;
   rule_id?: string;
@@ -209,9 +209,18 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
 
   // Safe data extraction with fallbacks
   const results: SASTResult[] = Array.isArray(data?.results) ? data.results : [];
-  const errors: SASTError[] = Array.isArray(data?.errors) ? data.errors : [];
+  const allErrors: SASTError[] = Array.isArray(data?.errors) ? data.errors : [];
   const scannedPaths = Array.isArray(data?.paths?.scanned) ? data.paths.scanned : [];
   const skippedPaths = Array.isArray(data?.paths?.skipped) ? data.paths.skipped : [];
+
+  // Filter out incompatible rule errors - only show actual scan errors
+  const errors: SASTError[] = allErrors.filter((error) => {
+    // Skip incompatible rule errors
+    if (Array.isArray(error.type) && error.type.length >= 2 && error.type[0] === "IncompatibleRule") {
+      return false;
+    }
+    return true;
+  });
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -238,7 +247,14 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
     const byCWE = results.reduce((acc, result) => {
       const cweList = result.extra?.metadata?.cwe || [];
       cweList.forEach((cwe) => {
-        const cweId = cwe.split(':')[0] || cwe;
+        let cweId: string;
+        if (typeof cwe === 'string') {
+          cweId = cwe.split(':')[0] || cwe;
+        } else if (cwe && typeof cwe === 'object' && 'rule_id' in cwe) {
+          cweId = (cwe as any).rule_id || JSON.stringify(cwe);
+        } else {
+          cweId = JSON.stringify(cwe);
+        }
         acc[cweId] = (acc[cweId] || 0) + 1;
       });
       return acc;
@@ -368,7 +384,7 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Findings</CardTitle>
@@ -410,16 +426,6 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Scan Errors</CardTitle>
-            <XCircle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.errors}</div>
-            <p className="text-xs text-muted-foreground">Analysis errors</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Filters and Search */}
@@ -561,11 +567,14 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
                                         <div>
                                           <div className="font-medium mb-1">CWE:</div>
                                           <div className="flex flex-wrap gap-1">
-                                            {metadata.cwe.map((cwe, idx) => (
-                                              <Badge key={idx} variant="outline" className="text-xs">
-                                                {cwe}
-                                              </Badge>
-                                            ))}
+                                            {metadata.cwe.map((cwe, idx) => {
+                                              const cweValue = typeof cwe === 'string' ? cwe : JSON.stringify(cwe);
+                                              return (
+                                                <Badge key={idx} variant="outline" className="text-xs">
+                                                  {cweValue}
+                                                </Badge>
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       )}
@@ -573,11 +582,14 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
                                         <div>
                                           <div className="font-medium mb-1">OWASP:</div>
                                           <div className="flex flex-wrap gap-1">
-                                            {metadata.owasp.map((owasp, idx) => (
-                                              <Badge key={idx} variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
-                                                {owasp}
-                                              </Badge>
-                                            ))}
+                                            {metadata.owasp.map((owasp, idx) => {
+                                              const owaspValue = typeof owasp === 'string' ? owasp : JSON.stringify(owasp);
+                                              return (
+                                                <Badge key={idx} variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+                                                  {owaspValue}
+                                                </Badge>
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       )}
@@ -585,11 +597,14 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
                                         <div>
                                           <div className="font-medium mb-1">Vulnerability Class:</div>
                                           <div className="flex flex-wrap gap-1">
-                                            {metadata.vulnerability_class.map((vuln, idx) => (
-                                              <Badge key={idx} variant="outline" className="text-xs">
-                                                {vuln}
-                                              </Badge>
-                                            ))}
+                                            {metadata.vulnerability_class.map((vuln, idx) => {
+                                              const vulnValue = typeof vuln === 'string' ? vuln : JSON.stringify(vuln);
+                                              return (
+                                                <Badge key={idx} variant="outline" className="text-xs">
+                                                  {vulnValue}
+                                                </Badge>
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       )}
@@ -597,18 +612,21 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
                                         <div>
                                           <div className="font-medium mb-1">References:</div>
                                           <div className="flex flex-wrap gap-2">
-                                            {metadata.references.map((ref, idx) => (
-                                              <a
-                                                key={idx}
-                                                href={ref}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-blue-500 hover:underline flex items-center gap-1 text-xs"
-                                              >
-                                                <ExternalLink className="w-3 h-3" />
-                                                Reference {idx + 1}
-                                              </a>
-                                            ))}
+                                            {metadata.references.map((ref, idx) => {
+                                              const refValue = typeof ref === 'string' ? ref : JSON.stringify(ref);
+                                              return (
+                                                <a
+                                                  key={idx}
+                                                  href={typeof ref === 'string' ? ref : '#'}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="text-blue-500 hover:underline flex items-center gap-1 text-xs"
+                                                >
+                                                  <ExternalLink className="w-3 h-3" />
+                                                  Reference {idx + 1}
+                                                </a>
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                       )}
@@ -689,32 +707,6 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
         </CardContent>
       </Card>
 
-      {/* Errors Section */}
-      {errors.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-orange-500" />
-              Scan Errors ({errors.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[200px]">
-              <div className="space-y-2">
-                {errors.map((error, idx) => (
-                  <div key={idx} className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded border border-orange-200 dark:border-orange-800">
-                    <div className="font-medium text-sm">{error.type || "Error"}</div>
-                    <div className="text-xs text-muted-foreground">{error.message || "No message"}</div>
-                    {error.path && (
-                      <div className="text-xs font-mono text-muted-foreground mt-1">{getRelativePath(error.path)}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

@@ -172,7 +172,8 @@ const ChatWindow = ({
           if (msg.id === assistantMessageId) {
             return {
               ...msg,
-              content: msg.content + data.content,
+              content:  data.content,
+              isStreaming: false,
             };
           }
           return msg;

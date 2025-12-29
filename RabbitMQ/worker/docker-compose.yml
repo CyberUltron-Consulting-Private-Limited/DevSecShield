@@ -1,0 +1,10 @@
+services:
+  worker:
+    container_name: devsecshield-scan-worker
+    # image: devsecshield-scan-worker
+    image: scan-worker:v0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - IS_DOCKER_CONTAINER= "True"

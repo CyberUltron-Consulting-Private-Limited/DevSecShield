@@ -137,10 +137,19 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     # Extract data from scan results
     version = scan_results.get("version", "Unknown")
     results = scan_results.get("results", [])
-    errors = scan_results.get("errors", [])
+    all_errors = scan_results.get("errors", [])
     scanned_paths = scan_results.get("paths", {}).get("scanned", [])
     skipped_paths = scan_results.get("paths", {}).get("skipped", [])
     engine_requested = scan_results.get("engine_requested", "Unknown")
+    
+    # Filter out incompatible rule errors - only show actual scan errors
+    errors = []
+    for error in all_errors:
+        error_type = error.get("type", "")
+        # Skip incompatible rule errors
+        if isinstance(error_type, list) and len(error_type) >= 2 and error_type[0] == "IncompatibleRule":
+            continue
+        errors.append(error)
     
     # Calculate statistics
     total_findings = len(results)
@@ -468,12 +477,15 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         error_data = [["Type", "Message", "File"]]
         for error in errors:
             error_type = error.get("type", "Unknown")
+            # Handle array type
+            if isinstance(error_type, list):
+                error_type = error_type[0] if error_type else "Unknown"
             error_message = error.get("message", "No message")
             error_path = get_relative_path(error.get("path", "Unknown"))
             # Wrap long messages
             error_msg_para = Paragraph(error_message[:150] + ("..." if len(error_message) > 150 else ""), normal_style)
             error_path_para = Paragraph(error_path[:60] + ("..." if len(error_path) > 60 else ""), normal_style)
-            error_data.append([error_type, error_msg_para, error_path_para])
+            error_data.append([str(error_type), error_msg_para, error_path_para])
         
         error_table = Table(error_data, colWidths=[1.5 * inch, 3.5 * inch, 1.0 * inch], repeatRows=1)
         error_table.setStyle(TableStyle([

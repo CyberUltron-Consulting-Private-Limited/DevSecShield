@@ -18,35 +18,52 @@ import json
 
 console = Console()
 
-os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+# os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
     is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
     if is_docker_container and is_docker_container == "True":
+        console.print(f"Docker container detected",style="bold green")
+
+        #broker url
         username = os.getenv("RABBIT_ADMIN_USERNAME")
         password = os.getenv("RABBIT_ADMIN_PASSWORD")
+        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
 
+        #mongo url
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
         mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
         mongo_host = "13.203.233.15"
         mongo_port = "27017"
         mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+
+        #check if credentials are set
         if not username or not password  or not mongo_username or not mongo_password: 
             raise Exception("Username, password or mongo username or password not set")
         
-        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+        console.print(f"Broker URL: {broker_url}",style="bold green")
+        console.print(f"Mongo URL: {mongo_url}",style="bold green")
     else:
+        console.print(f"Local container detected",style="bold green")
+
+        #broker url
         username = os.getenv("RABBIT_ADMIN_USERNAME")
         password = os.getenv("RABBIT_ADMIN_PASSWORD")
+        broker_url = f"amqp://{username}:{password}@localhost:5672"
 
-
+        #mongo url
         mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
         if not username or not password or not mongo_url: 
             raise Exception("Username, password or mongo url not set")
-
-        broker_url = f"amqp://{username}:{password}@localhost:5672"
+        
+        #check if credentials are set
+        if not username or not password or not mongo_url: 
+            raise Exception("Username, password or mongo url not set")
+        
+        console.print(f"Broker URL: {broker_url}",style="bold green")
+        console.print(f"Mongo URL: {mongo_url}",style="bold green")
     
 except Exception as e :
     console.print(f"Error in getting credentials: {e}",style="dim red")
@@ -165,25 +182,25 @@ try:
         if (model_type not in ["openai", "anthropic", "gemini","custom"]):
             raise Exception("Arguments are invalid/incorrect")
 
-        # results = run_garak_scan(
-        #     model_type=model_type,
-        #     model_name=model_name,
-        #     probes=probes,
-        #     api_key=api_key,
-        #     headers=headers,
-        #     request_template=request_template,
-        #     response_json_field=response_json_field,
-        #     generations=generations,
-        #     method=method,
-        #     model_uri=model_uri,
-        # ) 
+        results = run_garak_scan(
+            model_type=model_type,
+            model_name=model_name,
+            probes=probes,
+            api_key=api_key,
+            headers=headers,
+            request_template=request_template,
+            response_json_field=response_json_field,
+            generations=generations,
+            method=method,
+            model_uri=model_uri,
+        ) 
 
         # for testing purposes , using a mock result
-        for i in range(10):
-            console.print(f"Sleeping {i} ....",style="bold yellow")
-            time.sleep(1)
-        with open("mock_result.json", "r") as f:
-            results = json.load(f)
+        # for i in range(10):
+        #     console.print(f"Sleeping {i} ....",style="bold yellow")
+        #     time.sleep(1)
+        # with open("mock_result.json", "r") as f:
+        #     results = json.load(f)
 
         return results 
     console.print(f"Registered LLM task",style="bold green")

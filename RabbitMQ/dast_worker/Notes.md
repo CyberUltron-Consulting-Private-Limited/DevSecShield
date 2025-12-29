@@ -25,7 +25,7 @@ https://github.com/wapiti-scanner/wapiti/blob/master/doc/wapiti.ronn
 docker run -u zap -p 8080:8080 -i zaproxy/zap-stable zap-x.sh -daemon -host 0.0.0.0 -port 8080 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=hahahaha1234 
 ```
 
-- Scan Modes :
+- Scan Modes : ( not being used , all scans run in pen test mode )
 ```
 sample website with 44 URLS 
 

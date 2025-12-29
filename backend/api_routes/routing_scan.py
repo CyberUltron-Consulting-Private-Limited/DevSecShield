@@ -30,6 +30,8 @@ from backend.pdf_utils.iac_pdf import generate_pdf as generate_iac_pdf
 from backend.pdf_utils.gitleaks_pdf import generate_pdf as generate_gitleaks_pdf
 from backend.pdf_utils.sbom_sca_pdf import generate_pdf as generate_sbom_sca_pdf
 from backend.pdf_utils.agent_discovery_pdf import generate_pdf as generate_agent_discovery_pdf
+from backend.pdf_utils.zap_pdf import generate_pdf as generate_zap_pdf
+from backend.pdf_utils.wapiti_pdf import generate_pdf as generate_wapiti_pdf
 from fastapi_throttle import RateLimiter
 
 
@@ -510,11 +512,9 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 generate_agent_discovery_pdf(scan_data, temp_pdf_file.name)
             elif type == "dast" and isinstance(conversation,DASTConversation):
                 if conversation.auth_mode=="form_based":
-                    #zap pdf 
-                    pass
+                    generate_zap_pdf(scan_data, temp_pdf_file.name)
                 elif conversation.auth_mode=="header_cookie_based":
-                    #wapiti pdf
-                    pass
+                    generate_wapiti_pdf(scan_data, temp_pdf_file.name)
 
             else:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export results not found")

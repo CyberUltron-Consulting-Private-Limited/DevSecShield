@@ -9,27 +9,64 @@ import sys
 from tools.sast_utils.zip_sast_runner import run_sast_scan
 import json
 
+console = Console()
+
+# os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
-    username = os.getenv("RABBIT_ADMIN_USERNAME")
-    password = os.getenv("RABBIT_ADMIN_PASSWORD")
-    mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
-    if not username or not password : 
-        raise Exception()
+    is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
+    if is_docker_container and is_docker_container == "True":
+        console.print(f"Docker container detected",style="bold green")
+
+        #broker url
+        username = os.getenv("RABBIT_ADMIN_USERNAME")
+        password = os.getenv("RABBIT_ADMIN_PASSWORD")
+        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+
+        #mongo url
+        mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+        mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+        mongo_host = "13.203.233.15"
+        mongo_port = "27017"
+        mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+
+        #check if credentials are set
+        if not username or not password  or not mongo_username or not mongo_password: 
+            raise Exception("Username, password or mongo username or password not set")
+        
+        console.print(f"Broker URL: {broker_url}",style="bold green")
+        console.print(f"Mongo URL: {mongo_url}",style="bold green")
+    else:
+        console.print(f"Local container detected",style="bold green")
+
+        #broker url
+        username = os.getenv("RABBIT_ADMIN_USERNAME")
+        password = os.getenv("RABBIT_ADMIN_PASSWORD")
+        broker_url = f"amqp://{username}:{password}@localhost:5672"
+
+        #mongo url
+        mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
+        if not username or not password or not mongo_url: 
+            raise Exception("Username, password or mongo url not set")
+        
+        #check if credentials are set
+        if not username or not password or not mongo_url: 
+            raise Exception("Username, password or mongo url not set")
+        
+        console.print(f"Broker URL: {broker_url}",style="bold green")
+        console.print(f"Mongo URL: {mongo_url}",style="bold green")
+    
 except Exception as e :
-    Console().print("Set username and password env variables to access broker",style="bold red")
+    console.print(f"Error in getting credentials: {e}",style="dim red")
     sys.exit()
-
-
-
-
 
 #============================================================== Registering tasks to worker ==================================================================== 
 
 try:
     # app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
-    app = Celery('cicd_worker', broker=f"amqp://{username}:{password}@localhost:5672",backend=mongo_url)
+    app = Celery('cicd_worker', broker=broker_url,backend=mongo_url)
     app.conf.update(
         RESULT_PERSISTENT=True,
         TASK_TRACK_STARTED=True,

@@ -50,14 +50,20 @@ const scannerNames: Record<string, string> = {
 // Component to display scanner results in a user-friendly way
 const ScannerResultsDisplay = ({ results }: { results: any }) => {
   const metadata = extractResultMetadata(results);
+  // Filter to only show scanners with risk scores that are not -1.0
   const scannerKeys = Object.keys(metadata).filter(key => {
     const value = metadata[key];
-    return (
+    if (
       value &&
       typeof value === 'object' &&
       !Array.isArray(value) &&
-      ('valid' in value || 'score' in value)
-    );
+      'score' in value
+    ) {
+      const rawRiskScore = value.score;
+      // Only include if score exists and is not -1.0
+      return rawRiskScore !== null && rawRiskScore !== undefined && rawRiskScore !== -1.0;
+    }
+    return false;
   });
 
   if (scannerKeys.length === 0) {
@@ -73,8 +79,14 @@ const ScannerResultsDisplay = ({ results }: { results: any }) => {
       {scannerKeys.map((scannerKey) => {
         const scannerData = metadata[scannerKey];
         const scannerName = scannerNames[scannerKey] || scannerKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const isValid = scannerData?.valid !== undefined ? scannerData.valid : true;
-        const riskScore = scannerData?.score !== undefined ? scannerData.score : null;
+        const rawRiskScore = scannerData?.score !== undefined ? scannerData.score : null;
+        // If risk score is not -1.0, take absolute value and show as percentage
+        const riskScore = rawRiskScore !== null && rawRiskScore !== -1.0 ? Math.abs(rawRiskScore) : null;
+
+        // This should never be null due to filtering, but keeping check for safety
+        if (riskScore === null) {
+          return null;
+        }
 
         return (
           <div
@@ -85,48 +97,27 @@ const ScannerResultsDisplay = ({ results }: { results: any }) => {
               <span className="text-sm font-semibold text-zinc-900 dark:text-white">
                 {scannerName}
               </span>
-              <Badge
-                className={
-                  isValid
-                    ? "bg-green-500 hover:bg-green-600 text-white"
-                    : "bg-red-500 hover:bg-red-600 text-white"
-                }
-              >
-                {isValid ? (
-                  <>
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    Passed
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="w-3 h-3 mr-1" />
-                    Flagged
-                  </>
-                )}
-              </Badge>
             </div>
-            {riskScore !== null && (
-              <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">Risk Score:</span>
-                <div className="flex items-center gap-2 flex-1">
-                  <div className="flex-1 bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 max-w-24">
-                    <div
-                      className={`h-2 rounded-full transition-all ${
-                        riskScore < 0.3
-                          ? "bg-green-500"
-                          : riskScore < 0.7
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      }`}
-                      style={{ width: `${Math.min(riskScore * 100, 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-mono text-zinc-700 dark:text-zinc-300 min-w-12 text-right">
-                    {riskScore.toFixed(3)}
-                  </span>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">Risk Score:</span>
+              <div className="flex items-center gap-2 flex-1">
+                <div className="flex-1 bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 max-w-24">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      riskScore < 0.3
+                        ? "bg-green-500"
+                        : riskScore < 0.7
+                        ? "bg-yellow-500"
+                        : "bg-red-500"
+                    }`}
+                    style={{ width: `${Math.min(riskScore * 100, 100)}%` }}
+                  />
                 </div>
+                <span className="text-xs font-mono text-zinc-700 dark:text-zinc-300 min-w-12 text-right">
+                  {(riskScore * 100).toFixed(0)}%
+                </span>
               </div>
-            )}
+            </div>
           </div>
         );
       })}

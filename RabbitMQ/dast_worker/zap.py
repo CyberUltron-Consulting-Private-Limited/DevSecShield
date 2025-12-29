@@ -86,6 +86,11 @@ def run_zap_scan_with_form_auth(
         if not api_key:
             raise Exception("API Key not provided to access ZAP")
 
+        IS_DOCKER_CONTAINER = os.getenv("IS_DOCKER_CONTAINER")
+        if IS_DOCKER_CONTAINER and IS_DOCKER_CONTAINER == "True":
+            zap_daemon_proxy_url = "http://13.203.233.15:8090"
+            console.print(f"Using ZAP Daemon Proxy URL: {zap_daemon_proxy_url}", style="bold green")
+
         # Initialize ZAP Client
         zap = ZAPv2(apikey=api_key, proxies={'http': zap_daemon_proxy_url, 'https': zap_daemon_proxy_url})
         

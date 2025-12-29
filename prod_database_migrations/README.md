@@ -8,5 +8,5 @@ uv run alembic --config prod_database_migrations\alembic.ini revision --autogene
 
 2. Run this to apply the migration : 
 ```
-uv run alembic --config database_migrations\alembic.ini upgrade head
+uv run alembic --config prod_database_migrations\alembic.ini upgrade head
 ```

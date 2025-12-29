@@ -109,34 +109,19 @@ def guardrails_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             for log in guardrails_logs:
                 console.print(f"Guardrails log {log['_id']} , status: {log['status']} , results is None: {log['results']==None}", style="bold yellow")
 
-                # update status if not success
+                # if status is not success , get new status and update ( if new status is success , get results also and update )
                 if log["status"] != "success":
                     console.print(f"Guardrails log {log['_id']}", style="bold yellow")
                     task_id = log["task_id"]
                     status = AsyncResult(task_id, app=celery_app).status.lower()
+                    if status == "success":
+                        result = AsyncResult(task_id, app=celery_app).result
+                        guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"results": result , "status": status}})
+                        console.print(f"Guardrails log {log['_id']} updated with scan status {status} and results successfully", style="bold green")
+                    else:
+                        guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"status": status}})
+                        console.print(f"Guardrails log {log['_id']} updated with scan status {status}", style="bold green")
 
-
-                # get results if not already got and status is success
-                if log["results"] == None and (status == "success" or log["status"] == "success"):
-                    console.print(f"Guardrails log {log['_id']} is success, getting results", style="bold green")
-                    result = AsyncResult(log["task_id"], app=celery_app).result
-                
-
-                # update the log in the mongo db
-                if result and status:
-                    log["results"] = result
-                    log["status"] = status
-                    guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"results": result , "status": status}})
-                    console.print(f"Guardrails log {log['_id']} updated with scan status {status} and results successfully", style="bold green")
-                if status : 
-                    log["status"] = status
-                    guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"status": status}})
-                    console.print(f"Guardrails log {log['_id']} updated with status {status}", style="bold green")
-                if result:
-                    log["results"] = result
-                    guardrails_logs_collection.update_one({"_id": log["_id"]}, {"$set": {"results": result}})
-                    console.print(f"Guardrails log {log['_id']} updated with results {result}", style="bold green") 
-            
 
 
             # STEP [ 4 ] : =========================================Fetch and Calculate Metrics =======================================================================

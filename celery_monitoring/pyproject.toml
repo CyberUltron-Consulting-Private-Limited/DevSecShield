@@ -1,0 +1,11 @@
+[project]
+name = "celery-monitoring"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13.5"
+dependencies = [
+    "celery>=5.6.0",
+    "flower>=2.0.1",
+    "pymongo>=4.15.5",
+]

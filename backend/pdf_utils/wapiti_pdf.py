@@ -1,12 +1,13 @@
 """
-Wapiti (DAST) Scan Results PDF Generator
-Generates a comprehensive PDF report from Wapiti scan results using reportlab.
+DAST Scan Results PDF Generator
+Generates a comprehensive PDF report from DAST scan results using reportlab.
 """
 
 import json
 import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from xml.sax.saxutils import escape as xml_escape
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -18,6 +19,17 @@ from reportlab.platypus import (
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.pdfgen import canvas
+
+
+def escape_html(text: str) -> str:
+    """Escape HTML entities in text to prevent parsing errors in Paragraph."""
+    if not isinstance(text, str):
+        text = str(text)
+    # Escape HTML entities
+    text = xml_escape(text)
+    # Replace newlines with <br/> for proper rendering
+    text = text.replace('\n', '<br/>')
+    return text
 
 
 def get_level_color(level: int) -> colors.Color:
@@ -53,7 +65,7 @@ def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
     canvas_obj.drawCentredString(
         doc.pagesize[0] / 2.0,
         doc.pagesize[1] / 2.0 + 40,
-        "Dynamic Application Security Testing - Wapiti Analysis"
+        "Dynamic Application Security Testing - Security Analysis"
     )
     
     # Add logo below the title - smaller size
@@ -110,10 +122,10 @@ def create_header_footer(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
 
 def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     """
-    Generate a PDF report from Wapiti scan results.
+    Generate a PDF report from DAST scan results.
     
     Args:
-        scan_results: Dictionary containing Wapiti scan results
+        scan_results: Dictionary containing DAST scan results
         output_path: Optional path to save the PDF. If None, generates a timestamped filename.
     
     Returns:
@@ -122,7 +134,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     # Generate output filename if not provided
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = f"wapiti_scan_report_{timestamp}.pdf"
+        output_path = f"dast_scan_report_{timestamp}.pdf"
     
     # Extract data from scan results
     classifications = scan_results.get("classifications", {})
@@ -264,7 +276,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         ["Pages Crawled", str(crawled_pages)],
         ["Target", target[:60] + ("..." if len(target) > 60 else "")],
         ["Scan Date", date],
-        ["Wapiti Version", version],
+        ["Scanner Version", version],
     ]
     
     summary_table = Table(summary_data, colWidths=[3.5 * inch, 2.5 * inch], repeatRows=1)
@@ -386,39 +398,39 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
             finding_title = f"Finding #{idx}: {finding_type}"
             if finding_category != "vulnerability":
                 finding_title += f" ({finding_category.upper()})"
-            story.append(Paragraph(finding_title, heading_style))
+            story.append(Paragraph(escape_html(finding_title), heading_style))
             story.append(Spacer(1, 0.2 * inch))
             
             # Finding details table
             finding_data = []
             finding_data.append(["Property", "Value"])
             
-            finding_data.append(["Category", finding_category.upper()])
-            finding_data.append(["Type", finding_type])
+            finding_data.append(["Category", escape_html(finding_category.upper())])
+            finding_data.append(["Type", escape_html(finding_type)])
             finding_data.append(["Severity Level", str(level)])
             
             # Path - wrap if too long
-            path_para = Paragraph(path[:80] + ("..." if len(path) > 80 else ""), normal_style)
+            path_para = Paragraph(escape_html(path[:80] + ("..." if len(path) > 80 else "")), normal_style)
             finding_data.append(["Path", path_para])
             
-            finding_data.append(["Method", method])
+            finding_data.append(["Method", escape_html(method)])
             
             if parameter:
-                param_para = Paragraph(str(parameter)[:60] + ("..." if len(str(parameter)) > 60 else ""), normal_style)
+                param_para = Paragraph(escape_html(str(parameter)[:60] + ("..." if len(str(parameter)) > 60 else "")), normal_style)
                 finding_data.append(["Parameter", param_para])
             
             if module:
-                finding_data.append(["Module", module])
+                finding_data.append(["Module", escape_html(module)])
             
             if referer:
-                referer_para = Paragraph(referer[:60] + ("..." if len(referer) > 60 else ""), normal_style)
+                referer_para = Paragraph(escape_html(referer[:60] + ("..." if len(referer) > 60 else "")), normal_style)
                 finding_data.append(["Referer", referer_para])
             
             if wstg:
                 wstg_str = ", ".join(wstg[:3])  # Limit to first 3
                 if len(wstg) > 3:
                     wstg_str += f" (+{len(wstg) - 3} more)"
-                wstg_para = Paragraph(wstg_str, normal_style)
+                wstg_para = Paragraph(escape_html(wstg_str), normal_style)
                 finding_data.append(["WSTG", wstg_para])
             
             finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
@@ -456,14 +468,14 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
             )
             story.append(Paragraph("Description", desc_heading_style))
             story.append(Spacer(1, 0.12 * inch))
-            desc_para = Paragraph(desc, normal_style)
+            desc_para = Paragraph(escape_html(desc), normal_style)
             story.append(desc_para)
             story.append(Spacer(1, 0.25 * inch))
             
             # Solution section
             story.append(Paragraph("Solution", desc_heading_style))
             story.append(Spacer(1, 0.12 * inch))
-            solution_para = Paragraph(sol, normal_style)
+            solution_para = Paragraph(escape_html(sol), normal_style)
             story.append(solution_para)
             story.append(Spacer(1, 0.25 * inch))
             
@@ -513,7 +525,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                 ref_items = list(ref.items())[:5]  # Limit to 5 references
                 for ref_name, ref_url in ref_items:
                     ref_text = f"{ref_name}: {ref_url}"[:100] + ("..." if len(f"{ref_name}: {ref_url}") > 100 else "")
-                    ref_para = Paragraph(f"• {ref_text}", normal_style)
+                    ref_para = Paragraph(escape_html(f"• {ref_text}"), normal_style)
                     story.append(ref_para)
                     story.append(Spacer(1, 0.05 * inch))
     
@@ -525,13 +537,13 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
 
 if __name__ == "__main__":
     # Test the PDF generation with the sample data
-    test_file_path = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\api_routes\\wapiti_mock_results.json"
+    test_file_path = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\api_routes\\dast_mock_results.json"
     
     try:
         with open(test_file_path, 'r', encoding='utf-8') as f:
             scan_results = json.load(f)
         
-        output_file = f"wapiti_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        output_file = f"dast_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         pdf_path = generate_pdf(scan_results, output_file)
         print(f"PDF generated successfully: {pdf_path}")
     except FileNotFoundError:

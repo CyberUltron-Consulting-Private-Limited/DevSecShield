@@ -1,12 +1,13 @@
 """
-ZAP (DAST) Scan Results PDF Generator
-Generates a comprehensive PDF report from ZAP scan results using reportlab.
+DAST Scan Results PDF Generator
+Generates a comprehensive PDF report from DAST scan results using reportlab.
 """
 
 import json
 import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from xml.sax.saxutils import escape as xml_escape
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -18,6 +19,17 @@ from reportlab.platypus import (
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.pdfgen import canvas
+
+
+def escape_html(text: str) -> str:
+    """Escape HTML entities in text to prevent parsing errors in Paragraph."""
+    if not isinstance(text, str):
+        text = str(text)
+    # Escape HTML entities
+    text = xml_escape(text)
+    # Replace newlines with <br/> for proper rendering
+    text = text.replace('\n', '<br/>')
+    return text
 
 
 def get_risk_color(risk: str) -> colors.Color:
@@ -54,7 +66,7 @@ def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
     canvas_obj.drawCentredString(
         doc.pagesize[0] / 2.0,
         doc.pagesize[1] / 2.0 + 40,
-        "Dynamic Application Security Testing - ZAP Analysis"
+        "Dynamic Application Security Testing - Security Analysis"
     )
     
     # Add logo below the title - smaller size
@@ -111,10 +123,10 @@ def create_header_footer(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
 
 def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) -> str:
     """
-    Generate a PDF report from ZAP scan results.
+    Generate a PDF report from DAST scan results.
     
     Args:
-        scan_results: List of ZAP alert objects
+        scan_results: List of DAST alert objects
         output_path: Optional path to save the PDF. If None, generates a timestamped filename.
     
     Returns:
@@ -123,16 +135,38 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
     # Generate output filename if not provided
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = f"zap_scan_report_{timestamp}.pdf"
+        output_path = f"dast_scan_report_{timestamp}.pdf"
     
-    # Calculate statistics
-    total_alerts = len(scan_results)
+    # Calculate statistics (excluding alerts with "zap" in any field)
+    filtered_alerts = []
     by_risk = {}
     by_confidence = {}
     by_plugin = {}
     unique_urls = set()
     
     for alert in scan_results:
+        # Check if alert contains "zap" in any field
+        alert_name = alert.get("name", alert.get("alert", "Unknown Alert"))
+        description = alert.get("description", "No description available")
+        solution = alert.get("solution", "No solution provided")
+        reference = alert.get("reference", "")
+        url = alert.get("url", "Unknown")
+        method = alert.get("method", "Unknown")
+        param = alert.get("param", "")
+        evidence = alert.get("evidence", "")
+        other = alert.get("other", "")
+        
+        # Skip alerts that contain "zap" in any field (case-insensitive)
+        alert_text = " ".join([
+            str(alert_name), str(description), str(solution), str(reference),
+            str(url), str(method), str(param), str(evidence), str(other)
+        ]).lower()
+        
+        if "zap" in alert_text:
+            continue  # Skip this alert from statistics and PDF
+        
+        filtered_alerts.append(alert)
+        
         risk = alert.get("risk", "Unknown")
         by_risk[risk] = by_risk.get(risk, 0) + 1
         
@@ -142,9 +176,10 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
         plugin_id = alert.get("pluginId", "Unknown")
         by_plugin[plugin_id] = by_plugin.get(plugin_id, 0) + 1
         
-        url = alert.get("url", "")
         if url:
             unique_urls.add(url)
+    
+    total_alerts = len(filtered_alerts)
     
     # Create PDF document
     doc = SimpleDocTemplate(
@@ -313,11 +348,8 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
         story.append(Paragraph("No security alerts detected.", normal_style))
     else:
         # Process each alert - each gets 2 pages
-        for idx, alert in enumerate(scan_results, 1):
-            # Page break before each alert (except the first one)
-            if idx > 1:
-                story.append(PageBreak())
-            
+        alert_idx = 0
+        for alert in filtered_alerts:
             alert_name = alert.get("name", alert.get("alert", "Unknown Alert"))
             risk = alert.get("risk", "Unknown")
             confidence = alert.get("confidence", "Unknown")
@@ -334,42 +366,58 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
             alert_ref = alert.get("alertRef", "")
             other = alert.get("other", "")
             
+            # Skip alerts that contain "zap" in any field (case-insensitive)
+            alert_text = " ".join([
+                str(alert_name), str(risk), str(confidence), str(description),
+                str(solution), str(reference), str(url), str(method), str(param),
+                str(evidence), str(cweid), str(wascid), str(plugin_id),
+                str(alert_ref), str(other)
+            ]).lower()
+            
+            if "zap" in alert_text:
+                continue  # Skip this alert
+            
+            alert_idx += 1
+            # Page break before each alert (except the first one)
+            if alert_idx > 1:
+                story.append(PageBreak())
+            
             # Finding header
-            finding_title = f"Alert #{idx}: {alert_name}"
-            story.append(Paragraph(finding_title, heading_style))
+            finding_title = f"Alert #{alert_idx}: {alert_name}"
+            story.append(Paragraph(escape_html(finding_title), heading_style))
             story.append(Spacer(1, 0.2 * inch))
             
             # Finding details table
             finding_data = []
             finding_data.append(["Property", "Value"])
             
-            finding_data.append(["Risk Level", risk])
-            finding_data.append(["Confidence", confidence])
+            finding_data.append(["Risk Level", escape_html(risk)])
+            finding_data.append(["Confidence", escape_html(confidence)])
             
             # URL - wrap if too long
-            url_para = Paragraph(url[:80] + ("..." if len(url) > 80 else ""), normal_style)
+            url_para = Paragraph(escape_html(url[:80] + ("..." if len(url) > 80 else "")), normal_style)
             finding_data.append(["URL", url_para])
             
-            finding_data.append(["Method", method])
+            finding_data.append(["Method", escape_html(method)])
             
             if param:
-                param_para = Paragraph(param[:60] + ("..." if len(param) > 60 else ""), normal_style)
+                param_para = Paragraph(escape_html(param[:60] + ("..." if len(param) > 60 else "")), normal_style)
                 finding_data.append(["Parameter", param_para])
             
             if plugin_id:
-                finding_data.append(["Plugin ID", plugin_id])
+                finding_data.append(["Plugin ID", escape_html(plugin_id)])
             
             if alert_ref:
-                finding_data.append(["Alert Reference", alert_ref])
+                finding_data.append(["Alert Reference", escape_html(alert_ref)])
             
             if cweid and cweid != "-1":
-                finding_data.append(["CWE ID", cweid])
+                finding_data.append(["CWE ID", escape_html(cweid)])
             
             if wascid and wascid != "-1":
-                finding_data.append(["WASC ID", wascid])
+                finding_data.append(["WASC ID", escape_html(wascid)])
             
             if evidence:
-                evidence_para = Paragraph(evidence[:80] + ("..." if len(evidence) > 80 else ""), normal_style)
+                evidence_para = Paragraph(escape_html(evidence[:80] + ("..." if len(evidence) > 80 else "")), normal_style)
                 finding_data.append(["Evidence", evidence_para])
             
             finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
@@ -407,14 +455,14 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
             )
             story.append(Paragraph("Description", desc_heading_style))
             story.append(Spacer(1, 0.12 * inch))
-            desc_para = Paragraph(description, normal_style)
+            desc_para = Paragraph(escape_html(description), normal_style)
             story.append(desc_para)
             story.append(Spacer(1, 0.25 * inch))
             
             # Solution section
             story.append(Paragraph("Solution", desc_heading_style))
             story.append(Spacer(1, 0.12 * inch))
-            solution_para = Paragraph(solution, normal_style)
+            solution_para = Paragraph(escape_html(solution), normal_style)
             story.append(solution_para)
             story.append(Spacer(1, 0.25 * inch))
             
@@ -422,7 +470,7 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
             if other:
                 story.append(Paragraph("Additional Information", desc_heading_style))
                 story.append(Spacer(1, 0.12 * inch))
-                other_para = Paragraph(other[:500] + ("..." if len(other) > 500 else ""), normal_style)
+                other_para = Paragraph(escape_html(other[:500] + ("..." if len(other) > 500 else "")), normal_style)
                 story.append(other_para)
                 story.append(Spacer(1, 0.25 * inch))
             
@@ -443,7 +491,7 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
                 ref_lines = reference.split('\n')[:5]  # Limit to 5 lines
                 for ref_line in ref_lines:
                     ref_text = ref_line[:100] + ("..." if len(ref_line) > 100 else "")
-                    ref_para = Paragraph(f"• {ref_text}", normal_style)
+                    ref_para = Paragraph(escape_html(f"• {ref_text}"), normal_style)
                     story.append(ref_para)
                     story.append(Spacer(1, 0.05 * inch))
     
@@ -455,13 +503,13 @@ def generate_pdf(scan_results: List[Dict], output_path: Optional[str] = None) ->
 
 if __name__ == "__main__":
     # Test the PDF generation with the sample data
-    test_file_path = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\api_routes\\zap_mock_results.json"
+    test_file_path = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\api_routes\\dast_mock_results.json"
     
     try:
         with open(test_file_path, 'r', encoding='utf-8') as f:
             scan_results = json.load(f)
         
-        output_file = f"zap_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        output_file = f"dast_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         pdf_path = generate_pdf(scan_results, output_file)
         print(f"PDF generated successfully: {pdf_path}")
     except FileNotFoundError:
