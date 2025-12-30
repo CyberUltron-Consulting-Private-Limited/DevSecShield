@@ -1,0 +1,283 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Copy, Check } from "lucide-react";
+import { toast } from "sonner";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+interface BambooIntegrationGuideProps {
+  apiKey: string;
+}
+
+export function BambooGuide({ apiKey }: BambooIntegrationGuideProps) {
+  const [appLang, setAppLang] = useState<"python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin">("python");
+  const [copied, setCopied] = useState(false);
+
+  // Generate script content based on selections (full content for copying)
+  const scriptContent = useMemo(() => {
+    // Escape $ to prevent template literal interpolation
+    const dollar = '$';
+    const bambooVar = 'bamboo';
+    return `# Compress the project files excluding unnecessary ones
+zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
+
+# Call the API for SAST scan
+RESPONSE=$(curl -X POST \\
+  -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
+  -F "zip_file=@project.zip" \\
+  -F "app_lang=${appLang}" \\
+  https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)
+
+# Parse JSON response
+VULNS=$(echo "$RESPONSE" | grep -o '"vulnerabilities":[0-9]*' | grep -o '[0-9]*' || echo "0")
+
+echo "Vulnerabilities found during SAST: $VULNS"
+
+# Check for error in response
+if echo "$RESPONSE" | grep -q '"error"'; then
+  ERROR=$(echo "$RESPONSE" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
+  echo "Error: $ERROR"
+  exit 1
+fi
+
+echo "$RESPONSE"`;
+  }, [appLang]);
+
+  // Generate masked script content for display
+  const displayedScriptContent = useMemo(() => {
+    // Helper function to mask API key
+    const maskApiKey = (key: string) => {
+      if (key.length <= 8) {
+        return "•".repeat(key.length);
+      }
+      const start = key.substring(0, 4);
+      const end = key.substring(key.length - 4);
+      return `${start}${"•".repeat(12)}${end}`;
+    };
+    const maskedKey = maskApiKey(apiKey);
+    const dollar = '$';
+    const bambooVar = 'bamboo';
+    return `# Compress the project files excluding unnecessary ones
+zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
+
+# Call the API for SAST scan
+RESPONSE=$(curl -X POST \\
+  -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
+  -F "zip_file=@project.zip" \\
+  -F "app_lang=${appLang}" \\
+  https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)
+
+# Parse JSON response
+VULNS=$(echo "$RESPONSE" | grep -o '"vulnerabilities":[0-9]*' | grep -o '[0-9]*' || echo "0")
+
+echo "Vulnerabilities found during SAST: $VULNS"
+
+# Check for error in response
+if echo "$RESPONSE" | grep -q '"error"'; then
+  ERROR=$(echo "$RESPONSE" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
+  echo "Error: $ERROR"
+  exit 1
+fi
+
+echo "$RESPONSE"`;
+  }, [appLang, apiKey]);
+
+  const copyToClipboard = async () => {
+    try {
+      // Copy the full content with unmasked API key
+      await navigator.clipboard.writeText(scriptContent);
+      setCopied(true);
+      toast.success("Script content copied to clipboard!");
+      setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch (error) {
+      toast.error("Failed to copy script content");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">
+          Atlassian Bamboo Integration
+        </h3>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6">
+          Follow these steps to integrate DevSecShield SAST scanning into your Atlassian Bamboo plan.
+        </p>
+      </div>
+
+      {/* Configuration Options */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Configuration</CardTitle>
+          <CardDescription>
+            Select your application language to generate the scan script.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="bamboo_app_lang">Application Language *</Label>
+              <Select
+                value={appLang}
+                onValueChange={(value) => setAppLang(value as typeof appLang)}
+              >
+                <SelectTrigger id="bamboo_app_lang">
+                  <SelectValue placeholder="Select language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="python">Python</SelectItem>
+                  <SelectItem value="javascript">JavaScript</SelectItem>
+                  <SelectItem value="java">Java</SelectItem>
+                  <SelectItem value="php">PHP</SelectItem>
+                  <SelectItem value="c">C</SelectItem>
+                  <SelectItem value="ruby">Ruby</SelectItem>
+                  <SelectItem value="rust">Rust</SelectItem>
+                  <SelectItem value="swift">Swift</SelectItem>
+                  <SelectItem value="csharp">C#</SelectItem>
+                  <SelectItem value="kotlin">Kotlin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Instructions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Integration Steps</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol className="list-decimal list-inside space-y-3 text-sm text-zinc-700 dark:text-zinc-300">
+            <li>
+              <strong>Run the Atlassian Bamboo Service and Agent</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">Ensure the Atlassian Bamboo service and agent are running.</span>
+            </li>
+            <li>
+              <strong>Create a Project</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">Create a new project in Atlassian Bamboo.</span>
+            </li>
+            <li>
+              <strong>Create a Plan</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">Set up a plan for the project to manage your builds and scans.</span>
+            </li>
+            <li>
+              <strong>Configure Your Code Repository</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">Go to the plan configuration and link your code repository.</span>
+            </li>
+            <li>
+              <strong>Create a New Stage</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">Go to the Stages section and create a new stage named <strong>Security Scans</strong>. Move this stage to the top and delete or disable the default stage.</span>
+            </li>
+            <li>
+              <strong>Add a Job</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">Add a job under the Security Scans stage named <strong>SAST Scan</strong>.</span>
+            </li>
+            <li>
+              <strong>Configure the SAST Scan Job</strong>
+              <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
+                <li>Go to the SAST Scan job</li>
+                <li>Add a new task and select the task type as <strong>Script</strong></li>
+                <li>Follow the script configuration steps below</li>
+              </ol>
+            </li>
+            <li>
+              <strong>Script Configuration</strong>
+              <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
+                <li>
+                  <strong>Task Description:</strong> Enter a recognizable description like "SAST Scan"
+                </li>
+                <li>
+                  <strong>Interpreter:</strong> Choose <code className="bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">Shell</code> for Linux
+                </li>
+                <li>
+                  <strong>Script Location:</strong> Select <code className="bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">Inline</code>
+                </li>
+                <li>
+                  <strong>Script Body:</strong> Copy the script below by clicking the copy button and paste it into the Script Body field
+                </li>
+              </ol>
+            </li>
+            <li>
+              <strong>Configure Bamboo Variables</strong>
+              <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
+                <li>Go to your plan configuration and navigate to <strong>Variables</strong></li>
+                <li>Click <strong>Add Variable</strong></li>
+                <li>Create a new variable:
+                  <div className="mt-2 p-2 bg-zinc-50 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
+                    <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100">
+                      Variable: <span className="text-teal-600 dark:text-teal-400">cicd_api_key</span>
+                    </p>
+                    <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
+                      Value: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
+                    </p>
+                    <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
+                      Type: <span className="text-teal-600 dark:text-teal-400">Password</span> (to hide the value)
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <strong>Important:</strong> Make sure to set the <code className="bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">cicd_api_key</code> variable as masked/secure so it won't be exposed in logs
+                </li>
+              </ol>
+            </li>
+            <li>
+              <strong>Run the Plan</strong>
+              <br />
+              <span className="text-zinc-600 dark:text-zinc-400">After completing the configuration, manually run the plan and check the logs in Atlassian Bamboo for details of the found vulnerabilities. Detailed information on the scan will be available in the DevSecShield dashboard.</span>
+            </li>
+          </ol>
+        </CardContent>
+      </Card>
+
+      {/* Script Display */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base">SAST Scan Script</CardTitle>
+            <CardDescription>
+              Copy this script to use in your Bamboo Script task
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={copyToClipboard}
+            className="cursor-pointer"
+          >
+            {copied ? (
+              <>
+                <Check className="h-4 w-4 mr-2 text-green-600" />
+                Copied!
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Script
+              </>
+            )}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[400px] w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-4">
+            <pre className="text-xs font-mono text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap">
+              {displayedScriptContent}
+            </pre>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

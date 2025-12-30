@@ -17,7 +17,7 @@ import {
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
-import { startMCPScan, getMCPExportResults } from "@/utils/backend_api";
+import { startMCPScan, getMCPExportResults, reinitializeMCPScan } from "@/utils/backend_api";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
 // Placeholder response type - replace with actual type when backend API is created
@@ -107,6 +107,43 @@ export function MCPOptionsSidebar({
       a.click();
 
       setOptionsSidebarState("done");
+    },
+    onError: () => {
+      setOptionsSidebarState("error");
+    }
+  });
+
+  const handleReinitializeScan = async ({
+    conversation_id,
+    server_config,
+  }: {
+    conversation_id: number;
+    server_config: string;
+  }) => {
+    setOptionsSidebarState("ready");
+
+    if (!server_config.trim()) {
+      toast.error("Please provide the MCP server configuration JSON");
+      setOptionsSidebarState("error");
+      throw new Error("Please provide the MCP server configuration JSON");
+    }
+
+    try {
+      JSON.parse(server_config);
+    } catch (e) {
+      toast.error("Invalid JSON format in server configuration");
+      setOptionsSidebarState("error");
+      throw new Error("Invalid JSON format in server configuration");
+    }
+
+    return reinitializeMCPScan({ conversation_id, server_config });
+  };
+
+  const reinitializeScanMutation = useMutation({
+    mutationFn: handleReinitializeScan,
+    onSuccess: () => {
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', parseInt(conversation_id as string)] });
     },
     onError: () => {
       setOptionsSidebarState("error");
@@ -286,6 +323,35 @@ export function MCPOptionsSidebar({
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
+          </Button>
+        </div>
+      )}
+
+      {query.data?.scan_status === "pending" && (
+        <div className="p-6 border-t border-zinc-800">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              reinitializeScanMutation.mutate({
+                conversation_id: parseInt(conversation_id as string),
+                server_config: serverConfigJson
+              });
+            }}
+            disabled={reinitializeScanMutation.isPending || !serverConfigJson.trim() || !!jsonError}
+            className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"
+          >
+            {reinitializeScanMutation.isPending ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                <span>Reinitializing...</span>
+              </>
+            ) : (
+              <>
+                <ScanIcon className="size-4 mr-2" />
+                <span>Reinitialize Scan</span>
+              </>
+            )}
           </Button>
         </div>
       )}

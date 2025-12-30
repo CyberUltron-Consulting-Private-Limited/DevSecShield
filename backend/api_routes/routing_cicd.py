@@ -13,7 +13,7 @@ from backend.ai_utils.export_generation import create_export_results
 from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception
 from backend.celery_connection import get_celery_app, get_status_and_update_db
 from backend.cicd_utils.auth import create_api_key, get_user_and_integration_id
-from backend.general_utils.s3_utils import upload_file
+from backend.general_utils.s3_utils import delete_file, upload_file
 from backend.models import SASTConversation, User , LLMBenchmarkingConversation, CicdIntegration
 from backend.auth_utils.plans import plans
 from rich.console import Console
@@ -111,7 +111,7 @@ def cicd_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 "object_name": object_name,
                 "app_lang": app_lang
             }
-            task = celery_app.send_task(name="cicd_worker.sast", kwargs=cicd_kwargs)
+            task = celery_app.send_task(name="cicd_worker.sast", kwargs=cicd_kwargs , queue="cicd_worker_queue")
             task_id = task.id if task and task.id else None
             task_status = AsyncResult(task_id, app=celery_app).status.lower() if task_id else None
             if not task_id or not task_status:
@@ -133,19 +133,15 @@ def cicd_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             CICD_LOG_ID = str(cicd_log_insert_response.inserted_id) if cicd_log_insert_response and cicd_log_insert_response.inserted_id else None
             console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
 
-
-        #     #STEP [ 4 ] : ============ return the log id and status =================================
-        #     return {
-        #     "cicd_log_id": CICD_LOG_ID,
-        #     "status": status,
-        #    }
-
             # STEP [ 4 ] : ============= Poll the worker for the results with a timeout =============================
             results = await run_in_threadpool(poll_for_results, task_id, celery_app, cicd_log_collection, CICD_LOG_ID)
             console.print(f"Results obtained successfully", style="bold yellow")
 
             # STEP [ 6 ] : =================== return the results to the user ===================================
             vulnerabilities = get_vulns(results) if results else None
+
+            # STEP [ 7 ] : ================ delete the zip file from s3 bucket ===================================
+            delete_file("devsecshield-storage", object_name)
 
             return {
                 "vulnerabilities": vulnerabilities,

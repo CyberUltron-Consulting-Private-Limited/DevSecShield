@@ -55,7 +55,7 @@ def guardrails_api_routes(app: FastAPI, engine: Engine , mongo_db: Database):
                 "input_prompt": data.input_prompt,
                 "context": integration.settings
             }
-            task = celery_app.send_task(name="guardrail_worker.input_guardrail", kwargs=input_guardrail_kwargs)
+            task = celery_app.send_task(name="guardrail_worker.input_guardrail", kwargs=input_guardrail_kwargs , queue="guardrail_worker_queue")
             task_id = task.id
             status = AsyncResult(task_id, app=celery_app).status.lower()
             if not status or not task_id:

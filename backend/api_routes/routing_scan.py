@@ -530,3 +530,64 @@ def scan_routes(app: FastAPI, engine: Engine , mongo_db: Database):
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting conversation , please try again later")
         finally:
             temp_pdf_file.close()
+
+
+    @app.post("/{type}/conversation/{conversation_id}/reinitialize",summary="Reinitialize a scan")
+    async def reinitialize_scan(
+        type: scan_types,
+        conversation_id: int, 
+        sast_data: StartSastScanData | None = None,
+        llm_data: StartLLMBenchmarkingData | None = None,
+        mcp_data: StartMCPScanData | None = None,
+        iac_data: StartGeneralScanData | None = None,
+        leakage_data: StartGeneralScanData | None = None,
+        sbom_sca_data: StartGeneralScanData | None = None,
+        agent_discovery_data: StartGeneralScanData | None = None,
+        dast_data: StartDASTScanData | None = None,
+        Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+        """
+        Reinitialize a scan.
+        ( allow only when pending state and update main db with new task id )
+        """
+        try:
+            user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # user = User(id=1) # for testing purposes
+            Table = get_Table_from_type(type)
+            
+            # STEP [ 1 ] : =========== Validate getting the conversation from the main db ======================
+            
+            with Session(engine) as session:
+                conversation = None
+                conversation = session.exec(select(Table).where(Table.id == conversation_id).where(Table.user_id == user.id)).first()
+                if conversation==None:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found or User not allowed to start this conversation")
+                if conversation.scan_status != "pending":
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan is not in pending state, cannot reinitialize")
+            
+            
+                start_scan_and_update_db(
+                    sast_data=sast_data,
+                    llm_data=llm_data,
+                    mcp_data=mcp_data,
+                    iac_data=iac_data,
+                    leakage_data=leakage_data,
+                    sbom_sca_data=sbom_sca_data,
+                    agent_discovery_data=agent_discovery_data,
+                    dast_data=dast_data,
+                    conversation_id=conversation_id,
+                    user_id=user.id,
+                    engine=engine,
+                    mongo_db=mongo_db,
+                    type=type,
+                    table=Table,
+                )
+           
+                return {
+                    "message": "Scan started successfully",
+                }
+        except Exception as e:
+            console.print(f"Error in start_{type}_scan: {e}",style="bold red")
+            if isinstance(e,HTTPException):
+                raise e
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")
+    

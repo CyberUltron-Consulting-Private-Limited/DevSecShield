@@ -1,0 +1,28 @@
+services:
+
+  # worker:
+  #   container_name: devsecshield-scan-worker
+  #   image: ghcr.io/cyberultron-nikhil/scan-worker:v0
+  #   environment:
+  #     IS_DOCKER_CONTAINER: "True"
+  
+  # cicd_worker:
+  #   container_name: devsecshield-cicd-worker
+  #   image: ghcr.io/cyberultron-nikhil/cicd-worker:v0
+  #   environment:
+  #     IS_DOCKER_CONTAINER: "True"
+  
+  guardrail_worker:
+    container_name: devsecshield-guardrail-worker
+    image: ghcr.io/cyberultron-nikhil/guardrail-worker:v0
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+  
+  dast_worker:
+    container_name: devsecshield-dast-worker
+    image: ghcr.io/cyberultron-nikhil/dast-worker:v0
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+
+
+  

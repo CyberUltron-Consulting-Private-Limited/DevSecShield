@@ -17,7 +17,6 @@ from sse_starlette.sse import EventSourceResponse
 from pymongo.database import Database
 import json
 import time
-from backend.mongo_models import ActiveContextLog, Conversation, MessageLog
 import uuid
 
 
@@ -269,7 +268,7 @@ def start_scan_and_update_db(
                 },
                 "app_lang":sast_data.app_lang,
             }
-            task_result = simple_app.send_task(name="scan_worker.sast", kwargs=sast_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.sast", kwargs=sast_kwargs, queue="scan_worker_queue")
         elif type == "llm":
             llm_kwargs={
                 "model_type":llm_data.model_type,
@@ -282,12 +281,12 @@ def start_scan_and_update_db(
                 "model_uri":llm_data.model_uri,
                 "method":llm_data.method,
             }
-            task_result = simple_app.send_task(name="scan_worker.llm_benchmark", kwargs=llm_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.llm_benchmark", kwargs=llm_kwargs, queue="scan_worker_queue")
         elif type == "mcp":
             mcp_kwargs={
                 "server_config_json":mcp_data.server_config,
             }
-            task_result = simple_app.send_task(name="scan_worker.mcp", kwargs=mcp_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.mcp", kwargs=mcp_kwargs, queue="scan_worker_queue")
         elif type == "iac":
             iac_kwargs={
                 "dict_context":{
@@ -296,7 +295,7 @@ def start_scan_and_update_db(
                     "PAT":iac_data.PAT,
                 },
             }
-            task_result = simple_app.send_task(name="scan_worker.iac", kwargs=iac_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.iac", kwargs=iac_kwargs, queue="scan_worker_queue")
         elif type == "leakage":
             leakage_kwargs={
                 "dict_context":{
@@ -305,7 +304,7 @@ def start_scan_and_update_db(
                     "PAT":leakage_data.PAT,
                 },
             }
-            task_result = simple_app.send_task(name="scan_worker.gitleaks", kwargs=leakage_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.gitleaks", kwargs=leakage_kwargs, queue="scan_worker_queue")
         elif type == "sbom_sca":
             sbom_sca_kwargs={
                 "dict_context":{
@@ -314,7 +313,7 @@ def start_scan_and_update_db(
                     "PAT":sbom_sca_data.PAT,
                 },
             }
-            task_result = simple_app.send_task(name="scan_worker.sbom_sca", kwargs=sbom_sca_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.sbom_sca", kwargs=sbom_sca_kwargs, queue="scan_worker_queue")
         elif type == "agent_discovery":
             agent_discovery_kwargs={
                 "dict_context":{
@@ -323,7 +322,7 @@ def start_scan_and_update_db(
                     "PAT":agent_discovery_data.PAT,
                 },
             }
-            task_result = simple_app.send_task(name="scan_worker.discovery", kwargs=agent_discovery_kwargs)
+            task_result = simple_app.send_task(name="scan_worker.discovery", kwargs=agent_discovery_kwargs, queue="scan_worker_queue")
         elif type == "dast":
             if dast_data.auth_mode == "header_cookie_based":
                 dast_kwargs={
@@ -338,7 +337,7 @@ def start_scan_and_update_db(
                     "additional_urls":dast_data.header_cookie_based.additional_urls,
                 }
                 console.print(f"Sending task to wapiti dast worker with kwargs: {dast_kwargs}",style="bold green")
-                task_result = simple_app.send_task(name="dast_worker.wapiti_dast", kwargs=dast_kwargs)
+                task_result = simple_app.send_task(name="dast_worker.wapiti_dast", kwargs=dast_kwargs, queue="dast_worker_queue")
             elif dast_data.auth_mode == "form_based":
                 dast_kwargs={
                     "target_url":dast_data.form_based.target_url,
@@ -355,7 +354,7 @@ def start_scan_and_update_db(
                     "logged_out_regex":dast_data.form_based.logged_out_regex,
                 }
                 console.print(f"Sending task to zap dast worker with kwargs: {dast_kwargs}",style="bold green")
-                task_result = simple_app.send_task(name="dast_worker.zap_dast", kwargs=dast_kwargs)
+                task_result = simple_app.send_task(name="dast_worker.zap_dast", kwargs=dast_kwargs, queue="dast_worker_queue")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type of scan")
 

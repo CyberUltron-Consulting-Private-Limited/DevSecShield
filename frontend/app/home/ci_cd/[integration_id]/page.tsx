@@ -22,6 +22,7 @@ import { getCicdIntegrationDashboard, CicdIntegrationDashboard } from "@/utils/b
 import Link from "next/link";
 import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
 import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
+import { BambooGuide } from "@/components/BambooIntegrationGuide";
 
 export default function CicdIntegrationDashboardPage() {
   const pathname = usePathname();
@@ -30,7 +31,7 @@ export default function CicdIntegrationDashboardPage() {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide">("dashboard");
-  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins">("github-actions");
+  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo">("github-actions");
 
   const query = useQuery({
     queryKey: ['cicd-integration-dashboard', integration_id],
@@ -394,6 +395,16 @@ export default function CicdIntegrationDashboardPage() {
                 >
                   Jenkins
                 </button>
+                <button
+                  onClick={() => setActiveSubTab("bamboo")}
+                  className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                    activeSubTab === "bamboo"
+                      ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                      : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
+                >
+                  Atlassian Bamboo
+                </button>
               </div>
 
               {/* Sub-tab Content */}
@@ -403,6 +414,10 @@ export default function CicdIntegrationDashboardPage() {
 
               {activeSubTab === "jenkins" && (
                 <JenkinsGuide apiKey={dashboardData.api_key} />
+              )}
+
+              {activeSubTab === "bamboo" && (
+                <BambooGuide apiKey={dashboardData.api_key} />
               )}
             </div>
           )}

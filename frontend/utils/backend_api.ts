@@ -124,6 +124,33 @@ const getExportResults = async (conversation_id: number): Promise<any> => {
     }
 }
 
+const reinitializeSastScan = async (
+    {
+        conversation_id, 
+        repo_url, 
+        PAT, 
+        app_lang,
+        mode
+    }: {
+            conversation_id: number, 
+            repo_url: string, 
+            PAT: string, 
+            app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin" , 
+            mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/sast/conversation/${conversation_id}/reinitialize`, 
+            { 
+                sast_data : { repo_url: repo_url, PAT: PAT, app_lang: app_lang, mode: mode }, 
+            } , 
+        )
+        toast.success("Sast scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getSastConversations, 
     deleteSastConversation, 
@@ -131,7 +158,8 @@ export {
     createSastConversation, 
     getSastConversationMessages, 
     startSastScan, 
-    getExportResults }
+    getExportResults,
+    reinitializeSastScan }
 
 // -------------------------------------------------------------- LLM API Routes --------------------------------------------------------------
 
@@ -272,6 +300,53 @@ const getLLMExportResults = async (conversation_id: number): Promise<any> => {
     }
 }
 
+const reinitializeLLMScan = async (
+    {
+        conversation_id, 
+        model_type,
+        model_name,
+        generations,
+        probes,
+        api_key,
+        headers,
+        request_template,
+        response_json_field,
+        model_uri
+    }: {
+            conversation_id: number, 
+            model_type: "openai" | "anthropic" | "gemini" | "custom",
+            model_name: string,
+            generations?: number,
+            probes: string[],
+            api_key?: string | null,
+            headers?: Record<string, any> | null,
+            request_template?: Record<string, any> | null,
+            response_json_field?: string | null,
+            model_uri?: string | null
+    }) => {
+    try {
+        const response = await api.post(`/llm/conversation/${conversation_id}/reinitialize`, 
+        {
+        llm_data :   { 
+            model_type,
+            model_name,
+            generations,
+            probes,
+            api_key,
+            headers,
+            request_template,
+            response_json_field,
+            model_uri
+        },
+        }
+    )
+        toast.success("LLM scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getLLMConversations, 
     deleteLLMConversation, 
@@ -279,7 +354,8 @@ export {
     createLLMConversation, 
     getLLMConversationMessages, 
     startLLMScan, 
-    getLLMExportResults }
+    getLLMExportResults,
+    reinitializeLLMScan }
 
 // -------------------------------------------------------------- MCP API Routes --------------------------------------------------------------
 
@@ -297,7 +373,9 @@ export interface MCPConversationResponse {
     created_at: string
     last_updated: string
     scan_status: string
+    data: any
     messages: MCPConversationMessage[]
+    
 }
 
 const getMCPConversationMessages = async ({queryKey}: {queryKey: ['mcp-conversation-data', number]}): Promise<MCPConversationResponse> => {
@@ -394,6 +472,28 @@ const getMCPExportResults = async (conversation_id: number): Promise<any> => {
         throw error
     }
 }
+const reinitializeMCPScan = async (
+    {
+        conversation_id,
+        server_config
+    }: {
+        conversation_id: number,
+        server_config: string
+    }
+) => {
+    try {
+        const response = await api.post(`/mcp/conversation/${conversation_id}/reinitialize`, 
+            { 
+            mcp_data: { server_config: server_config } 
+            }
+        )
+        toast.success("MCP scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getMCPConversationMessages,
     getMCPConversations,
@@ -401,7 +501,8 @@ export {
     renameMCPConversation,
     createMCPConversation,
     getMCPExportResults,
-    startMCPScan
+    startMCPScan,
+    reinitializeMCPScan
 }
 
 // -------------------------------------------------------------- Auth API Routes --------------------------------------------------------------
@@ -556,6 +657,27 @@ const getIACExportResults = async (conversation_id: number): Promise<any> => {
     }
 }
 
+const reinitializeIACScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {   
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/iac/conversation/${conversation_id}/reinitialize`, { iac_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("IAC scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getIACConversations, 
     deleteIACConversation, 
@@ -563,7 +685,8 @@ export {
     createIACConversation, 
     getIACConversationMessages,
     startIACScan,
-    getIACExportResults
+    getIACExportResults,
+    reinitializeIACScan
 }
 
 // -------------------------------------------------------------- SCA + SBOM API Routes --------------------------------------------------------------
@@ -677,6 +800,27 @@ const getSCASBOMExportResults = async (conversation_id: number): Promise<any> =>
     }
 }
 
+const reinitializeSCASBOMScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/sbom_sca/conversation/${conversation_id}/reinitialize`, { sbom_sca_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("SCA + SBOM scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getSCASBOMConversations, 
     deleteSCASBOMConversation, 
@@ -684,7 +828,8 @@ export {
     createSCASBOMConversation,
     getSCASBOMConversationMessages,
     startSCASBOMScan,
-    getSCASBOMExportResults
+    getSCASBOMExportResults,
+    reinitializeSCASBOMScan
 }
 
 // -------------------------------------------------------------- Discovery API Routes --------------------------------------------------------------
@@ -798,6 +943,27 @@ const getDiscoveryExportResults = async (conversation_id: number): Promise<any> 
     }
 }
 
+const reinitializeDiscoveryScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/agent_discovery/conversation/${conversation_id}/reinitialize`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("Discovery scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getDiscoveryConversations, 
     deleteDiscoveryConversation, 
@@ -805,7 +971,8 @@ export {
     createDiscoveryConversation,
     getDiscoveryConversationMessages,
     startDiscoveryScan,
-    getDiscoveryExportResults
+    getDiscoveryExportResults,
+    reinitializeDiscoveryScan
 }
 
 // -------------------------------------------------------------- Leakage API Routes --------------------------------------------------------------
@@ -919,6 +1086,27 @@ const getLeakageExportResults = async (conversation_id: number): Promise<any> =>
     }
 }
 
+const reinitializeLeakageScan = async (
+    {
+        conversation_id,
+        repo_url, 
+        PAT, 
+        mode
+    }: {
+        conversation_id: number,
+        repo_url: string, 
+        PAT: string, 
+        mode: "github" | "gitlab" | "bitbucket"
+    }) => {
+    try {
+        const response = await api.post(`/leakage/conversation/${conversation_id}/reinitialize`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
+        toast.success("Leakage scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getLeakageConversations, 
     deleteLeakageConversation, 
@@ -926,7 +1114,8 @@ export {
     createLeakageConversation,
     getLeakageConversationMessages,
     startLeakageScan,
-    getLeakageExportResults
+    getLeakageExportResults,
+    reinitializeLeakageScan
 }
 
 // -------------------------------------------------------------- Guardrails API Routes --------------------------------------------------------------
@@ -1267,6 +1456,33 @@ const getDASTExportResults = async (conversation_id: number): Promise<any> => {
     }
 }
 
+const reinitializeDASTScan = async (
+    {
+        conversation_id,
+        auth_mode,
+        form_based,
+        header_cookie_based
+    }: {   
+        conversation_id: number,
+        auth_mode: "form_based" | "header_cookie_based",
+        form_based?: FormBasedDASTScanData,
+        header_cookie_based?: HeaderCookieDASTScanData
+    }) => {
+    try {
+        const response = await api.post(`/dast/conversation/${conversation_id}/reinitialize`, { 
+            dast_data: {
+                auth_mode,
+                form_based: form_based || null,
+                header_cookie_based: header_cookie_based || null
+            }
+        })
+        toast.success("DAST scan reinitialized successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
 export { 
     getDASTConversations, 
     deleteDASTConversation, 
@@ -1274,7 +1490,8 @@ export {
     createDASTConversation, 
     getDASTConversationMessages,
     startDASTScan,
-    getDASTExportResults
+    getDASTExportResults,
+    reinitializeDASTScan
 }
 
 // -------------------------------------------------------------- CI/CD API Routes --------------------------------------------------------------

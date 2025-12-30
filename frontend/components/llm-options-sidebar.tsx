@@ -16,7 +16,7 @@ import {
   Eye,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { LLMConversationResponse, startLLMScan, getLLMExportResults } from "@/utils/backend_api";
+import { LLMConversationResponse, startLLMScan, getLLMExportResults, reinitializeLLMScan } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import ModelChoicePicker from "./ModelChoicePicker";
@@ -253,6 +253,104 @@ export function LLMOptionsSidebar({
       a.click();
 
       setOptionsSidebarState("done");
+    },
+    onError: () => {
+      setOptionsSidebarState("error");
+    }
+  });
+
+  const handleReinitializeScan = ({
+    conversation_id,
+    creationData
+  }: {
+    conversation_id: number;
+    creationData: LLMScanCreateData;
+  }) => {
+    setOptionsSidebarState("ready");
+    
+    // Validate required fields
+    if (!creationData.api_key && creationData.model_type !== "custom"){
+      toast.error("Please provide the API Key for the model");
+      setOptionsSidebarState("error");
+      throw new Error("Please provide the API Key for the model");
+    }
+    if(!creationData.model_type || !creationData.model_name || creationData.probes.length === 0){
+      toast.error("Please fill in Model Type, Model Name, and at least one Probe");
+      setOptionsSidebarState("error");
+      throw new Error("Please fill in Model Type, Model Name, and at least one Probe");
+    }
+
+    // For custom models, validate additional required fields
+    if(creationData.model_type === "custom"){
+      if(!creationData.model_uri || !creationData.request_template || !creationData.response_json_field){
+        toast.error("Custom models require Model URI, Request Template, and Response JSON Field");
+        setOptionsSidebarState("error");
+        throw new Error("Custom models require Model URI, Request Template, and Response JSON Field");
+      }
+
+      // Validate JSON for headers and request_template
+      let parsedHeaders = null;
+      let parsedTemplate = null;
+
+      try {
+        parsedHeaders = creationData.headers && creationData.headers.trim() !== "" ? JSON.parse(creationData.headers) : "";
+        if(parsedHeaders && typeof parsedHeaders !== "object"){
+          toast.error("Headers must be a JSON object");
+          setOptionsSidebarState("error");
+          throw new Error("Headers must be a JSON object");
+        }
+      } catch (e:any) {
+        toast.error("Invalid JSON in Headers");
+        setOptionsSidebarState("error");
+        throw new Error("Invalid JSON in Headers");
+      }
+
+      try {
+        parsedTemplate = creationData.request_template && creationData.request_template.trim() !== "" ? JSON.parse(creationData.request_template) : "";
+        if(!parsedTemplate || typeof parsedTemplate !== "object"){
+          toast.error("Request Template must be a JSON object");
+          setOptionsSidebarState("error");
+          throw new Error("Request Template must be a JSON object");
+        }
+      } catch (e:any) {
+        toast.error("Invalid JSON in Request Template");
+        setOptionsSidebarState("error");
+        throw new Error("Invalid JSON in Request Template");
+      }
+
+      return reinitializeLLMScan({
+        conversation_id,
+        model_type: creationData.model_type as "openai" | "anthropic" | "gemini" | "custom",
+        model_name: creationData.model_name,
+        generations: creationData.generations,
+        probes: creationData.probes,
+        api_key: creationData.api_key || null,
+        headers: parsedHeaders,
+        request_template: parsedTemplate,
+        response_json_field: creationData.response_json_field,
+        model_uri: creationData.model_uri
+      });
+    }
+
+    return reinitializeLLMScan({
+      conversation_id,
+      model_type: creationData.model_type as "openai" | "anthropic" | "gemini" | "custom",
+      model_name: creationData.model_name,
+      generations: creationData.generations,
+      probes: creationData.probes,
+      api_key: creationData.api_key || null,
+      headers: null,
+      request_template: null,
+      response_json_field: null,
+      model_uri: null
+    });
+  };
+
+  const reinitializeScanMutation = useMutation({
+    mutationFn: handleReinitializeScan,
+    onSuccess: () => {
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', parseInt(conversation_id as string)] });
     },
     onError: () => {
       setOptionsSidebarState("error");
@@ -521,6 +619,35 @@ export function LLMOptionsSidebar({
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
+          </Button>
+        </div>
+      )}
+
+      {query.data?.scan_status === "pending" && (
+        <div className="p-6 border-t border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => {
+              reinitializeScanMutation.mutate({
+                conversation_id: parseInt(conversation_id as string),
+                creationData
+              });
+            }}
+            disabled={reinitializeScanMutation.isPending}
+            className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"
+          >
+            {reinitializeScanMutation.isPending ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                <span>Reinitializing...</span>
+              </>
+            ) : (
+              <>
+                <ScanIcon className="size-4 mr-2" />
+                <span>Reinitialize Scan</span>
+              </>
+            )}
           </Button>
         </div>
       )}

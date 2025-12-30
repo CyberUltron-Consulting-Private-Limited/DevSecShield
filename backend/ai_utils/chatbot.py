@@ -203,7 +203,7 @@ async def create_response(
                 user_id=user_id,
                 content=summarized_history,
                 type="message",
-                sender="agent",
+                sender="assistant",
             )
             result = active_context_collection.insert_one(active_context_instance)
             console.print(f"Summarized history added to active context collection for conversation {mongo_conversation_id} with _id {str(result.inserted_id)}",style="bold green")

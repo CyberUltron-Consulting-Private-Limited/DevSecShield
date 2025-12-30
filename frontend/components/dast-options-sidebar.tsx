@@ -31,7 +31,7 @@ import {
   Info,
 } from "lucide-react";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { DASTConversationResponse, startDASTScan, getDASTExportResults, FormBasedDASTScanData, HeaderCookieDASTScanData } from "@/utils/backend_api";
+import { DASTConversationResponse, startDASTScan, getDASTExportResults, reinitializeDASTScan, FormBasedDASTScanData, HeaderCookieDASTScanData } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -153,6 +153,37 @@ export function DASTOptionsSidebar({
       a.click();
 
       setOptionsSidebarState("done");
+    },
+    onError: () => {
+      setOptionsSidebarState("error");
+    }
+  });
+
+  const handleReinitializeScan = ({
+    conversation_id,
+    auth_mode,
+    form_based,
+    header_cookie_based
+  }: {
+    conversation_id: number;
+    auth_mode: "form_based" | "header_cookie_based";
+    form_based?: FormBasedDASTScanData;
+    header_cookie_based?: HeaderCookieDASTScanData;
+  }) => {
+    setOptionsSidebarState("ready");
+    return reinitializeDASTScan({
+      conversation_id,
+      auth_mode,
+      form_based,
+      header_cookie_based
+    });
+  };
+
+  const reinitializeScanMutation = useMutation({
+    mutationFn: handleReinitializeScan,
+    onSuccess: () => {
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ['dast-conversation-data', parseInt(conversation_id as string)] });
     },
     onError: () => {
       setOptionsSidebarState("error");
@@ -999,6 +1030,79 @@ export function DASTOptionsSidebar({
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
+          </Button>
+        </div>
+      )}
+
+      {query.data?.scan_status === "pending" && (
+        <div className="p-6 border-t border-zinc-800">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              if (authMode === "form_based") {
+                if (!formTargetUrl || !formLoginUrl || !formUsernameValue || !formPasswordValue || !formUsernameKey || !formPasswordKey || !formLoggedInRegex || !formLoggedOutRegex) {
+                  toast.error("Please fill in all required fields for form-based authentication");
+                  return;
+                }
+                const finalIncludeUrls = formIncludeUrls.includes(formTargetUrl) 
+                  ? formIncludeUrls 
+                  : [formTargetUrl, ...formIncludeUrls];
+                
+                reinitializeScanMutation.mutate({
+                  conversation_id: parseInt(conversation_id as string),
+                  auth_mode: "form_based",
+                  form_based: {
+                    target_url: formTargetUrl,
+                    login_url: formLoginUrl,
+                    include_urls: finalIncludeUrls.length > 0 ? finalIncludeUrls : [formTargetUrl],
+                    exclude_urls: formExcludeUrls.length > 0 ? formExcludeUrls : undefined,
+                    timeout_durations_mins: formTimeoutMins,
+                    poll_durations_seconds: formPollSeconds,
+                    username_value: formUsernameValue,
+                    password_value: formPasswordValue,
+                    username_key: formUsernameKey,
+                    password_key: formPasswordKey,
+                    logged_in_regex: formLoggedInRegex,
+                    logged_out_regex: formLoggedOutRegex,
+                  }
+                });
+              } else {
+                if (!headerTargetUrl) {
+                  toast.error("Please fill in the target URL for header/cookie-based authentication");
+                  return;
+                }
+                reinitializeScanMutation.mutate({
+                  conversation_id: parseInt(conversation_id as string),
+                  auth_mode: "header_cookie_based",
+                  header_cookie_based: {
+                    target_url: headerTargetUrl,
+                    attack_modules: headerAttackModules.length > 0 ? headerAttackModules : undefined,
+                    max_scan_time: headerMaxScanTime,
+                    user_agent: headerUserAgent || undefined,
+                    headers: headerHeaders.length > 0 ? headerHeaders.filter(h => h.name && h.value) : undefined,
+                    cookies: headerCookies.length > 0 ? headerCookies.filter(c => c.name && c.value) : undefined,
+                    scan_force: headerScanForce,
+                    exclude_url_patterns: headerExcludePatterns.length > 0 ? headerExcludePatterns : undefined,
+                    additional_urls: headerAdditionalUrls.length > 0 ? headerAdditionalUrls : undefined,
+                  }
+                });
+              }
+            }}
+            disabled={reinitializeScanMutation.isPending}
+            className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"
+          >
+            {reinitializeScanMutation.isPending ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                <span>Reinitializing...</span>
+              </>
+            ) : (
+              <>
+                <ScanIcon className="size-4 mr-2" />
+                <span>Reinitialize Scan</span>
+              </>
+            )}
           </Button>
         </div>
       )}

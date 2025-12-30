@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { Mode } from "@/app/home/sast/[conversation_id]/page";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { IACConversationResponse, startIACScan, getIACExportResults } from "@/utils/backend_api";
+import { IACConversationResponse, startIACScan, getIACExportResults, reinitializeIACScan } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";
@@ -120,6 +120,42 @@ export function IACOptionsSidebar({
       a.click();
 
       setOptionsSidebarState("done");
+    },
+    onError: () => {
+      setOptionsSidebarState("error");
+    }
+  });
+
+  const handleReinitializeScan = ({
+    conversation_id,
+    repo_url,
+    PAT,
+    mode
+  }: {
+    conversation_id: number;
+    repo_url: string;
+    PAT: string;
+    mode: Mode;
+  }) => {
+    setOptionsSidebarState("ready");
+    if (mode === "unknown") {
+      toast.error("Please select a repository platform");
+      setOptionsSidebarState("error");
+      throw new Error("Please select a repository platform");
+    }
+    return reinitializeIACScan({
+      conversation_id,
+      repo_url,
+      PAT,
+      mode
+    });
+  };
+
+  const reinitializeScanMutation = useMutation({
+    mutationFn: handleReinitializeScan,
+    onSuccess: () => {
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ['iac-conversation-data', parseInt(conversation_id as string)] });
     },
     onError: () => {
       setOptionsSidebarState("error");
@@ -353,6 +389,37 @@ export function IACOptionsSidebar({
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
+          </Button>
+        </div>
+      )}
+
+      {query.data?.scan_status === "pending" && (
+        <div className="p-6 border-t border-zinc-800">
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => {
+              reinitializeScanMutation.mutate({
+                conversation_id: parseInt(conversation_id as string),
+                repo_url,
+                PAT,
+                mode
+              });
+            }}
+            disabled={reinitializeScanMutation.isPending}
+            className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"
+          >
+            {reinitializeScanMutation.isPending ? (
+              <>
+                <Loader2 className="size-4 mr-2 animate-spin" />
+                <span>Reinitializing...</span>
+              </>
+            ) : (
+              <>
+                <ScanIcon className="size-4 mr-2" />
+                <span>Reinitialize Scan</span>
+              </>
+            )}
           </Button>
         </div>
       )}
