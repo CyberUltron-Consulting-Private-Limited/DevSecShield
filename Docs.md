@@ -2,7 +2,11 @@
 
 # 🛡️ DevSec Shield
 
+<img src="https://github.com/user-attachments/assets/50e90813-b077-46fc-b316-d3ca416ccc64" alt="DevSec Shield Logo" width="200" height="100">
+
 ### _Enterprise-Grade Security Scanning & Intelligence Platform Enhanced by AI_
+
+[![Sign Up](https://img.shields.io/badge/Sign%20Up-Get%20Started-brightgreen?style=for-the-badge&logo=shield)](https://devsecshield.zeroshield.ai/register)
 
 ![License](https://img.shields.io/badge/license-Proprietary-red)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
@@ -14,7 +18,7 @@
 
 </div>
 
-DevSec Shield is a unified, AI-powered security scanning platform designed to provide comprehensive security analysis across multiple dimensions of modern software development. From traditional application security to cutting-edge AI/ML systems, DevSec Shield delivers automated vulnerability detection and actionable remediation guidance.
+DevSec Shield is a unified, AI-powered Devsecops assistant designed to provide comprehensive security analysis across multiple dimensions of modern software development. From traditional application security to cutting-edge AI/ML systems, DevSec Shield delivers automated vulnerability detection and actionable remediation guidance. It is a comprehensive security scanning platform that automates vulnerability detection and security intelligence across the entire software development lifecycle. Built with AI-powered analysis capabilities, it provides deep insights into security risks and actionable remediation guidance for traditional applications, AI/ML systems, and infrastructure configurations.
 
 **🌟 Key Highlights:**
 - 🤖 **AI-Powered Analysis**: Chat with your scan results for instant, contextual security insights
@@ -78,33 +82,39 @@ To transform complex, manual security challenges into automated, actionable insi
 
 ## Platform Architecture & Workflow
 
-### Overall Scanning Workflow
+### Unified Scanning Workflow
 
 ```mermaid
 flowchart TD
-    A[User Initiates Scan] --> B{Scan Type}
-    B -->|SAST| C[Code Analysis]
-    B -->|SCA| D[Dependency Scanning]
-    B -->|IAC| E[Infrastructure Analysis]
-    B -->|Leakage| F[Secret Detection]
-    B -->|LLM| G[AI Security Testing]
-    B -->|Agent| H[Agent Discovery]
+    A[User Input] --> B{Select Scan Type}
+    B -->|SAST| C[Scan Worker: SAST]
+    B -->|SCA| D[Scan Worker: SCA]
+    B -->|IAC| E[Scan Worker: IAC]
+    B -->|Leakage| F[Scan Worker: Secret Detection]
+    B -->|LLM| G[Scan Worker: LLM Benchmarking]
+    B -->|Agent| H[Scan Worker: Agent Discovery]
+    B -->|MCP| I[Scan Worker: MCP Server]
     
-    C --> I[AI-Enhanced Analysis]
-    D --> I
-    E --> I
-    F --> I
-    G --> I
-    H --> I
+    C --> J[Secure Scan Execution]
+    D --> J
+    E --> J
+    F --> J
+    G --> J
+    H --> J
+    I --> J
     
-    I --> J[Generate Findings]
-    J --> K[Unified Dashboard]
-    J --> L[PDF Report Export]
-    J --> M[AI Chat Interface]
+    J --> K[Generate Scan Results]
+    K --> L[Results Populate Chatbot Context]
+    L --> M[User Can Chat with Scan Results]
+    M --> N[AI Chatbot with Full Context]
+    N --> O[Interactive Q&A]
     
-    K --> N[Visual Analytics]
-    M --> O[Interactive Q&A]
-    L --> P[Audit Documentation]
+    K --> P[Unified Dashboard]
+    K --> Q[PDF Report Export]
+    
+    style J fill:#e1f5ff
+    style L fill:#fff4e1
+    style M fill:#e8f5e9
 ```
 
 ### CI/CD Integration Flow
@@ -163,20 +173,7 @@ Static Application Security Testing analyzes source code without executing it, i
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: Code Repository/Upload] --> B[Scan Worker Receives Scan Job]
-    B --> C[Parse Codebase Structure]
-    C --> D[Language Detection Engine]
-    D --> E[Code Analysis Worker]
-    E --> F[Pattern Matching Engine]
-    F --> G[Security Rule Evaluation]
-    G --> H[Vulnerability Detection]
-    H --> I[Severity Classification]
-    I --> J[AI Analysis Worker]
-    J --> K[Generate Findings Report]
-    K --> L[Results to Dashboard]
-```
+Each SAST scan is executed securely in a dedicated scan worker, processing user-submitted code repositories or uploads to identify security vulnerabilities and generate comprehensive reports.
 
 **Output**
 
@@ -210,21 +207,7 @@ Software Composition Analysis identifies vulnerabilities in third-party dependen
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: Code Repository/Upload] --> B[Scan Worker Receives Scan Job]
-    B --> C[Dependency Discovery Engine]
-    C --> D[Parse Dependency Files]
-    D --> E[Extract Package Information]
-    E --> F[Dependency Tree Builder]
-    F --> G[Vulnerability Database Query]
-    G --> H[Match Packages to CVEs]
-    H --> I[SBOM Generation Worker]
-    I --> J[License Identification]
-    J --> K[Risk Assessment Engine]
-    K --> L[Generate Vulnerability Report]
-    L --> M[Results to Dashboard]
-```
+Each SCA scan is executed securely in a dedicated scan worker, analyzing dependency files to identify vulnerabilities, generate SBOMs, and assess license compliance.
 
 **Output**
 
@@ -258,20 +241,7 @@ Infrastructure as Code security scanning analyzes cloud infrastructure configura
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: IAC Configuration Files] --> B[Scan Worker Receives Scan Job]
-    B --> C[IAC Parser Engine]
-    C --> D[Parse Configuration Format]
-    D --> E[Cloud Provider Detection]
-    E --> F[Policy Evaluation Engine]
-    F --> G[Security Rule Matching]
-    G --> H[Misconfiguration Detection]
-    H --> I[Risk Assessment Worker]
-    I --> J[Severity Classification]
-    J --> K[Generate Security Report]
-    K --> L[Results to Dashboard]
-```
+Each IAC scan is executed securely in a dedicated scan worker, analyzing infrastructure configuration files to identify misconfigurations and security gaps.
 
 **Output**
 
@@ -305,21 +275,7 @@ Code and Data Leakage Detection scans repositories and codebases to identify exp
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: Repository/Codebase] --> B[Scan Worker Receives Scan Job]
-    B --> C[File System Scanner]
-    C --> D[Git History Analyzer]
-    D --> E[Pattern Matching Engine]
-    E --> F[Secret Pattern Detection]
-    F --> G[Entropy Analysis Worker]
-    G --> H[High-Entropy String Detection]
-    H --> I[Secret Format Validation]
-    I --> J[False Positive Filtering]
-    J --> K[Risk Assessment Engine]
-    K --> L[Generate Leakage Report]
-    L --> M[Results to Dashboard]
-```
+Each leakage detection scan is executed securely in a dedicated scan worker, scanning codebases and Git history to identify exposed secrets, credentials, and sensitive data.
 
 **Output**
 
@@ -354,22 +310,7 @@ Model Context Protocol (MCP) Server Vulnerability Scanning analyzes MCP servers 
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: MCP Server Config] --> B[Scan Worker Receives Scan Job]
-    B --> C[Configuration Parser]
-    C --> D[Parse MCP Configuration]
-    D --> E[Server Initialization Worker]
-    E --> F[Start Server in Sandbox]
-    F --> G[Tool Discovery Engine]
-    G --> H[Enumerate Available Tools]
-    H --> I[Security Testing Worker]
-    I --> J[Test Server Endpoints]
-    J --> K[Test Tool Interfaces]
-    K --> L[Vulnerability Detection Engine]
-    L --> M[Generate Security Report]
-    M --> N[Results to Dashboard]
-```
+Each MCP server scan is executed securely in a dedicated scan worker, analyzing server configurations and testing endpoints for security vulnerabilities.
 
 **Output**
 
@@ -413,51 +354,7 @@ LLM Security Benchmarking performs comprehensive security testing of Large Langu
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: LLM Configuration] --> B[Scan Worker Receives Scan Job]
-    B --> C[LLM Connection Setup]
-    C --> D[Probe Selection Engine]
-    D --> E[Security Probe Library]
-    E --> F[Probe Execution Worker]
-    F --> G[Send Probes to LLM]
-    G --> H[Collect Model Responses]
-    H --> I[Response Analysis Engine]
-    I --> J[Vulnerability Detection]
-    J --> K[OWASP LLM Top 10 Mapping]
-    K --> L[Risk Assessment Worker]
-    L --> M[Generate Security Report]
-    M --> N[Results to Dashboard]
-```
-
-**Prompt Injection Attacks Workflow**
-
-```mermaid
-flowchart TD
-    A[Prompt Injection Probe Selected] --> B[Generate Attack Payloads]
-    B --> C[Payload Types: Direct Injection]
-    B --> D[Payload Types: Indirect Injection]
-    B --> E[Payload Types: Encoded Attacks]
-    C --> F[Send Payload to LLM]
-    D --> F
-    E --> F
-    F --> G[LLM Processes Request]
-    G --> H[Capture Model Response]
-    H --> I[Response Analysis Worker]
-    I --> J{Check for System Prompt Leakage}
-    I --> K{Check for Policy Bypass}
-    I --> L{Check for Unauthorized Actions}
-    J -->|Detected| M[Flag as Vulnerable]
-    K -->|Detected| M
-    L -->|Detected| M
-    J -->|Safe| N[No Vulnerability]
-    K -->|Safe| N
-    L -->|Safe| N
-    M --> O[Classify Severity]
-    O --> P[Record Finding]
-    N --> P
-    P --> Q[Generate Report]
-```
+Each LLM security benchmark scan is executed securely in a dedicated scan worker, running comprehensive security probes against Large Language Models to identify vulnerabilities such as prompt injection, jailbreaking, and data leakage.
 
 **Output**
 
@@ -491,23 +388,7 @@ AI Agent Discovery automatically scans codebases to identify AI agents, analyze 
 
 **How It Works**
 
-```mermaid
-flowchart TD
-    A[User Input: Code Repository] --> B[Scan Worker Receives Scan Job]
-    B --> C[Codebase Scanner]
-    C --> D[Pattern Recognition Engine]
-    D --> E[Agent Pattern Detection]
-    E --> F[System Prompt Extractor]
-    F --> G[Agent Identification Worker]
-    G --> H[Framework Detection]
-    H --> I[Capability Analysis Engine]
-    I --> J[Tool & API Extraction]
-    J --> K[Risk Assessment Worker]
-    K --> L[Evaluate Agent Capabilities]
-    L --> M[Risk Level Classification]
-    M --> N[Generate Risk Report]
-    N --> O[Results to Dashboard]
-```
+Each AI agent discovery scan is executed securely in a dedicated scan worker, automatically scanning codebases to identify AI agents, analyze their capabilities, and assess security risks.
 
 **Risk Factors**
 
