@@ -1,8 +1,27 @@
+<div align="center">
+
 # 🛡️ DevSec Shield
 
 ### _Enterprise-Grade Security Scanning & Intelligence Platform Enhanced by AI_
 
+![License](https://img.shields.io/badge/license-Proprietary-red)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.8+-green)
+![OWASP](https://img.shields.io/badge/OWASP-Compliant-orange)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-Integrated-success)
+![AI-Powered](https://img.shields.io/badge/AI-Powered-purple)
+![Security](https://img.shields.io/badge/Security-Enterprise--Grade-yellow)
+
+</div>
+
 DevSec Shield is a unified, AI-powered security scanning platform designed to provide comprehensive security analysis across multiple dimensions of modern software development. From traditional application security to cutting-edge AI/ML systems, DevSec Shield delivers automated vulnerability detection and actionable remediation guidance.
+
+**🌟 Key Highlights:**
+- 🤖 **AI-Powered Analysis**: Chat with your scan results for instant, contextual security insights
+- 📊 **Interactive Dashboards**: Visualize security trends and vulnerability patterns with insightful analytics
+- 📄 **Professional Reports**: Export comprehensive PDF reports for audits and documentation
+- 🔄 **CI/CD Integration**: Automated SAST scanning in your development pipelines
+- 🛡️ **Guardrails API**: Add security validation layer to any chatbot system
 
 ---
 
@@ -22,8 +41,9 @@ DevSec Shield is a unified, AI-powered security scanning platform designed to pr
   * [6. LLM Security Benchmarking](#6-llm-security-benchmarking)
   * [7. AI Agent Discovery & Risk Assessment](#7-ai-agent-discovery--risk-assessment)
   * [8. CI/CD Integration](#8-cicd-integration)
-  * [9. Guardrails API](#9-guardrails-api)
-  * [10. AI-Powered Security Chatbot](#10-ai-powered-security-chatbot)
+  * [9. Guardrails REST API](#9-guardrails-rest-api)
+  * [10. AI-Powered Security Chatbot & Interactive Analysis](#10-ai-powered-security-chatbot--interactive-analysis)
+* [Reporting, Dashboards & Analytics](#reporting-dashboards--analytics)
 * [Security Measures & Data Protection](#security-measures--data-protection)
 * [Example Workflows & User Benefits](#example-workflows--user-benefits)
 * [Use Cases](#use-cases)
@@ -47,10 +67,62 @@ To transform complex, manual security challenges into automated, actionable insi
 
 * **Multi-Dimensional Security Scanning**: Comprehensive coverage across code, dependencies, infrastructure, and AI systems
 * **AI-Enhanced Analysis**: Large Language Model-powered explanations and remediation guidance for every finding
-* **Unified Dashboard**: Centralized view of all security findings across different scan types with severity prioritization
-* **CI/CD Integration**: Seamless integration with popular CI/CD platforms for automated security checks
-* **Export & Reporting**: Professional PDF reports for audit trails and documentation
-* **Real-Time Chat Interface**: Interactive AI chatbot for querying scan results and getting contextual security guidance
+* **Chat with Your Scan Results**: Interactive AI chatbot that lets you query scan outputs in natural language for instant insights
+* **Interactive Dashboards**: Visual analytics and insightful dashboards showing trends, distributions, and security posture metrics
+* **Professional PDF Reports**: Export comprehensive, branded PDF reports for audits, compliance, and stakeholder communication
+* **CI/CD Integration for SAST**: Automated SAST scanning integrated directly into your CI/CD pipelines
+* **Guardrails REST API**: Add security validation layer to chatbot systems by scanning user queries for policy compliance
+* **Unified Security View**: Centralized dashboard showing all security findings across different scan types with severity prioritization
+
+---
+
+## Platform Architecture & Workflow
+
+### Overall Scanning Workflow
+
+```mermaid
+flowchart TD
+    A[User Initiates Scan] --> B{Scan Type}
+    B -->|SAST| C[Code Analysis]
+    B -->|SCA| D[Dependency Scanning]
+    B -->|IAC| E[Infrastructure Analysis]
+    B -->|Leakage| F[Secret Detection]
+    B -->|LLM| G[AI Security Testing]
+    B -->|Agent| H[Agent Discovery]
+    
+    C --> I[AI-Enhanced Analysis]
+    D --> I
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+    
+    I --> J[Generate Findings]
+    J --> K[Unified Dashboard]
+    J --> L[PDF Report Export]
+    J --> M[AI Chat Interface]
+    
+    K --> N[Visual Analytics]
+    M --> O[Interactive Q&A]
+    L --> P[Audit Documentation]
+```
+
+### CI/CD Integration Flow
+
+```mermaid
+flowchart TD
+    A[Developer Push/PR] --> B[CI/CD Pipeline Triggered]
+    B --> C[Code Package as ZIP]
+    C --> D[DevSec Shield API]
+    D --> E[SAST Scan Execution]
+    E --> F{Security Gate}
+    F -->|Pass| G[Deploy/Merge]
+    F -->|Fail| H[Block & Notify]
+    H --> I[Developer Reviews Findings]
+    I --> J[Fixes Applied]
+    J --> B
+    E --> K[Results to Dashboard]
+```
 
 ---
 
@@ -91,10 +163,20 @@ Static Application Security Testing analyzes source code without executing it, i
 
 **How It Works**
 
-1. **Repository Analysis**: Connects to GitHub, GitLab, or Bitbucket repositories (or accepts code uploads)
-2. **Language Detection**: Automatically detects the primary programming language(s) in the codebase
-3. **Pattern Matching**: Analyzes code against comprehensive security rule sets covering common vulnerabilities
-4. **AI-Enhanced Analysis**: Each finding is enriched with AI-generated explanations, risk assessments, and remediation steps
+```mermaid
+flowchart TD
+    A[User Input: Code Repository/Upload] --> B[Scan Worker Receives Scan Job]
+    B --> C[Parse Codebase Structure]
+    C --> D[Language Detection Engine]
+    D --> E[Code Analysis Worker]
+    E --> F[Pattern Matching Engine]
+    F --> G[Security Rule Evaluation]
+    G --> H[Vulnerability Detection]
+    H --> I[Severity Classification]
+    I --> J[AI Analysis Worker]
+    J --> K[Generate Findings Report]
+    K --> L[Results to Dashboard]
+```
 
 **Output**
 
@@ -128,11 +210,21 @@ Software Composition Analysis identifies vulnerabilities in third-party dependen
 
 **How It Works**
 
-1. **Dependency Discovery**: Automatically detects and parses dependency files (package.json, requirements.txt, pom.xml, Gemfile, etc.)
-2. **Vulnerability Database Matching**: Matches detected packages against comprehensive vulnerability databases
-3. **SBOM Construction**: Builds a complete inventory of all software components with version information
-4. **Risk Assessment**: Evaluates the severity and exploitability of each vulnerability
-5. **Remediation Guidance**: Provides specific version updates and patch recommendations
+```mermaid
+flowchart TD
+    A[User Input: Code Repository/Upload] --> B[Scan Worker Receives Scan Job]
+    B --> C[Dependency Discovery Engine]
+    C --> D[Parse Dependency Files]
+    D --> E[Extract Package Information]
+    E --> F[Dependency Tree Builder]
+    F --> G[Vulnerability Database Query]
+    G --> H[Match Packages to CVEs]
+    H --> I[SBOM Generation Worker]
+    I --> J[License Identification]
+    J --> K[Risk Assessment Engine]
+    K --> L[Generate Vulnerability Report]
+    L --> M[Results to Dashboard]
+```
 
 **Output**
 
@@ -166,10 +258,20 @@ Infrastructure as Code security scanning analyzes cloud infrastructure configura
 
 **How It Works**
 
-1. **Configuration Parsing**: Parses IAC files from repositories or uploads
-2. **Policy Evaluation**: Evaluates configurations against security policies and best practices
-3. **Risk Assessment**: Assesses the severity and impact of each misconfiguration
-4. **Remediation Guidance**: Provides specific configuration fixes and secure alternatives
+```mermaid
+flowchart TD
+    A[User Input: IAC Configuration Files] --> B[Scan Worker Receives Scan Job]
+    B --> C[IAC Parser Engine]
+    C --> D[Parse Configuration Format]
+    D --> E[Cloud Provider Detection]
+    E --> F[Policy Evaluation Engine]
+    F --> G[Security Rule Matching]
+    G --> H[Misconfiguration Detection]
+    H --> I[Risk Assessment Worker]
+    I --> J[Severity Classification]
+    J --> K[Generate Security Report]
+    K --> L[Results to Dashboard]
+```
 
 **Output**
 
@@ -203,11 +305,21 @@ Code and Data Leakage Detection scans repositories and codebases to identify exp
 
 **How It Works**
 
-1. **Repository Scanning**: Scans codebase files and Git history
-2. **Pattern Matching**: Applies pattern recognition to identify potential secrets
-3. **Entropy Analysis**: Uses entropy calculations to detect high-entropy strings that may be secrets
-4. **Validation**: Cross-references findings with known secret formats
-5. **Risk Assessment**: Evaluates the potential impact of each exposed secret
+```mermaid
+flowchart TD
+    A[User Input: Repository/Codebase] --> B[Scan Worker Receives Scan Job]
+    B --> C[File System Scanner]
+    C --> D[Git History Analyzer]
+    D --> E[Pattern Matching Engine]
+    E --> F[Secret Pattern Detection]
+    F --> G[Entropy Analysis Worker]
+    G --> H[High-Entropy String Detection]
+    H --> I[Secret Format Validation]
+    I --> J[False Positive Filtering]
+    J --> K[Risk Assessment Engine]
+    K --> L[Generate Leakage Report]
+    L --> M[Results to Dashboard]
+```
 
 **Output**
 
@@ -242,11 +354,22 @@ Model Context Protocol (MCP) Server Vulnerability Scanning analyzes MCP servers 
 
 **How It Works**
 
-1. **Configuration Parsing**: Parses MCP server configuration files (JSON format)
-2. **Server Initialization**: Starts the MCP server in a controlled environment
-3. **Tool Discovery**: Enumerates available tools and their capabilities
-4. **Security Testing**: Performs security tests on server endpoints and tool interfaces
-5. **Vulnerability Reporting**: Generates detailed reports with tool-specific findings
+```mermaid
+flowchart TD
+    A[User Input: MCP Server Config] --> B[Scan Worker Receives Scan Job]
+    B --> C[Configuration Parser]
+    C --> D[Parse MCP Configuration]
+    D --> E[Server Initialization Worker]
+    E --> F[Start Server in Sandbox]
+    F --> G[Tool Discovery Engine]
+    G --> H[Enumerate Available Tools]
+    H --> I[Security Testing Worker]
+    I --> J[Test Server Endpoints]
+    J --> K[Test Tool Interfaces]
+    K --> L[Vulnerability Detection Engine]
+    L --> M[Generate Security Report]
+    M --> N[Results to Dashboard]
+```
 
 **Output**
 
@@ -290,12 +413,51 @@ LLM Security Benchmarking performs comprehensive security testing of Large Langu
 
 **How It Works**
 
-1. **Model Configuration**: Configures connection to the LLM (API key, endpoint, headers)
-2. **Probe Selection**: Selects security probes to execute (or runs all probes)
-3. **Automated Testing**: Executes probes against the model and collects responses
-4. **Response Analysis**: Analyzes responses for security vulnerabilities and policy violations
-5. **Risk Assessment**: Maps findings to OWASP LLM Top 10
-6. **Remediation Guidance**: Provides specific recommendations for improving model security
+```mermaid
+flowchart TD
+    A[User Input: LLM Configuration] --> B[Scan Worker Receives Scan Job]
+    B --> C[LLM Connection Setup]
+    C --> D[Probe Selection Engine]
+    D --> E[Security Probe Library]
+    E --> F[Probe Execution Worker]
+    F --> G[Send Probes to LLM]
+    G --> H[Collect Model Responses]
+    H --> I[Response Analysis Engine]
+    I --> J[Vulnerability Detection]
+    J --> K[OWASP LLM Top 10 Mapping]
+    K --> L[Risk Assessment Worker]
+    L --> M[Generate Security Report]
+    M --> N[Results to Dashboard]
+```
+
+**Prompt Injection Attacks Workflow**
+
+```mermaid
+flowchart TD
+    A[Prompt Injection Probe Selected] --> B[Generate Attack Payloads]
+    B --> C[Payload Types: Direct Injection]
+    B --> D[Payload Types: Indirect Injection]
+    B --> E[Payload Types: Encoded Attacks]
+    C --> F[Send Payload to LLM]
+    D --> F
+    E --> F
+    F --> G[LLM Processes Request]
+    G --> H[Capture Model Response]
+    H --> I[Response Analysis Worker]
+    I --> J{Check for System Prompt Leakage}
+    I --> K{Check for Policy Bypass}
+    I --> L{Check for Unauthorized Actions}
+    J -->|Detected| M[Flag as Vulnerable]
+    K -->|Detected| M
+    L -->|Detected| M
+    J -->|Safe| N[No Vulnerability]
+    K -->|Safe| N
+    L -->|Safe| N
+    M --> O[Classify Severity]
+    O --> P[Record Finding]
+    N --> P
+    P --> Q[Generate Report]
+```
 
 **Output**
 
@@ -329,11 +491,23 @@ AI Agent Discovery automatically scans codebases to identify AI agents, analyze 
 
 **How It Works**
 
-1. **Repository Scanning**: Scans codebase for AI agent patterns and system prompts
-2. **Agent Identification**: Identifies agents by analyzing code structure and prompt patterns
-3. **Capability Analysis**: Extracts and analyzes tools, APIs, and capabilities available to agents
-4. **Risk Evaluation**: Assesses risk level (Low, Medium, High) based on agent capabilities
-5. **Reporting**: Generates comprehensive reports with agent inventory and risk assessments
+```mermaid
+flowchart TD
+    A[User Input: Code Repository] --> B[Scan Worker Receives Scan Job]
+    B --> C[Codebase Scanner]
+    C --> D[Pattern Recognition Engine]
+    D --> E[Agent Pattern Detection]
+    E --> F[System Prompt Extractor]
+    F --> G[Agent Identification Worker]
+    G --> H[Framework Detection]
+    H --> I[Capability Analysis Engine]
+    I --> J[Tool & API Extraction]
+    J --> K[Risk Assessment Worker]
+    K --> L[Evaluate Agent Capabilities]
+    L --> M[Risk Level Classification]
+    M --> N[Generate Risk Report]
+    N --> O[Results to Dashboard]
+```
 
 **Risk Factors**
 
@@ -359,130 +533,295 @@ AI Agent Discovery automatically scans codebases to identify AI agents, analyze 
 
 ---
 
-### 8. CI/CD Integration
+### 8. CI/CD Integration for SAST Scanning
 
 **Overview**
 
-CI/CD Integration enables automated security scanning directly within your continuous integration and continuous deployment pipelines, providing real-time security feedback during the development process.
+CI/CD Integration enables **automated SAST (Static Application Security Testing) scanning** directly within your continuous integration and continuous deployment pipelines. Get real-time security feedback during development, ensuring vulnerabilities are caught before they reach production.
+
+**🌟 Featured: Automated SAST in Your Pipeline**
+
+Integrate DevSec Shield's powerful SAST scanning into your existing CI/CD workflows. Every commit, pull request, or deployment can be automatically scanned for security vulnerabilities, providing immediate feedback to your development team.
 
 **Capabilities**
 
-* **Multi-Platform Support**: Integrates with GitHub Actions, GitLab CI, Jenkins, CircleCI, Bitbucket Pipelines, AWS CodePipeline, Azure DevOps, and more
-* **Automated Scanning**: Triggers security scans automatically on code commits, pull requests, or scheduled intervals
+* **Multi-Platform Support**: Seamlessly integrates with GitHub Actions, GitLab CI, Jenkins, CircleCI, Bitbucket Pipelines, AWS CodePipeline, Azure DevOps, and more
+* **Automated SAST Scanning**: Triggers comprehensive SAST scans automatically on code commits, pull requests, or scheduled intervals
 * **API-Based Integration**: RESTful API for programmatic scan initiation and result retrieval
-* **Zip File Upload**: Supports scanning of code packaged as ZIP files for flexible integration
+* **Zip File Upload**: Supports scanning of code packaged as ZIP files for maximum flexibility
 * **Real-Time Results**: Provides immediate scan results for fast feedback loops
+* **Security Gates**: Block deployments or merges based on severity thresholds
 
 **Supported Scan Types**
 
-* Static Application Security Testing (SAST)
+* **Static Application Security Testing (SAST)** - Primary focus for CI/CD integration
 * Software Composition Analysis (SCA)
 * Infrastructure as Code (IAC) scanning
 * Code & Data Leakage detection
 
 **How It Works**
 
-1. **Integration Setup**: Create CI/CD integration and obtain API key
-2. **Pipeline Configuration**: Configure CI/CD pipeline to call DevSec Shield API
-3. **Code Submission**: Pipeline uploads code (ZIP file) or provides repository access
-4. **Automated Scanning**: DevSec Shield performs security scan
-5. **Result Retrieval**: Pipeline retrieves scan results via API
-6. **Gate Enforcement**: Pipeline can enforce security gates based on scan results
+```mermaid
+flowchart TD
+    A[User Input: CI/CD Pipeline Trigger] --> B[Pipeline Packages Code]
+    B --> C[DevSec Shield API Call]
+    C --> D[Scan Worker Receives Scan Job]
+    D --> E[SAST Scan Execution]
+    E --> F[Generate Scan Results]
+    F --> G[Return Results to Pipeline]
+    G --> H{Security Gate Check}
+    H -->|Pass| I[Allow Merge/Deploy]
+    H -->|Fail| J[Block Merge/Deploy]
+    F --> K[Results to Dashboard]
+```
 
 **Output**
 
-* JSON-formatted scan results via API
-* Vulnerability counts by severity
-* Detailed findings for integration into CI/CD dashboards
+* JSON-formatted scan results via API for programmatic access
+* Vulnerability counts by severity level (Critical, High, Medium, Low)
+* Detailed findings with code locations for integration into CI/CD dashboards
 * Scan status and completion notifications
+* Direct links to full reports in DevSec Shield dashboard
+
+**Benefits**
+
+* ✅ **Shift-Left Security**: Catch vulnerabilities early in the development cycle
+* ✅ **Automated Workflow**: No manual intervention required
+* ✅ **Fast Feedback**: Get results within minutes, not hours
+* ✅ **Policy Enforcement**: Automatically enforce security policies across all deployments
+* ✅ **Developer-Friendly**: Clear, actionable feedback directly in your pipeline
 
 **Use Cases**
 
 * Automated security gates in CI/CD pipelines
-* Pre-merge security validation
-* Continuous security monitoring
-* DevSecOps automation
-* Security policy enforcement
+* Pre-merge security validation for pull requests
+* Continuous security monitoring across all repositories
+* DevSecOps automation and security-as-code practices
+* Security policy enforcement at the pipeline level
 
 ---
 
-### 9. Guardrails API
+### 9. Guardrails REST API
 
 **Overview**
 
-Guardrails API provides a programmatic interface for implementing security guardrails in applications, enabling real-time security validation and policy enforcement.
+Guardrails REST API provides a powerful programmatic interface for adding an **extra layer of security scanning to any chatbot or AI system**. Specifically designed for real-time validation of user queries and inputs, the Guardrails API allows you to scan user-submitted content for adherence to your custom input guardrails and security policies before processing.
+
+**🌟 Key Use Case: Secure Your Chatbots**
+
+Protect your AI chatbot systems by scanning every user query against your security policies. Whether you're building customer support bots, code assistants, or AI-powered applications, the Guardrails API ensures malicious, inappropriate, or policy-violating inputs are caught before they reach your AI models.
 
 **Capabilities**
 
+* **Chatbot Query Scanning**: Scan user queries and inputs for compliance with your input guardrails
+* **Custom Policy Enforcement**: Define and enforce your own security policies and content filters
 * **API Key Management**: Secure API key generation and management for integrations
-* **Configurable Scanners**: Enable or disable specific scanner types per integration
-* **Real-Time Validation**: Instant security validation for code submissions
-* **Scan History**: Maintains history of all scans performed through the API
-* **Customizable Settings**: Per-integration configuration for scanner preferences
+* **Configurable Scanners**: Enable or disable specific scanner types per integration (SAST, SCA, IAC, Leakage Detection)
+* **Real-Time Validation**: Instant security validation for user inputs and code submissions
+* **Scan History**: Maintains comprehensive history of all scans performed through the API
+* **Customizable Settings**: Per-integration configuration for scanner preferences and thresholds
 
 **How It Works**
 
-1. **Integration Creation**: Create a Guardrails integration and obtain API key
-2. **API Configuration**: Configure application to call Guardrails API endpoints
-3. **Code Submission**: Submit code for security validation via API
-4. **Security Scanning**: Guardrails performs configured security scans
-5. **Result Retrieval**: Retrieve scan results and enforce security policies
+```mermaid
+flowchart TD
+    A[User Query/Input] --> B[Your Chatbot/App]
+    B --> C[Guardrails API Call]
+    C --> D{Scan Results}
+    D -->|Pass| E[Process with AI]
+    D -->|Fail| F[Block/Filter Input]
+    F --> G[Return Security Alert]
+    E --> H[Return Response]
+```
 
 **Supported Scanners**
 
-* Static Application Security Testing (SAST)
-* Software Composition Analysis (SCA)
-* Infrastructure as Code (IAC)
-* Code & Data Leakage detection
+* **Static Application Security Testing (SAST)**: Scan code snippets in user queries
+* **Software Composition Analysis (SCA)**: Detect dependency vulnerabilities in submitted code
+* **Infrastructure as Code (IAC)**: Validate infrastructure configurations
+* **Code & Data Leakage Detection**: Identify secrets, API keys, and sensitive data
+
+**Example Integration Scenarios**
+
+* **Code Assistant Chatbots**: Validate user-submitted code for security vulnerabilities before execution
+* **Customer Support Bots**: Filter malicious or inappropriate queries
+* **AI Development Tools**: Scan user inputs for security compliance
+* **Content Generation Systems**: Ensure generated content meets security policies
+
+**API Benefits**
+
+* ✅ **Add Security Layer**: Protect your chatbots without building scanning infrastructure
+* ✅ **Policy Compliance**: Enforce organizational security policies automatically
+* ✅ **Risk Reduction**: Catch security issues before they impact your AI systems
+* ✅ **Scalable Solution**: Handle high-volume query validation with enterprise-grade performance
+* ✅ **Flexible Configuration**: Customize scanning rules per application or use case
 
 **Use Cases**
 
-* Application-level security guardrails
-* Real-time security validation
-* Policy enforcement in custom workflows
-* Third-party integration security
-* Automated security checks in custom tools
+* Securing AI chatbot systems against malicious inputs
+* Validating user-submitted code before execution
+* Enforcing content policies in AI-powered applications
+* Real-time security validation in custom workflows
+* Third-party integration security for chatbot platforms
+* Policy enforcement in developer tools and assistants
 
 ---
 
-### 10. AI-Powered Security Chatbot
+### 10. AI-Powered Security Chatbot & Interactive Analysis
 
 **Overview**
 
-The AI-Powered Security Chatbot provides an interactive interface for querying scan results, getting contextual security guidance, and understanding vulnerabilities in natural language.
+The AI-Powered Security Chatbot revolutionizes how you interact with your scan results. Instead of reading through static reports, you can now **chat directly with your scan outputs** to get instant, contextual answers to your security questions. This conversational interface makes security analysis accessible to both technical and non-technical team members.
+
+**🌟 Key Feature: Chat with Your Scan Results**
+
+Transform your scan outputs into an interactive conversation. Simply ask questions about any vulnerability, risk, or finding, and get intelligent, context-aware responses powered by advanced AI analysis.
 
 **Capabilities**
 
-* **Contextual Understanding**: Understands scan results and provides relevant explanations
-* **Natural Language Queries**: Ask questions about vulnerabilities, risks, and remediation in plain English
-* **Remediation Guidance**: Provides step-by-step guidance for fixing vulnerabilities
-* **Conversation History**: Maintains conversation context for follow-up questions
+* **Chat with Scan Outputs**: Directly interact with your scan results through natural language - ask questions, get explanations, and dive deep into any finding
+* **Contextual Understanding**: The chatbot understands your complete scan context, including all vulnerabilities, their relationships, and affected code areas
+* **Natural Language Queries**: Ask questions in plain English like "What's the most critical vulnerability?" or "How do I fix this SQL injection?"
+* **Intelligent Remediation Guidance**: Get step-by-step, code-specific remediation instructions tailored to your exact findings
+* **Conversation History**: Maintains full conversation context for follow-up questions and deep exploration
+* **Real-Time Analysis**: Get instant responses with streaming output for faster insights
 
 **How It Works**
 
-1. **Scan Completion**: After a scan completes, users can interact with results via chatbot
-2. **Query Processing**: Users ask questions about findings, risks, or remediation
-3. **Context-Aware Responses**: Chatbot analyzes scan results and provides contextual answers
-4. **Interactive Dialogue**: Supports multi-turn conversations for deep dives into security issues
-5. **Export Capability**: Conversation history can be exported for documentation
+```mermaid
+flowchart LR
+    A[Scan Completes] --> B[Results Generated]
+    B --> C[AI Chat Interface Opens]
+    C --> D[User Asks Question]
+    D --> E[Context Analysis]
+    E --> F[Scan Results + AI]
+    F --> G[Contextual Response]
+    G --> H[Follow-up Questions]
+    H --> E
+```
+
+**Example Interactions**
+
+* **"Show me all critical vulnerabilities in my Python code"**
+* **"Explain why this SQL injection is dangerous and how to fix it"**
+* **"What's the security impact of this exposed API key?"**
+* **"Compare vulnerabilities across my last 3 scans"**
+* **"Generate a remediation plan for high-severity findings"**
 
 **Features**
 
-* Real-time streaming responses
-* Conversation history management
-* Scan-specific context awareness
-* Multi-language support
-* Exportable conversation logs
+* ✅ Real-time streaming responses for instant feedback
+* ✅ Full scan context awareness - understands all your findings
+* ✅ Code-specific remediation suggestions with examples
+* ✅ Multi-language support for global teams
+* ✅ Conversation history management and export
+* ✅ Integration with dashboard and PDF reports
+* ✅ Security education and learning mode
 
 **Use Cases**
 
-* Understanding complex vulnerabilities
-* Getting remediation guidance
-* Security education and training
-* Team collaboration on security issues
+* **Understanding Complex Vulnerabilities**: Get explanations of security issues in simple terms
+* **Rapid Remediation**: Get instant, actionable fix recommendations
+* **Security Education**: Learn about security concepts through interactive Q&A
+* **Team Collaboration**: Share insights and explanations with team members
+* **Onboarding**: Help new team members understand security findings quickly
 
 ---
 
+## Reporting, Dashboards & Analytics
+
+### 📊 Interactive Security Dashboards
+
+**Overview**
+
+DevSec Shield provides comprehensive, interactive dashboards that transform your security scan results into actionable visual insights. Track trends, identify patterns, and make data-driven security decisions with our powerful analytics platform.
+
+**Dashboard Workflow**
+
+```mermaid
+flowchart TD
+    A[Scans Execute] --> B[Results Aggregated]
+    B --> C[Unified Dashboard]
+    C --> D[Visual Analytics]
+    D --> E[Trend Analysis]
+    D --> F[Vulnerability Distribution]
+    D --> G[Security Score]
+    C --> H[Interactive Filtering]
+    H --> I[Detailed Views]
+    I --> J[PDF Export]
+    I --> K[AI Chat Interface]
+```
+
+**Key Dashboard Features**
+
+* **Unified Security View**: Centralized dashboard showing all scan results across different scan types (SAST, SCA, IAC, LLM, etc.)
+* **Severity Prioritization**: Visual representation of vulnerabilities by severity level with color-coded indicators
+* **Trend Analysis**: Track security posture over time with historical charts and trend lines
+* **Vulnerability Distribution**: Pie charts and bar graphs showing vulnerability distribution by type, severity, and location
+* **Scan History**: Complete timeline of all scans with status, duration, and results summary
+* **Filtering & Search**: Advanced filtering options to focus on specific scan types, severity levels, or date ranges
+* **Real-Time Updates**: Live updates as scans complete with instant dashboard refresh
+
+**Dashboard Analytics**
+
+* **Security Score**: Overall security score calculated from all scan results
+* **Vulnerability Trends**: Track improvement or degradation over time
+* **Most Affected Files**: Identify files with the highest number of vulnerabilities
+* **Language-Specific Analysis**: Breakdown of vulnerabilities by programming language
+* **Remediation Progress**: Track your progress in fixing identified vulnerabilities
+* **Team Performance**: Security metrics by team, project, or repository
+
+### 📄 Professional PDF Report Generation
+
+**Overview**
+
+Export comprehensive, professional-grade PDF reports for documentation, audits, compliance, and stakeholder communication. Our PDF reports include detailed vulnerability findings, remediation guidance, and executive summaries.
+
+**PDF Report Generation Flow**
+
+```mermaid
+flowchart LR
+    A[Select Scan Results] --> B{Report Type}
+    B -->|Full Report| C[Detailed Analysis]
+    B -->|Executive Summary| D[High-Level Overview]
+    B -->|Custom| E[Custom Template]
+    C --> F[Generate PDF]
+    D --> F
+    E --> F
+    F --> G[Add Branding]
+    G --> H[Export PDF]
+    H --> I[Download/Share]
+```
+
+**Report Features**
+
+* **Executive Summary**: High-level overview of security posture for stakeholders
+* **Detailed Findings**: Complete list of all vulnerabilities with descriptions, locations, and severity
+* **Code Snippets**: Relevant code snippets highlighting vulnerable areas
+* **Remediation Guidance**: Step-by-step recommendations for fixing each vulnerability
+* **Visual Charts**: Graphs and charts showing vulnerability distribution and trends
+* **OWASP Mapping**: Mapping of findings to OWASP Top 10 categories
+* **Custom Branding**: Add your organization's branding and logo
+* **Compliance Reports**: Generate reports aligned with specific compliance frameworks
+
+**Report Use Cases**
+
+* **Security Audits**: Comprehensive documentation for internal and external audits
+* **Compliance Documentation**: Evidence for compliance requirements (SOC 2, ISO 27001, etc.)
+* **Stakeholder Reporting**: Share security status with management and executives
+* **Client Deliverables**: Professional reports for security assessments and engagements
+* **Historical Records**: Maintain records of security assessments over time
+* **Remediation Tracking**: Document vulnerabilities and track remediation progress
+
+**Export Options**
+
+* Full detailed reports with all findings
+* Executive summary reports (high-level overview)
+* Vulnerability-specific reports (filtered by severity or type)
+* Comparison reports (compare scans over time)
+* Custom report templates based on your needs
+
+---
 
 ## Security Measures & Data Protection
 
