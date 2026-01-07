@@ -1,3 +1,6 @@
+To Do :
+1. remove status from sast dash column and replace it with impact 
+
 Query Keys : 
 
 IAC : 
