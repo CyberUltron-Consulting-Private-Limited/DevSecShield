@@ -7,7 +7,7 @@ from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_community.vectorstores import VectorStore
 from rich.console import Console
-from tools.context.base import BaseContext, BaseContextManager
+from tools.context.base_context import BaseContext, BaseContextManager
 
 console = Console()
 

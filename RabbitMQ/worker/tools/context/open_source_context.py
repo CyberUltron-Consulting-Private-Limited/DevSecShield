@@ -1,7 +1,7 @@
 from typing import Callable
 from rich.console import Console
 from langchain_community.vectorstores import MongoDBAtlasVectorSearch, VectorStore
-from tools.context.base import BaseContext, BaseContextManager
+from tools.context.base_context import BaseContext, BaseContextManager
 from langchain_text_splitters import RecursiveJsonSplitter
 
 console = Console()
