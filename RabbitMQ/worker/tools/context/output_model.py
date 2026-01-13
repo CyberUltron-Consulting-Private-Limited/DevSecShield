@@ -134,6 +134,7 @@ class OutputModelManager:
                     raise Exception(f"Attribute {attribute} is missing from the output model")
             console.print(f"Final Vulnerability Model created successfully",style="dim green")
             
+            # ⭐ Final Output Model
             class ResponseModel(BaseModel):
                 vulnerabilities : list[FinalVulnerabilityModel] = Field(description="List of vulnerabilities found ")
             
@@ -158,6 +159,7 @@ class OutputModelManager:
                     raise Exception(f"Attribute {attribute} is missing from the output model")
             console.print(f"Final Vulnerability Model created successfully",style="dim green")
             
+            # ⭐ Final Output Model
             class ResponseModel(BaseModel):
                 vulnerabilities : list[FinalVulnerabilityModel] = Field(description="List of vulnerabilities found ")
             

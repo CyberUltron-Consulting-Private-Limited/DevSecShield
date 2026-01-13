@@ -1,30 +1,15 @@
 from pydantic import BaseModel, Field
-from enum import Enum
+from enums import * 
 
-class OWASPTop10(Enum):
-    BROKEN_ACCESS_CONTROL = "A01:2021 - Broken Access Control"
-    CRYPTOGRAPHIC_FAILURES = "A02:2021 - Cryptographic Failures"
-    INJECTION = "A03:2021 - Injection"
-    INSECURE_DESIGN = "A04:2021 - Insecure Design"
-    SECURITY_MISCONFIGURATION = "A05:2021 - Security Misconfiguration"
-    VULNERABLE_AND_OUTDATED_COMPONENTS = "A06:2021 - Vulnerable and Outdated Components"
-    IDENTIFICATION_AND_AUTHENTICATION_FAILURES = "A07:2021 - Identification and Authentication Failures"
-    SOFTWARE_AND_DATA_INTEGRITY_FAILURES = "A08:2021 - Software and Data Integrity Failures"
-    SECURITY_LOGGING_AND_MONITORING_FAILURES = "A09:2021 - Security Logging and Monitoring Failures"
-    SERVER_SIDE_REQUEST_FORGERY = "A10:2021 - Server-Side Request Forgery (SSRF)"
 
-class Impact(Enum):
-    LOW = "Low"
-    MEDIUM = "Medium"
-    HIGH = "High"
-    CRITICAL = "Critical"
+
 
 class BaseVulnerability(BaseModel):
     title : str = Field(description="The title of the vulnerability")
     description : str = Field(description="The description of the vulnerability")
     impact : Impact = Field(description="The impact of the vulnerability")
     owasp_top_10 : list[OWASPTop10] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
-    # cves : list[str] = Field(description="A list of CVE vulnerabilities that this vulnerability is related to") # this will be created dynamically in the agent
+    compliance_controls : list[ComplianceControls] = Field(description="A list of compliance controls that this vulnerability is related to")
     suggested_fix : str = Field(description="The suggested fix for the vulnerability")
 
 class CodebaseVulnerability(BaseVulnerability):
@@ -53,3 +38,5 @@ class FallbackCVEEnum(Enum):
     cve_2025_42880 = "Recently published critical CVE entry (details aggregated)."  # New critical entry. :contentReference[oaicite:19]{index=19}
     cve_2025_49704 = "Critical Microsoft SharePoint remote code execution vulnerability."  # SharePoint critical. :contentReference[oaicite:20]{index=20}
     cve_2025_49706 = "Critical SharePoint spoofing vulnerability enabling unauthenticated access."  # SharePoint critical. :contentReference[oaicite:21]{index=21}
+
+

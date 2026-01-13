@@ -3,6 +3,8 @@ from rich.console import Console
 from langchain_community.vectorstores import MongoDBAtlasVectorSearch, VectorStore
 from tools.context.base_context import BaseContext, BaseContextManager
 from langchain_text_splitters import RecursiveJsonSplitter
+import uuid
+from datetime import datetime
 
 console = Console()
 
@@ -64,23 +66,31 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in running open source tool: {e}")
     
-    def _load_results_into_vector_store(self)->VectorStore:
+    def _load_results_into_vector_store_and_return_context_id(self)->str:
         """
-        loads the results into a vector store
+        Main function responsible for loading the results into a vector store and returning the context id
         """
         try:
             splitter = RecursiveJsonSplitter(max_chunk_size=500)
             if not self.results:
                 raise ValueError(f"No results found")
-            json_documents = splitter.create_documents(texts=[self.results])
-            if json_documents:
-                console.print(f"Loading {len(json_documents)} json documents into vector store",style="dim blue1")
-                mongo_db = self.__get_mongo_client_db()
-                collection = mongo_db[self.collection_name]
-                vector_store = MongoDBAtlasVectorSearch(collection, self.__get_embedding_model())
-                vector_store.add_documents(json_documents)
-                console.print(f"Json chunks loaded into vector store successfully",style="bold blue1")
-                return vector_store
+            split_json_documents = splitter.create_documents(texts=[self.results])
+            if split_json_documents:
+                
+                # adding context_id to the documents metadata for filtering
+                generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+                split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
+                
+
+                #adding documents to vector store
+                vector_store = self.__get_vector_store(collection_name=self.collection_name)
+                adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store)
+                if not adding_success:
+                    raise ValueError(f"Failed to add documents to vector store")
+                
+                self.context_id = generated_id # SET context_id ⭐
+
+                return generated_id
             else:
                 raise ValueError(f"No json chunks found")
         except Exception as e:
@@ -114,7 +124,7 @@ class OpenSourceContext(BaseContextManager):
         """
         try:
             self._run_open_source_tool()
-            vector_store = self._load_results_into_vector_store()
+            context_id = self._load_results_into_vector_store_and_return_context_id()
             if combine_prompt_string and map_prompt_string:
                 summary = self.generate_map_reduce_summary(
                     combine_prompt_string=combine_prompt_string, 
@@ -122,6 +132,6 @@ class OpenSourceContext(BaseContextManager):
                 )
             else:
                 summary = None
-            return BaseContext(vector_store=vector_store, summary=summary)
+            return BaseContext(context_id=context_id, summary=summary)
         except Exception as e:
             return BaseContext(error_message=f"Error in running open source tool and returning vector store: {e}")

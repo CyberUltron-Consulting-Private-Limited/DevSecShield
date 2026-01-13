@@ -1,13 +1,17 @@
 from typing import Iterable, Literal
-from langchain_community.vectorstores.mongodb_atlas import MongoDBAtlasVectorSearch
-from tools.context.scan_context import GithubContext, GitlabContext, BitbucketContext, clone_repo
+import uuid
+from datetime import datetime
 from langchain_community.document_loaders.generic import GenericLoader
 from langchain_community.document_loaders.parsers import LanguageParser
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_community.vectorstores import VectorStore
 from rich.console import Console
-from tools.context.base_context import BaseContext, BaseContextManager
+from base_context import BaseContext, BaseContextManager
+from pathlib import Path
+
+
+
 
 console = Console()
 
@@ -19,7 +23,10 @@ class CodebaseContext(BaseContextManager):
     2. Generate a map reduce summary of the codebase, based on the specifications given
     """
 
-    def __init__(self, context: GithubContext | GitlabContext | BitbucketContext  , app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
+    def __init__(
+        self, 
+        directory: str | Path , 
+        app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
         """
         Args:
             context: The context of the codebase to be prepared for ingestion
@@ -37,15 +44,12 @@ class CodebaseContext(BaseContextManager):
         ```
         """
         try:
-            directory = None
-            if context and isinstance(context, GithubContext):
-                directory = clone_repo(context.repo_url)
-            elif context and isinstance(context, GitlabContext):
-                directory = clone_repo(context.repo_url)
-            elif context and isinstance(context, BitbucketContext):
-                directory = clone_repo(context.repo_url)
-            else : 
-                raise ValueError(f"Unsupported context: {context}")
+            super().__init__()
+
+            if not directory or not isinstance(directory, (str, Path)):
+                raise ValueError(f"Directory is required")
+            self.directory = directory
+            
 
             include_files = None
             match app_lang:
@@ -74,16 +78,13 @@ class CodebaseContext(BaseContextManager):
             
             self.include_files = include_files if include_files else None
             self.collection_name = "codebase_context"
-            self.split_documents: list[Document] = []
 
         except Exception as e:
             raise ValueError(f"Error in preparing codebase: {e}")
-        finally:
-            if directory:
-                self.directory = directory
+        
     
 
-    def __load_documents_of_language(self,lang_ext: str)->Iterable[Document]:
+    def load_documents_of_language(self,lang_ext: str)->Iterable[Document]:
         """
         loads documents of a specific language ( file extension )
         """
@@ -92,14 +93,21 @@ class CodebaseContext(BaseContextManager):
                 self.directory,
                 glob="**/*",
                 suffixes=[lang_ext],
-                parser=LanguageParser()
+                parser=LanguageParser(),
+                show_progress=True,
             )
-            documents = loader.load()
+            iterator = loader.lazy_load()
+            documents = []
+            for document in iterator:
+                documents.append(document)
+            console.print(f"{len(documents)} Language: {lang_ext} Documents loaded successfully",style="dim green")
+            for document in documents:
+                console.print(f"Document: {document.metadata["source"]}",style="dim green")
             return documents
         except Exception as e:
             raise ValueError(f"Error in loading documents of language: {e}")
     
-    def __split_documents_of_language(self, documents: Iterable[Document] , language: Language)->list[Document]:
+    def split_documents_of_language(self, documents: Iterable[Document] , language: Language)->list[Document]:
         """
         splits the documents into smaller chunks
         """
@@ -109,24 +117,26 @@ class CodebaseContext(BaseContextManager):
             )
             split_documents = codebase_splitter.split_documents(documents)
             if split_documents:
+                console.print(f"{len(split_documents)} Documents of language: {language} split successfully",style="dim green")
                 return split_documents
             else:
                 raise ValueError(f"No split documents found")
         except Exception as e:
             raise ValueError(f"Error in splitting documents of language: {e}")
     
-    def __split_documents_without_language(self, documents: Iterable[Document])->list[Document]:
+    def split_documents_without_language(self, documents: Iterable[Document])->list[Document]:
         """
         splits the documents into smaller chunks without using the language
         """
         try:
             document_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
             split_documents = document_splitter.split_documents(documents)
+            console.print(f"{len(split_documents)} Documents without language split successfully",style="dim green")
             return split_documents
         except Exception as e:
             raise ValueError(f"Error in splitting documents without language: {e}")
     
-    def __load_documents_without_language(self,file_extension: str)->Iterable[Document]:
+    def load_documents_without_language(self,file_extension: str)->Iterable[Document]:
         """
         loads documents without using the language
         """
@@ -136,57 +146,68 @@ class CodebaseContext(BaseContextManager):
                 suffixes=[file_extension],
             )
             documents = loader.load()
+            console.print(f"{len(documents)} Documents without language: {file_extension} loaded successfully",style="dim green")
             return documents
         except Exception as e:
             raise ValueError(f"Error in loading documents without language: {e}")
     
-    def __load_and_split_codebase_into_documents(self)->list[Document]:
+    def load_and_split_codebase_into_documents(self)->list[Document]:
         """
         Responsible for loading codebase as documents and splitting them based on their language inferred from the file extension
         Cyles through all the file extensions and load the documents accordingly
         """
         try:
             for file_extension in self.include_files:
-                language = self.__get_language_from_file_extension(file_extension)
+                language = self.get_language_from_file_extension(file_extension)
                 if language!= None and isinstance(language, Language):
-                    documents = self.__load_documents_of_language(file_extension)
-                    split_documents = self.__split_documents_of_language(documents, language)
+                    console.print(f"Loading documents of language: {language}",style="dim green")
+                    documents = self.load_documents_of_language(file_extension)
+                    split_documents = self.split_documents_of_language(documents, language)
                     console.print(f"Split documents of language: {language} found and added {len(split_documents)} split documents",style="dim green")
-                    self.split_documents.extend(split_documents)
+        
+                    return split_documents
                 else:
-                    documents = self.__load_documents_without_language(file_extension)
-                    split_documents = self.__split_documents_without_language(documents)
+                    console.print(f"Loading documents without language: {file_extension}",style="dim green")
+                    documents = self.load_documents_without_language(file_extension)
+                    split_documents = self.split_documents_without_language(documents)
                     console.print(f"Split documents of language: None found and added {len(split_documents)} split documents",style="dim green")
-                    self.split_documents.extend(split_documents)
+                    
+                    return split_documents
         except Exception as e:
             raise ValueError(f"Error in loading and splitting codebase into documents: {e}")
 
-    def load_and_return_vector_store(self)->VectorStore:
+    def load_documents_and_return_context_id(self)->str:
         """
-        Responsible for loading the split documents into a vector store
+        Main function responsible for loading the split documents into a vector store
+        Attributes set :
+        - self.context_id : str
         """
         try:
-            # TODO : Finish this function
-            mongo_db = self.__get_mongo_client_db()
-            collection = mongo_db[self.collection_name]
-            embeddings = self.__get_embedding_model()
-            vectorstore = MongoDBAtlasVectorSearch(collection, embeddings)
-
-            # Load Codebase --> Split --> Add to Vector Store --> Return Vector Store 
-            self.__load_and_split_codebase_into_documents()
-            if self.split_documents:
-                console.print(f"Adding split documents to vector store",style="dim blue1")
-                vectorstore.add_documents(self.split_documents)
-                console.print(f"Split documents added to vector store successfully",style="bold blue1")
-                return vectorstore
-            else:
+            vectorstore = self.get_vector_store(collection_name=self.collection_name) 
+                 
+            split_documents = self.load_and_split_codebase_into_documents()
+            if not split_documents:
                 raise ValueError(f"No split documents found")
+
+            # Adding agent_job_id to the documents metadata for filtering
+            generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+            split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
+
+            adding_success = self.add_documents_to_vector_store( documents=split_documents_with_context_id, vector_store=vectorstore, )
+            if not adding_success:
+                raise ValueError(f"Failed to add documents to vector store")
+            
+            self.context_id = generated_id # SET context_id ⭐
+            self.documents = split_documents_with_context_id # SET documents ⭐
+
+            return generated_id
+
         except Exception as e:
-            raise ValueError(f"Error in loading and returning vector store: {e}")
+            raise ValueError(f"Error in loading and returning context id: {e}")
 
 
 
-    def __get_language_from_file_extension(self, file_extension: str)->Language:
+    def get_language_from_file_extension(self, file_extension: str)->Language:
         """
         Responsible for getting the language from the file extension
         Only supports languages that match app_lang options: python, javascript, java, php, c, ruby, rust, swift, csharp, kotlin
@@ -241,7 +262,7 @@ class CodebaseContext(BaseContextManager):
 
         codebase_context.prepare_context(combine_prompt_string="combine_prompt_string", map_prompt_string="map_prompt_string")
         
-        vector_store = codebase_context.vector_store
+        codebase_context_id = codebase_context.context_id
         summary = codebase_context.summary
         
         if codebase_context.error_message:
@@ -251,7 +272,7 @@ class CodebaseContext(BaseContextManager):
         ```
         """
         try:
-            vector_store = self.load_and_return_vector_store()
+            context_id = self.load_documents_and_return_context_id()
             if combine_prompt_string and map_prompt_string:
                 summary = self.generate_map_reduce_summary(
                     combine_prompt_string=combine_prompt_string, 
@@ -259,9 +280,18 @@ class CodebaseContext(BaseContextManager):
                 )
             else:
                 summary = None
-            return BaseContext(vector_store=vector_store, summary=summary)
+            return BaseContext(context_id=context_id, summary=summary)
         except Exception as e:
             return BaseContext(error_message=f"Error in preparing codebase for ingestion: {e}")
+
+
+
+if __name__ == "__main__":
+    #testing codebase context
+    directory = Path("C:/Users/HP/Desktop/RiskPilot")
+    codebase_context = CodebaseContext(directory=directory, app_lang="python")
+    result = codebase_context.prepare_context(combine_prompt_string="Create a coherent summary of the codebase", map_prompt_string="Create a detailed, descriptive and brief summary of this code:")
+    print(result)
 
 
         

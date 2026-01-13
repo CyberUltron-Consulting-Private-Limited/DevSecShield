@@ -6,12 +6,16 @@ import shutil
 from pathlib import Path
 from typing import Literal
 import json
+from s3_utils import download_file
+import zipfile
 
-def clone_repo(url: str) -> Path:
+def clone_repo(
+    url: str,
+    branch: str = "main") -> Path:
     tmp = Path(tempfile.mkdtemp(prefix="repo_"))
     Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
     try:
-        Repo.clone_from(url, tmp, depth=1)
+        Repo.clone_from(url, tmp, depth=1 , branch=branch)
     except GitCommandError as e:
         shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(f"Clone failed: {e}") from e
@@ -27,6 +31,7 @@ def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
         Console().print(f"Failed to read code snippet {fp}:{start}-{end} — {exc}",style="bold red")
         return ""
 
+
 def is_github_url(url: str) -> bool:
     return url.startswith(("http://", "https://")) and "github.com" in url
 
@@ -38,6 +43,7 @@ def is_bitbucket_url(url: str) -> bool:
 
 class GithubContext(BaseModel):
     mode : Literal["github"] = "github"
+    branch: str = Field(..., description="The branch of the GitHub repository to scan.",default="main")
     repo_url : str = Field(..., description="The URL of the GitHub repository to scan.")
     PAT: str = Field(..., description="The GitHub token to use for authentication.")
 
@@ -56,6 +62,7 @@ class GithubContext(BaseModel):
 
 class GitlabContext(BaseModel):
     mode : Literal["gitlab"] = "gitlab"
+    branch: str = Field(..., description="The branch of the GitLab repository to scan.",default="main")
     repo_url: str = Field(..., description="The URL of the GitLab repository to scan.")
     PAT: str = Field(..., description="The GitLab token to use for authentication.")
 
@@ -74,6 +81,7 @@ class GitlabContext(BaseModel):
 
 class BitbucketContext(BaseModel):
     mode : Literal["bitbucket"] = "bitbucket"
+    branch: str = Field(..., description="The branch of the Bitbucket repository to scan.",default="main")
     repo_url: str = Field(..., description="The URL of the Bitbucket repository to scan.")
     PAT: str = Field(..., description="The Bitbucket token to use for authentication.")
 
@@ -105,3 +113,34 @@ def validate_dict_with_context(dict_context: dict) -> GithubContext | GitlabCont
         return context
     except Exception as e:
         raise ValueError(f"Invalid context JSON: {e}")
+
+def clone_repo_from_context(context: GithubContext | GitlabContext | BitbucketContext) -> Path:
+    if context and isinstance(context, GithubContext):
+        return clone_repo(context.repo_url, context.branch)
+    elif context and isinstance(context, GitlabContext):
+        return clone_repo(context.repo_url, context.branch)
+    elif context and isinstance(context, BitbucketContext):
+        return clone_repo(context.repo_url, context.branch)
+    else:
+        raise ValueError(f"Unsupported context: {context}")
+
+
+class ZipContext(BaseModel):
+    bucket_name: str = Field(..., description="The name of the bucket with zip file of the project to scan.")
+    object_name: str = Field(..., description="The name of the object with zip file of the project to scan.")
+
+
+def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
+    try:
+        # Download the zip file from the s3 bucket 
+        zip_file_path = download_file(zip_context.bucket_name, zip_context.object_name)
+
+        
+        # create a temporary directory
+        directory = tempfile.mkdtemp(prefix="repo_")
+        
+        # extract the zip file to a temporary directory
+        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+            zip_ref.extractall(directory)
+    except Exception as e:
+        raise ValueError(f"Error in getting directory from zip context: {e}")

@@ -74,6 +74,16 @@ def mongo_db_create_collections_and_documents(dev_environment: bool = False):
             db.create_collection('cicd_logs')
             console.print(f"cicd_logs collection created",style="bold green")
         
+        # codebase_context collection ( for RAG )
+        if 'codebase_context' not in collections:
+            db.create_collection('codebase_context')
+            console.print(f"codebase_context collection created",style="bold green")
+        
+        # open_source_context collection ( for RAG )
+        if 'open_source_context' not in collections:
+            db.create_collection('open_source_context')
+            console.print(f"open_source_context collection created",style="bold green")
+        
         console.print(f"collections created",style="bold green")
         console.print(f"list of collections: {db.list_collection_names()}",style="bold green")
     except Exception as e:
