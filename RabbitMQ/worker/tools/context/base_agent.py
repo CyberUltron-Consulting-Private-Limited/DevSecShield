@@ -26,12 +26,16 @@ class BaseAgent(OutputModelManager):
         self,
         vector_store: VectorStore,
         query: str,
-        k: int = 10,
+        k: int = 20,
         metadata_filter: dict = None,
+        score_threshold: float = 0.7,
     ) -> list[Document]:
         try:
             if not vector_store or not query or not k:
                 raise Exception("Vector store, query or k are missing")
+            
+            # retriever = vector_store.as_retriever(search_kwargs={"k": k, "filter": metadata_filter , "score_threshold": score_threshold})
+            # retriever_docs = retriever.invoke(query)
             
             docs = vector_store.similarity_search(
                 query=query, 

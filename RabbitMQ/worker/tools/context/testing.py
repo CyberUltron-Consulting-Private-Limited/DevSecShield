@@ -1,25 +1,159 @@
-import warnings
 
-warnings.filterwarnings("ignore")
 from pprint import pprint
 from rich.console import Console
 from langchain_community.document_loaders.generic import GenericLoader
-from langchain_community.document_loaders.parsers import LanguageParser
-from langchain_text_splitters import Language
+from custom_language_parser import LanguageParser
+from codebase_context import accept_file
+from pathlib import Path
+import os
+from dotenv import load_dotenv
+from langchain_aws import ChatBedrock
+from langchain.chains.llm import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains.summarize import load_summarize_chain
+from langchain.schema import Document
 
+load_dotenv()
 
 console = Console()
 
-loader = GenericLoader.from_filesystem(
-    "C:/Users/HP/Desktop/RiskPilot",
-    glob="**/*",
-    suffixes=[".py"],
-    show_progress=True,
-    parser=LanguageParser(),
 
-)
-iterator = loader.lazy_load()
-docs = []
-for doc in iterator:
-    docs.append(doc)
-console.print(f"Number of documents: {len(docs)}",style="bold green")
+def test_loader(
+    repo_path:str,
+    exclude_path_arrays:list[list[str]],
+    default_exclude_paths:list[str],
+):
+    loader = GenericLoader.from_filesystem(
+        path=repo_path,
+        glob="**/*",
+        suffixes=[".py"],
+        show_progress=True,
+        parser=LanguageParser(),
+    )
+    iterator = loader.lazy_load()
+    docs = []
+
+    documents = []
+    default_excluded_count, parsing_error_count , excluded_count = 0,0,0
+    for document in iterator:
+
+        # ------------------> Logic where we skip files ( Parsing error or in default exclude paths )
+        if "parsing_error" in document.metadata:
+            parsing_error_count += 1
+            continue # skip the document if it has a parsing error
+        if any(path in document.metadata['source'] for path in default_exclude_paths):
+            default_excluded_count += 1
+            continue # skip the document if it is in the default exclude paths
+
+        # ------------------> Logic where we skip files ( in exclude paths )
+        dont_allow_count = 0
+        for path_array in exclude_path_arrays:
+            if not accept_file(document.metadata['source'] , path_array ):
+                dont_allow_count += 1
+        if dont_allow_count > 0:
+            excluded_count += 1
+            continue # skip the document if it is in the exclude paths
+
+        # ------------------> Accept Document 
+        documents.append(document)
+
+    console.print(f"{len(documents)} Documents loaded successfully",style="dim green")
+    console.print(f"\n Parsing error Count: {parsing_error_count} , Excluded Count: {excluded_count}, default excluded count: {default_excluded_count}",style="dim yellow")
+    console.print("Sources: ",style="green")
+    unique_sources = list(set([document.metadata['source'] for document in documents]))
+    for source in unique_sources:
+        console.print(f"    - {source}",style="dim green")
+    
+    return documents
+
+def testing(
+    exclude_path_arrays:list[list[str]],
+):
+    filepaths = [
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\src\components\Dashboard\Table.tsx",
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\src\components\Something\Table.tsx",
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\AAAAA\Table.tsx",
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\BBB\Table.tsx",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\.venv",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__\__init__.py",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__\__init__.py",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\__init__.py",
+    ]
+
+    for filepath in filepaths:
+
+        dont_allow_count = 0
+        for path_array in exclude_path_arrays:
+            if not accept_file(filepath , path_array ):
+                dont_allow_count += 1
+        if dont_allow_count == 0:
+            console.print(f"Accepting the file: {filepath}",style="dim green")
+        else:
+            console.print(f"Skipping the file: {filepath} because it is in the exclude paths",style="dim red")
+
+def testing_chain_aws_bedrock(documents:list[Document]):
+    load_dotenv()
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_REGION = os.getenv("AWS_DEFAULT_REGION")
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY or not AWS_REGION:
+        raise Exception("AWS credentials not found")
+    else:
+        pass
+
+    llm = ChatBedrock(
+        model="openai.gpt-oss-20b-1:0",
+        region=AWS_REGION or "ap-south-1",
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    )
+
+
+    # Split text into chunks
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=2000,
+        chunk_overlap=100
+    )
+
+    # Define custom prompts
+    map_prompt = PromptTemplate(
+        input_variables=["text"],
+        template="Summarize this content:\n{text}"
+    )
+
+    combine_prompt = PromptTemplate(
+        input_variables=["text"],
+        template="Combine these summaries into a coherent summary:\n{text}"
+    )
+
+    # Create and run the chain
+    chain = load_summarize_chain(
+        llm,
+        chain_type="map_reduce",
+        map_prompt=map_prompt,
+        combine_prompt=combine_prompt,
+        # verbose=True
+    )
+
+    summary = chain.run(documents)
+
+
+
+if __name__ == "__main__":
+    testing_exclude_path_arrays = [ ["RiskPilot" , "frontend" ] , [ ".venv" ]  ]
+    default_exclude_paths = ["__pycache__" , ".venv"]
+    repo_path = Path("C:/Users/HP/Desktop/RiskPilot/backend/api_routes")
+    
+    # testing(testing_exclude_path_arrays)
+    documents = test_loader(repo_path, testing_exclude_path_arrays, default_exclude_paths)
+    testing_chain_aws_bedrock(documents)
+
+
+
+
+
+
+
+

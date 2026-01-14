@@ -7,10 +7,12 @@ from pymongo import MongoClient
 from rich.console import Console
 from langchain.prompts import PromptTemplate
 from langchain.chains.summarize import load_summarize_chain
+from langchain.chains.llm import LLMChain
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_aws import ChatBedrock
 from langchain_mongodb import MongoDBAtlasVectorSearch
+
 
 console = Console()
 
@@ -52,7 +54,6 @@ class BaseContextManager:
             return openai_embedding
         except Exception as e:
             raise ValueError(f"Error in getting embedding model: {e}")
-    
     
     
     def get_unstructured_llm(
@@ -240,8 +241,10 @@ class BaseContextManager:
                     combine_prompt=combine_prompt,
                     verbose=True
                 )
+
                 if not self.documents:
                     raise ValueError(f"No documents found")
+
                 summary = chain.run(self.documents)
                 console.print(f"Map reduce summary generated successfully",style="bold bright_cyan")
                 return summary
