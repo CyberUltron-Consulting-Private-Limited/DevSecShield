@@ -1,0 +1,138 @@
+{
+    "logical_components": [
+        {
+            "title": "CreateUserData",
+            "description": "Pydantic data model used as the request body schema for admin-created user creation. It defines five required string fields to validate incoming data before business logic executes: email, password, plan, first_name, last_name.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "typing",
+                "routing_admin.py (admin routes)",
+                "FastAPI (input validation integration)"
+            ],
+            "business_logic": "Acts as a Data Transfer Object (DTO) to validate payloads for admin-created user creation. Ensures proper typing and presence before hashing the password and persisting the user."
+        },
+        {
+            "title": "CreateAdminData",
+            "description": "Pydantic data model used as the request body schema for creating a new admin (superuser) via admin routes. Fields mirror CreateUserData (email, password, plan, first_name, last_name).",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "routing_admin.py",
+                "FastAPI"
+            ],
+            "business_logic": "Provides a minimal, validated contract for creating admin accounts. Facilitates automatic OpenAPI schema generation and input validation for admin creation workflows."
+        },
+        {
+            "title": "UpdateUserPlanData",
+            "description": "Pydantic model representing the payload to update a user\u2019s subscription plan via an admin route.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "routing_admin.py",
+                "FastAPI",
+                "SQLAlchemy/SQLModel"
+            ],
+            "business_logic": "Enforces presence and type of user_id and plan; sets up data for downstream plan-update operations (potentially with an Enum-constrained plan in extended versions)."
+        },
+        {
+            "title": "UpdateUserTotalScansData",
+            "description": "Pydantic model for updating a user\u2019s total_scans counter through an admin route.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "routing_admin.py",
+                "FastAPI",
+                "SQLAlchemy/SQLModel"
+            ],
+            "business_logic": "Provides user_id and total_scans as required fields; validates payloads so downstream services can apply the new counter value."
+        },
+        {
+            "title": "ToggleAdminAccessData",
+            "description": "Pydantic model for toggling a user\u2019s admin privileges by user_id.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "routing_admin.py",
+                "FastAPI",
+                "SQLAlchemy/SQLModel"
+            ],
+            "business_logic": "Serves as a minimal input contract to identify the target user; actual is_superuser state transition is implemented in route/service logic with proper authorization checks."
+        },
+        {
+            "title": "Check Superuser Endpoint",
+            "description": "GET /admin/check_superuser endpoint that verifies whether the currently authenticated user is a superuser.",
+            "dependencies": [
+                "FastAPI",
+                "HTTPException",
+                "get_user_from_header_or_raise_exception",
+                "engine",
+                "psycopg2 (db error detection)"
+            ],
+            "business_logic": "Resolves the current user from the Authorization header and enforces is_superuser. Returns a success payload (e.g., message, user_id, email) if authorized; returns HTTP 403 otherwise and handles DB errors with HTTP 500 when applicable."
+        },
+        {
+            "title": "Admin Users List Endpoint",
+            "description": "Endpoint that returns a list of all users to an authenticated superuser.",
+            "dependencies": [
+                "FastAPI",
+                "HTTPException",
+                "get_user_from_header_or_raise_exception",
+                "engine",
+                "SQLAlchemy/SQLModel",
+                "psycopg2"
+            ],
+            "business_logic": "Opens a DB session, queries all User records, maps them to simplified dicts (id, email, first_name, last_name, plan, is_superuser, total_scans), and returns the collection. Enforces 403 for non-admins and 500 for DB/unexpected errors."
+        },
+        {
+            "title": "Admin Create User Endpoint",
+            "description": "POST /admin/create_user endpoint that creates a new non-admin user from admin-provided data.",
+            "dependencies": [
+                "FastAPI",
+                "HTTPException",
+                "get_user_from_header_or_raise_exception",
+                "engine",
+                "Session",
+                "User model",
+                "get_hashed_password",
+                "plans (validation)",
+                "Email sending utility"
+            ],
+            "business_logic": "Validates requester is a superuser, validates data.plan against predefined plans, checks for duplicate email, hashes the plaintext password, constructs a new User (is_superuser=False, total_scans=0), persists it, and commits. May trigger a welcome email and returns the new user details. Handles 403/400/500 scenarios."
+        },
+        {
+            "title": "EmailNotificationStep",
+            "description": "Asynchronous step to send a welcome email to a newly created user containing credentials.",
+            "dependencies": [
+                "async email task",
+                "create_user_password_email_html",
+                "new_user.email",
+                "data.password",
+                "FastAPI/AIO backend"
+            ],
+            "business_logic": "Sends a templated password delivery email after user creation. Builds a success payload including user fields and handles DB/HTTP errors with layered error handling. Notes security considerations about plaintext passwords in email and responses."
+        },
+        {
+            "title": "Admin Create Admin Endpoint",
+            "description": "POST /admin/create_admin endpoint that creates a new admin (superuser) from admin-provided data, enforcing admin-only access and proper validation.",
+            "dependencies": [
+                "FastAPI",
+                "HTTPException",
+                "get_user_from_header_or_raise_exception",
+                "engine",
+                "Session",
+                "User model",
+                "get_hashed_password",
+                "plans (validation)",
+                "Email sending utility"
+            ],
+            "business_logic": "Performs an Authorization check to ensure the requester is a superuser, validates data.plan, checks for email duplication, hashes the password, constructs a new User with is_superuser=True and total_scans=0, persists it, and commits. Returns success data; may trigger optional notifications and returns 403/400/500 on errors."
+        },
+        {
+            "title": "Admin User Persistence Lifecycle",
+            "description": "Lifecycle steps for admin user creation: in-memory object construction, password hashing, and DB persistence with session management.",
+            "dependencies": [
+                "User model",
+                "get_hashed_password",
+                "Session",
+                "engine"
+            ],
+            "business_logic": "Constructs the in-memory admin user object (fields: email, hashed password, first_name, last_name, plan, is_superuser=True, total_scans=0), adds to session, commits, and refreshes to load DB-generated fields (e.g., id)."
+        }
+    ]
+}

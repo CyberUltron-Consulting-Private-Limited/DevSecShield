@@ -1,7 +1,8 @@
 from typing import Callable
 from rich.console import Console
 from langchain_community.vectorstores import MongoDBAtlasVectorSearch, VectorStore
-from tools.context.base_context import BaseContext, BaseContextManager
+from scan_context import validate_dict_with_context
+from base_context import BaseContext, BaseContextManager
 from langchain_text_splitters import RecursiveJsonSplitter
 import uuid
 from datetime import datetime
@@ -38,6 +39,7 @@ class OpenSourceContext(BaseContextManager):
             print("Open source tool ran successfully")
         """
         try:
+            super().__init__()
             if open_source_tool and isinstance(open_source_tool, Callable):
                 self.open_source_tool = open_source_tool
             else:
@@ -50,7 +52,7 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in initializing OpenSourceContext: {e}")
 
-    def _run_open_source_tool(self)->dict:
+    def run_open_source_tool(self)->dict:
         """
         Responsible for running the open source tool and returning the context
         """
@@ -66,7 +68,7 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in running open source tool: {e}")
     
-    def _load_results_into_vector_store_and_return_context_id(self)->str:
+    def load_results_into_vector_store_and_return_context_id(self)->str:
         """
         Main function responsible for loading the results into a vector store and returning the context id
         """
@@ -83,7 +85,7 @@ class OpenSourceContext(BaseContextManager):
                 
 
                 #adding documents to vector store
-                vector_store = self.__get_vector_store(collection_name=self.collection_name)
+                vector_store = self.get_vector_store(collection_name=self.collection_name)
                 adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store)
                 if not adding_success:
                     raise ValueError(f"Failed to add documents to vector store")
@@ -123,8 +125,8 @@ class OpenSourceContext(BaseContextManager):
             print("Open source tool ran successfully")
         """
         try:
-            self._run_open_source_tool()
-            context_id = self._load_results_into_vector_store_and_return_context_id()
+            self.run_open_source_tool()
+            context_id = self.load_results_into_vector_store_and_return_context_id()
             if combine_prompt_string and map_prompt_string:
                 summary = self.generate_map_reduce_summary(
                     combine_prompt_string=combine_prompt_string, 
@@ -135,3 +137,4 @@ class OpenSourceContext(BaseContextManager):
             return BaseContext(context_id=context_id, summary=summary)
         except Exception as e:
             return BaseContext(error_message=f"Error in running open source tool and returning vector store: {e}")
+

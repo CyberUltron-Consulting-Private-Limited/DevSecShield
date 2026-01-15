@@ -1,22 +1,13 @@
 import shutil
-from context.codebase_context import CodebaseContext
-from context.open_source_context import OpenSourceContext
-from context.scan_context import GithubContext, GitlabContext, BitbucketContext, ZipContext, clone_repo_from_context, get_directory_from_zip_context
-from context.base_agent import BaseAgent
+from tools.context.codebase_context import CodebaseContext
+from tools.context.open_source_context import OpenSourceContext
+from tools.context.scan_context import GithubContext,GitlabContext, BitbucketContext, ZipContext, clone_repo_from_context, get_directory_from_zip_context
+from tools.context.base_agent import BaseAgent
 from typing import Literal
-from pydantic import BaseModel, Field
 from rich.console import Console
-from semgrep_util import run_sast_scan_on_directory
-from tools.context.schema import CodebaseVulnerability, BaseVulnerability
+from tools.sast_agent.semgrep_util import run_sast_scan_on_directory
+from tools.context.schema import CodebaseVulnerability, BaseVulnerability, IndividualLogicalComponent , LogicalComponents
 
-class LogicalComponentsOutputModel(BaseModel):
-    title: str = Field(..., description="The title of the logical component")
-    description: str = Field(..., description="The description of the logical component")
-    dependencies: list[str] = Field(..., description="A List of Dependencies of the logical component")
-    business_logic: str = Field(..., description="A Detailed summary of the business logic of the logical component")
-
-class LogicalComponents(BaseModel):
-    logical_components : list[LogicalComponentsOutputModel] = Field(..., description="A List of Logical Components of the Codebase")
 
 console = Console()
 
@@ -46,15 +37,53 @@ class SASTAgent(BaseAgent):
             self.technical_stack = technical_stack # SET technical_stack ⭐
 
 
+            include_files_extensions = None
+            match app_lang:
+                case "python":
+                    include_files_extensions = [".py"]
+                    default_exclude_paths = ["__pycache__", ".venv", "venv", "env", ".env", "dist", "build", ".egg-info"]
+                case "javascript":
+                    include_files_extensions = [".js"]
+                    default_exclude_paths = ["node_modules", ".next", "dist", "build", ".cache", ".nuxt", ".output"]
+                case "java":
+                    include_files_extensions = [".java"]
+                    default_exclude_paths = ["target", "build", ".gradle", ".m2", "out", ".idea"]
+                case "php":
+                    include_files_extensions = [".php"]
+                    default_exclude_paths = ["vendor", "node_modules", ".composer"]
+                case "c":
+                    include_files_extensions = [".c"]
+                    default_exclude_paths = ["build", "bin", "obj", "cmake-build-"]
+                case "ruby":
+                    include_files_extensions = [".rb"]
+                    default_exclude_paths = ["vendor", "tmp", ".bundle", "node_modules"]
+                case "rust":
+                    include_files_extensions = [".rs"]
+                    default_exclude_paths = ["target", ".cargo"]
+                case "swift":
+                    include_files_extensions = [".swift"]
+                    default_exclude_paths = ["build", ".build", "DerivedData", "Pods"]
+                case "csharp":
+                    include_files_extensions = [".cs"]
+                    default_exclude_paths = ["bin", "obj", "packages", ".vs", "node_modules"]
+                case "kotlin":
+                    include_files_extensions = [".kt"]
+                    default_exclude_paths = ["build", ".gradle", ".idea", "out", "node_modules"]
+                case _:
+                    raise ValueError(f"Unsupported application language: {app_lang}")
+            
+            self.include_files_extensions = include_files_extensions if include_files_extensions else []
+            self.default_exclude_paths = default_exclude_paths if default_exclude_paths else []
+
+
             #initializing
             self.codebase_context_id = None
             self.opensource_context_id = None
-
-            #important
-            self.logical_components : list[LogicalComponentsOutputModel] = []
-            self.vulnerabilities : list[CodebaseVulnerability] | list[BaseVulnerability] = []
+            self.codebase_context = None
+            self.open_source_context = None
+            self.logical_components : list[IndividualLogicalComponent] = []
+            self.vulnerabilities : list[CodebaseVulnerability] = []
             self.codebase_context_summary = None
-            self.opensource_context_summary = None
 
         except Exception as e:
             raise ValueError(f"Error in initializing SASTAgent: {e}")
@@ -66,17 +95,22 @@ class SASTAgent(BaseAgent):
         """
         try:
             console.print(f"Populating codebase context ...",style="bold yellow")
-            codebase_context = CodebaseContext(directory=self.directory , app_lang=self.app_lang)
+            codebase_context = CodebaseContext(
+                directory=self.directory , 
+                include_files_extensions=self.include_files_extensions, 
+                default_exclude_paths=self.default_exclude_paths,
+                exclude_path_arrays=self.exclude_path_arrays,
+            )
             combine_prompt_string = "Combine these codebase summaries into a coherent summary:"
             map_prompt_string = "Create a detailed , descriptive and brief summary of this code:"
-            codebase_context_object = codebase_context.prepare_context(
+            output = codebase_context.prepare_context(
                 combine_prompt_string=combine_prompt_string,
                 map_prompt_string=map_prompt_string,
             )
-            codebase_context_id = codebase_context_object.context_id
 
-            self.codebase_context_id = codebase_context_id # SET codebase_context_id ⭐
-            self.codebase_context_summary = codebase_context_object.summary # SET codebase_context_summary ⭐
+            self.codebase_context = codebase_context # SET codebase_context ⭐
+            self.codebase_context_id = output.context_id # SET codebase_context_id ⭐
+            self.codebase_context_summary = output.summary # SET codebase_context_summary ⭐
             console.print(f"Codebase context id set successfully",style="bold bue1")
 
         except Exception as e:
@@ -95,18 +129,18 @@ class SASTAgent(BaseAgent):
             )
             combine_prompt_string = "Combine these summaries into a coherent summary:"
             map_prompt_string = "Summarize the content of the results of this tool run :"
-            open_source_context_object = open_source_context.prepare_context(
+            output = open_source_context.prepare_context(
                 combine_prompt_string=combine_prompt_string,
                 map_prompt_string=map_prompt_string,
             )
-            open_source_context_id = open_source_context_object.context_id
+            self.open_source_context = open_source_context # SET open_source_context ⭐
+            self.opensource_context_id = output.context_id # SET open_source_context_id ⭐
 
-            self.opensource_context_id = open_source_context_id # SET open_source_context_id ⭐
             console.print(f"Open source context id set successfully",style="bold bue1")
         except Exception as e:
             raise ValueError(f"Error in populating open source context: {e}")
     
-    def remove_temp_directory(self)->None:
+    def clean_up(self)->None:
         """
         Removes the temporary directory
         """
@@ -114,8 +148,33 @@ class SASTAgent(BaseAgent):
             console.print(f"Removing temporary directory ...",style="bold yellow")
             shutil.rmtree(self.directory)
             console.print(f"Temporary directory removed successfully",style="bold green")
+
+
+            # Deleting codebase context
+            console.print(f"Deleting codebase context ...",style="bold yellow")
+            if self.codebase_context_id:
+                if self.codebase_context.delete_context():
+                    console.print(f"Codebase context deleted successfully",style="bold green")
+                else:
+                    console.print(f"Failed to delete codebase context",style="bold red")
+            else:
+                console.print(f"Codebase context id not found",style="bold red")
+
+
+            # Deleting open source context
+            console.print(f"Deleting open source context ...",style="bold yellow")
+            if self.opensource_context_id:
+                if self.open_source_context.delete_context():
+                    console.print(f"Open source context deleted successfully",style="bold green")
+                else:
+                    console.print(f"Failed to delete open source context",style="bold red")
+            else:
+                console.print(f"Open source context id not found",style="bold red")
+
+
+
         except Exception as e:
-            raise ValueError(f"Error in removing temporary directory: {e}")
+            raise ValueError(f"Error in cleaning up: {e}")
     
     def extract_logical_components(self)->None:
         """
@@ -144,11 +203,11 @@ class SASTAgent(BaseAgent):
             response_model = self.generate_structured_response(
                 prompt=prompt,
                 system_prompt=system_prompt,
-                output_model=LogicalComponentsOutputModel,
+                output_model=LogicalComponents,
             )
-            logical_components : list[LogicalComponentsOutputModel] = response_model.logical_components # GET logical_components ⭐
+            logical_components : list[IndividualLogicalComponent] = response_model.logical_components # GET logical_components ⭐
 
-            self.logical_components : list[LogicalComponentsOutputModel] = logical_components # SET logical_components ⭐
+            self.logical_components : list[IndividualLogicalComponent] = logical_components # SET logical_components ⭐
             console.print(f"Logical components extracted successfully and set successfully",style="bold green")
 
 
@@ -158,14 +217,14 @@ class SASTAgent(BaseAgent):
     
     def analyze_logical_component_and_append_vulnerabilities(
         self,
-        logical_component: LogicalComponentsOutputModel,
+        logical_component: IndividualLogicalComponent,
         relevant_code_snippets: str,
         relevant_open_source_results: str,
         )->None:
         """
         Analyzes the logical component and finds the vulnerabilities to append to the existing list
         Args:
-            logical_component: LogicalComponentsOutputModel
+            logical_component: IndividualLogicalComponent
         Returns:
             None
         """
@@ -237,3 +296,19 @@ class SASTAgent(BaseAgent):
 
         """
         pass
+
+if __name__ == "__main__":
+
+    open_source_context = OpenSourceContext(
+        open_source_tool=run_sast_scan_on_directory,
+        directory="C:\\Users\\HP\\Desktop\\RiskPilot\\backend",
+        app_lang="python",
+    )
+    output = open_source_context.prepare_context()
+    console.print(f"Open source context id: {output.context_id}",style="bold green")
+
+    if open_source_context.delete_context():
+        console.print(f"Open source context deleted successfully",style="bold green")
+    else:
+        console.print(f"Failed to delete open source context",style="bold red")
+    

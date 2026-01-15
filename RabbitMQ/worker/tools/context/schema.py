@@ -2,6 +2,14 @@ from pydantic import BaseModel, Field
 from enums import * 
 
 
+class IndividualLogicalComponent(BaseModel):
+    title: str = Field(..., description="The title of the logical component")
+    description: str = Field(..., description="The description of the logical component")
+    dependencies: list[str] = Field(..., description="A List of Dependencies of the logical component")
+    business_logic: str = Field(..., description="A Detailed summary of the business logic of the logical component")
+
+class LogicalComponents(BaseModel):
+    logical_components : list[IndividualLogicalComponent] = Field(..., description="A List of Logical Components of the Codebase")
 
 
 class BaseVulnerability(BaseModel):

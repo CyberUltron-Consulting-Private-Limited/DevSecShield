@@ -1,3 +1,4 @@
+import json
 from typing import Iterable, Literal
 import uuid
 from datetime import datetime
@@ -63,7 +64,8 @@ class CodebaseContext(BaseContextManager):
     def __init__(
         self, 
         directory: str | Path , 
-        app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],
+        include_files_extensions: list[str] = None,
+        default_exclude_paths: list[str] = None,
         exclude_paths: list[list[str]] = None, # Expectation ex : [ ["root", "frontend"], ["root", "backend"] , ["file_name.extension"] , [ "parent_directory", "file_name.extension"]]
         ):
         """
@@ -91,42 +93,8 @@ class CodebaseContext(BaseContextManager):
             self.directory = directory
             self.exclude_path_arrays= exclude_paths if exclude_paths else []
 
-            include_files = None
-            match app_lang:
-                case "python":
-                    include_files = [".py"]
-                    self.default_exclude_paths = ["__pycache__", ".venv", "venv", "env", ".env", "dist", "build", ".egg-info"]
-                case "javascript":
-                    include_files = [".js"]
-                    self.default_exclude_paths = ["node_modules", ".next", "dist", "build", ".cache", ".nuxt", ".output"]
-                case "java":
-                    include_files = [".java"]
-                    self.default_exclude_paths = ["target", "build", ".gradle", ".m2", "out", ".idea"]
-                case "php":
-                    include_files = [".php"]
-                    self.default_exclude_paths = ["vendor", "node_modules", ".composer"]
-                case "c":
-                    include_files = [".c"]
-                    self.default_exclude_paths = ["build", "bin", "obj", "cmake-build-"]
-                case "ruby":
-                    include_files = [".rb"]
-                    self.default_exclude_paths = ["vendor", "tmp", ".bundle", "node_modules"]
-                case "rust":
-                    include_files = [".rs"]
-                    self.default_exclude_paths = ["target", ".cargo"]
-                case "swift":
-                    include_files = [".swift"]
-                    self.default_exclude_paths = ["build", ".build", "DerivedData", "Pods"]
-                case "csharp":
-                    include_files = [".cs"]
-                    self.default_exclude_paths = ["bin", "obj", "packages", ".vs", "node_modules"]
-                case "kotlin":
-                    include_files = [".kt"]
-                    self.default_exclude_paths = ["build", ".gradle", ".idea", "out", "node_modules"]
-                case _:
-                    raise ValueError(f"Unsupported application language: {app_lang}")
-            
-            self.include_files = include_files if include_files else None
+            self.include_files_extensions = include_files_extensions if include_files_extensions else []
+            self.default_exclude_paths = default_exclude_paths if default_exclude_paths else []
             self.collection_name = "codebase_context"
 
         except Exception as e:
@@ -190,7 +158,7 @@ class CodebaseContext(BaseContextManager):
             )
             split_documents = codebase_splitter.split_documents(documents)
             if split_documents:
-                console.print(f"{len(split_documents)} Documents of language: {language} split successfully",style="dim green")
+                console.print(f"{len(split_documents)} Documents of language: {language} split successfully",style="dim yellow")
                 return split_documents
             else:
                 raise ValueError(f"No split documents found")
@@ -204,7 +172,7 @@ class CodebaseContext(BaseContextManager):
         try:
             document_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
             split_documents = document_splitter.split_documents(documents)
-            console.print(f"{len(split_documents)} Documents without language split successfully",style="dim green")
+            console.print(f"{len(split_documents)} Documents without language split successfully",style="dim yellow")
             return split_documents
         except Exception as e:
             raise ValueError(f"Error in splitting documents without language: {e}")
@@ -216,22 +184,26 @@ class CodebaseContext(BaseContextManager):
         Cyles through all the file extensions and load the documents accordingly
         """
         try:
-            for file_extension in self.include_files:
+            split_documents_list = []
+            for file_extension in self.include_files_extensions:
                 language = self.get_language_from_file_extension(file_extension)
                 if language!= None and isinstance(language, Language):
                     console.print(f"Loading documents of language: {language}",style="dim green")
                     documents = self.load_documents(file_extension)
                     split_documents = self.split_documents_of_language(documents, language)
-                    console.print(f"Split documents of language: {language} found and added {len(split_documents)} split documents",style="dim green")
         
-                    return split_documents
+                    split_documents_list.extend(split_documents)
                 else:
                     console.print(f"Loading documents without language: {file_extension}",style="dim green")
                     documents = self.load_documents(file_extension)
                     split_documents = self.split_documents_without_language(documents)
-                    console.print(f"Split documents of language: None found and added {len(split_documents)} split documents",style="dim green")
                     
-                    return split_documents
+                    split_documents_list.extend(split_documents)
+            
+
+            console.print(f"Total split documents: {len(split_documents_list)}",style="dim green")
+            return split_documents_list
+
         except Exception as e:
             raise ValueError(f"Error in loading and splitting codebase into documents: {e}")
 
@@ -303,10 +275,16 @@ class CodebaseContext(BaseContextManager):
 
     def prepare_context(
         self,
-        combine_prompt_string: str | None = None,
+        refine_prompt_string: str | None = None,
         map_prompt_string: str | None = None,
+        combine_prompt_string: str | None = None,
     )->BaseContext:
         """
+        Args:
+        - ### refine_prompt_string: 
+        This string must contain {text} and {summary} ( {text} will be used to refine the existing {summary} )
+        - ### map_prompt_string: 
+        This string must contain {text} ( {text} will be used to generate a summary for the given codebase )
         Responsible for preparing the codebase for ingestion
 
         Returns :
@@ -332,29 +310,45 @@ class CodebaseContext(BaseContextManager):
         """
         try:
             context_id = self.load_documents_and_return_context_id()
-            if combine_prompt_string and map_prompt_string:
+            if refine_prompt_string and map_prompt_string:
                 summary = self.generate_map_reduce_summary(
-                    combine_prompt_string=combine_prompt_string, 
+                    refine_prompt_string=refine_prompt_string, 
                     map_prompt_string=map_prompt_string,
+                    combine_prompt_string=combine_prompt_string,
                 )
             else:
                 summary = None
             return BaseContext(context_id=context_id, summary=summary)
         except Exception as e:
-            return BaseContext(error_message=f"Error in preparing codebase for ingestion: {e}")
+            # return BaseContext(error_message=f"Error in preparing codebase for ingestion: {e}")
+            raise e
 
 
 
 if __name__ == "__main__":
     #testing codebase context
-    directory = Path("C:/Users/HP/Desktop/RiskPilot")
+    directory = Path("C:/Users/HP/Desktop/RiskPilot/backend/api_routes")
     codebase_context = CodebaseContext(
         directory=directory, 
-        app_lang="python",
+        include_files_extensions=[".py"],
+        default_exclude_paths=["__pycache__", ".venv", "venv", "env", ".env", "dist", "build", ".egg-info"],
         exclude_paths=[ ["RiskPilot" , "frontend" ] , [ ".venv" ] , [ "backend" , "__pycache__" ]  ]
     )
-    result = codebase_context.prepare_context(combine_prompt_string="Create a coherent summary of the codebase", map_prompt_string="Create a detailed, descriptive and brief summary of this code:")
-    print(result)
+    map_prompt_string = "Create a detailed, descriptive and brief summary of the logical components of this code from the given codebase :" + "{text}"
+    refine_prompt_string = "Create a coherent summary of the logical components of the codebase from the given summaries" + "{text}" + "{summary}"
+    combine_prompt_string = "Create a coherent summary of the logical components of the codebase from the given summaries {text}"
+    result = codebase_context.prepare_context(refine_prompt_string=refine_prompt_string, map_prompt_string=map_prompt_string, combine_prompt_string=combine_prompt_string)
+    print(result.summary)
+    console.print(f"Codebase context id: {result.context_id}",style="bold green")
+
+    with open("sast_agent_context_result.json", "w+") as f:
+        data = result.summary.model_dump()
+        json.dump(data, f, indent=4)
+
+    if codebase_context.delete_context():
+        console.print("Context deleted successfully",style="dim green")
+    else:
+        console.print("Failed to delete context",style="bold red")
 
 
         

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from rich.console import Console
 from git import Repo, GitCommandError
-import tempfile
+import tempfile     
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -43,7 +43,7 @@ def is_bitbucket_url(url: str) -> bool:
 
 class GithubContext(BaseModel):
     mode : Literal["github"] = "github"
-    branch: str = Field(..., description="The branch of the GitHub repository to scan.",default="main")
+    branch: str = Field(description="The branch of the GitHub repository to scan.",default="main")
     repo_url : str = Field(..., description="The URL of the GitHub repository to scan.")
     PAT: str = Field(..., description="The GitHub token to use for authentication.")
 
@@ -62,7 +62,7 @@ class GithubContext(BaseModel):
 
 class GitlabContext(BaseModel):
     mode : Literal["gitlab"] = "gitlab"
-    branch: str = Field(..., description="The branch of the GitLab repository to scan.",default="main")
+    branch: str = Field(description="The branch of the GitLab repository to scan.",default="main")
     repo_url: str = Field(..., description="The URL of the GitLab repository to scan.")
     PAT: str = Field(..., description="The GitLab token to use for authentication.")
 
@@ -81,7 +81,7 @@ class GitlabContext(BaseModel):
 
 class BitbucketContext(BaseModel):
     mode : Literal["bitbucket"] = "bitbucket"
-    branch: str = Field(..., description="The branch of the Bitbucket repository to scan.",default="main")
+    branch: str = Field(description="The branch of the Bitbucket repository to scan.",default="main")
     repo_url: str = Field(..., description="The URL of the Bitbucket repository to scan.")
     PAT: str = Field(..., description="The Bitbucket token to use for authentication.")
 

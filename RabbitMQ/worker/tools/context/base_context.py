@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 import os
+from botocore.utils import tempfile
 from dotenv import load_dotenv
 from langchain_community.vectorstores import VectorStore
 from langchain_core.documents import Document
 from pymongo import MongoClient
 from rich.console import Console
 from langchain.prompts import PromptTemplate
-from langchain.chains.summarize import load_summarize_chain
-from langchain.chains.llm import LLMChain
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_aws import ChatBedrock
 from langchain_mongodb import MongoDBAtlasVectorSearch
+from schema import LogicalComponents,IndividualLogicalComponent
 
 
 console = Console()
@@ -19,9 +19,44 @@ console = Console()
 @dataclass
 class BaseContext:
     context_id: str = None
-    summary: str = None
-
+    summary: str | type[BaseModel] = None
     error_message: str = None
+
+def remove_reasoning_from_response(response: str)->str:
+    """
+    Responsible for removing the reasoning from the response
+    """
+    try:
+        end = response.find("</reasoning>")
+        if end == -1:
+            return response
+        content_without_reasoning = response[end+len("</reasoning>"):]
+        return content_without_reasoning
+    except Exception as e:
+        console.print(f"Error in removing reasoning from response: {e}",style="dim red")
+        return response
+
+def format_logical_components_for_summary(logical_components: list[IndividualLogicalComponent] , summary_starting_string: str)->str:
+    """
+    Responsible for formatting the logical components for the summary
+    """
+    try:
+        summary = summary_starting_string
+        for item in logical_components:
+            temp = f"""
+            \n\n\n
+            ----------------------------------------------------------------------------------------------
+            Logical Component : {item.title} \n
+            Description : {item.description} \n
+            Dependencies : {item.dependencies} \n
+            Business Logic : {item.business_logic} \n
+            ----------------------------------------------------------------------------------------------
+            \n\n\n
+            """
+            summary += temp
+        return summary
+    except Exception as e:
+        raise ValueError(f"Error in formatting logical components for summary: {e}")
 
 class BaseContextManager:
 
@@ -88,7 +123,7 @@ class BaseContextManager:
         self,
         model: str = "gpt-5-nano",
         temperature: float = 0.0,
-        max_tokens: int = 1000,
+        max_tokens: int | None = None,
         output_model: type[BaseModel] = None,
         ):
         """
@@ -108,7 +143,8 @@ class BaseContextManager:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     api_key=OPENAI_API_KEY,
-                ).with_structured_output(output_model=output_model)
+                ).with_structured_output(schema=output_model)
+                console.print(f"Structured OpenAI LLM fetched successfully",style="dim green")
             else:
                 llm = ChatOpenAI(
                     model=model,
@@ -116,8 +152,7 @@ class BaseContextManager:
                     max_tokens=max_tokens,
                     api_key=OPENAI_API_KEY,
                 )
-
-            console.print(f"LLM fetched successfully",style="dim green")
+                console.print(f"Unstructured OpenAI LLM fetched successfully",style="dim green")
             return llm
         except Exception as e:
             raise ValueError(f"Error in getting LLM: {e}")
@@ -198,10 +233,11 @@ class BaseContextManager:
             raise ValueError(f"Error in adding context id to documents: {e}")
     
     def generate_map_reduce_summary(
-        self, 
-        combine_prompt_string: str = "Combine these summaries into a coherent summary:", 
-        map_prompt_string: str = "Summarize this content:",
-    ):
+        self,
+        refine_prompt_string: str | None = None, 
+        map_prompt_string: str | None = None,
+        combine_prompt_string: str | None = None,
+    )->list[IndividualLogicalComponent]:
         """
         Responsible for generating a map reduce summary of documents, based on the specified prompt
         """
@@ -210,52 +246,86 @@ class BaseContextManager:
 
                 console.print(f"Generating map reduce summary of codebase",style="bold bright_cyan")
 
-                if not combine_prompt_string or not map_prompt_string:
+                if not refine_prompt_string or not map_prompt_string:
                     console.print(f"Combine prompt string or map prompt string is not set. Therfore using fallback prompts",style="dim yellow")
-                    combine_prompt_string = "Combine these summaries into a coherent summary:"
-                    map_prompt_string = "Summarize this content:"
+                    refine_prompt_string = "Refine the given summary to make it more coherent and detailed:\n\nThe existing summary that needs to be refined is  :\n {summary} \n\n\nHere is the new content that must be used to refine the existing summary : {text}"
+                    map_prompt_string = "Summarize this content:\n\n{text}"
+                    combine_prompt_string = "Create a coherent summary of the logical components of the codebase from the given summaries {text}"
                 
                 
                 console.print(f"Setting up map and combine prompts",style="dim bright_cyan")
+
                 
-                map_prompt_template = map_prompt_string + "\n{text}"
+                
+                map_prompt_template = map_prompt_string 
                 map_prompt = PromptTemplate(
                     input_variables=["text"],
                     template=map_prompt_template
                 )
+                map_chain = map_prompt | self.get_llm()
 
-                combine_prompt_template = combine_prompt_string + "\n{text}"
+                refine_prompt_template = refine_prompt_string 
+                refine_prompt = PromptTemplate(
+                    input_variables=["text","summary"],
+                    template=refine_prompt_template
+                )
+                refine_chain = refine_prompt | self.get_llm(output_model=LogicalComponents)
+
+                combine_prompt_template = combine_prompt_string
                 combine_prompt = PromptTemplate(
                     input_variables=["text"],
                     template=combine_prompt_template
                 )
+                combine_chain = combine_prompt | self.get_llm(output_model=LogicalComponents)
 
-                # Create and run the chain
-                console.print(f"Creating and running the chain",style="dim bright_cyan")
+  
                 
-        
-                chain = load_summarize_chain(
-                    self.get_unstructured_llm(),
-                    chain_type="map_reduce",
-                    map_prompt=map_prompt,
-                    combine_prompt=combine_prompt,
-                    verbose=True
-                )
+                # ----------------------------------------> Mapping ( each document is mapped to a summary )
+                map_results = []
+                console.print(f"Mapping length of documents {len(self.documents)}",style="dim bright_cyan")
+                for document in self.documents:
+                    map_chain_response = map_chain.invoke({"text": f"Document Name : {document.metadata['source']}\n\nDocument Content : {document.page_content}"})
+                    content_without_reasoning = remove_reasoning_from_response(map_chain_response.content)
+                    console.print(f"Map result For Document {document.metadata['source']}: content length {len(content_without_reasoning)}",style="dim bright_cyan")
+                    map_results.append(content_without_reasoning)
 
-                if not self.documents:
-                    raise ValueError(f"No documents found")
+                # ---------------------> Reducing ( the summaries are reduced to a single summary 10 at a time )  
+                console.print(f"Creating initial summary using combine chain",style="dim yellow")
+                combine_chain_response : type[LogicalComponents] = combine_chain.invoke({"text": "\n\n".join(map_results[:10])})
+                
 
-                summary = chain.run(self.documents)
-                console.print(f"Map reduce summary generated successfully",style="bold bright_cyan")
-                return summary
+                summary_to_be_refined = format_logical_components_for_summary(
+                    combine_chain_response.logical_components, 
+                    summary_starting_string="Logical Components Identified in the codebase are as follows : \n\n")
+
+                if len(map_results) > 10:
+                    console.print(f"Refining summaries using refine chain",style="dim yellow")
+
+                    for i in range(10, len(map_results), 10):
+                        
+                        summaries_concatenated = "\n\n".join(map_results[i:i+10])
+
+                        refine_response : type[LogicalComponents] = refine_chain.invoke({"text": summaries_concatenated, "summary": summary_to_be_refined})
+                        
+                        summary_to_be_refined = format_logical_components_for_summary(
+                            refine_response.logical_components, 
+                            summary_starting_string= "Logical Components Identified in the codebase are as follows : \n\n")
+
+                        console.print(f"Refine result content length {len(summary_to_be_refined)}",style="dim bright_cyan")
+
+                    return refine_response
+                
+                else:
+                    return combine_chain_response
             else:
                 raise ValueError(f"No split documents found")
             
         except Exception as e:
+            
             raise ValueError(f"Error in generating map reduce summary of codebase: {e}")
     
 
-    def close_context(self):
+    def delete_context(self):
         """
         Responsible for closing the context
         """
@@ -275,3 +345,16 @@ class BaseContextManager:
         except Exception as e:
             console.print(f"Error in closing context: {e}",style="bold red")
             return False
+
+if __name__ == "__main__":
+    # testing llm chain with openai llm ( structured and unstructured )
+    base_context = BaseContextManager()
+    llm = base_context.get_llm()
+    prompt = "Here are some details about the codebase , tell me if it is a web application or a mobile application: {codebase_details}"
+    prompt_template = PromptTemplate(
+        input_variables=["codebase_details"],
+        template=prompt
+    )
+    chain = prompt_template | llm
+    print(chain.invoke({"codebase_details": "The codebase is a web application built with Flask and MongoDB."}).content)
+    print(chain.invoke({"codebase_details": "The codebase is a mobile application built with React Native and MongoDB."}).content)

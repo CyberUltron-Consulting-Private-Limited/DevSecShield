@@ -2,13 +2,12 @@ from pydantic import BaseModel
 from langchain_core.documents import Document
 from langchain_community.vectorstores import VectorStore
 from rich.console import Console
-from tools.context.schema import BaseVulnerability
-from tools.context.output_model import OutputModelManager
+from schema import BaseVulnerability
+from output_model import OutputModelManager
 from openai import OpenAI
 import base64
 from dotenv import load_dotenv
 import os
-from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
 from langchain_core.messages import HumanMessage , SystemMessage
 
@@ -122,10 +121,8 @@ class BaseAgent(OutputModelManager):
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
                 max_tokens=max_output_tokens,
             )
-            agent = create_agent(model,system_prompt=system_prompt)
 
-
-            result = agent.invoke({"messages":[SystemMessage(system_prompt), HumanMessage(prompt)]})
+            result = model.invoke({"messages":[SystemMessage(system_prompt), HumanMessage(prompt)]})
             response = result["messages"][-1]
             response_string = response.content
 
