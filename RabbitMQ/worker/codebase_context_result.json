@@ -1,0 +1,140 @@
+{
+    "logical_components": [
+        {
+            "title": "Garak Scan Orchestrator",
+            "description": "End-to-end coordinator that triggers Garak scans: loads model config templates, customizes them per model type, writes temporary config, invokes Garak to run probes, collects results, cleans up, and returns a concise summary.",
+            "dependencies": [
+                "rest_configs/{model_type}.json",
+                "backend/garak (external Garak module invoked via subprocess)",
+                "temp_configs/{job_id}.json",
+                "results/ (output directory for reports)",
+                "uuid, json, subprocess, os, pathlib Path",
+                "__main__ test harness (example usage with secrets)"
+            ],
+            "business_logic": "Core flow: Step 1) Load a configuration template for the given model_type from rest_configs/{model_type}.json, with a hard-coded fallback when run as main. Step 2) Update the template: if model_type == 'custom', mutate the nested RestGenerator fields (method, headers, request_template, response_json_field, uri); otherwise replace placeholders <API_KEY> and <MODEL_NAME> with provided values. Step 3) Create a unique job_id and ensure a results directory exists; prepare a report_prefix path for output files. Step 4) Write the updated config to a new temporary file in temp_configs/{job_id}.json. Step 5) Build a command to invoke Garak (python -m garak) with model_type rest, supplying the temporary config path, probes, and report_prefix; include generations if provided. Step 6) Execute Garak via subprocess.run and wait for completion. Step 7) Clean up the temporary config file. Step 8) Locate Garak output files using multiple naming conventions (report.jsonl/json; report.html; hitlog.jsonl/ hitlog). Step 9) Parse the results JSONL to accumulate per-probe metrics (total tests, hits, probe set, hit rate) and derive a per-entry vulnerability summary keyed by detector+probe. Also derive an overall risk level from digest gain (DEFCON-like scoring). Step 10-11) Normalize per-probe and overall hit rates; compute final hit_rate percent. Step 12) Build a simplified summary dictionary with status, model, totals, risk level, and per-probe summaries; attempt to remove any generated report files."
+        },
+        {
+            "title": "Garak Config Template Manager",
+            "description": "Module responsible for loading and adapting the scan configuration templates for both standard and custom model types before running Garak.",
+            "dependencies": [
+                "Path.cwd()/rest_configs",
+                "json (config parsing and stringification)",
+                "typing.Literal for model_type and probes",
+                "uuid (for job_id generation in orchestrator)"
+            ],
+            "business_logic": "Responsibilities include: Loading the base template from rest_configs/{model_type}.json (or a hard-coded path when running as main). For model_type == 'custom', create a new_config by copying the template and populating rest.RestGenerator fields with method, headers, request_template, response_json_field, and uri. For non-custom models, perform string substitutions in the JSON string to replace placeholders <API_KEY> and <MODEL_NAME> with provided values. Produce a json string new_json_string that reflects the updated configuration and parse it back into a Python dict (config)."
+        },
+        {
+            "title": "Garak Temporary Config Writer",
+            "description": "Writes the updated Garak configuration to a transient file used by Garak for the scan run and ensures it is cleaned up afterward.",
+            "dependencies": [
+                "temp_configs/{job_id}.json",
+                "json",
+                "Path.cwd()",
+                "os"
+            ],
+            "business_logic": "Actions include: Construct a temporary file path under temp_configs/{job_id}.json. Write the current config dictionary to the temporary file as JSON. This file is later deleted after Garak completes to avoid leaving stray artifacts."
+        },
+        {
+            "title": "Garak Execution Engine",
+            "description": "Builds the command to run Garak and executes it, then handles cleanup and error propagation.",
+            "dependencies": [
+                "subprocess",
+                "path to garak module",
+                "custom_scan_config_path",
+                "report_prefix",
+                "generations (optional)"
+            ],
+            "business_logic": "Core steps: Assemble the command list to invoke Garak with the prepared temporary config and options (probes, report_prefix, generations). Invoke subprocess.run with check=True to raise exceptions on non-zero exit codes. Remove the temporary config file after execution to cleanup artifacts."
+        },
+        {
+            "title": "Garak Results Parser and Summary Builder",
+            "description": "Parses Garak's outputs (JSONL/HTML/Hitlog), aggregates metrics per probe, computes hit rates and an overall risk level, and returns a concise summary.",
+            "dependencies": [
+                "results directory and report_prefix",
+                "json",
+                "pathlib.Path",
+                "os",
+                "def first_existing (utility) to resolve available result formats"
+            ],
+            "business_logic": "Responsibilities: Locate and read the generated report artifacts (jsonl, html, hitlog) using multiple naming conventions. Iterate over jsonl lines to extract eval entries (per-probe metrics) and digest entries (overall risk group DEFCON mapping). Compute per-probe totals, passed, hits, and hit_rate, plus an overall hit_rate across all tests. Build a simplified summary including status, model, totals, risk_level, and per-probe summaries. Attempt to remove the result files after summarization; swallow cleanup errors gracefully."
+        },
+        {
+            "title": "OWASP Tracker Prompt Engine",
+            "description": "LLM-driven component that ingests a probe and detector results to extract OWASP Top 10 vulnerabilities relevant to the scan.",
+            "dependencies": [
+                "llm_scan_utils.py",
+                "OWASPTop10 Enum and OWASPTop10_Response / OWASP_Response models",
+                "generate_structured_response (LLM interface)",
+                "system_prompt and per-probe prompt construction"
+            ],
+            "business_logic": "Responsibilities: Define an OWASPTop10 enumeration for expected risk categories. Build structured prompts (system_prompt + probe-specific prompt) and pass them to generate_structured_response to obtain a typed response containing tracker_data. Convert the returned tracker_data into a typed form (list of OWASPTop10_Response) and expose as OWASP_Result via a model (OWASP_Response)."
+        },
+        {
+            "title": "OWASP Result Transformer",
+            "description": "Converts the structured LLM response into a compact, consumable list of risk descriptions for downstream consumption.",
+            "dependencies": [
+                "response from generate_structured_response",
+                "response.model_dump()[\"tracker_data\"]",
+                "dictionary/list transformations"
+            ],
+            "business_logic": "Responsibilities: Extract tracker_data from the LLM response and map each item to a simplified dict with keys 'risk' and 'description'. Print the transformed OWASP results for visibility and return the result list."
+        },
+        {
+            "title": "Test Harness / Secrets in Code (Security Review Highlight)",
+            "description": "Self-contained test snippet under __name__ == '__main__' that demonstrates usage and includes embedded secrets for demonstration.",
+            "dependencies": [
+                "garak_scan.py __main__ section",
+                "example API keys and Authorization headers in code"
+            ],
+            "business_logic": "Notes: This section demonstrates running run_garak_scan with a hard-coded Authorization header containing a secret API key. It also includes a real-looking OpenAI model_uri and various configuration values."
+        },
+        {
+            "title": "LLM Compliance Tracker",
+            "description": "Tracks compliance-related vulnerabilities by parsing scan results and mapping them to defined compliance controls. It defines lightweight data models (Compliance and Compliance_Response) and uses a system prompt combined with probe/detector/result data to solicit a structured list of compliance vulnerabilities from an LLM.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "pydantic.Field",
+                "generate_structured_response",
+                "system_prompt strings for compliance tracking",
+                "llm_scan_utils module"
+            ],
+            "business_logic": "Defines two Pydantic models: Compliance (with fields 'control' and 'description') and Compliance_Response (with 'tracker_data' as a list of Compliance). It constructs a system prompt and a per-call prompt containing the probe name, detector name, and results. It then invokes generate_structured_response with Compliance_Response as the output model and returns the resulting tracker_data. Potential vulnerabilities include unvalidated inputs embedded into prompts, potential leakage via responses or logs, dependence on the external LLM, and mismatches between returned data and the Compliance_Response schema."
+        },
+        {
+            "title": "LLM Probe Fix Generator",
+            "description": "Generates a remediation suggestion for a given probe using the LLM scan results. It defines a simple Fix model and uses a system prompt to request a fix. The function then returns the fix text.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "pydantic.Field",
+                "generate_structured_response",
+                "system_prompt string for fixes",
+                "print/logging of prompts",
+                "llm_scan_utils module"
+            ],
+            "business_logic": "Defines a Fix model with a single field 'fix'. Builds a prompt that includes probe name, detector name, results, model type, and model name, then calls generate_structured_response with the Fix output model and returns response.model_dump()['fix']."
+        },
+        {
+            "title": "LLM OWASP Tracker (Stub/Placeholder)",
+            "description": "Intended to implement an OWASP-focused vulnerability tracker function, but the snippet only contains placeholders and comments indicating where the code should live. This component is meant to analyze results to surface OWASP vulnerabilities but is not implemented in the provided content.",
+            "dependencies": [
+                "llm_owasp_tracker function (placeholder)",
+                "generate_structured_response (assumed)",
+                "llm_scan_utils module"
+            ],
+            "business_logic": "In the full implementation, this component would accept probe, detector, and results inputs, call the LLM to identify OWASP-related issues, and return a structured list of vulnerabilities. The current state represents a missing or incomplete implementation."
+        },
+        {
+            "title": "Test Harness / __main__ Block",
+            "description": "A test harness guarded by if __name__ == '__main__' that exercises the LLM tracker with sample data and prints results. It serves as a development-time sanity check rather than production logic.",
+            "dependencies": [
+                "__name__ guard",
+                "sample test data (test_probe_name, test_detector_name, test_results)",
+                "print statements",
+                "try/except for error handling",
+                "llm_owasp_tracker call (incomplete)"
+            ],
+            "business_logic": "Sets up test probe, detector, and result payloads, runs the LLM tracker (llm_owasp_tracker) within a try/except block, and prints colored status messages indicating success or failure. Vulnerabilities include: exposure of internal prompts or data in logs if test data contains sensitive information; reliance on hard-coded test values; lack of defensive validation or error handling for production usage."
+        }
+    ]
+}

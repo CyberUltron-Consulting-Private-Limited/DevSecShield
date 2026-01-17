@@ -1,4 +1,6 @@
 from pathlib import Path
+
+from langchain.schema import Document
 from helpers.context import OpenSourceContext , BaseSummaryManager
 from helpers.tools.sast_agent.semgrep_util import run_sast_scan_on_directory
 from pydantic import BaseModel
@@ -50,6 +52,24 @@ class OpenSourceSummaryManager(BaseSummaryManager):
             return final_string
         except Exception as e:
             raise ValueError(f"Error in formatting summary output model to string: {e}")
+    
+
+    def format_documents_to_string(
+        self,
+        documents:list[Document],
+        )->str:
+        """
+        Responsible for formatting the documents into a string
+        """
+        try:
+            documents_data = ""
+            for document in documents:
+                documents_data += f"""
+                Document Content : {document.page_content}\n
+                """
+            return documents_data
+        except Exception as e:
+            raise ValueError(f"Error in formatting documents to string: {e}")
 
 if __name__ == "__main__":
     directory = Path("C:/Users/HP/Desktop/RiskPilot - Copy/backend")
@@ -58,8 +78,10 @@ if __name__ == "__main__":
         directory=directory,
         app_lang="python" ) 
     
-    result = open_source_context.prepare_context(summary_manager=OpenSourceSummaryManager())
+    result = open_source_context.prepare_context(load_results_into_vector_store=False,  summary_manager=OpenSourceSummaryManager())
     console.print(f"OpenSourceSummary: {result.summary}",style="dim yellow")
+    console.print(f"Opensource results {result.results}")
+    console.print(f"Opensource context_id : {result.context_id}")
     with open("opensource_context_result.json", "w+") as f:
         data = result.summary.model_dump()
         json.dump(data, f, indent=4)

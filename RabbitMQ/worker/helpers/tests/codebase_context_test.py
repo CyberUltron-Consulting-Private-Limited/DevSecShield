@@ -2,6 +2,7 @@ from helpers.context import CodebaseContext , BaseSummaryManager , LogicalCompon
 from pathlib import Path
 import json
 from rich.console import Console
+from langchain.schema import Document
 console = Console()
 
 
@@ -46,8 +47,27 @@ class SASTSummaryManager(BaseSummaryManager):
             return final_string
         except Exception as e:
             raise ValueError(f"Error in formatting summary output model to string: {e}")
+    
+    def format_documents_to_string(
+        self,
+        documents:list[Document],
+        )->str:
+        """
+        Responsible for formatting the documents into a string
+        """
+        try:
+            documents_data = ""
+            for document in documents:
+                documents_data += f"""
+                =======================================================
+                Document Path : {document.metadata['source']}\n\nDocument Content : {document.page_content}\n
+                =======================================================
+                \n\n\n\n 
+                """
 
-
+            return documents_data
+        except Exception as e:
+            raise ValueError(f"Error in formatting documents to string: {e}")
 
 if __name__ == "__main__":
     #testing codebase context
@@ -59,12 +79,12 @@ if __name__ == "__main__":
     )
 
 
-    result = codebase_context.prepare_context(summary_manager=SASTSummaryManager())
+    result = codebase_context.prepare_context(load_documents_to_vector_store=False, summary_manager=SASTSummaryManager())
     
     console.print(f"Codebase context id: {result.context_id}",style="bold green")
     console.print(f"Summary: {result.summary}",style="dim yellow")
 
-    with open("sast_agent_context_result.json", "w+") as f:
+    with open("codebase_context_result.json", "w+") as f:
         json.dump(result.summary.model_dump(), f, indent=4)
 
     if codebase_context.delete_context():

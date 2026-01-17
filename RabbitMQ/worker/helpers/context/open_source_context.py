@@ -72,6 +72,21 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in running open source tool: {e}")
     
+    def split_and_set_result_documents(self)->bool:
+        """
+        Responsible for splitting the results into documents and setting the documents
+        """
+        try:
+            splitter = RecursiveJsonSplitter(max_chunk_size=500)
+            if not self.results:
+                raise ValueError(f"No results found")
+            split_json_documents = splitter.create_documents(texts=[self.results])
+            if not split_json_documents:
+                raise ValueError(f"No split json documents found")
+            self.documents = split_json_documents # SET documents ⭐
+            return True
+        except Exception as e:
+            return False
     
     def save_results_into_vector_store_and_return_context_id(self)->str:
         """
@@ -127,12 +142,13 @@ class OpenSourceContext(BaseContextManager):
 
             # if load_results_into_vector_store is True, then save the results into the vector store and return the context id
             if load_results_into_vector_store:
-                context_id = self.save_results_into_vector_store_and_return_context_id()
+                context_id = self.save_results_into_vector_store_and_return_context_id() #sets self.documents for map reduce summary
             else:
                 context_id = None
-            
+                self.split_and_set_result_documents() #sets self.documents for map reduce summary
+                     
             # if summary_manager is provided, then generate the summary using the summary manager
-            if summary_manager and load_results_into_vector_store:
+            if summary_manager:
                 summary = self.generate_map_reduce_summary(summary_manager=summary_manager)
             else:
                 summary = None

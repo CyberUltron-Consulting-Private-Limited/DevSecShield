@@ -258,20 +258,16 @@ class BaseContextManager:
 
 
 
+
+
             # STEP [ 4 ] ----------------> Mapping ( each document is mapped to a summary )--------------------------------- --------------------------
             
             map_results = []
             console.print(f"Mapping length of documents {len(self.documents)}",style="dim yellow")
             for i in range(0, len(self.documents), 10): # summarizing 10 documents at a time
                 documents_batch = self.documents[i:i+10]
-                documents_data = ""
-                for document in documents_batch:
-                    documents_data += f"""
-                    =======================================================
-                    Document Path : {document.metadata['source']}\n\nDocument Content : {document.page_content}\n
-                    =======================================================
-                    \n\n\n\n 
-                    """
+                documents_data = summary_manager.format_documents_to_string( documents=documents_batch )
+
                 # for testing 
                 # documents_for_ingestion = { "documents_data": documents_data }
                 # with open(f"logging_stuff_ingestion_{i}.json", "w+") as f:
@@ -288,12 +284,23 @@ class BaseContextManager:
                 # with open(f"logging_stuff_map_{i}.json", "w+") as f:
                 #     json.dump(logging_stuff, f, indent=4)
 
-                map_results.append(documents_summary)            
+                map_results.append(documents_summary)       
 
-            # STEP [ 5 ] ----------------> Reducing ( the summaries are reduced to a single summary 10 at a time )--------------------------------- --------------------------
+
+
+
+
+            # STEP [ 5 ] ----------------> Reducing ( the summaries are reduced to a single summary 10 at a time )-------------------------------------------------------------
+            
+            
+            # =========================== if the map results has only 1 item , then skip summarization and return that one map result =========================================
+            if len(map_results)==1 : 
+                console.print("Skipping Combine and Refine steps as there is only 1 Map summary result .", style="dim yellow")
+                return map_chain_response
             
             
             # =================================== Creating initial summary that will be refined ===================================
+            console.print(f"Initial Summary : Combining first batch (upto 10 ) map summary results {len(map_results)}",style="dim yellow")
             combine_chain_response = combine_chain.invoke({"text": "\n\n".join(map_results[:10])})
             summary_to_be_refined = summary_manager.format_to_string( input=combine_chain_response )
 
@@ -309,11 +316,11 @@ class BaseContextManager:
                     #     json.dump(logging_stuff, f, indent=4)
                     
 
-                    refine_response = refine_chain.invoke({"text": summaries_concatenated, "summary": summary_to_be_refined})
-                    summary_to_be_refined = summary_manager.format_to_string( input=refine_response ) 
+                    refine_chain_response = refine_chain.invoke({"text": summaries_concatenated, "summary": summary_to_be_refined})
+                    summary_to_be_refined = summary_manager.format_to_string( input=refine_chain_response ) 
                     console.print(f"Refine result content length {len(summary_to_be_refined)}",style="dim bright_cyan")
                 
-                return refine_response
+                return refine_chain_response
             else:
                 # for testing 
                 # logging_stuff = { "summary_to_be_refined": summary_to_be_refined }

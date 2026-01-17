@@ -1,0 +1,8 @@
+{
+    "vulnerabilities": [
+        {
+            "risk": "Path Traversal (CWE-22)",
+            "description": "The code constructs a filesystem path from untrusted input (the variable 'path') and writes to it using open(path, 'wb') without validating or sanitizing the input. This can allow an attacker to manipulate the path to access or modify arbitrary files. Mitigations: validate/sanitize inputs, constrain file operations to a safe directory, apply path normalization, and prefer framework-provided path handling or explicit filename/path parameter validation (e.g., FastAPI/Starlette path parameters)."
+        }
+    ]
+}

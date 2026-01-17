@@ -1,3 +1,4 @@
+from langchain.schema import Document
 from pydantic import BaseModel
 
 class BaseSummaryManager:
@@ -27,5 +28,15 @@ class BaseSummaryManager:
             summary_output_models: list[type[BaseModel]]
         Returns:
             str
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+    
+
+    def format_documents_to_string(
+        self,
+        documents:list[Document],
+        )->str:
+        """
+        Responsible for formatting the documents into a string
         """
         raise NotImplementedError("Subclasses must implement this method")

@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import tempfile
 from rich.console import Console
-from context.scan_context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext, validate_dict_with_context, clone_repo_from_context
+from helpers.context.scan_context import clone_repo, snippet_with_numbers , GithubContext, GitlabContext, BitbucketContext, validate_dict_with_context, clone_repo_from_context
 
 
 

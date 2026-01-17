@@ -381,10 +381,10 @@ class CodebaseContext(BaseContextManager):
         try:
             # if load_documents_to_vector_store is True, then save the documents to the vector store and return the context id
             if load_documents_to_vector_store:
-                context_id = self.save_documents_to_vector_store_and_return_context_id()
+                context_id = self.save_documents_to_vector_store_and_return_context_id() #sets self.documents for map reduce summary
             else:
                 context_id = None
-                self.split_documents_and_set_documents()
+                self.split_documents_and_set_documents() #sets self.documents for map reduce summary
             
             # if summary_manager is provided, then generate the summary using the summary manager
             if summary_manager:
