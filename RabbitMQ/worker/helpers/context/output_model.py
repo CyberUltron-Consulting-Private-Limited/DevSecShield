@@ -1,12 +1,12 @@
 from rich.console import Console
-from tools.context.schema import BaseVulnerability, CodebaseVulnerability
+from helpers.context.schema import BaseVulnerability, CodebaseVulnerability
 from pydantic import BaseModel, Field
 from typing import Literal
 import urllib.parse
 import requests
 import time
 from enum import Enum
-from tools.context.schema import FallbackCVEEnum
+from helpers.context.schema import FallbackCVEEnum
 
 console = Console()
 

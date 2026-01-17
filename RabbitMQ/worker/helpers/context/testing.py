@@ -3,7 +3,7 @@ from pprint import pprint
 from rich.console import Console
 from langchain_community.document_loaders.generic import GenericLoader
 from custom_language_parser import LanguageParser
-from codebase_context import accept_file
+from codebase_context import file_path_matches_pattern, CodebaseContext
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -49,7 +49,7 @@ def test_loader(
         # ------------------> Logic where we skip files ( in exclude paths )
         dont_allow_count = 0
         for path_array in exclude_path_arrays:
-            if not accept_file(document.metadata['source'] , path_array ):
+            if not file_path_matches_pattern(document.metadata['source'] , path_array ):
                 dont_allow_count += 1
         if dont_allow_count > 0:
             excluded_count += 1
@@ -74,24 +74,31 @@ def testing(
         r"C:\Users\HP\Desktop\RiskPilot\frontend\src\components\Dashboard\Table.tsx",
         r"C:\Users\HP\Desktop\RiskPilot\frontend\src\components\Something\Table.tsx",
         r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\AAAAA\Table.tsx",
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\package.json",
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\package-lock.json",
         r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\BBB\Table.tsx",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\.venv",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__",
+        r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\BBB\Table.tsx",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\.venv\Scripts\python.exe",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\.venv\Scripts\pip.exe",
         r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__\__init__.py",
         r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__\__init__.py",
         r"C:\Users\HP\Desktop\RiskPilot\backend\__init__.py",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\api_routes\routing_scan.py",
+        r"C:\Users\HP\Desktop\RiskPilot\backend\api_routes_and_stuff\routing_scan.py",
+        r"C:\Users\HP\Desktop\RiskPilot\testing\api_routes_and_stuff\routing_scan.py",
+        r"C:\Users\HP\Desktop\RiskPilot - Copy\backend\llm_scan_utils\llm_scan_utils.py",
     ]
 
     for filepath in filepaths:
 
-        dont_allow_count = 0
+        matches_count = 0
         for path_array in exclude_path_arrays:
-            if not accept_file(filepath , path_array ):
-                dont_allow_count += 1
-        if dont_allow_count == 0:
-            console.print(f"Accepting the file: {filepath}",style="dim green")
+            if file_path_matches_pattern(filepath , path_array ):
+                matches_count += 1
+        if matches_count > 0:
+            console.print(f"{filepath} matches the pattern",style="dim green")
         else:
-            console.print(f"Skipping the file: {filepath} because it is in the exclude paths",style="dim red")
+            console.print(f"{filepath} does not match the pattern",style="dim red")
 
 def testing_chain_aws_bedrock(documents:list[Document]):
     load_dotenv()
@@ -142,13 +149,41 @@ def testing_chain_aws_bedrock(documents:list[Document]):
 
 
 if __name__ == "__main__":
-    testing_exclude_path_arrays = [ ["RiskPilot" , "frontend" ] , [ ".venv" ]  ]
-    default_exclude_paths = ["__pycache__" , ".venv"]
-    repo_path = Path("C:/Users/HP/Desktop/RiskPilot/backend/api_routes")
+    testing_exclude_path_arrays = [ 
+        ["RiskPilot" , "frontend" , "src" , "components" , "Dashboard" , "Table.tsx" ] , 
+        [ ".venv" ] ,
+        [ "mcpscan_utils"] , 
+        [ "normal_scan_utils"] ,
+        [ "api_routes"],
+        [ "package.json" ],
+        [ "package-lock.json" ]
+         ]
+    testing_include_path_arrays = [
+        [ "llm_scan_utils" ],
+        [ "package-lock.json" ]
+         ]
+    
+    repo_path = Path("C:/Users/HP/Desktop/RiskPilot - Copy/backend/")
+    codebase_context = CodebaseContext(
+        directory=repo_path,
+        # exclude_path_arrays=testing_exclude_path_arrays,
+        include_path_arrays=testing_include_path_arrays,
+        include_files_extensions=[".py"],
+    )
+    documents = codebase_context.load_documents_of_extension(".py")
+
+    sources = set([document.metadata['source'] for document in documents])
+    for source in sources:
+        console.print(f"- {source}",style="dim green")
+    # metadata = codebase_context.metadata
+    # for excluded_document in metadata["excluded_documents"]:
+    #     console.print(f"- {excluded_document}",style="dim red")
+    # for included_document in metadata["included_documents"]:
+    #     console.print(f"- {included_document}",style="dim green")
     
     # testing(testing_exclude_path_arrays)
-    documents = test_loader(repo_path, testing_exclude_path_arrays, default_exclude_paths)
-    testing_chain_aws_bedrock(documents)
+    # documents = test_loader(repo_path, testing_exclude_path_arrays, default_exclude_paths)
+    # testing_chain_aws_bedrock(documents)
 
 
 

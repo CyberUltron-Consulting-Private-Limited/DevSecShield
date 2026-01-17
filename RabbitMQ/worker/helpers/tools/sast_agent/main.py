@@ -1,15 +1,57 @@
 import shutil
-from tools.context.codebase_context import CodebaseContext
-from tools.context.open_source_context import OpenSourceContext
-from tools.context.scan_context import GithubContext,GitlabContext, BitbucketContext, ZipContext, clone_repo_from_context, get_directory_from_zip_context
-from tools.context.base_agent import BaseAgent
+from context.codebase_context import CodebaseContext
+from context.open_source_context import OpenSourceContext
+from context.scan_context import *
+from context.base_agent import BaseAgent
 from typing import Literal
 from rich.console import Console
 from tools.sast_agent.semgrep_util import run_sast_scan_on_directory
-from tools.context.schema import CodebaseVulnerability, BaseVulnerability, IndividualLogicalComponent , LogicalComponents
+from context.schema import *
+from context.base_summary_manager import BaseSummaryManager
 
 
 console = Console()
+
+class SASTSummaryManager(BaseSummaryManager):
+    def __init__(self):
+        super().__init__(
+            summary_output_model=LogicalComponents,
+            refine_prompt_string="Refine the following summary:",
+            map_prompt_string="Create a detailed, descriptive and brief summary of this code:",
+            combine_prompt_string="Combine these codebase summaries into a coherent summary:",
+            summary_starting_string="Logical Components Identified in the codebase are as follows : \n\n",
+        )
+    
+        
+    def format_to_string(self, input:type[LogicalComponents] )->str:
+        """
+        Responsible for formatting the summary output model to a string
+        Returns:
+            str
+        """
+        try:
+
+            output_model_string = ""
+            for logical_component in input.logical_components:
+                temp = f"""
+                \n\n
+                =======================================================================================
+                Title: {logical_component.title} \n
+                Description: {logical_component.description} \n
+                Dependencies: {logical_component.dependencies} \n
+                Business Logic: {logical_component.business_logic} \n
+                =======================================================================================
+                \n\n
+                """
+                output_model_string += temp
+            
+            final_string = self.summary_starting_string + output_model_string
+            return final_string
+        except Exception as e:
+            raise ValueError(f"Error in formatting summary output model to string: {e}")
+
+
+
 
 class SASTAgent(BaseAgent):
     def __init__(
@@ -17,6 +59,7 @@ class SASTAgent(BaseAgent):
         context: GithubContext | GitlabContext | BitbucketContext | None = None,
         zip_context: ZipContext | None = None,
         app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] = None,
+        exclude_path_arrays: list[list[str]] = None,
         technical_stack: list[str] = None,
         ):
         try:
@@ -41,40 +84,42 @@ class SASTAgent(BaseAgent):
             match app_lang:
                 case "python":
                     include_files_extensions = [".py"]
-                    default_exclude_paths = ["__pycache__", ".venv", "venv", "env", ".env", "dist", "build", ".egg-info"]
+                    default_exclude_path_arrays = [["__pycache__"], [".venv"], ["venv"], ["env"], [".env"], ["dist"], ["build"], [".egg-info"]]
                 case "javascript":
                     include_files_extensions = [".js"]
-                    default_exclude_paths = ["node_modules", ".next", "dist", "build", ".cache", ".nuxt", ".output"]
+                    default_exclude_path_arrays = [["node_modules"], [".next"], ["dist"], ["build"], [".cache"], [".nuxt"], [".output"]]
                 case "java":
                     include_files_extensions = [".java"]
-                    default_exclude_paths = ["target", "build", ".gradle", ".m2", "out", ".idea"]
+                    default_exclude_path_arrays = [["target"], ["build"], [".gradle"], [".m2"], ["out"], [".idea"]]
                 case "php":
                     include_files_extensions = [".php"]
-                    default_exclude_paths = ["vendor", "node_modules", ".composer"]
+                    default_exclude_path_arrays = [["vendor"], ["node_modules"], [".composer"]]
                 case "c":
                     include_files_extensions = [".c"]
-                    default_exclude_paths = ["build", "bin", "obj", "cmake-build-"]
+                    default_exclude_path_arrays = [["build"], ["bin"], ["obj"], ["cmake-build-"]]
                 case "ruby":
                     include_files_extensions = [".rb"]
-                    default_exclude_paths = ["vendor", "tmp", ".bundle", "node_modules"]
+                    default_exclude_path_arrays = [["vendor"], ["tmp"], [".bundle"], ["node_modules"]]
                 case "rust":
                     include_files_extensions = [".rs"]
-                    default_exclude_paths = ["target", ".cargo"]
+                    default_exclude_path_arrays = [["target"], [".cargo"]]
                 case "swift":
                     include_files_extensions = [".swift"]
-                    default_exclude_paths = ["build", ".build", "DerivedData", "Pods"]
+                    default_exclude_path_arrays = [["build"], [".build"], ["DerivedData"], ["Pods"]]  
                 case "csharp":
                     include_files_extensions = [".cs"]
-                    default_exclude_paths = ["bin", "obj", "packages", ".vs", "node_modules"]
+                    default_exclude_path_arrays = [["bin"], ["obj"], ["packages"], [".vs"], ["node_modules"]]
                 case "kotlin":
                     include_files_extensions = [".kt"]
-                    default_exclude_paths = ["build", ".gradle", ".idea", "out", "node_modules"]
+                    default_exclude_path_arrays = [["build"], [".gradle"], [".idea"], ["out"], ["node_modules"]]
                 case _:
                     raise ValueError(f"Unsupported application language: {app_lang}")
             
+            if not default_exclude_path_arrays or include_files_extensions:
+                raise ValueError(f"Default exclude path arrays or include files extensions not found, Invalid Language: {app_lang}")
+            
             self.include_files_extensions = include_files_extensions if include_files_extensions else []
-            self.default_exclude_paths = default_exclude_paths if default_exclude_paths else []
-
+            self.exclude_path_arrays = default_exclude_path_arrays.extend(exclude_path_arrays) if exclude_path_arrays else default_exclude_path_arrays
 
             #initializing
             self.codebase_context_id = None
@@ -98,7 +143,6 @@ class SASTAgent(BaseAgent):
             codebase_context = CodebaseContext(
                 directory=self.directory , 
                 include_files_extensions=self.include_files_extensions, 
-                default_exclude_paths=self.default_exclude_paths,
                 exclude_path_arrays=self.exclude_path_arrays,
             )
             combine_prompt_string = "Combine these codebase summaries into a coherent summary:"
@@ -296,19 +340,3 @@ class SASTAgent(BaseAgent):
 
         """
         pass
-
-if __name__ == "__main__":
-
-    open_source_context = OpenSourceContext(
-        open_source_tool=run_sast_scan_on_directory,
-        directory="C:\\Users\\HP\\Desktop\\RiskPilot\\backend",
-        app_lang="python",
-    )
-    output = open_source_context.prepare_context()
-    console.print(f"Open source context id: {output.context_id}",style="bold green")
-
-    if open_source_context.delete_context():
-        console.print(f"Open source context deleted successfully",style="bold green")
-    else:
-        console.print(f"Failed to delete open source context",style="bold red")
-    

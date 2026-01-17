@@ -2,8 +2,8 @@ from pydantic import BaseModel
 from langchain_core.documents import Document
 from langchain_community.vectorstores import VectorStore
 from rich.console import Console
-from schema import BaseVulnerability
-from output_model import OutputModelManager
+from helpers.context.schema import BaseVulnerability
+from helpers.context.output_model import OutputModelManager
 from openai import OpenAI
 import base64
 from dotenv import load_dotenv

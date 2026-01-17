@@ -1,138 +1,172 @@
 {
     "logical_components": [
         {
-            "title": "CreateUserData",
-            "description": "Pydantic data model used as the request body schema for admin-created user creation. It defines five required string fields to validate incoming data before business logic executes: email, password, plan, first_name, last_name.",
+            "title": "Garak Scan Orchestrator (run_garak_scan)",
+            "description": "Orchestrates the end-to-end Garak scan process. It loads a configuration template for the specified model type, updates it for custom vs non-custom models, creates a per-job temporary config, builds and runs the Garak CLI, and aggregates results into per-probe summaries and an overall risk summary.",
             "dependencies": [
+                "json",
+                "uuid",
+                "pathlib.Path",
+                "subprocess",
+                "os",
+                "typing.Literal",
+                "typing.Optional",
+                "typing.Dict",
+                "typing.Any",
+                "typing.List",
+                "dotenv.load_dotenv",
+                "garak (external tool)"
+            ],
+            "business_logic": "Orchestrate the scan by (1) loading rest_configs/{model_type}.json, (2) applying custom model updates or replacing placeholders <API_KEY>/<MODEL_NAME> for non-custom models, (3) creating a unique job_id and ensuring a results directory with a per-job report_prefix, (4) writing the updated config to temp_configs/{job_id}.json for Garak to consume, (5) constructing a Garak invocation via python -m garak with the prepared temp config and target probes, optionally including --generations, (6) executing Garak with subprocess.run to perform the scan, (7) cleaning up the temp config, (8) locating and parsing generated results (jsonl/html/hitlog) using known naming conventions, (9) aggregating totals, per-probe hit rates, probe usage, and a per-probe vulnerability map keyed by detector+probe, (10) deriving a global risk level from digest entries, (11) computing overall hit rate and assembling a concise summary, and (12) cleaning up result artifacts before returning the final summary."
+        },
+        {
+            "title": "Garak Configuration Management (config loading and templating)",
+            "description": "Loads the base Garak configuration template for the chosen model type and applies updates depending on whether the model is custom or not. Produces a JSON string that can be used to drive the Garak scan.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing.Optional",
+                "typing.Dict",
+                "typing.Any"
+            ],
+            "business_logic": "Load rest_configs/{model_type}.json; if model_type == 'custom', copy the config and set RestGenerator.method, RestGenerator.headers, RestGenerator.req_template_json_object, RestGenerator.response_json_field, and RestGenerator.uri from arguments; re-serialize to JSON. If not custom, substitute <API_KEY> and <MODEL_NAME> placeholders within the JSON string, then re-parse into a dict. Return the updated config object for use by the orchestrator, while logging the updated JSON for debugging. "
+        },
+        {
+            "title": "Garak Job and Results Directory Manager",
+            "description": "Generates a unique job_id, ensures a results directory exists, and defines a per-job report prefix used for all output artifacts.",
+            "dependencies": [
+                "uuid",
+                "pathlib.Path",
+                "typing"
+            ],
+            "business_logic": "Create a UUID-based job_id (string). Ensure a 'results' directory exists in the current working directory. Define report_prefix as the path to the per-job results (e.g., results/garak_{job_id})."
+        },
+        {
+            "title": "Garak Temporary Configuration Writer",
+            "description": "Writes the updated configuration (config) to a per-job temporary file under temp_configs, which Garak reads for the scan.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing"
+            ],
+            "business_logic": "Construct a path temp_configs/{job_id}.json and write the current config dictionary into that file as JSON so Garak can consume it during execution."
+        },
+        {
+            "title": "Garak Command Builder",
+            "description": "Assembles the Garak CLI invocation arguments to run a scan against the prepared temporary config file with the specified probes and reporting options.",
+            "dependencies": [
+                "list",
+                "typing",
+                "subprocess"
+            ],
+            "business_logic": "Build a command list to invoke Garak as: [\"python\",\"-m\",\"garak\",\"--model_type\",\"rest\",\"-G\", temp_config_path, \"--probes\", probes, \"--report_prefix\", str(report_prefix)]. Optionally append --generations if provided."
+        },
+        {
+            "title": "Garak Runner Execution",
+            "description": "Executes the constructed Garak command using subprocess.run and handles exception flow. This is the actual trigger that runs the external risk scan.",
+            "dependencies": [
+                "subprocess",
+                "typing",
+                "logging"
+            ],
+            "business_logic": "Print the command for debugging, run the command with check=True to raise on non-zero exit codes, and proceed to cleanup and result parsing upon successful completion."
+        },
+        {
+            "title": "Garak Results Parser and Per-Probe Summary",
+            "description": "Parses generated Garak results (JSONL/HTML/Hitlog), aggregates per-probe metrics, and computes per-probe hit rates as well as overall hit rate. Builds the per-probe vulnerability summary keyed by detector and probe.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing",
+                "collections"
+            ],
+            "business_logic": "Locate result files using candidate filenames, iterate over jsonl lines parsing JSON entries, collect 'eval' (probe results) and 'digest' (risk scoring). For each 'eval', accumulate total tests and hits, track probe usage, and build a probe_bucket with fields like probe, detector, passed, total, and hit_rate. Use 'digest' entries to derive a system-wide risk level from the _summary DEFCON-like score. Finalize per-probe hit rates and compute overall hit_rate across all tests."
+        },
+        {
+            "title": "Garak Summary Builder and Cleanup",
+            "description": "Builds a concise summary dictionary of the scan results and attempts to clean up temporary result artifacts (jsonl, html, hitlog). Returns a high-level summary for downstream use.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing",
+                "os",
+                "typing.Optional",
+                "typing.Dict"
+            ],
+            "business_logic": "Compose a summary with status, model_name, total_tests, total_hits, hit_rate_percent, risk_level, probes_used, and probes_summary. Attempt to remove generated artifact files (jsonl, html, hitlog) to clean up traces; ignore errors during cleanup to avoid blocking the workflow."
+        },
+        {
+            "title": "OWASP Top 10 Tracker (llm_owasp_tracker)",
+            "description": "Prompts a LLM to identify potential OWASP Top 10 vulnerabilities based on a probe and detector results. Returns a structured mapping of risks to descriptions.",
+            "dependencies": [
+                "enum",
                 "pydantic.BaseModel",
                 "typing",
-                "routing_admin.py (admin routes)",
-                "FastAPI (input validation integration)"
+                "llm (external)"
             ],
-            "business_logic": "Acts as a Data Transfer Object (DTO) to validate payloads for admin-created user creation. Ensures proper typing and presence before hashing the password and persisting the user."
+            "business_logic": "Define OWASPTop10 enum with 2021 categories. Define OWASPTop10_Response and OWASP_Response models. Prepare system prompt and composite prompt with specific probe/detector/results. Call generate_structured_response to obtain a structured output and map it to a list of {risk, description} entries for downstream use."
         },
         {
-            "title": "CreateAdminData",
-            "description": "Pydantic data model used as the request body schema for creating a new admin (superuser) via admin routes. Fields mirror CreateUserData (email, password, plan, first_name, last_name).",
+            "title": "OWASP Result Formatter (transformer)",
+            "description": "Converts the structured LLM response into a simple list of dictionaries with risk and description. Logs or prints the transformed results.",
+            "dependencies": [
+                "typing",
+                "json",
+                "pydantic (for model_dump)"
+            ],
+            "business_logic": "Transform response.model_dump()[\"tracker_data\"] into a list of {risk, description} and print the formatted OWASP results for visibility before returning them."
+        },
+        {
+            "title": "LLM Compliance Tracker",
+            "description": "Parses scan results to produce a tracker of compliance-related vulnerabilities by modeling outputs with Pydantic and querying an LLM via a structured response utility.",
             "dependencies": [
                 "pydantic.BaseModel",
-                "routing_admin.py",
-                "FastAPI"
+                "pydantic.Field",
+                "Compliance (inner model)",
+                "Compliance_Response (inner model)",
+                "generate_structured_response (from utilities)",
+                "system_prompt string",
+                "prompt construction (Probe/Detector/Results)",
+                "response.model_dump()"
             ],
-            "business_logic": "Provides a minimal, validated contract for creating admin accounts. Facilitates automatic OpenAPI schema generation and input validation for admin creation workflows."
+            "business_logic": "Define Compliance and Compliance_Response data models. Build a system_prompt instructing the LLM to enumerate compliance vulnerabilities and a prompt containing the Probe, Detector, and Results. Use generate_structured_response with the Compliance_Response model to obtain a structured LLM output and return response.model_dump()[\"tracker_data\"]."
         },
         {
-            "title": "UpdateUserPlanData",
-            "description": "Pydantic model representing the payload to update a user\u2019s subscription plan via an admin route.",
+            "title": "LLM Probe Fix Generator",
+            "description": "Generates a remediation for a given probe by encoding the request in a structured prompt and parsing the LLM\u2019s fix through a defined data model.",
             "dependencies": [
                 "pydantic.BaseModel",
-                "routing_admin.py",
-                "FastAPI",
-                "SQLAlchemy/SQLModel"
+                "pydantic.Field",
+                "Fix (inner model)",
+                "generate_structured_response (from utilities)",
+                "system_prompt string",
+                "prompt construction (Probe/Detector/Results/ModelType/ModelName)",
+                "response.model_dump()"
             ],
-            "business_logic": "Enforces presence and type of user_id and plan; sets up data for downstream plan-update operations (potentially with an Enum-constrained plan in extended versions)."
+            "business_logic": "Define Fix with a single field 'fix'. Construct a system_prompt describing the task (return a fix for the probe). Build a prompt that includes Probe, Detector, Results, Model Type, and Model Name, then call generate_structured_response with output_model=Fix and return response.model_dump()[\"fix\"]. It also logs the prompt before sending."
         },
         {
-            "title": "UpdateUserTotalScansData",
-            "description": "Pydantic model for updating a user\u2019s total_scans counter through an admin route.",
+            "title": "OWASP Tracker (Unimplemented Placeholder)",
+            "description": "Represents a planned component for tracking OWASP vulnerabilities; currently indicated by code comments and a test harness, but no actual implementation present in the snippet.",
             "dependencies": [
-                "pydantic.BaseModel",
-                "routing_admin.py",
-                "FastAPI",
-                "SQLAlchemy/SQLModel"
+                "llm_owasp_tracker (expected function)",
+                "commented code placeholders",
+                "__main__ test harness references"
             ],
-            "business_logic": "Provides user_id and total_scans as required fields; validates payloads so downstream services can apply the new counter value."
+            "business_logic": "Intended to implement an llm_owasp_tracker(probe_name, results, detector_name) that would return structured data about discovered vulnerabilities. As currently unimplemented, it serves as a placeholder signaling intended behavior and testing scaffolding."
         },
         {
-            "title": "ToggleAdminAccessData",
-            "description": "Pydantic model for toggling a user\u2019s admin privileges by user_id.",
+            "title": "Test Harness / Main Execution Block",
+            "description": "A demonstration/test harness guarded by if __name__ == '__main__' that exercises the OWASP tracker with static test data and prints results, serving as a development aid.",
             "dependencies": [
-                "pydantic.BaseModel",
-                "routing_admin.py",
-                "FastAPI",
-                "SQLAlchemy/SQLModel"
+                "__main__ guard",
+                "hardcoded test data",
+                "print statements",
+                "try/except for error handling",
+                "llm_owasp_tracker (referenced)",
+                "ENOENT/NameError handling (via try/except)"
             ],
-            "business_logic": "Serves as a minimal input contract to identify the target user; actual is_superuser state transition is implemented in route/service logic with proper authorization checks."
-        },
-        {
-            "title": "Check Superuser Endpoint",
-            "description": "GET /admin/check_superuser endpoint that verifies whether the currently authenticated user is a superuser.",
-            "dependencies": [
-                "FastAPI",
-                "HTTPException",
-                "get_user_from_header_or_raise_exception",
-                "engine",
-                "psycopg2 (db error detection)"
-            ],
-            "business_logic": "Resolves the current user from the Authorization header and enforces is_superuser. Returns a success payload (e.g., message, user_id, email) if authorized; returns HTTP 403 otherwise and handles DB errors with HTTP 500 when applicable."
-        },
-        {
-            "title": "Admin Users List Endpoint",
-            "description": "Endpoint that returns a list of all users to an authenticated superuser.",
-            "dependencies": [
-                "FastAPI",
-                "HTTPException",
-                "get_user_from_header_or_raise_exception",
-                "engine",
-                "SQLAlchemy/SQLModel",
-                "psycopg2"
-            ],
-            "business_logic": "Opens a DB session, queries all User records, maps them to simplified dicts (id, email, first_name, last_name, plan, is_superuser, total_scans), and returns the collection. Enforces 403 for non-admins and 500 for DB/unexpected errors."
-        },
-        {
-            "title": "Admin Create User Endpoint",
-            "description": "POST /admin/create_user endpoint that creates a new non-admin user from admin-provided data.",
-            "dependencies": [
-                "FastAPI",
-                "HTTPException",
-                "get_user_from_header_or_raise_exception",
-                "engine",
-                "Session",
-                "User model",
-                "get_hashed_password",
-                "plans (validation)",
-                "Email sending utility"
-            ],
-            "business_logic": "Validates requester is a superuser, validates data.plan against predefined plans, checks for duplicate email, hashes the plaintext password, constructs a new User (is_superuser=False, total_scans=0), persists it, and commits. May trigger a welcome email and returns the new user details. Handles 403/400/500 scenarios."
-        },
-        {
-            "title": "EmailNotificationStep",
-            "description": "Asynchronous step to send a welcome email to a newly created user containing credentials.",
-            "dependencies": [
-                "async email task",
-                "create_user_password_email_html",
-                "new_user.email",
-                "data.password",
-                "FastAPI/AIO backend"
-            ],
-            "business_logic": "Sends a templated password delivery email after user creation. Builds a success payload including user fields and handles DB/HTTP errors with layered error handling. Notes security considerations about plaintext passwords in email and responses."
-        },
-        {
-            "title": "Admin Create Admin Endpoint",
-            "description": "POST /admin/create_admin endpoint that creates a new admin (superuser) from admin-provided data, enforcing admin-only access and proper validation.",
-            "dependencies": [
-                "FastAPI",
-                "HTTPException",
-                "get_user_from_header_or_raise_exception",
-                "engine",
-                "Session",
-                "User model",
-                "get_hashed_password",
-                "plans (validation)",
-                "Email sending utility"
-            ],
-            "business_logic": "Performs an Authorization check to ensure the requester is a superuser, validates data.plan, checks for email duplication, hashes the password, constructs a new User with is_superuser=True and total_scans=0, persists it, and commits. Returns success data; may trigger optional notifications and returns 403/400/500 on errors."
-        },
-        {
-            "title": "Admin User Persistence Lifecycle",
-            "description": "Lifecycle steps for admin user creation: in-memory object construction, password hashing, and DB persistence with session management.",
-            "dependencies": [
-                "User model",
-                "get_hashed_password",
-                "Session",
-                "engine"
-            ],
-            "business_logic": "Constructs the in-memory admin user object (fields: email, hashed password, first_name, last_name, plan, is_superuser=True, total_scans=0), adds to session, commits, and refreshes to load DB-generated fields (e.g., id)."
+            "business_logic": "Provide a self-contained test scenario: define test_probe_name, test_detector_name, and test_results; print status messages, invoke llm_owasp_tracker within a try block, and report success or failure. It uses static data and mocks for development testing, which should be removed or isolated in production."
         }
     ]
 }

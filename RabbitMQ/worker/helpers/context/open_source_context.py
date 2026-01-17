@@ -1,14 +1,18 @@
 from typing import Callable
 from rich.console import Console
 from langchain_community.vectorstores import MongoDBAtlasVectorSearch, VectorStore
-from scan_context import validate_dict_with_context
-from base_context import BaseContext, BaseContextManager
+from helpers.context.scan_context import validate_dict_with_context
+from helpers.context.base_context import BaseResult, BaseContextManager
 from langchain_text_splitters import RecursiveJsonSplitter
 import uuid
 from datetime import datetime
-
+from helpers.context.base_summary_manager import BaseSummaryManager
+from dataclasses import dataclass
 console = Console()
 
+@dataclass
+class OpenSourceResult(BaseResult):
+    results: str | dict | None = None
 
 class OpenSourceContext(BaseContextManager):
     """
@@ -68,7 +72,8 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in running open source tool: {e}")
     
-    def load_results_into_vector_store_and_return_context_id(self)->str:
+    
+    def save_results_into_vector_store_and_return_context_id(self)->str:
         """
         Main function responsible for loading the results into a vector store and returning the context id
         """
@@ -77,64 +82,66 @@ class OpenSourceContext(BaseContextManager):
             if not self.results:
                 raise ValueError(f"No results found")
             split_json_documents = splitter.create_documents(texts=[self.results])
-            if split_json_documents:
-                
-                # adding context_id to the documents metadata for filtering
-                generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
-                split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
-                
 
-                #adding documents to vector store
-                vector_store = self.get_vector_store(collection_name=self.collection_name)
-                adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store)
-                if not adding_success:
-                    raise ValueError(f"Failed to add documents to vector store")
-                
-                self.context_id = generated_id # SET context_id ⭐
 
-                return generated_id
-            else:
-                raise ValueError(f"No json chunks found")
+            if not split_json_documents:
+                raise ValueError(f"No split json documents found")
+
+            self.documents = split_json_documents # SET documents ⭐
+            
+            # adding context_id to the documents metadata for filtering
+            generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+            split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
+            
+
+            #adding documents to vector store
+            vector_store = self.get_vector_store(collection_name=self.collection_name)
+            adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store)
+            if not adding_success:
+                raise ValueError(f"Failed to add documents to vector store")
+            
+            self.context_id = generated_id # SET context_id ⭐
+
+            return generated_id
         except Exception as e:
             raise ValueError(f"Error in loading results into vector store: {e}")
 
-    def prepare_context(self,
-        combine_prompt_string: str | None = None,
-        map_prompt_string: str | None = None,
-    )->BaseContext:
+    def prepare_context(
+        self,
+        load_results_into_vector_store: bool = True,
+        summary_manager: BaseSummaryManager | None = None,
+        )->OpenSourceResult:
         """
         Responsible for running the open source tool and returning the vector store
         
         Returns :
         - BaseContext object with vector store and summary if successful ( if unsuccessful , error message field is populated )
 
-        ### Example Usage : 
-        ```python
-
-        from tools.context.open_source_context import OpenSourceContext
-
-        open_source_context = OpenSourceContext(open_source_tool=open_source_tool, **kwargs)
-
-        open_source_context.prepare_context(combine_prompt_string="combine_prompt_string", map_prompt_string="map_prompt_string")
-        
-        vector_store = open_source_context.vector_store
-        
-        if open_source_context.error_message:
-            print(open_source_context.error_message)
-        else:
-            print("Open source tool ran successfully")
+        Args:
+            load_results_into_vector_store: bool = True,
+            summary_manager: BaseSummaryManager | None = None
         """
         try:
             self.run_open_source_tool()
-            context_id = self.load_results_into_vector_store_and_return_context_id()
-            if combine_prompt_string and map_prompt_string:
-                summary = self.generate_map_reduce_summary(
-                    combine_prompt_string=combine_prompt_string, 
-                    map_prompt_string=map_prompt_string,
-                )
+
+
+            # if load_results_into_vector_store is True, then save the results into the vector store and return the context id
+            if load_results_into_vector_store:
+                context_id = self.save_results_into_vector_store_and_return_context_id()
+            else:
+                context_id = None
+            
+            # if summary_manager is provided, then generate the summary using the summary manager
+            if summary_manager and load_results_into_vector_store:
+                summary = self.generate_map_reduce_summary(summary_manager=summary_manager)
             else:
                 summary = None
-            return BaseContext(context_id=context_id, summary=summary)
+            
+            # if results are not found, raise an error
+            if not self.results:
+                raise ValueError(f"No results found")
+            
+            return OpenSourceResult(context_id=context_id, summary=summary , results=self.results)
         except Exception as e:
-            return BaseContext(error_message=f"Error in running open source tool and returning vector store: {e}")
+            return OpenSourceResult(error_message=f"Error in running open source tool and returning context: {e}")
 

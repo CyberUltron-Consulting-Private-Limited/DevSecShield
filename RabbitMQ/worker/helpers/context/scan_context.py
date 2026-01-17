@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Literal
 import json
-from s3_utils import download_file
+from .s3_utils import download_file
 import zipfile
 
 def clone_repo(

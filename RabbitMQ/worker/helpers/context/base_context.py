@@ -11,52 +11,18 @@ from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_aws import ChatBedrock
 from langchain_mongodb import MongoDBAtlasVectorSearch
-from schema import LogicalComponents,IndividualLogicalComponent
-
+from helpers.context.schema import LogicalComponents,IndividualLogicalComponent
+from helpers.context.base_summary_manager import BaseSummaryManager
+import json
 
 console = Console()
 
 @dataclass
-class BaseContext:
+class BaseResult:
     context_id: str = None
     summary: str | type[BaseModel] = None
     error_message: str = None
 
-def remove_reasoning_from_response(response: str)->str:
-    """
-    Responsible for removing the reasoning from the response
-    """
-    try:
-        end = response.find("</reasoning>")
-        if end == -1:
-            return response
-        content_without_reasoning = response[end+len("</reasoning>"):]
-        return content_without_reasoning
-    except Exception as e:
-        console.print(f"Error in removing reasoning from response: {e}",style="dim red")
-        return response
-
-def format_logical_components_for_summary(logical_components: list[IndividualLogicalComponent] , summary_starting_string: str)->str:
-    """
-    Responsible for formatting the logical components for the summary
-    """
-    try:
-        summary = summary_starting_string
-        for item in logical_components:
-            temp = f"""
-            \n\n\n
-            ----------------------------------------------------------------------------------------------
-            Logical Component : {item.title} \n
-            Description : {item.description} \n
-            Dependencies : {item.dependencies} \n
-            Business Logic : {item.business_logic} \n
-            ----------------------------------------------------------------------------------------------
-            \n\n\n
-            """
-            summary += temp
-        return summary
-    except Exception as e:
-        raise ValueError(f"Error in formatting logical components for summary: {e}")
 
 class BaseContextManager:
 
@@ -64,7 +30,7 @@ class BaseContextManager:
         self.doc_ids = []
         self.context_id = None
     
-    def prepare_context(self)->BaseContext:
+    def prepare_context(self)->BaseResult:
         raise NotImplementedError("Subclasses must implement this method")
     
     def get_embedding_model(
@@ -91,7 +57,7 @@ class BaseContextManager:
             raise ValueError(f"Error in getting embedding model: {e}")
     
     
-    def get_unstructured_llm(
+    def get_aws_bedrock_llm(
         self,
     ):
         """
@@ -207,6 +173,11 @@ class BaseContextManager:
         documents: list[Document] = None, 
         vector_store: VectorStore = None, 
         ):
+        """
+        Responsible for adding documents to the vector store
+        Attributes Set :
+        - self.doc_ids : list[str] ( the ids of the documents added to the vector store )
+        """
         try:
             if not documents or not vector_store:
                 raise Exception("Documents or vector store are missing")
@@ -234,94 +205,124 @@ class BaseContextManager:
     
     def generate_map_reduce_summary(
         self,
-        refine_prompt_string: str | None = None, 
-        map_prompt_string: str | None = None,
-        combine_prompt_string: str | None = None,
-    )->list[IndividualLogicalComponent]:
+        summary_manager: BaseSummaryManager,
+    )->type[BaseModel] | str:
         """
         Responsible for generating a map reduce summary of documents, based on the specified prompt
+        Requires : self.documents to be set
         """
         try:
-            if self.documents:
 
-                console.print(f"Generating map reduce summary of codebase",style="bold bright_cyan")
+            # STEP [ 1 ] ----------------> Extract required utils from summary manager class and validation --------------------------
+            
+            refine_prompt_string = summary_manager.refine_prompt_string
+            map_prompt_string = summary_manager.map_prompt_string
+            combine_prompt_string = summary_manager.combine_prompt_string
+            summary_output_model : type[BaseModel] = summary_manager.summary_output_model
+            summary_starting_string = summary_manager.summary_starting_string
 
-                if not refine_prompt_string or not map_prompt_string:
-                    console.print(f"Combine prompt string or map prompt string is not set. Therfore using fallback prompts",style="dim yellow")
-                    refine_prompt_string = "Refine the given summary to make it more coherent and detailed:\n\nThe existing summary that needs to be refined is  :\n {summary} \n\n\nHere is the new content that must be used to refine the existing summary : {text}"
-                    map_prompt_string = "Summarize this content:\n\n{text}"
-                    combine_prompt_string = "Create a coherent summary of the logical components of the codebase from the given summaries {text}"
+
+
+            
+
+            # STEP [ 2 ] ----------------> Validation and fallback prompts--------------------------------- --------------------------
+            
+            if not self.documents:
+                raise ValueError("Documents are not set")
+            if not refine_prompt_string or not map_prompt_string or not combine_prompt_string:
+                console.print(f"Combine prompt string or map prompt string is not set. Therfore using fallback prompts",style="dim yellow")
+                refine_prompt_string = "Refine the given summary to make it more coherent and detailed:\n\nThe existing summary that needs to be refined is  :\n {summary} \n\n\nHere is the new content that must be used to refine the existing summary : {text}"
+                map_prompt_string = "Summarize this content:\n\n{text}"
+                combine_prompt_string = "Create a coherent summary of the logical components of the codebase from the given summaries {text}"
+            if not summary_starting_string:
+                console.print(f"Summary starting string is not set. Therefore using fallback starting string",style="dim yellow")
+                summary_starting_string = "Logical Components Identified in the codebase are as follows : \n\n"
+
+
+
+
+            # STEP [ 3 ] ----------------> Setting up map , combine and refine chains--------------------------------- --------------------------
+            
+            map_prompt_template = map_prompt_string 
+            map_prompt = PromptTemplate( input_variables=["text"], template=map_prompt_template )
+            map_chain = map_prompt | self.get_llm( output_model=summary_output_model )
+
+            refine_prompt_template = refine_prompt_string 
+            refine_prompt = PromptTemplate(input_variables=["text","summary"],template=refine_prompt_template)
+            refine_chain = refine_prompt | self.get_llm(output_model=summary_output_model)
+
+            combine_prompt_template = combine_prompt_string
+            combine_prompt = PromptTemplate(input_variables=["text"],template=combine_prompt_template)
+            combine_chain = combine_prompt | self.get_llm(output_model=summary_output_model)
+
+
+
+
+            # STEP [ 4 ] ----------------> Mapping ( each document is mapped to a summary )--------------------------------- --------------------------
+            
+            map_results = []
+            console.print(f"Mapping length of documents {len(self.documents)}",style="dim yellow")
+            for i in range(0, len(self.documents), 10): # summarizing 10 documents at a time
+                documents_batch = self.documents[i:i+10]
+                documents_data = ""
+                for document in documents_batch:
+                    documents_data += f"""
+                    =======================================================
+                    Document Path : {document.metadata['source']}\n\nDocument Content : {document.page_content}\n
+                    =======================================================
+                    \n\n\n\n 
+                    """
+                # for testing 
+                # documents_for_ingestion = { "documents_data": documents_data }
+                # with open(f"logging_stuff_ingestion_{i}.json", "w+") as f:
+                #     json.dump(documents_for_ingestion, f, indent=4)
+
+                console.print(f"Documents data length before summarizing {len(documents_data)}",style="dim bright_cyan")
+                map_chain_response = map_chain.invoke({"text": documents_data})
+                documents_summary = summary_manager.format_to_string( input=map_chain_response )
+
+                console.print(f"Map Summary for Documents {i} to {i+10} content length {len(documents_summary)}",style="dim bright_cyan")
+
+                # for testing 
+                # logging_stuff = { "documents_summary": documents_summary }
+                # with open(f"logging_stuff_map_{i}.json", "w+") as f:
+                #     json.dump(logging_stuff, f, indent=4)
+
+                map_results.append(documents_summary)            
+
+            # STEP [ 5 ] ----------------> Reducing ( the summaries are reduced to a single summary 10 at a time )--------------------------------- --------------------------
+            
+            
+            # =================================== Creating initial summary that will be refined ===================================
+            combine_chain_response = combine_chain.invoke({"text": "\n\n".join(map_results[:10])})
+            summary_to_be_refined = summary_manager.format_to_string( input=combine_chain_response )
+
+            
+            # ========================================= Refining the initial summary by 10 summaries at a time ===================================
+            if len(map_results) > 10:
+                for i in range(10, len(map_results), 10):
+                    summaries_concatenated = "\n\n".join(map_results[i:i+10])
+
+                    # for testing 
+                    # logging_stuff = { "summaries_concatenated": summaries_concatenated, "summary_to_be_refined": summary_to_be_refined }
+                    # with open(f"logging_stuff_refine_{i}.json", "w+") as f:
+                    #     json.dump(logging_stuff, f, indent=4)
+                    
+
+                    refine_response = refine_chain.invoke({"text": summaries_concatenated, "summary": summary_to_be_refined})
+                    summary_to_be_refined = summary_manager.format_to_string( input=refine_response ) 
+                    console.print(f"Refine result content length {len(summary_to_be_refined)}",style="dim bright_cyan")
                 
-                
-                console.print(f"Setting up map and combine prompts",style="dim bright_cyan")
-
-                
-                
-                map_prompt_template = map_prompt_string 
-                map_prompt = PromptTemplate(
-                    input_variables=["text"],
-                    template=map_prompt_template
-                )
-                map_chain = map_prompt | self.get_llm()
-
-                refine_prompt_template = refine_prompt_string 
-                refine_prompt = PromptTemplate(
-                    input_variables=["text","summary"],
-                    template=refine_prompt_template
-                )
-                refine_chain = refine_prompt | self.get_llm(output_model=LogicalComponents)
-
-                combine_prompt_template = combine_prompt_string
-                combine_prompt = PromptTemplate(
-                    input_variables=["text"],
-                    template=combine_prompt_template
-                )
-                combine_chain = combine_prompt | self.get_llm(output_model=LogicalComponents)
-
-  
-                
-                # ----------------------------------------> Mapping ( each document is mapped to a summary )
-                map_results = []
-                console.print(f"Mapping length of documents {len(self.documents)}",style="dim bright_cyan")
-                for document in self.documents:
-                    map_chain_response = map_chain.invoke({"text": f"Document Name : {document.metadata['source']}\n\nDocument Content : {document.page_content}"})
-                    content_without_reasoning = remove_reasoning_from_response(map_chain_response.content)
-                    console.print(f"Map result For Document {document.metadata['source']}: content length {len(content_without_reasoning)}",style="dim bright_cyan")
-                    map_results.append(content_without_reasoning)
-
-                # ---------------------> Reducing ( the summaries are reduced to a single summary 10 at a time )  
-                console.print(f"Creating initial summary using combine chain",style="dim yellow")
-                combine_chain_response : type[LogicalComponents] = combine_chain.invoke({"text": "\n\n".join(map_results[:10])})
-                
-
-                summary_to_be_refined = format_logical_components_for_summary(
-                    combine_chain_response.logical_components, 
-                    summary_starting_string="Logical Components Identified in the codebase are as follows : \n\n")
-
-                if len(map_results) > 10:
-                    console.print(f"Refining summaries using refine chain",style="dim yellow")
-
-                    for i in range(10, len(map_results), 10):
-                        
-                        summaries_concatenated = "\n\n".join(map_results[i:i+10])
-
-                        refine_response : type[LogicalComponents] = refine_chain.invoke({"text": summaries_concatenated, "summary": summary_to_be_refined})
-                        
-                        summary_to_be_refined = format_logical_components_for_summary(
-                            refine_response.logical_components, 
-                            summary_starting_string= "Logical Components Identified in the codebase are as follows : \n\n")
-
-                        console.print(f"Refine result content length {len(summary_to_be_refined)}",style="dim bright_cyan")
-
-                    return refine_response
-                
-                else:
-                    return combine_chain_response
+                return refine_response
             else:
-                raise ValueError(f"No split documents found")
+                # for testing 
+                # logging_stuff = { "summary_to_be_refined": summary_to_be_refined }
+                # with open("logging_stuff_final.json", "w+") as f:
+                #     json.dump(logging_stuff, f, indent=4)
+
+                return combine_chain_response
             
         except Exception as e:
-            
             raise ValueError(f"Error in generating map reduce summary of codebase: {e}")
     
 
@@ -345,6 +346,12 @@ class BaseContextManager:
         except Exception as e:
             console.print(f"Error in closing context: {e}",style="bold red")
             return False
+
+
+
+
+
+
 
 if __name__ == "__main__":
     # testing llm chain with openai llm ( structured and unstructured )

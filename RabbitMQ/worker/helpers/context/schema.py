@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from enums import * 
+from helpers.context.enums import * 
 
 
 class IndividualLogicalComponent(BaseModel):
