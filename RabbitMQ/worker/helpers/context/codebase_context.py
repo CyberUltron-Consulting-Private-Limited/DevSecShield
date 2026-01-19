@@ -25,7 +25,7 @@ def get_documents_after_exclusion(
     """
     try:
         
-        
+        console.print("Getting documents with exclusion .... ✔️",style="bold yellow ")
         for document in document_iterator:
             matches_count = 0
 
@@ -60,6 +60,7 @@ def get_documents_after_inclusion(
     Responsible for getting the documents with inclusion
     """
     try:
+        console.print("Getting documents with inclusion .... ✔️",style="bold yellow ")
         for document in document_iterator:
             matches_count = 0
             if "parsing_error" in document.metadata:
@@ -81,6 +82,29 @@ def get_documents_after_inclusion(
                 if metadata:
                     metadata["excluded_documents"].append(document.metadata["source"])
                 continue # skip
+    except Exception as e:
+        raise ValueError(f"Error in getting documents with inclusion: {e}")
+
+def get_documents(
+    document_iterator: Iterable[Document], 
+    verbose: bool = False,
+    metadata: dict | None = None)->Iterable[Document]:
+    """
+    Responsible for getting the documents with inclusion
+    """
+    try:
+        console.print("Getting documents without exclusion or inclusion .... ✔️",style="bold yellow ")
+        for document in document_iterator:
+            if "parsing_error" in document.metadata:
+                if verbose:
+                    console.print(f"Skipping document with parsing error",style="dim red")
+                continue # skip
+
+            if metadata:
+                metadata["included_documents"].append(document.metadata["source"])
+            yield document # accept document 
+        
+                
     except Exception as e:
         raise ValueError(f"Error in getting documents with inclusion: {e}")
 
@@ -141,18 +165,9 @@ class CodebaseContext(BaseContextManager):
         Ingests Codebase and provides Summary of the codebase + context id of documents loaded to Vector Store
         Args:
             context: The context of the codebase to be prepared for ingestion
-            include_files: The list of file extensions to be included in the codebase
-        ### Example Usage : 
-        ```python
-        from tools.context.codebase_context import CodebaseContext
-        from utils.context_utils import validate_dict_with_context
-
-        context = validate_dict_with_context(dict_context) # GithubContext | GitlabContext | BitbucketContext
-
-        codebase_context = CodebaseContext(context=context, app_lang=app_lang)
-
-        codebase_context.prepare_context(combine_prompt_string="combine_prompt_string", map_prompt_string="map_prompt_string")
-        ```
+            include_files_extensions : list of file extensions to include
+            include_path_arrays: list of path arrays to include  ex : [ ["root", "frontend"], ["root", "backend"] , ["file_name.extension"] , [ "parent_directory", "file_name.extension"]]
+            exclude_path_arrays: list of path arrays to exclude ex : [ ["root", "frontend"], ["root", "backend"] , ["file_name.extension"] , [ "parent_directory", "file_name.extension"]]
         """
         try:
             super().__init__()
@@ -193,16 +208,18 @@ class CodebaseContext(BaseContextManager):
             )
             document_loader_object = loader.lazy_load()
             documents = []
-            default_excluded_count, parsing_error_count , excluded_count , included_count = 0,0,0,0
+            console.print(f"include path arrays : {self.include_path_arrays} \nexclude path arrays : {self.exclude_path_arrays}",style="dim yellow")
             
 
             # ----------------------- Only allow either file exclusion or inclusion ( inclusion takes precedence over exclusion ) --------------------------------------------
-            if self.exclude_path_arrays and self.include_path_arrays:
+            if self.exclude_path_arrays and self.include_path_arrays :
                 raise ValueError(f"Only one of exclude_path_arrays or include_path_arrays can be provided")
             
 
             # ---------------------------------- Setting up document iterator with exclusion or inclusion --------------------------------------------
-            if self.exclude_path_arrays and not self.include_path_arrays:
+            if not self.exclude_path_arrays and not self.include_path_arrays:
+                iterator = get_documents(document_loader_object,metadata=self.metadata)
+            elif self.exclude_path_arrays and not self.include_path_arrays:
                 iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, metadata=self.metadata)
             elif self.include_path_arrays and not self.exclude_path_arrays:
                 iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, metadata=self.metadata)
@@ -218,11 +235,12 @@ class CodebaseContext(BaseContextManager):
             excluded_set = set(self.metadata["excluded_documents"])
             console.print(f"Included documents count: {len(included_set)}",style="dim yellow")
             console.print(f"Excluded documents count: {len(excluded_set)}",style="dim yellow")
+
             
 
             return documents
         except Exception as e:
-            raise ValueError(f"Error in loading documents of language: {e}")
+            raise ValueError(f"Error in loading documents of extension : {e}")
     
     def split_documents_of_language(self, documents: Iterable[Document] , language: Language)->list[Document]:
         """
@@ -277,6 +295,20 @@ class CodebaseContext(BaseContextManager):
                     split_documents_list.extend(split_documents)
             
 
+            included_set = set(self.metadata["included_documents"])
+            excluded_set = set(self.metadata["excluded_documents"])
+            self.metadata["included_documents"] = included_set
+            self.metadata["excluded_documents"] = excluded_set
+            
+            
+            # for testing
+            for included in self.metadata["excluded_documents"]:
+                console.print(f" -{included}",style = "dim red")
+            for included in self.metadata["included_documents"]:
+                console.print(f" -{included}",style = "dim green")
+            
+            
+
             console.print(f"Total split documents: {len(split_documents_list)}",style="dim green")
             return split_documents_list
 
@@ -316,7 +348,7 @@ class CodebaseContext(BaseContextManager):
             generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
             split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
 
-            adding_success = self.add_documents_to_vector_store( documents=split_documents_with_context_id, vector_store=vectorstore, )
+            adding_success = self.add_documents_to_vector_store( documents=split_documents_with_context_id, vector_store=vectorstore, ) # SETS doc_ids ⭐
             if not adding_success:
                 raise ValueError(f"Failed to add documents to vector store")
             
@@ -326,7 +358,7 @@ class CodebaseContext(BaseContextManager):
             return generated_id
 
         except Exception as e:
-            raise ValueError(f"Error in loading and returning context id: {e}")
+            raise ValueError(f"Error in saving documents to vector store and returning context id: {e}")
 
 
 

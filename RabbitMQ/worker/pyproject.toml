@@ -10,6 +10,7 @@ dependencies = [
     "gitpython>=3.1.45",
     "langchain>=0.3.27",
     "langchain-aws>=0.2.35",
+    "langchain-chroma>=0.2.6",
     "langchain-community>=0.3.27",
     "langchain-core>=0.3.80",
     "langchain-mongodb>=0.7.2",

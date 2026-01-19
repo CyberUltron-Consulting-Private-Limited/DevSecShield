@@ -12,9 +12,13 @@ import zipfile
 def clone_repo(
     url: str,
     branch: str = "main") -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="repo_"))
-    Console().print(f":package: Cloning [blue]{url}[/] → {tmp}")
+
     try:
+        # tmp = Path(tempfile.mkdtemp(prefix="repo_"))
+        with tempfile.TemporaryDirectory(delete=False,prefix="repo_") as temp_dir:
+            tmp = Path(temp_dir)
+        Console().print(f":package: Cloning [blue]{url}[/] → {tmp} Branch:{branch}")
+
         Repo.clone_from(url, tmp, depth=1 , branch=branch)
     except GitCommandError as e:
         shutil.rmtree(tmp, ignore_errors=True)

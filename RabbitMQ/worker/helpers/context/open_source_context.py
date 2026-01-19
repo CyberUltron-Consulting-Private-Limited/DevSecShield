@@ -102,7 +102,6 @@ class OpenSourceContext(BaseContextManager):
             if not split_json_documents:
                 raise ValueError(f"No split json documents found")
 
-            self.documents = split_json_documents # SET documents ⭐
             
             # adding context_id to the documents metadata for filtering
             generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
@@ -111,11 +110,12 @@ class OpenSourceContext(BaseContextManager):
 
             #adding documents to vector store
             vector_store = self.get_vector_store(collection_name=self.collection_name)
-            adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store)
+            adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store) # SETS doc_ids ⭐
             if not adding_success:
                 raise ValueError(f"Failed to add documents to vector store")
             
             self.context_id = generated_id # SET context_id ⭐
+            self.documents = split_json_documents # SET documents ⭐
 
             return generated_id
         except Exception as e:

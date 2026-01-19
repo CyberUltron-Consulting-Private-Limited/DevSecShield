@@ -1,54 +1,19 @@
+import os
 import shutil
-from context.codebase_context import CodebaseContext
-from context.open_source_context import OpenSourceContext
-from context.scan_context import *
-from context.base_agent import BaseAgent
+from langchain_core.documents import Document
+from helpers.context.codebase_context import CodebaseContext
+from helpers.context.open_source_context import OpenSourceContext
+from helpers.context.scan_context import *
+from helpers.context.base_agent import BaseAgent
 from typing import Literal
 from rich.console import Console
-from tools.sast_agent.semgrep_util import run_sast_scan_on_directory
-from context.schema import *
-from context.base_summary_manager import BaseSummaryManager
+from helpers.tools.sast_agent.semgrep_util import run_sast_scan_on_directory
+from helpers.context.schema import * 
+from helpers.tools.sast_agent.summary_manager import SASTSummaryManager
+
 
 
 console = Console()
-
-class SASTSummaryManager(BaseSummaryManager):
-    def __init__(self):
-        super().__init__(
-            summary_output_model=LogicalComponents,
-            refine_prompt_string="Refine the following summary:",
-            map_prompt_string="Create a detailed, descriptive and brief summary of this code:",
-            combine_prompt_string="Combine these codebase summaries into a coherent summary:",
-            summary_starting_string="Logical Components Identified in the codebase are as follows : \n\n",
-        )
-    
-        
-    def format_to_string(self, input:type[LogicalComponents] )->str:
-        """
-        Responsible for formatting the summary output model to a string
-        Returns:
-            str
-        """
-        try:
-
-            output_model_string = ""
-            for logical_component in input.logical_components:
-                temp = f"""
-                \n\n
-                =======================================================================================
-                Title: {logical_component.title} \n
-                Description: {logical_component.description} \n
-                Dependencies: {logical_component.dependencies} \n
-                Business Logic: {logical_component.business_logic} \n
-                =======================================================================================
-                \n\n
-                """
-                output_model_string += temp
-            
-            final_string = self.summary_starting_string + output_model_string
-            return final_string
-        except Exception as e:
-            raise ValueError(f"Error in formatting summary output model to string: {e}")
 
 
 
@@ -60,7 +25,6 @@ class SASTAgent(BaseAgent):
         zip_context: ZipContext | None = None,
         app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] = None,
         exclude_path_arrays: list[list[str]] = None,
-        technical_stack: list[str] = None,
         ):
         try:
             if context:
@@ -72,19 +36,16 @@ class SASTAgent(BaseAgent):
                 raise ValueError(f"Directory not found")
             if not app_lang:
                 raise ValueError(f"App language not found")
-            if not technical_stack:
-                raise ValueError(f"Technical stack not found")
             
             self.directory = directory # SET directory ⭐
             self.app_lang = app_lang # SET app_lang ⭐
-            self.technical_stack = technical_stack # SET technical_stack ⭐
 
 
             include_files_extensions = None
             match app_lang:
                 case "python":
                     include_files_extensions = [".py"]
-                    default_exclude_path_arrays = [["__pycache__"], [".venv"], ["venv"], ["env"], [".env"], ["dist"], ["build"], [".egg-info"]]
+                    default_exclude_path_arrays = [["__pycache__"], [".venv"], ["venv"], ["env"], [".env"], ["dist"], ["build"], [".egg-info"] , ["node_modules"]]
                 case "javascript":
                     include_files_extensions = [".js"]
                     default_exclude_path_arrays = [["node_modules"], [".next"], ["dist"], ["build"], [".cache"], [".nuxt"], [".output"]]
@@ -115,20 +76,26 @@ class SASTAgent(BaseAgent):
                 case _:
                     raise ValueError(f"Unsupported application language: {app_lang}")
             
-            if not default_exclude_path_arrays or include_files_extensions:
+            if not default_exclude_path_arrays or not include_files_extensions:
                 raise ValueError(f"Default exclude path arrays or include files extensions not found, Invalid Language: {app_lang}")
             
-            self.include_files_extensions = include_files_extensions if include_files_extensions else []
-            self.exclude_path_arrays = default_exclude_path_arrays.extend(exclude_path_arrays) if exclude_path_arrays else default_exclude_path_arrays
+            self.include_files_extensions = include_files_extensions 
+
+            if exclude_path_arrays:
+                self.exclude_path_arrays = default_exclude_path_arrays + exclude_path_arrays
+            else:
+                self.exclude_path_arrays = default_exclude_path_arrays
+
 
             #initializing
             self.codebase_context_id = None
             self.opensource_context_id = None
-            self.codebase_context = None
-            self.open_source_context = None
-            self.logical_components : list[IndividualLogicalComponent] = []
-            self.vulnerabilities : list[CodebaseVulnerability] = []
-            self.codebase_context_summary = None
+            self.codebase_doc_ids = None
+            self.open_source_doc_ids = None
+            self.codebase_collection_name = None
+            self.open_source_collection_name = None
+            self.logical_components : type[LogicalComponents] = []
+            self.vulnerabilities : list[type[CodebaseVulnerability]] = []
 
         except Exception as e:
             raise ValueError(f"Error in initializing SASTAgent: {e}")
@@ -145,16 +112,18 @@ class SASTAgent(BaseAgent):
                 include_files_extensions=self.include_files_extensions, 
                 exclude_path_arrays=self.exclude_path_arrays,
             )
-            combine_prompt_string = "Combine these codebase summaries into a coherent summary:"
-            map_prompt_string = "Create a detailed , descriptive and brief summary of this code:"
             output = codebase_context.prepare_context(
-                combine_prompt_string=combine_prompt_string,
-                map_prompt_string=map_prompt_string,
+                summary_manager=SASTSummaryManager()
             )
 
-            self.codebase_context = codebase_context # SET codebase_context ⭐
+
+            self.codebase_doc_ids = codebase_context.doc_ids # SET codebase_context ⭐
             self.codebase_context_id = output.context_id # SET codebase_context_id ⭐
-            self.codebase_context_summary = output.summary # SET codebase_context_summary ⭐
+            self.codebase_collection_name = codebase_context.collection_name # SET codebase_collection_name ⭐
+
+            summary : type[LogicalComponents] = output.summary
+            self.logical_components = summary # SET logical_components ⭐
+
             console.print(f"Codebase context id set successfully",style="bold bue1")
 
         except Exception as e:
@@ -173,14 +142,12 @@ class SASTAgent(BaseAgent):
             )
             combine_prompt_string = "Combine these summaries into a coherent summary:"
             map_prompt_string = "Summarize the content of the results of this tool run :"
-            output = open_source_context.prepare_context(
-                combine_prompt_string=combine_prompt_string,
-                map_prompt_string=map_prompt_string,
-            )
-            self.open_source_context = open_source_context # SET open_source_context ⭐
+            output = open_source_context.prepare_context()
+            self.open_source_doc_ids = open_source_context.doc_ids # SET open_source_context ⭐
             self.opensource_context_id = output.context_id # SET open_source_context_id ⭐
+            self.open_source_collection_name = open_source_context.collection_name # SET open_source_collection_name ⭐
 
-            console.print(f"Open source context id set successfully",style="bold bue1")
+            console.print(f"Open source context id set successfully",style="bold blue1")
         except Exception as e:
             raise ValueError(f"Error in populating open source context: {e}")
     
@@ -189,10 +156,22 @@ class SASTAgent(BaseAgent):
         Removes the temporary directory
         """
         try:
-            console.print(f"Removing temporary directory ...",style="bold yellow")
-            shutil.rmtree(self.directory)
-            console.print(f"Temporary directory removed successfully",style="bold green")
+            try:
+                if os.path.exists(self.directory):
+                    console.print("Temp Dir does Exist",style="dim bright_cyan")
+                else:
+                    console.print("Temp Dir does NOT Exist",style="dim bright_cyan")
+                
+                console.print(f"Removing temporary directory ...",style="dim red")
+                shutil.rmtree(self.directory)
+                console.print(f"Temporary directory removed successfully",style="bold green")
 
+                if os.path.exists(self.directory):
+                    console.print("Temp Dir does Exist",style="dim bright_cyan")
+                else:
+                    console.print("Temp Dir does NOT Exist",style="dim bright_cyan")
+            except Exception as e:
+                console.print(f"Error while deleting temp directory : {str(e)}", style = "dim red")
 
             # Deleting codebase context
             console.print(f"Deleting codebase context ...",style="bold yellow")
@@ -219,44 +198,6 @@ class SASTAgent(BaseAgent):
 
         except Exception as e:
             raise ValueError(f"Error in cleaning up: {e}")
-    
-    def extract_logical_components(self)->None:
-        """
-        Extracts the logical components of the codebase
-        """
-        try:
-
-            # Generating logical components from codebase context summary
-            system_prompt = f"""
-            You are a cybersecurity expert and you are given a summary of a codebase.
-            You need to generate the logical components of the codebase.
-            The logical components are the main components of the codebase that are used to build the codebase. """
-
-
-            prompt = f"""
-            # Here is the technical stack of the codebase :
-            {self.technical_stack}
-
-
-            # Here is a detailed summary of the codebase :
-            {self.codebase_context_summary}
-
-            ### Important Note :
-            - Logical components should be extracted in a way that helps a cybersecurity expert understand the codebase and its components for further vulnerability identification.
-            """
-            response_model = self.generate_structured_response(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                output_model=LogicalComponents,
-            )
-            logical_components : list[IndividualLogicalComponent] = response_model.logical_components # GET logical_components ⭐
-
-            self.logical_components : list[IndividualLogicalComponent] = logical_components # SET logical_components ⭐
-            console.print(f"Logical components extracted successfully and set successfully",style="bold green")
-
-
-        except Exception as e:
-            raise ValueError(f"Error in extracting logical components: {e}")
 
     
     def analyze_logical_component_and_append_vulnerabilities(
@@ -291,7 +232,7 @@ class SASTAgent(BaseAgent):
             Business Logic: {logical_component.business_logic}
             
 
-            ## Relavant Code Snippets : 
+            ## Relavant Code Snippets: 
             {relevant_code_snippets}
 
             ## Relevant Results from an open source tool that looks for vulnerable patterns in the code:
@@ -314,6 +255,61 @@ class SASTAgent(BaseAgent):
         except Exception as e:
             raise ValueError(f"Error in analyzing input and finding vulnerabilities: {e}")
     
+
+    def format_codebase_rag_result(documents : list[Document])->str:
+        try:
+            formatted_string = ""
+            for document in documents:
+                temp = f"""
+                ===========================================================
+                # Content : 
+                {document.page_content} 
+                \n\n
+                ## Metadata 
+                {document.metadata}
+                ===========================================================
+                \n\n
+                """
+                formatted_string +=temp
+            
+            return formatted_string
+        except Exception as e:
+            raise e 
+
+
+    def format_opensource_rag_result(documents : list[Document])->str:
+        try:
+            formatted_string = ""
+            for document in documents:
+                temp = f"""
+                ===========================================================
+                # Content : 
+                {document.page_content} 
+                \n\n
+                ## Metadata 
+                {document.metadata}
+                ===========================================================
+                \n\n
+                """
+                formatted_string +=temp
+            
+            return formatted_string
+        except Exception as e:
+            raise e
+    
+    def format_logical_component_to_query(logical_component:type[IndividualLogicalComponent])->str:
+        try:
+            formatted_string = f"""
+            Find the code snippets corresponding to the logical component given below : 
+            \n\n
+            Title: {logical_component.title} \n
+            Description: {logical_component.description} \n
+            Dependencies: {logical_component.dependencies} \n
+            Business Logic: {logical_component.business_logic} \n
+            """
+            return formatted_string
+        except Exception as e:
+            raise e 
     
 
     def run_agent(self):
@@ -339,4 +335,63 @@ class SASTAgent(BaseAgent):
         
 
         """
-        pass
+        try:
+            # STEP [ 1 ] ============================ Populate open source context ==========================================================
+            self.populate_opensource_context() 
+
+            # STEP [ 2 ] ============================ Populate codebase context ==========================================================
+            self.populate_codebase_context()
+
+            # STEP [ 3 ] ============================ Cycle through logical components ==========================================================
+            if not self.logical_components or not isinstance(self.logical_components,LogicalComponents):
+                raise Exception(f"Logical Components == None ? : {self.logical_components == None } and Logical component isinstance ? : {isinstance(self.logical_components,LogicalComponents)}")
+            
+            for logical_component in self.logical_components:
+                console.print(f"Analyzing Logical Component : {logical_component.title} ... 🔃 " , style = "bold yellow ")
+                
+                # running checks 
+                if not self.open_source_collection_name or not self.codebase_collection_name:
+                    raise Exception(f"Opensource collection name :{self.open_source_collection_name} , Codebase collection name : {self.codebase_collection_name}")
+                
+                # get codebase context documents for RAG 
+                codebase_rag_documents = self.query_vector_store(
+                    query=self.format_logical_component_to_query(logical_component = logical_component),
+                    vector_store=self.get_vector_store(collection_name=self.codebase_collection_name),
+                    k=10,
+                    metadata_filter={"context_id":self.codebase_context_id}
+                )
+                codebase_rag_formatted_string = self.format_codebase_rag_result(documents = codebase_rag_documents)
+                console.print(f"codebase rag context fetched ✔️ . Content length : {len(codebase_rag_formatted_string)}",style="bright_cyan")
+
+                # get open source context documents for RAG 
+                opensource_rag_documents = self.query_vector_store(
+                    query=self.format_logical_component_to_query(logical_component = logical_component),
+                    vector_store=self.get_vector_store(collection_name=self.open_source_collection_name),
+                    k=10,
+                    metadata_filter={"context_id":self.opensource_context_id}
+
+                )
+                opensource_rag_formatted_string = self.format_opensource_rag_result(documents = opensource_rag_documents)
+                console.print(f"opensource rag context fetched ✔️ . Content length : {len(opensource_rag_formatted_string)}",style="bright_cyan")
+
+                # extract vulnerabilties and append to self.vulnerabilities 
+                self.analyze_logical_component_and_append_vulnerabilities(
+                    logical_component=logical_component,
+                    relevant_code_snippets=codebase_rag_formatted_string,
+                    relevant_open_source_results=opensource_rag_formatted_string
+                )
+            
+
+            # STEP [ 4 ] ================================ Final checks and cleanup =====================================================================
+            console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
+            self.clean_up()
+
+            # STEP [ 5 ] ================================ Return Vulnerabilities model =================================================================
+            return self.vulnerabilities
+
+
+        except Exception as e:
+            console.print(f"Error occured in run_agent : {str(e)}",style="bold red")
+            self.clean_up()
+            raise Exception(f"Error occured while running agent : {str(e)}")
+    

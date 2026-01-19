@@ -1,0 +1,24 @@
+services:
+
+  chromadb:
+    image: chromadb/chroma
+    container_name: devsecshield-chroma-db
+    ports:
+    - 9090:8000
+    
+    environment:
+      CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER: "chromadb.auth.token.TokenConfigServerAuthCredentialsProvider"
+      CHROMA_SERVER_AUTH_PROVIDER: "chromadb.auth.token.TokenAuthServerProvider"
+      CHROMA_SERVER_AUTH_CREDENTIALS: "new-token"
+      CHROMA_SERVER_AUTH_TOKEN_TRANSPORT_HEADER: "X_CHROMA_TOKEN" 
+    
+    volumes:
+    - chroma_db_vol:/chroma/chroma
+
+
+volumes:
+  chroma_db_vol:
+    driver: local
+
+
+    

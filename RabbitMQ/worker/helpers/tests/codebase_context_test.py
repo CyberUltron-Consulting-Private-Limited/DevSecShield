@@ -1,3 +1,4 @@
+from helpers.context.scan_context import clone_repo_from_context, validate_dict_with_context
 from helpers.context import CodebaseContext , BaseSummaryManager , LogicalComponents
 from pathlib import Path
 import json
@@ -70,24 +71,41 @@ class SASTSummaryManager(BaseSummaryManager):
             raise ValueError(f"Error in formatting documents to string: {e}")
 
 if __name__ == "__main__":
+    included_path_arrays = [["llm_scan_utils"]]
+    excluded_path_arrays = [ ["api_routes"],["normal_scan_utils"],["mcpscan_utils"],["llm_scan_utils"]]
+
+    # testing repository integration with sast agent 
+    dict_context = {
+    "mode":"github",
+    "repo_url":"https://github.com/CyberUltron-Nikhil/RiskPilot.git",
+    "PAT":"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",
+    }
+    context = validate_dict_with_context(dict_context)
+    directory = clone_repo_from_context(context)
+
+    
     #testing codebase context
-    directory = Path("C:/Users/HP/Desktop/RiskPilot - Copy/backend")
+    # directory = Path("C:/Users/HP/Desktop/RiskPilot - Copy/backend")
     codebase_context = CodebaseContext(
         directory=directory, 
         include_files_extensions=[".py"],
-        include_path_arrays=[["llm_scan_utils"]],
+        exclude_path_arrays=excluded_path_arrays,
+        # include_path_arrays=included_path_arrays,
     )
 
 
-    result = codebase_context.prepare_context(load_documents_to_vector_store=False, summary_manager=SASTSummaryManager())
+    result = codebase_context.prepare_context(load_documents_to_vector_store=True)
     
     console.print(f"Codebase context id: {result.context_id}",style="bold green")
-    console.print(f"Summary: {result.summary}",style="dim yellow")
+    # console.print(f"Summary: {result.summary}",style="dim yellow")
 
-    with open("codebase_context_result.json", "w+") as f:
-        json.dump(result.summary.model_dump(), f, indent=4)
+    # with open("codebase_context_result.json", "w+") as f:
+    #     json.dump({
+    #         "metadata": codebase_context.metadata,
+    #         "result":result.summary.model_dump()
+    #         }, f, indent=4)
 
-    if codebase_context.delete_context():
-        console.print("Context deleted successfully",style="dim green")
-    else:
-        console.print("Failed to delete context",style="bold red")
+    # if codebase_context.delete_context():
+    #     console.print("Context deleted successfully",style="dim green")
+    # else:
+    #     console.print("Failed to delete context",style="bold red")

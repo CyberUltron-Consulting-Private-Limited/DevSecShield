@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from langchain_core.documents import Document
 from langchain_community.vectorstores import VectorStore
 from rich.console import Console
+from helpers.context.base_utilities import BaseUtilities
 from helpers.context.schema import BaseVulnerability
 from helpers.context.output_model import OutputModelManager
 from openai import OpenAI
@@ -13,7 +14,7 @@ from langchain_core.messages import HumanMessage , SystemMessage
 
 console = Console()
 
-class BaseAgent(OutputModelManager):
+class BaseAgent(OutputModelManager,BaseUtilities):
 
     def __init__(self):
         console.print(f"BaseAgent initialized without overriding the __init__ method",style="dim yellow")
@@ -32,14 +33,17 @@ class BaseAgent(OutputModelManager):
         try:
             if not vector_store or not query or not k:
                 raise Exception("Vector store, query or k are missing")
+            print(metadata_filter)
             
             # retriever = vector_store.as_retriever(search_kwargs={"k": k, "filter": metadata_filter , "score_threshold": score_threshold})
-            # retriever_docs = retriever.invoke(query)
+            # docs = retriever.invoke(query)
+            
             
             docs = vector_store.similarity_search(
                 query=query, 
                 k=k, 
-                filter=metadata_filter)
+                # filter=metadata_filter
+                )
             
             return docs
         except Exception as e:
