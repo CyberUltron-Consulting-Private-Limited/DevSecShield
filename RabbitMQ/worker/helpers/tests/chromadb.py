@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents.base import Document
 from langchain_openai import OpenAIEmbeddings
-from helpers.context.scan_context import GithubContext, validate_dict_with_context
-from helpers.tools import SASTAgent , SASTSummaryManager
 from rich.console import Console
 
 
