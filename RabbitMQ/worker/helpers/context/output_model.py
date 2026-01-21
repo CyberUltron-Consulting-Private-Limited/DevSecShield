@@ -1,7 +1,7 @@
 from rich.console import Console
 from helpers.context.schema import BaseVulnerability, CodebaseVulnerability
-from pydantic import BaseModel, Field
-from typing import Literal
+from pydantic import BaseModel, Field , create_model
+from typing import Annotated, Literal
 import urllib.parse
 import requests
 import time
@@ -14,6 +14,26 @@ class OutputModelManager:
 
     def __init__(self):
         raise Exception("OutputModelManager is a singleton class and should not be instantiated")
+
+    def get_codebase_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting Codebase Output Model ....",style="dim yellow")
+            codebase_output_model = self.get_output_model(CodebaseVulnerability)
+            console.print(f"Codebase Output Model generated successfully",style="bold green")
+            return codebase_output_model
+        except Exception as e:
+            console.print(f"Error in getting codebase output model: {e}",style="dim red")
+            raise e
+    
+    def get_base_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting Base Output Model ....",style="dim yellow")
+            base_output_model = self.get_output_model(BaseVulnerability)
+            console.print(f"Base Output Model generated successfully",style="bold green")
+            return base_output_model
+        except Exception as e:
+            console.print(f"Error in getting base output model: {e}",style="dim red")
+            raise e
 
     def get_output_model(self, VulnerabilityModel : type[BaseVulnerability] | type[CodebaseVulnerability]) -> type[BaseModel]:
         try:
@@ -122,21 +142,33 @@ class OutputModelManager:
     def create_output_model(self,cves_enum: Enum, VulnerabilityModel : type[BaseVulnerability] | type[CodebaseVulnerability]) -> type[BaseModel]:
         try:
             console.print(f"Creating Output Model ....",style="dim yellow")
-            class FinalVulnerabilityModel(VulnerabilityModel):
-                cves : list[cves_enum] = Field(description="A list of CVE vulnerabilities that this vulnerability is related to")
             
-            attributes = [attribute for attribute in FinalVulnerabilityModel.__pydantic_fields__.keys()]
-            expected_attributes = ["title", "description", "impact", "owasp_top_10", "suggested_fix"]
-            for attribute in expected_attributes:
-                if attribute in attributes:
-                    continue
-                else:
-                    raise Exception(f"Attribute {attribute} is missing from the output model")
+            # --------------------------------------- ⭐ Final Vulnerability Model ---------------------------------------
+            final_vulnerability_model_fields = {}
+            # for f_name, f_info in VulnerabilityModel.model_fields.items():
+            #     f_dct = f_info.asdict()
+            #     final_vulnerability_model_fields[f_name] = (
+            #         Annotated[f_dct['annotation'] , *f_dct['metadata'], Field(**f_dct['attributes'])],
+            #     )
+            final_vulnerability_model_fields["cves"] = ( list[cves_enum],  Field(description="A list of CVE vulnerabilities that this vulnerability is related to") )
+            
+            FinalVulnerabilityModel = create_model(
+                "FinalVulnerabilityModel",
+                __base__ = VulnerabilityModel,
+                **final_vulnerability_model_fields
+            )
             console.print(f"Final Vulnerability Model created successfully",style="dim green")
             
-            # ⭐ Final Output Model
-            class ResponseModel(BaseModel):
-                vulnerabilities : list[FinalVulnerabilityModel] = Field(description="List of vulnerabilities found ")
+            # --------------------------------------- ⭐ Final Output Model ---------------------------------------
+            response_model_fields = {}
+            response_model_fields["vulnerabilities"] = (
+                list[FinalVulnerabilityModel], Field(description="List of vulnerabilities found ")
+            )
+            ResponseModel = create_model(
+                "ResponseModel",
+                __base__=BaseModel,
+                **response_model_fields
+            )
             
             console.print(f"Response Model created successfully",style="bold green")
             return ResponseModel

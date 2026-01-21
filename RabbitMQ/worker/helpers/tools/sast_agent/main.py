@@ -94,6 +94,8 @@ class SASTAgent(BaseAgent):
             self.open_source_doc_ids = None
             self.codebase_collection_name = None
             self.open_source_collection_name = None
+            self.codebase_context = None
+            self.open_source_context = None
             self.logical_components : type[LogicalComponents] = []
             self.vulnerabilities : list[type[CodebaseVulnerability]] = []
 
@@ -121,10 +123,13 @@ class SASTAgent(BaseAgent):
             self.codebase_context_id = output.context_id # SET codebase_context_id ⭐
             self.codebase_collection_name = codebase_context.collection_name # SET codebase_collection_name ⭐
 
+            self.codebase_context = codebase_context # SET codebase_context ⭐
+
             summary : type[LogicalComponents] = output.summary
+            console.print(f"Summary {summary}",style="dim yellow")
             self.logical_components = summary # SET logical_components ⭐
 
-            console.print(f"Codebase context id set successfully",style="bold bue1")
+            console.print(f"Codebase context id set successfully",style="bold blue1")
 
         except Exception as e:
             raise ValueError(f"Error in populating codebase context: {e}")
@@ -140,12 +145,12 @@ class SASTAgent(BaseAgent):
                 directory=self.directory,
                 app_lang=self.app_lang,
             )
-            combine_prompt_string = "Combine these summaries into a coherent summary:"
-            map_prompt_string = "Summarize the content of the results of this tool run :"
             output = open_source_context.prepare_context()
             self.open_source_doc_ids = open_source_context.doc_ids # SET open_source_context ⭐
             self.opensource_context_id = output.context_id # SET open_source_context_id ⭐
-            self.open_source_collection_name = open_source_context.collection_name # SET open_source_collection_name ⭐
+            self.open_source_collection_name = open_source_context.collection_name # SET open_source_collection_name 
+            
+            self.open_source_context = open_source_context # SET open_source_context ⭐
 
             console.print(f"Open source context id set successfully",style="bold blue1")
         except Exception as e:
@@ -239,24 +244,24 @@ class SASTAgent(BaseAgent):
             {relevant_open_source_results}
             """
 
-            output_model = self.get_output_model(CodebaseVulnerability)
             
             response_model = self.generate_structured_response(
                 prompt=prompt,
                 system_prompt=system_prompt,
-                output_model=output_model,
+                output_model=self.output_model,
             )
             vulnerabilities : list[CodebaseVulnerability] = response_model.vulnerabilities 
-            self.vulnerabilities.extend(vulnerabilities) # APPEND ⭐ vulnerabilities to the existing list
+            logical_comp_vulnerability = {"logical_component_title":logical_component.title, "vulnerabilities":vulnerabilities}
+            self.vulnerabilities.append(logical_comp_vulnerability) # APPEND ⭐ logical_comp_vulnerability to the existing list
 
 
-            console.print(f"Vulnerabilities found successfully and set successfully",style="bold green")
+            console.print(f"Vulnerabilities length : {len(vulnerabilities)}",style="bold green")
 
         except Exception as e:
             raise ValueError(f"Error in analyzing input and finding vulnerabilities: {e}")
     
 
-    def format_codebase_rag_result(documents : list[Document])->str:
+    def format_codebase_rag_result(self,documents : list[Document])->str:
         try:
             formatted_string = ""
             for document in documents:
@@ -277,7 +282,7 @@ class SASTAgent(BaseAgent):
             raise e 
 
 
-    def format_opensource_rag_result(documents : list[Document])->str:
+    def format_opensource_rag_result(self, documents : list[Document])->str:
         try:
             formatted_string = ""
             for document in documents:
@@ -297,7 +302,7 @@ class SASTAgent(BaseAgent):
         except Exception as e:
             raise e
     
-    def format_logical_component_to_query(logical_component:type[IndividualLogicalComponent])->str:
+    def format_logical_component_to_query(self,logical_component:type[IndividualLogicalComponent])->str:
         try:
             formatted_string = f"""
             Find the code snippets corresponding to the logical component given below : 
@@ -342,12 +347,17 @@ class SASTAgent(BaseAgent):
             # STEP [ 2 ] ============================ Populate codebase context ==========================================================
             self.populate_codebase_context()
 
-            # STEP [ 3 ] ============================ Cycle through logical components ==========================================================
+            # STEP [ 3 ] ============================ Set output model ==========================================================
+            self.output_model = self.get_codebase_output_model()
+
+            # STEP [ 4 ] ============================ Cycle through logical components ==========================================================
             if not self.logical_components or not isinstance(self.logical_components,LogicalComponents):
                 raise Exception(f"Logical Components == None ? : {self.logical_components == None } and Logical component isinstance ? : {isinstance(self.logical_components,LogicalComponents)}")
             
-            for logical_component in self.logical_components:
-                console.print(f"Analyzing Logical Component : {logical_component.title} ... 🔃 " , style = "bold yellow ")
+
+            for index, logical_component in enumerate(self.logical_components.logical_components[:10]):
+
+                console.print(f"Analyzing Logical Component # {index + 1} : {logical_component.title} ... 🔃 " , style = "bold yellow ")
                 
                 # running checks 
                 if not self.open_source_collection_name or not self.codebase_collection_name:
@@ -382,11 +392,11 @@ class SASTAgent(BaseAgent):
                 )
             
 
-            # STEP [ 4 ] ================================ Final checks and cleanup =====================================================================
+            # STEP [ 5 ] ================================ Final checks and cleanup =====================================================================
             console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
             self.clean_up()
 
-            # STEP [ 5 ] ================================ Return Vulnerabilities model =================================================================
+            # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
             return self.vulnerabilities
 
 

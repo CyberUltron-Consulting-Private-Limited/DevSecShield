@@ -22,6 +22,7 @@ if __name__ == "__main__":
         )
 
         # agent.populate_codebase_context()
+        # console.print(f"codebase context id : {agent.codebase_context_id}",style="bold yellow")
 
         # agent.populate_opensource_context()
 
@@ -32,8 +33,8 @@ if __name__ == "__main__":
         docs = agent.query_vector_store(
             vector_store=agent.get_vector_store("codebase_context"),
             k=3,
-            query="fastapi",
-            metadata_filter = { "context_id" : "1925b4f6-5268-488e-85e3-3bd20fdb00d420260119144958" }
+            query="authentication",
+            metadata_filter = { "context_id" : "1a295a62-f638-4557-9ee5-53e6c2e1219c20260121120752" }
         )
 
         console.print(f"Hits : \n{docs}")

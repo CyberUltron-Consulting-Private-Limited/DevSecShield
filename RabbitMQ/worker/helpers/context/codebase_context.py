@@ -242,13 +242,19 @@ class CodebaseContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in loading documents of extension : {e}")
     
-    def split_documents_of_language(self, documents: Iterable[Document] , language: Language)->list[Document]:
+    def split_documents_of_language(
+        self, 
+        documents: Iterable[Document] , 
+        language: Language,
+        chunk_size: int = 5000,
+        chunk_overlap: int = 200
+        )->list[Document]:
         """
         splits the documents into smaller chunks
         """
         try:
             codebase_splitter = RecursiveCharacterTextSplitter.from_language(
-                language=language, chunk_size=2000, chunk_overlap=200
+                language=language, chunk_size=chunk_size, chunk_overlap=chunk_overlap
             )
             split_documents = codebase_splitter.split_documents(documents)
             if split_documents:
@@ -259,12 +265,17 @@ class CodebaseContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in splitting documents of language: {e}")
     
-    def split_documents_without_language(self, documents: Iterable[Document])->list[Document]:
+    def split_documents_without_language(
+        self, 
+        documents: Iterable[Document],
+        chunk_size: int = 5000,
+        chunk_overlap: int = 200
+        )->list[Document]:
         """
         splits the documents into smaller chunks without using the language
         """
         try:
-            document_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+            document_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             split_documents = document_splitter.split_documents(documents)
             console.print(f"{len(split_documents)} Documents without language split successfully",style="dim yellow")
             return split_documents

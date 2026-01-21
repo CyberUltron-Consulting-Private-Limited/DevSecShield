@@ -18,9 +18,17 @@ if __name__ == "__main__":
         agent = SASTAgent(
             context=context,
             app_lang="python",
-            exclude_path_arrays=[["frontend"],["api_routes"],["mcpscan_utils"],["llm_scan_utils"]]
+            exclude_path_arrays=[["frontend"],["api_routes"],["mcpscan_utils"],["llm_scan_utils"],["normal_scan_utils"],["virus_scan_utils"],["test.py"],["graph.py"]]
         )
 
+        # agent.populate_codebase_context()
+
+        # console.print(f"Codebase context id : {agent.codebase_context_id}",style="bold yellow")
+        # console.print(f"Codebase Summary Type : {type(agent.logical_components)}",style="bold yellow")
+        # console.print(f"Codebase Summary : {agent.logical_components}",style="bold yellow")
+        # console.print(f"Codebase Summary logical components list  : {agent.logical_components.logical_components}",style="bold yellow")
+
         result = agent.run_agent()
+        console.print(f"Result : {result}",style="bold green")
     except Exception as e:
         console.print(f"Error while Testing SAST agent : {str(e)}")

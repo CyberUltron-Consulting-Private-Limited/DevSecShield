@@ -72,12 +72,15 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in running open source tool: {e}")
     
-    def split_and_set_result_documents(self)->bool:
+    def split_and_set_result_documents(
+        self,
+        max_chunk_size: int = 5000
+        )->bool:
         """
         Responsible for splitting the results into documents and setting the documents
         """
         try:
-            splitter = RecursiveJsonSplitter(max_chunk_size=500)
+            splitter = RecursiveJsonSplitter(max_chunk_size=max_chunk_size)
             if not self.results:
                 raise ValueError(f"No results found")
             split_json_documents = splitter.create_documents(texts=[self.results])
@@ -88,12 +91,15 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             return False
     
-    def save_results_into_vector_store_and_return_context_id(self)->str:
+    def save_results_into_vector_store_and_return_context_id(
+        self,
+        max_chunk_size: int = 5000
+        )->str:
         """
         Main function responsible for loading the results into a vector store and returning the context id
         """
         try:
-            splitter = RecursiveJsonSplitter(max_chunk_size=500)
+            splitter = RecursiveJsonSplitter(max_chunk_size=max_chunk_size)
             if not self.results:
                 raise ValueError(f"No results found")
             split_json_documents = splitter.create_documents(texts=[self.results])

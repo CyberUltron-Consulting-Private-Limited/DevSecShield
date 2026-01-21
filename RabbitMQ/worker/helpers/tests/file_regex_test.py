@@ -2,8 +2,8 @@
 from pprint import pprint
 from rich.console import Console
 from langchain_community.document_loaders.generic import GenericLoader
-from custom_language_parser import LanguageParser
-from codebase_context import file_path_matches_pattern, CodebaseContext
+from helpers.context.custom_language_parser import LanguageParser
+from helpers.context.codebase_context import file_path_matches_pattern, CodebaseContext
 from pathlib import Path
 import os
 from dotenv import load_dotenv

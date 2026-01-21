@@ -5,7 +5,7 @@ console = Console()
 
 RefinePrompt = """
 ## Your Task : \n
-Refine the given Logical Components list to make it more coherent and detailed
+Refine the given Logical Components list to make it more coherent and detailed . Refine the Logical Components list to at Most 10 Logical Components . Do not exceed the limit of 10 Logical Components .
 \n\n
 ---------------------------------------------------------------------------------------------------------
 ### The existing Logical Components list that needs to be refined is  :\n

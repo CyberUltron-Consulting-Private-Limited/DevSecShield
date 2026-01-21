@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import os
 from langchain_aws import ChatBedrock
 from langchain_core.messages import HumanMessage , SystemMessage
+from qdrant_client import models
 
 console = Console()
 
@@ -28,22 +29,43 @@ class BaseAgent(OutputModelManager,BaseUtilities):
         query: str,
         k: int = 20,
         metadata_filter: dict = None,
-        score_threshold: float = 0.7,
+        score_threshold: float = 0.5,
     ) -> list[Document]:
         try:
             if not vector_store or not query or not k:
                 raise Exception("Vector store, query or k are missing")
-            print(metadata_filter)
+
             
-            # retriever = vector_store.as_retriever(search_kwargs={"k": k, "filter": metadata_filter , "score_threshold": score_threshold})
+            
+            context_id = metadata_filter.get("context_id")
+            if not context_id:
+                raise Exception("Context id is missing")
+            else:
+                console.print(f"🔍Creating filter for qdrant Context id: {context_id}",style="bold yellow")
+                filter = models.Filter(
+                    should=[
+                        models.FieldCondition(
+                            key="metadata.context_id",
+                            match=models.MatchValue(value=context_id)
+                        )
+                    ]
+                )
+                console.print(f"🔍Filter created: {filter}",style="dim orange1")
+            
+
+            # this approach sometimes yields 0 hits , but the similarity search approach works fine for this use case
+            # retriever = vector_store.as_retriever(search_kwargs={"k": k, "filter": filter , "score_threshold": score_threshold})
             # docs = retriever.invoke(query)
-            
-            
+            # console.print(f"🔍 RAG Results length: {len(docs)}",style="bold yellow")
+
+
+                
             docs = vector_store.similarity_search(
                 query=query, 
                 k=k, 
-                # filter=metadata_filter
+                filter=filter
                 )
+            console.print(f"🔍 RAG Results length: {len(docs)}",style="bold yellow")
             
             return docs
         except Exception as e:
@@ -60,7 +82,6 @@ class BaseAgent(OutputModelManager,BaseUtilities):
         llm_model: str = "gpt-5-nano",
     ) -> type[BaseModel] | str:
         try:
-            output_model = self.get_output_model(output_model)
             
             load_dotenv()
             client = OpenAI()

@@ -1,29 +1,21 @@
-from dataclasses import dataclass
+
 import os
-from botocore.utils import tempfile
 from dotenv import load_dotenv
 from langchain_community.vectorstores import VectorStore
-from langchain_core.documents import Document
-from pymongo import MongoClient
 from rich.console import Console
-from langchain.prompts import PromptTemplate
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_aws import ChatBedrock
-from langchain_mongodb import MongoDBAtlasVectorSearch
-from helpers.context.schema import LogicalComponents,IndividualLogicalComponent
-from helpers.context.base_summary_manager import BaseSummaryManager
-import json
-from langchain_chroma import Chroma
+from qdrant_client import QdrantClient
+from langchain_qdrant import QdrantVectorStore
 console = Console()
 
 
 class BaseUtilities:
     """
     ### Contains utilities like 
-    - get_mongo_client_db
     - get_vector_store
-    - get_llm_
+    - get_llm
     - get_embedding_model
     """
     def __init__(self):
@@ -120,93 +112,46 @@ class BaseUtilities:
         except Exception as e:
             raise ValueError(f"Error in getting LLM: {e}")
     
-    def get_mongo_client_db(self, dev_environment: bool = True):
-        """
-        Responsible for getting the mongo client for Database ( collection not specified here yet )
-        """
-        try:
-            load_dotenv()
-            is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
-            
-            if is_docker_container and is_docker_container == "True":
-                mongo_username = os.environ['MONGO_INITDB_ROOT_USERNAME']
-                mongo_password = os.environ['MONGO_INITDB_ROOT_PASSWORD']
-                mongo_host = "13.203.233.15"
-                mongo_port = "27017"    
-                mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
-            elif dev_environment:
-                mongo_url = "mongodb://localhost:27017/"
-            else:
-                mongo_username = os.environ['MONGO_INITDB_ROOT_USERNAME']
-                mongo_password = os.environ['MONGO_INITDB_ROOT_PASSWORD']
-                mongo_host = "13.203.233.15"
-                mongo_port = "27017"
-                mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
-            
-            mongo_client = MongoClient(mongo_url)
-            mongo_db = mongo_client['devsecshield_backend_server_db']
-            console.print(f"Mongo client fetched successfully",style="dim green")
-            return mongo_db
-            
-        except Exception as e:
-            raise ValueError(f"Error in getting mongo client: {e}")
+    
     
     def get_vector_store(self, collection_name: str)->VectorStore:
         """
-        Responsible for getting the vector store for the specified collection
+        Responsible for getting the qdrant vector store for the specified collection
         """
         try:
-            mongo_db = self.get_mongo_client_db()
-            collection = mongo_db[collection_name]
-            embedding_model = self.get_embedding_model()
-            vectorstore = MongoDBAtlasVectorSearch(collection=collection, embedding=embedding_model)
-            console.print(f"Vector store fetched successfully",style="dim green")
+            # getting qdrant client from url and api key 
+            load_dotenv()
+            is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
+            if is_docker_container and is_docker_container == "True":
+                qdrant_host = "13.203.233.15"
+                qdrant_port = "6333"
+                qdrant_url = f"http://{qdrant_host}:{qdrant_port}"
+            else:
+                qdrant_url = "http://localhost:6333"
+
+            # getting api key from environment variable
+            QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+            if not QDRANT_API_KEY:
+                raise ValueError("QDRANT_API_KEY not found")
+            else:
+                console.print(f"QDRANT_API_KEY is set to {QDRANT_API_KEY[:10]}...",style="dim green")
+
+            qdrant_client = QdrantClient(url=qdrant_url, api_key=QDRANT_API_KEY, check_compatibility=False)
+
+            
+            # getting vector store from collection name , embedding model and qdrant client
+            vectorstore = QdrantVectorStore(
+                collection_name=collection_name,
+                embedding=self.get_embedding_model(),
+                client=qdrant_client,
+            )
+
+            # returning the vector store
             return vectorstore
         except Exception as e:
             raise ValueError(f"Error in getting vector store: {e}")
     
     
     
-    def get_chroma_client(self, dev_environment: bool = True):
-        """
-        Responsible for getting the chroma client
-        """
-        try:
-            load_dotenv()
-            is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
-            
-            if is_docker_container and is_docker_container == "True":
-                chroma_host = "13.203.233.15"
-                chroma_port = "9090"
-                chroma_url = f"http://{chroma_host}:{chroma_port}"
-            elif dev_environment:
-                chroma_url = "http://localhost:9090"
-            else:
-                chroma_host = "13.203.233.15"
-                chroma_port = "9090"
-                chroma_url = f"http://{chroma_host}:{chroma_port}"
-
-            chroma_client = Chroma(host=chroma_host, port=chroma_port)
-            console.print(f"Chroma client fetched successfully",style="dim green")
-            return chroma_client
-
-        except Exception as e:
-            raise ValueError(f"Error in getting chroma client: {e}")
     
-    def get_chroma_vector_store(self, collection_name: str)->VectorStore:
-        """
-        Responsible for getting the vector store for the specified collection
-        """
-        try:
-            vector_store = Chroma(
-                collection_name=collection_name,
-                embedding_function=self.get_embedding_model(),
-                host="localhost",
-                port=9090,
-                # headers={"X_CHROMA_TOKEN" : "new-token"}
-            )
-            console.print(f"Chroma Vector store object instantiated !",style="dim green")
-            return vector_store
-        except Exception as e:
-            raise ValueError(f"Error in getting chroma vector store: {e}")
     

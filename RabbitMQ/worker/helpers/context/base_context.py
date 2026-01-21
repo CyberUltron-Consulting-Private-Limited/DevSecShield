@@ -144,7 +144,7 @@ class BaseContextManager(BaseUtilities):
                 map_chain_response = map_chain.invoke({"text": documents_data})
                 documents_summary = summary_manager.format_to_string( input=map_chain_response )
 
-                console.print(f"Map Summary for Documents {i} to {i+10} content length {len(documents_summary)}",style="dim bright_cyan")
+                console.print(f"Map Summary for Documents {i} to {i+10} .  Content length of map summary: {len(documents_summary)}",style="dim bright_cyan")
 
                 # for testing 
                 # logging_stuff = { "documents_summary": documents_summary }
@@ -167,7 +167,8 @@ class BaseContextManager(BaseUtilities):
             
             
             # =================================== Creating initial summary that will be refined ===================================
-            console.print(f"Initial Summary : Combining first batch (upto 10 ) map summary results {len(map_results)}",style="dim yellow")
+            console.print(f"Map results length : {len(map_results)}",style="dim yellow")
+            console.print(f"Initial Summary : Combining first batch (upto 10 ) map results",style="dim yellow")
             combine_chain_response = combine_chain.invoke({"text": "\n\n".join(map_results[:10])})
             summary_to_be_refined = summary_manager.format_to_string( input=combine_chain_response )
 
@@ -185,7 +186,7 @@ class BaseContextManager(BaseUtilities):
 
                     refine_chain_response = refine_chain.invoke({"text": summaries_concatenated, "summary": summary_to_be_refined})
                     summary_to_be_refined = summary_manager.format_to_string( input=refine_chain_response ) 
-                    console.print(f"Refine result content length {len(summary_to_be_refined)}",style="dim bright_cyan")
+                    console.print(f"Refine result for batch {i} to {i+10} .  Content length of refine result: {len(summary_to_be_refined)}",style="dim bright_cyan")
                 
                 return refine_chain_response
             else:
