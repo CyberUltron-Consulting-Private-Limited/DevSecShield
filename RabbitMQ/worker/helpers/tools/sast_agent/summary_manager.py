@@ -20,9 +20,10 @@ Refine the given Logical Components list to make it more coherent and detailed .
 
 MapPrompt = """
 ## Your Task : \n
-Analyze this code and extract the Logical Components from this code which can help a cybersecurity professional identify vulnerabilities later . 
+**Analyze this code and extract the Logical Components from this code which can help a cybersecurity professional identify vulnerabilities later** . 
 For example : A logical component could be "Authentication Workflow/System , CRUD Database workflow , Role based access system , ... or any other feature specific logical component . 
 Note : This was only an example to help you understand the task better , remember to only extract the logical components mentioned in the code snippet provided . 
+Important : Extract at most 2 logical components from these snippets but meake the description as detailed as possible for each logical component , capturing all the logic/workflows corresponding to each logical component .
 \n\n
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## Code Snippets :
@@ -34,6 +35,7 @@ CombinePrompt = """
 ## Your Task : \n
 Analyze the logical components provided below that have been extracted from the codebase and combine them into a single list of logical components 
 that would help a cybersecurity professional identify vulnerabilities in the code later . 
+Important : Combine at most 3 logical components into a single logical component , making the description as detailed as possible for each logical component , capturing all the logic/workflows corresponding to each logical component .
 \n\n
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## Logical Components  :

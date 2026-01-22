@@ -12,11 +12,14 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_aws import ChatBedrock
 from langchain_mongodb import MongoDBAtlasVectorSearch
 from helpers.context.base_utilities import BaseUtilities
-from helpers.context.schema import LogicalComponents,IndividualLogicalComponent
+from helpers.context.schema import LogicalComponents
 from helpers.context.base_summary_manager import BaseSummaryManager
 import json
+from langsmith import traceable
 
 console = Console()
+
+load_dotenv()
 
 @dataclass
 class BaseResult:
@@ -70,6 +73,8 @@ class BaseContextManager(BaseUtilities):
         except Exception as e:
             raise ValueError(f"Error in adding context id to documents: {e}")
     
+    
+    @traceable
     def generate_map_reduce_summary(
         self,
         summary_manager: BaseSummaryManager,
@@ -199,6 +204,7 @@ class BaseContextManager(BaseUtilities):
             
         except Exception as e:
             raise ValueError(f"Error in generating map reduce summary of codebase: {e}")
+    
     
 
     def delete_context(self):

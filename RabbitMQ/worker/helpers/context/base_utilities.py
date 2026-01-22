@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_aws import ChatBedrock
 from qdrant_client import QdrantClient
 from langchain_qdrant import QdrantVectorStore
+from langsmith.wrappers import wrap_openai
 console = Console()
 
 
@@ -18,6 +19,8 @@ class BaseUtilities:
     - get_llm
     - get_embedding_model
     """
+    tracing : bool = True 
+
     def __init__(self):
         raise NotImplementedError("Subclass must implement this method")
     
@@ -108,6 +111,7 @@ class BaseUtilities:
                     api_key=OPENAI_API_KEY,
                 )
                 console.print(f"Unstructured OpenAI LLM fetched successfully",style="dim green")
+            
             return llm
         except Exception as e:
             raise ValueError(f"Error in getting LLM: {e}")

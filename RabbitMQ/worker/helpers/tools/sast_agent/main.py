@@ -130,6 +130,9 @@ class SASTAgent(BaseAgent):
             self.logical_components = summary # SET logical_components ⭐
 
             console.print(f"Codebase context id set successfully",style="bold blue1")
+            console.print(f"Logical Components length : {len(self.logical_components.logical_components)}",style="bold yellow")
+            for index , logical_component in enumerate(self.logical_components.logical_components):
+                console.print(f" 🔧 Logical Component # {index + 1} : {logical_component.title}",style="bold yellow")
 
         except Exception as e:
             raise ValueError(f"Error in populating codebase context: {e}")

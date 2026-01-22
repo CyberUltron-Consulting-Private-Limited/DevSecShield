@@ -1,4 +1,4 @@
-from helpers.context.scan_context import GithubContext, validate_dict_with_context
+from helpers.context.scan_context import GithubContext, validate_dict_with_context , ZipContext
 from helpers.tools import SASTAgent , SASTSummaryManager
 from rich.console import Console
 
@@ -15,10 +15,17 @@ if __name__ == "__main__":
         }
         context = validate_dict_with_context(dict_context)
 
+        zip_context = ZipContext(
+            bucket_name="devsecshield-storage",
+            object_name="RiskPilot-main (1).zip" # size : Total size: 0.0002691037952899933 GB ( 0.2755622863769531 MB ) ( 288948 bytes ) ( 36 files ) , cost : 0.08 $ ( ~ 7 INR )
+        )
+        
+
         agent = SASTAgent(
-            context=context,
+            # context=context,
+            zip_context=zip_context,
             app_lang="python",
-            exclude_path_arrays=[["frontend"],["api_routes"],["mcpscan_utils"],["llm_scan_utils"],["normal_scan_utils"],["virus_scan_utils"],["test.py"],["graph.py"]]
+            # exclude_path_arrays=[["frontend"],["api_routes"],["mcpscan_utils"],["llm_scan_utils"],["normal_scan_utils"],["virus_scan_utils"],["test.py"],["graph.py"]]
         )
 
         # agent.populate_codebase_context()

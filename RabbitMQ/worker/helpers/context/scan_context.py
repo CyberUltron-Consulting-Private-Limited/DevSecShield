@@ -146,5 +146,7 @@ def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
         # extract the zip file to a temporary directory
         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
             zip_ref.extractall(directory)
+        
+        return directory
     except Exception as e:
         raise ValueError(f"Error in getting directory from zip context: {e}")

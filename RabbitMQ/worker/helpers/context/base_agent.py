@@ -12,10 +12,13 @@ import os
 from langchain_aws import ChatBedrock
 from langchain_core.messages import HumanMessage , SystemMessage
 from qdrant_client import models
+from langsmith.wrappers import wrap_openai
 
 console = Console()
 
 class BaseAgent(OutputModelManager,BaseUtilities):
+
+    tracing : bool = True 
 
     def __init__(self):
         console.print(f"BaseAgent initialized without overriding the __init__ method",style="dim yellow")
@@ -85,6 +88,12 @@ class BaseAgent(OutputModelManager,BaseUtilities):
             
             load_dotenv()
             client = OpenAI()
+
+            # remove from production 
+            if self.tracing:
+                client = wrap_openai(client)
+            
+
             console.print("Generating Structured response .... ",style="bold bright_yellow")
 
             if image:
