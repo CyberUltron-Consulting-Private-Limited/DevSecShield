@@ -3,11 +3,13 @@ from rich.console import Console
 from langchain_community.vectorstores import MongoDBAtlasVectorSearch, VectorStore
 from helpers.context.scan_context import validate_dict_with_context
 from helpers.context.base_context import BaseResult, BaseContextManager
-from langchain_text_splitters import RecursiveJsonSplitter
+from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from langchain_text_splitters.json import RecursiveJsonSplitter
 import uuid
 from datetime import datetime
 from helpers.context.base_summary_manager import BaseSummaryManager
 from dataclasses import dataclass
+import json
 console = Console()
 
 @dataclass
@@ -53,6 +55,7 @@ class OpenSourceContext(BaseContextManager):
             else:
                 raise ValueError(f"kwargs must be a dictionary")
             self.collection_name = "open_source_context"
+            self.results:dict | None = None
         except Exception as e:
             raise ValueError(f"Error in initializing OpenSourceContext: {e}")
 
@@ -65,7 +68,13 @@ class OpenSourceContext(BaseContextManager):
             results = self.open_source_tool(**self.kwargs)
             if results:
                 console.print(f"Results found !",style="bold green")
-                self.results = results
+                self.results = results # SET results ⭐
+
+                # for testing ⚠️⚠️
+                # with open("results.json", "w") as f:
+                #     json.dump(results, f, indent=2)
+
+
             else:
                 console.print(f"No results found !",style="bold red")
                 raise ValueError(f"No results found")
@@ -74,16 +83,16 @@ class OpenSourceContext(BaseContextManager):
     
     def split_and_set_result_documents(
         self,
-        max_chunk_size: int = 5000
+        max_chunk_size: int = 10000
         )->bool:
         """
         Responsible for splitting the results into documents and setting the documents
         """
         try:
-            splitter = RecursiveJsonSplitter(max_chunk_size=max_chunk_size)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=max_chunk_size)
             if not self.results:
                 raise ValueError(f"No results found")
-            split_json_documents = splitter.create_documents(texts=[self.results])
+            split_json_documents = splitter.create_documents(texts=[str(self.results)])
             if not split_json_documents:
                 raise ValueError(f"No split json documents found")
             self.documents = split_json_documents # SET documents ⭐
@@ -93,16 +102,20 @@ class OpenSourceContext(BaseContextManager):
     
     def save_results_into_vector_store_and_return_context_id(
         self,
-        max_chunk_size: int = 5000
+        max_chunk_size: int = 10000
         )->str:
         """
         Main function responsible for loading the results into a vector store and returning the context id
         """
         try:
-            splitter = RecursiveJsonSplitter(max_chunk_size=max_chunk_size)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=max_chunk_size)
             if not self.results:
                 raise ValueError(f"No results found")
-            split_json_documents = splitter.create_documents(texts=[self.results])
+            split_json_documents = splitter.create_documents(texts=[str(self.results)])
+
+            # for testing 
+            for json_document in split_json_documents:
+                console.print(f"JSON Document length: {len(json_document.page_content)}",style="dim yellow")
 
 
             if not split_json_documents:
@@ -111,6 +124,7 @@ class OpenSourceContext(BaseContextManager):
             
             # adding context_id to the documents metadata for filtering
             generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+            console.print(f"Adding {len(split_json_documents)} opensource context documents to vector store with context id : {generated_id}",style="bold green")
             split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
             
 

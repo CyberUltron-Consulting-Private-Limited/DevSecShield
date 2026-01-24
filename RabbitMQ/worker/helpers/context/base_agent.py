@@ -115,6 +115,7 @@ class BaseAgent(OutputModelManager,BaseUtilities):
                             ],
                         }
                     ],
+                    timeout=self.llm_timeout,
                     )
             
             else:
@@ -123,7 +124,8 @@ class BaseAgent(OutputModelManager,BaseUtilities):
                     model=llm_model,
                     text_format=output_model,
                     instructions=system_prompt,
-                    input=prompt
+                    input=prompt,
+                    timeout=self.llm_timeout,
                 )
             
             model_response = response.output_parsed

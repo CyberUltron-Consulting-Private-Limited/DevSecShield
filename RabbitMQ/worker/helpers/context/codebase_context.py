@@ -359,6 +359,7 @@ class CodebaseContext(BaseContextManager):
             generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
             split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
 
+            console.print(f"Adding {len(split_documents_with_context_id)} codebase documents to vector store with context id : {generated_id}",style="bold green")
             adding_success = self.add_documents_to_vector_store( documents=split_documents_with_context_id, vector_store=vectorstore, ) # SETS doc_ids ⭐
             if not adding_success:
                 raise ValueError(f"Failed to add documents to vector store")

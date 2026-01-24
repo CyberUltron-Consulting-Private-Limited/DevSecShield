@@ -24,5 +24,8 @@ def get_size(start_path = '.'):
 
     console.print(f"Total size: {total_size_gb} GB ( {total_size_mb} MB ) ( {total_size} bytes ) ( {total_files} files )",style="bold yellow")
 
-get_size("C:\\Users\\HP\\AppData\\Local\\Temp\\repo_n4hky4d2")
+# get_size("C:\\Users\\HP\\AppData\\Local\\Temp\\repo_n4hky4d2")
 # get_size("C:\\Users\\HP\\Downloads\\transformers-main")
+# get_size("C:\\Users\\HP\\Desktop\\DevSecShield")
+# get_size("C:\\Users\\HP\\Desktop\\RiskPilot")
+get_size("C:\\Users\\HP\\Downloads\\DevSecShield-main")

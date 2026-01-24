@@ -20,6 +20,7 @@ class BaseUtilities:
     - get_embedding_model
     """
     tracing : bool = True 
+    llm_timeout: int = 60*10 # 10 minutes
 
     def __init__(self):
         raise NotImplementedError("Subclass must implement this method")
@@ -101,6 +102,7 @@ class BaseUtilities:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     api_key=OPENAI_API_KEY,
+                    timeout=self.llm_timeout,
                 ).with_structured_output(schema=output_model)
                 console.print(f"Structured OpenAI LLM fetched successfully",style="dim green")
             else:
@@ -109,6 +111,7 @@ class BaseUtilities:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     api_key=OPENAI_API_KEY,
+                    timeout=self.llm_timeout,
                 )
                 console.print(f"Unstructured OpenAI LLM fetched successfully",style="dim green")
             

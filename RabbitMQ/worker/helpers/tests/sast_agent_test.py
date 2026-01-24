@@ -18,6 +18,7 @@ if __name__ == "__main__":
         zip_context = ZipContext(
             bucket_name="devsecshield-storage",
             object_name="RiskPilot-main (1).zip" # size : Total size: 0.0002691037952899933 GB ( 0.2755622863769531 MB ) ( 288948 bytes ) ( 36 files ) , cost : 0.08 $ ( ~ 7 INR )
+            # object_name="DevSecShield-main.zip" # size : Total size: 0.000959618017077446 GB ( 0.9826488494873047 MB ) ( 1030382 bytes ) ( 153 files ) , cost : 0.182 $ ( ~ 16.7 INR )
         )
         
 

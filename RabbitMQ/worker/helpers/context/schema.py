@@ -25,6 +25,10 @@ class CodebaseVulnerability(BaseVulnerability):
     snippet : str = Field(description="The snippet of code that contains the vulnerability")
 
 
+class DependencyVulnerability(BaseVulnerability):
+    dependencies : list[str] = Field(description="A list of dependencies that this vulnerability is related to")
+
+
 class FallbackCVEEnum(Enum):
     cve_2025_55182 = "Pre-authentication remote code execution in React Server Components due to unsafe deserialization."  # CVE-2025-55182 description from NVD. :contentReference[oaicite:2]{index=2}
     cve_2025_14847 = "Critical MongoDB vulnerability allowing unauthenticated heap memory extraction (MongoBleed)."  # Based on analysis. :contentReference[oaicite:3]{index=3}
