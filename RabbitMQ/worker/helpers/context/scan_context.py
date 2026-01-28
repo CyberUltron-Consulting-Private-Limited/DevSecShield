@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Literal
 import json
-from .s3_utils import download_file
+from helpers.context.s3_utils import download_zip_file, download_file
 import zipfile
 
 def clone_repo(
@@ -137,7 +137,7 @@ class ZipContext(BaseModel):
 def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
     try:
         # Download the zip file from the s3 bucket 
-        zip_file_path = download_file(zip_context.bucket_name, zip_context.object_name)
+        zip_file_path = download_zip_file(zip_context.bucket_name, zip_context.object_name)
 
         
         # create a temporary directory
@@ -150,3 +150,14 @@ def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
         return directory
     except Exception as e:
         raise ValueError(f"Error in getting directory from zip context: {e}")
+
+
+class FileContext(BaseModel):
+    bucket_name: str = Field(..., description="The name of the bucket with file to download.")
+    object_name: str = Field(..., description="The name of the object with file to download.")
+
+def get_file_from_file_context(file_context: FileContext) -> str | Path | None:
+    try:
+        return download_file(file_context.bucket_name, file_context.object_name)
+    except Exception as e:
+        raise ValueError(f"Error in getting file from file context: {e}")

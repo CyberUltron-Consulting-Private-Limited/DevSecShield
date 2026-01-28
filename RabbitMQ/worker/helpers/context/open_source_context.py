@@ -59,7 +59,7 @@ class OpenSourceContext(BaseContextManager):
         except Exception as e:
             raise ValueError(f"Error in initializing OpenSourceContext: {e}")
 
-    def run_open_source_tool(self)->dict:
+    def run_open_source_tool(self)->None:
         """
         Responsible for running the open source tool and returning the context
         """

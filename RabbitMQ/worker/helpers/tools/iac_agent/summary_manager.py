@@ -1,5 +1,6 @@
 from helpers.context import  BaseSummaryManager 
 from helpers.context.schema import CodebaseVulnerability
+from helpers.context.output_model import OutputModelManager
 from pydantic import BaseModel, Field
 from rich.console import Console
 from langchain.schema import Document
@@ -49,15 +50,27 @@ Important : Combine at most 3 IAC Vulnerabilities into a single IAC Vulnerabilit
 """
 
 
-class IACSummaryManager(BaseSummaryManager):
-    def __init__(self):
+class IACSummaryManager(BaseSummaryManager,OutputModelManager):
+    def __init__(self,iac_types:list[str]):
+
+        console.print(f"IAC Types being used in the codebase are : {iac_types}",style="bold yellow")
+
+        addition_to_map_prompt = f"""
+        ## IAC Types being used in the codebase are :
+        {", ".join(iac_types)}
+        """
+        ModifiedMapPrompt = MapPrompt + addition_to_map_prompt
+
+        output_model = self.get_codebase_output_model()
+        
         super().__init__(
-            summary_output_model=FinalIACVulnerabilities,
+            summary_output_model=output_model,
             refine_prompt_string = RefinePrompt,
-            map_prompt_string = MapPrompt,
+            map_prompt_string = ModifiedMapPrompt,
             combine_prompt_string = CombinePrompt,
             summary_starting_string="IAC Vulnerabilities Identified in the codebase are as follows : \n\n",
         )
+
     
         
     def format_to_string(

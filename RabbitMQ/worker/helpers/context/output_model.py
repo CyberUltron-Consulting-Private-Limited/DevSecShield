@@ -1,5 +1,5 @@
 from rich.console import Console
-from helpers.context.schema import BaseVulnerability, CodebaseVulnerability
+from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability
 from pydantic import BaseModel, Field , create_model
 from typing import Annotated, Literal
 import urllib.parse
@@ -23,6 +23,16 @@ class OutputModelManager:
             return codebase_output_model
         except Exception as e:
             console.print(f"Error in getting codebase output model: {e}",style="dim red")
+            raise e
+    
+    def get_dependency_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting Dependency Output Model ....",style="dim yellow")
+            dependency_output_model = self.get_output_model(DependencyVulnerability)
+            console.print(f"Dependency Output Model generated successfully",style="bold green")
+            return dependency_output_model
+        except Exception as e:
+            console.print(f"Error in getting dependency output model: {e}",style="dim red")
             raise e
     
     def get_base_output_model(self) -> type[BaseModel]:

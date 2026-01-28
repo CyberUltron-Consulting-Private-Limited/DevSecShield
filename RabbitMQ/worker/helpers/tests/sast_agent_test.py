@@ -1,7 +1,7 @@
 from helpers.context.scan_context import GithubContext, validate_dict_with_context , ZipContext
 from helpers.tools import SASTAgent , SASTSummaryManager
 from rich.console import Console
-
+import json
 console = Console()
 
 if __name__ == "__main__":
@@ -26,7 +26,7 @@ if __name__ == "__main__":
             # context=context,
             zip_context=zip_context,
             app_lang="python",
-            # exclude_path_arrays=[["frontend"],["api_routes"],["mcpscan_utils"],["llm_scan_utils"],["normal_scan_utils"],["virus_scan_utils"],["test.py"],["graph.py"]]
+            exclude_path_arrays=[["frontend"],["api_routes"],["mcpscan_utils"],["llm_scan_utils"],["normal_scan_utils"],["virus_scan_utils"],["test.py"],["graph.py"]]
         )
 
         # agent.populate_codebase_context()
@@ -38,5 +38,13 @@ if __name__ == "__main__":
 
         result = agent.run_agent()
         console.print(f"Result : {result}",style="bold green")
+
+
+        parsed_output = agent.to_dict_list(result)
+
+        console.print(f"Parsed output : {parsed_output}",style="dim yellow")
+
+        with open("sast_agent_test_output.json", "w") as f:
+            json.dump(parsed_output, f, indent=2)
     except Exception as e:
         console.print(f"Error while Testing SAST agent : {str(e)}")

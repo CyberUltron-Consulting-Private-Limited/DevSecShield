@@ -13,6 +13,7 @@ from langchain_aws import ChatBedrock
 from langchain_core.messages import HumanMessage , SystemMessage
 from qdrant_client import models
 from langsmith.wrappers import wrap_openai
+from helpers.parsers.base_vuln import parse_vuln
 
 console = Console()
 
@@ -25,6 +26,20 @@ class BaseAgent(OutputModelManager,BaseUtilities):
     
     def run_agent(self):
         raise NotImplementedError("Subclasses must implement this method")
+    
+
+    def to_dict_list(self,output:list[type[BaseVulnerability]]) -> list[dict]:
+        """
+        Parse the list of vulnerabilities output of the agent into a list of dictionaries
+        """
+        try:
+            parsed_output = []
+            for item in output:
+                parsed_output.append(parse_vuln(item))
+            return parsed_output
+        except Exception as e:
+            console.print(f"Error while parsing output: {e}",style="bold red")
+            raise e
 
     def query_vector_store(
         self,

@@ -15,7 +15,7 @@ import { FcGoogle } from "react-icons/fc"
 import { FaApple } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6" // Keeping this. If this still fails, confirm react-icons version/install.
 import { toast } from "sonner"
-import router from "next/navigation"
+import router, { useSearchParams } from "next/navigation"
 import api from "@//utils/interceptors"
 import { useRouter } from "next/navigation"
 import { handleApiError, showErrorToast } from "@/utils/error-handler"
@@ -52,6 +52,13 @@ export default function LoginPage({
       setTimer(delay*1000)
     }
   }, [timer])
+
+  // get query params for redirect url after auth ( and redirect to that url after auth if this query param is present)
+  const searchParams = useSearchParams()
+  const redirectUrlString = searchParams.get("redirect_url")
+  const redirectUrl = redirectUrlString?.split("-").join("/") || ""
+
+  console.log(redirectUrl)
 
 
 

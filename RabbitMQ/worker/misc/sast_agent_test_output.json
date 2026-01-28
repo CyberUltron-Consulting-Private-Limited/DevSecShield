@@ -1,0 +1,627 @@
+[
+  {
+    "logical_component_title": "Unified Authentication and Token Lifecycle (Signup/Login, Token Issuance, and Verification Code Validation)",
+    "vulnerability": {
+      "title": "Path traversal in file upload and image handling",
+      "description": "User-controlled file paths are used to build the destination path for writing uploaded content. This can lead to path traversal where an attacker can access or overwrite arbitrary files outside the intended directory.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        },
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        {
+          "NIST_CSF_IDENTIFY": "NIST CSF - Identify"
+        }
+      ],
+      "suggested_fix": "Sanitize and constrain all user-supplied paths. Resolve to a fixed base upload directory and validate the final path. Use safe filename handling and avoid trusting user-provided path components. Example fixes: base_dir = Path(\"uploads\"); dest = (base_dir / Path(os.path.basename(user_path))).resolve(); assert str(dest).startswith(str(base_dir.resolve())); open(dest, 'wb') in a controlled directory only. Consider using streaming uploads and validating mime/type before writing.",
+      "location": "backend/api_routes/routing_normal_sys.py",
+      "snippet": "with open(path,\"wb\") as file:\n    ...  # path derived from user input (potential path traversal)\"",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Unified Authentication and Token Lifecycle (Signup/Login, Token Issuance, and Verification Code Validation)",
+    "vulnerability": {
+      "title": "Sensitive data leakage via logs (printing DB URL)",
+      "description": "Database URL or secret material appears in logs via print statements during backup or debugging. This exposes credentials and connection strings to logs or stdout.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+        },
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
+        },
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        }
+      ],
+      "suggested_fix": "Remove or redact sensitive data from logs. Use a logging framework with appropriate log levels and masking. Do not print DATABASE_URL or secret keys. If needed for debugging, log only non-sensitive metadata and enable secure, access-controlled log sinks.",
+      "location": "backup.py",
+      "snippet": "print(db_url)  # prints the full DB URL with credentials",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Unified Authentication and Token Lifecycle (Signup/Login, Token Issuance, and Verification Code Validation)",
+    "vulnerability": {
+      "title": "Expired verification codes not enforced in verification flows",
+      "description": "Verification codes have expiry metadata (expires_at) but signup, login, and password reset flows only look up by email and code, without validating expiry. This enables reuse of expired codes or race conditions between code issuance and validation.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
+        },
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+        },
+        {
+          "NIST_CSF_IDENTIFY": "NIST CSF - Identify"
+        }
+      ],
+      "suggested_fix": "When fetching a VerificationCode by email and code, also verify that verification_code.expires_at > current_utc_time. Implement a strict time window and reject expired codes. Consider DB-side CHECK (expires_at > NOW()) and an atomic transaction to ensure code is consumed only once.",
+      "location": "backend/models.py / backend/auth_utils.py / backend/routing_auth.py",
+      "snippet": "verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()\nif verification_code is None or verification_code.expires_at <= datetime.now(timezone.utc):\n    raise HTTPException(..., detail=\"Invalid or expired verification code\")\n...  session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))\nsession.commit()",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Unified Authentication and Token Lifecycle (Signup/Login, Token Issuance, and Verification Code Validation)",
+    "vulnerability": {
+      "title": "Potential race condition / weak transactional integrity around signup",
+      "description": "Signup checks for existing user and then inserts a new user in separate steps. A race condition could allow duplicate emails or inconsistent session state under concurrent signup requests.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        },
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        {
+          "CMMC_LEVEL_2": "CMMC - Level 2 (Intermediate Cyber Hygiene)"
+        }
+      ],
+      "suggested_fix": "Wrap signup steps in a single database transaction or enforce a UNIQUE constraint on User.email. Use SELECT FOR UPDATE or proper isolation to prevent race conditions. Validate and consolidate session_active updates within the same transactional context as user creation.",
+      "location": "backend/auth_routes.py / backend/routing_auth.py",
+      "snippet": "with Session(engine) as session:\n    verification_code = session.exec(select(VerificationCode).where(...)).first()\n    if verification_code is None: ...\n    else:\n        session.exec(delete(VerificationCode).where(...))\n        session.commit()\n\n    user = session.exec(select(User).where(User.email == data.email)).first()\n    if user is not None: raise HTTPException(...)\n    new_user = User(..., session_active=True)\n    session.add(new_user)\n    session.commit()\n    session.refresh(new_user)\n    return { ... }",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Unified Authentication and Token Lifecycle (Signup/Login, Token Issuance, and Verification Code Validation)",
+    "vulnerability": {
+      "title": "Token validation lacks audience/issuer and rotation controls",
+      "description": "Token issuance relies on HS256 with configured secrets but omits issuer/audience validation, token revocation, and rotation (no JTI/blacklist). This increases risk if a token is leaked or used beyond intended scope.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+        },
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        {
+          "NIST80053_IA": "NIST 800-53 - Identification and Authentication"
+        }
+      ],
+      "suggested_fix": "Include issuer (iss) and audience (aud) claims in JWTs and validate them during decoding. Implement token rotation and a revocation mechanism (e.g., a token blacklist or short-lived access tokens with refresh tokens). Consider adding a JTI (unique token identifier) and persisting active sessions to support revocation.",
+      "location": "backend/auth_utils.py / routing_auth.py",
+      "snippet": "access_token = create_access_token(user.email)  # signed with HS256 and secret\nrefresh_token = create_refresh_token(user.email)\n# decode flow should verify iss/aud and check token validity against active sessions",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Unified Authentication and Token Lifecycle (Signup/Login, Token Issuance, and Verification Code Validation)",
+    "vulnerability": {
+      "title": "Insecure handling of Authorization header and tokens in get_user",
+      "description": "get_user parses the Authorization header manually and assumes a well-formed header. Missing or malformed headers can raise exceptions or leak error details. This pattern can cause accidental token leaks or crashes.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        },
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security"
+        }
+      ],
+      "suggested_fix": "Use FastAPI dependencies to extract and validate tokens (e.g., OAuth2PasswordBearer) and avoid manual string parsing. Return 401 for missing/invalid tokens rather than leaking details.",
+      "location": "backend/routing_auth.py",
+      "snippet": "access_token = Authorization.split(\" \")[1]  # assumes Bearer token without validation\nuser = await get_current_user_from_access_token(engine, access_token)",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "Plaintext verification codes stored in the database",
+      "description": "Verification codes are stored in plaintext in the VerificationCode.code column. If the database is compromised, attackers can obtain active or recently issued codes, potentially enabling password resets or account takeovers.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "INJECTION": "A03:2021 - Injection"
+        },
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
+        },
+        {
+          "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
+        },
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        }
+      ],
+      "suggested_fix": "Store a one-way hash of the code (e.g., bcrypt/argon2) instead of plaintext. On issuance, hash the generated code and save the hash. On verification, hash the provided code and compare to the stored hash. Remove the plaintext code storage entirely or migrate existing rows to hashed values. Consider adding a separate \u201cused\u201d flag or delete the row after successful verification.",
+      "location": "backend/models.py (VerificationCode model) and backend/auth_utils.py (generate_verification_code / send_verification_code_and_save_to_db)",
+      "snippet": "class VerificationCode(SQLModel, table=True): ... code: str ... expires_at: datetime = Field(default=nowUTC() + 10 minutes) ...",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "Verification expiry not enforced at verification time",
+      "description": "The VerificationCode check filters by email and code but does not validate expires_at. As a result, codes past their expiry window can still be used for password resets or sign-in, defeating the intended expiry semantics.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "INJECTION": "A03:2021 - Injection"
+        },
+        {
+          "VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_CP": "NIST 800-53 - Contingency Planning"
+        },
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        }
+      ],
+      "suggested_fix": "When validating a code, include a check that VerificationCode.expires_at > current_utc_time (and optionally created_at within acceptable window). Reject if expired. Consider a DB constraint or ORM-level predicate.",
+      "location": "routing_auth.py, reset_password handler (verification_code lookup)",
+      "snippet": "verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "No enforced single-use semantics (code not deleted/marked after successful use)",
+      "description": "After a successful verification, the code remains in the table. This enables potential reuse of the same code to perform further password resets unless separately deleted or marked as used.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+        },
+        {
+          "NIST80053_AC": "NIST 800-53 - Access Control"
+        }
+      ],
+      "suggested_fix": "Delete the code row or flip a 'used' flag immediately upon successful verification. Ensure race-condition safe deletion. Consider referential integrity constraints if codes are linked to sessions.",
+      "location": "routing_auth.py (reset_password) and VerificationCode lifecycle",
+      "snippet": "if verification_code is None: ... # on success, delete/mark as used",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "Use of non-cryptographically secure randomness for codes",
+      "description": "Code generation uses Python\u2019s random module (random.choices), which is not cryptographically secure. This reduces entropy and can make guessing codes feasible in some scenarios.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "INJECTION": "A03:2021 - Injection"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management"
+        },
+        {
+          "CMMC_LEVEL_2": "CMMC - Level 2 (Intermediate Cyber Hygiene)"
+        }
+      ],
+      "suggested_fix": "Generate codes using a cryptographically secure source, e.g., secrets.choice('0123456789') repeated 6 times or secrets.randbelow(10) in a loop. Replace random with the secrets module in generate_verification_code().",
+      "location": "backend/auth_utils.py (generate_verification_code)",
+      "snippet": "code = ''.join(random.choices('0123456789', k=6))",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "Plaintext credentials exposure via email in some flows",
+      "description": "The component description mentions credential-delivery paths that may email plaintext passwords. Even if not consistently implemented, any flow that mails actual passwords is a critical security flaw (confidentiality and auditability risk).",
+      "impact": "Critical",
+      "owasp_top_10": [
+        {
+          "INJECTION": "A03:2021 - Injection"
+        },
+        {
+          "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+        },
+        {
+          "SERVER_SIDE_REQUEST_FORGERY": "A10:2021 - Server-Side Request Forgery (SSRF)"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+        },
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        {
+          "GDPR_INTEGRITY_CONFIDENTIALITY": "GDPR - Integrity and confidentiality"
+        }
+      ],
+      "suggested_fix": "Never email plaintext passwords. Store only salted hashes and use password reset flows with time-limited verification codes. If a credential is created, send a one-time link to set/change a password, not the password itself. Audit email content and remove any plaintext password emissions.",
+      "location": "documentation of flows; potential paths in signup/login/password-reset sequences",
+      "snippet": "No explicit plaintext password transmission should exist; ensure password field is stored hashed and never emailed.",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "Potential lack of rate-limiting and operational abuse protections",
+      "description": "Code issuance and password-reset flows should be protected against abuse (mass requests, enumeration, brute-force guessing). While /send_code uses limiter, the reset path and other paths may lack robust throttling or abuse controls.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        },
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_PL": "NIST 800-53 - Planning"
+        },
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        }
+      ],
+      "suggested_fix": "Apply consistent rate-limiting on all sensitive endpoints (send_code, reset_password, sign-up/verification flows). Consider per-user and per-IP throttling, and add exponential backoff after repeated failures.",
+      "location": "routing_auth.py (send_verification_code, reset_password) and related endpoints",
+      "snippet": "Depends(limiter) used on some routes; ensure all sensitive routes are protected with limiter",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Verification Code Lifecycle and Email-Based Credential Flows",
+    "vulnerability": {
+      "title": "Logging and handling of sensitive data",
+      "description": "Error handling and logs should avoid printing or persisting sensitive values (e.g., verification codes). Logging could inadvertently reveal sensitive data in logs or stack traces.",
+      "impact": "Low",
+      "owasp_top_10": [
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management"
+        },
+        {
+          "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
+        }
+      ],
+      "suggested_fix": "Sanitize logs to avoid exposing codes, emails, or passwords. Use generic error messages for clients and keep detailed traces in secure logs with access controls.",
+      "location": "exception handlers in routing_auth.py and surrounding logs",
+      "snippet": "print(\"invalid verification code \ud83d\udd34\")",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Backup and Restore Data Migration Workflow (Postgres to SQLite)",
+    "vulnerability": {
+      "title": "Credentials exposure via logging ofDATABASE_URL during backup creation",
+      "description": "The backup workflow logs the database connection URL (DATABASE_URL) to stdout via print(db_url) in the create_backup path. This can reveal credentials or other sensitive connection details in logs or console output, leading to credential leakage and potential lateral movement if logs are accessible.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+        },
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
+        },
+        {
+          "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+        },
+        {
+          "ISO27002_9_2": "ISO 27002 - 9.2 User access management"
+        }
+      ],
+      "suggested_fix": "Remove or redact sensitive data from logs. Do not print or log the full DATABASE_URL. Use a logging framework with redaction/masking for secrets, or log only non-sensitive identifiers. Consider using a dedicated secret manager and never write credentials to stdout/stderr or log files with broad access.",
+      "location": "backup.py, function create_backup, line where: print(db_url) occurs and where load_dotenv() initializes environment variables",
+      "snippet": "name = datetime.datetime.now().strftime(\"%d-%m-%Y-at-%I_%M_%S-%p-Backup\")\ndb_url = postgres_url\nprint(db_url)  # Sensitive: do not log credentials\nengine = create_engine(db_url)",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Backup and Restore Data Migration Workflow (Postgres to SQLite)",
+    "vulnerability": {
+      "title": "Unencrypted backups at rest (SQLite backup file stored plaintext)",
+      "description": "SQLite backup files are created and stored under backups/ without encryption. This means that if the backup file is accessed by an unauthorized party, they can read all domain data including potentially sensitive fields (e.g., passwords, verification codes, raw_scan_data).",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+        },
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        {
+          "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_RA": "NIST 800-53 - Risk Assessment"
+        },
+        {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management"
+        },
+        {
+          "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
+        }
+      ],
+      "suggested_fix": "Encrypt backups at rest using a strong encryption mechanism (e.g., AES-256-GCM) with keys managed in a secure KMS or secret manager. Store encrypted backups outside the code repository and enforce strict filesystem permissions (e.g., 0600). Include integrity protection (e.g., HMAC or a signed manifest) to detect tampering.",
+      "location": "backup.py, function create_backup and sqlite_engine creation",
+      "snippet": "sqlite_file_name = os.path.join(os.path.dirname(__file__),'backups',f\"{name}.db\")\nsqlite_url = f\"sqlite:///{sqlite_file_name}\"\nsqlite_engine = create_engine(sqlite_url)",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Backup and Restore Data Migration Workflow (Postgres to SQLite)",
+    "vulnerability": {
+      "title": "Inclusion of plaintext passwords in backup (password field copied verbatim)",
+      "description": "The backup mirrors User objects including the password field (password=user.password). If passwords are not hashed, this results in sensitive credential leakage within backups. Even if hashed, exporting password hashes can increase the attack surface if the backup is exposed.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+        },
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        {
+          "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
+        },
+        {
+          "NIST80053_AC": "NIST 800-53 - Access Control"
+        }
+      ],
+      "suggested_fix": "Avoid exporting or duplicating plaintext password fields. If password hashes are stored, ensure only hashes are backed up and that access to backups is tightly controlled. Consider redacting or omitting sensitive fields during backup, or encrypting the entire backup and restricting access to keys and files.",
+      "location": "backup.py, in create_backup, during domain mirroring of User objects",
+      "snippet": "downloaded_user = User(\n    id=user.id,\n    email=user.email,\n    password=user.password,  # potentially sensitive\n    first_name=user.first_name,\n    last_name=user.last_name,\n    ...\n)",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Backup and Restore Data Migration Workflow (Postgres to SQLite)",
+    "vulnerability": {
+      "title": "Logical bug in restore_backup: create_all invoked on Postgres engine instead of SQLite engine",
+      "description": "In restore_backup(create_tables=True), the code conditionally creates tables with SQLModel.metadata.create_all(engine) which uses the Postgres engine. This means schemas may be created on the source/Postgres database rather than the backup SQLite store, leading to schema drift, failed restoration, or data corruption when restoring from SQLite to Postgres.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+        },
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management"
+        },
+        {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+        }
+      ],
+      "suggested_fix": "Create tables on the SQLite backup engine, not on the Postgres engine. Replace SQLModel.metadata.create_all(engine) with SQLModel.metadata.create_all(sqlite_engine) (and ensure table creation occurs on the correct engine prior to restoration).",
+      "location": "backup.py, function restore_backup, near: if create_tables: SQLModel.metadata.create_all(engine)",
+      "snippet": "if create_tables:\n    SQLModel.metadata.create_all(sqlite_engine)  # should target the backup SQLite engine",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Backup and Restore Data Migration Workflow (Postgres to SQLite)",
+    "vulnerability": {
+      "title": "Potential path traversal risk in related file-upload code (not in backup/restore snippet but present in codebase)",
+      "description": "Static analysis indicates a path traversal vulnerability in api_routes/routing_normal_sys.py where a file path is constructed from untrusted input and used in an open() call (with open(path, 'wb')). If user input determines the path without proper sanitization, an attacker could write to arbitrary locations.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management"
+        },
+        {
+          "CMMC_LEVEL_3": "CMMC - Level 3 (Good Cyber Hygiene)"
+        }
+      ],
+      "suggested_fix": "Sanitize and validate all file paths derived from user input. Use secure file handling utilities, restrict writes to a designated directory, and avoid using raw user-supplied paths. Consider using path libraries (e.g., pathlib) to resolve and constrain paths and implement allow-listing for upload destinations.",
+      "location": "backend/api_routes/routing_normal_sys.py, around the file upload path handling (line 79 and related)",
+      "snippet": "with open(path, \"wb\") as file:\n    ...  # path should be validated and confined to an approved directory",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Authentication and Per-user Scan Overview (Header-based Auth and Per-user Data Aggregation)",
+    "vulnerability": {
+      "title": "Weak header-based authentication and lack of per-endpoint authorization",
+      "description": "The /overview endpoint relies solely on a header-based authentication flow via get_user_from_header_or_raise_exception and does not enforce explicit per-endpoint authorization checks. If tokens are leaked, forged, or misissued, an attacker could potentially access data for that user or perform unauthorized actions if admin flags or scopes are misconfigured in seed/util scripts.",
+      "impact": "High",
+      "owasp_top_10": [
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security"
+        },
+        {
+          "NIST80053_AC": "NIST 800-53 - Access Control"
+        },
+        {
+          "NIST_CSF_IDENTIFY": "NIST CSF - Identify"
+        }
+      ],
+      "suggested_fix": "Replace header-only authentication with robust, per-endpoint authorization using a formal framework (e.g., OAuth2/JWT with proper scopes). Use FastAPI dependencies to enforce authentication on the route and verify that the user has the right to access the requested data. Validate token signature, expiration, issuer, and enforce role/ownership checks before returning data.",
+      "location": "backend/main.py - overview endpoint",
+      "snippet": "async def overview(Authorization: Annotated[str | None, Header()] = None):\n    user = await get_user_from_header_or_raise_exception(engine, Authorization)\n    # further authorization checks are not explicit beyond header validation",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Authentication and Per-user Scan Overview (Header-based Auth and Per-user Data Aggregation)",
+    "vulnerability": {
+      "title": "Excessive data exposure by aggregating multiple sources into a single per-user payload",
+      "description": "The endpoint merges NormalSystemTM, LLMScan, and MCPScan records into one payload. While filtered by user_id, this combined view could reveal sensitive metadata (e.g., model_names, repo paths, or internal statuses) across sources. If any admin or privileged user obtains a valid token, or if seed scripts grant broad access, this increases the blast radius of data exposure.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "ISO27002_9_2": "ISO 27002 - 9.2 User access management"
+        },
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        {
+          "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+        }
+      ],
+      "suggested_fix": "Apply data minimization: expose only fields strictly needed by the client. Consider per-field redaction or filtering and implement pagination. Enforce strict ownership checks and audit access. Consider scoping responses to the caller\u2019s permissions and embedding access control decisions in the data retrieval layer.",
+      "location": "backend/main.py - overview endpoint",
+      "snippet": "\"name\":proj.system_name, ... \"name\":proj.model_name, ... \"name\":proxy.repo ...",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Authentication and Per-user Scan Overview (Header-based Auth and Per-user Data Aggregation)",
+    "vulnerability": {
+      "title": "Insecure and non-robust error handling with potential information leakage",
+      "description": "The overview flow uses a broad try/except Exception and logs via a plain print. It surfaces generic HTTP 500/400 errors and prints internal error details to stdout. This can leak internal details and make incident response harder, and it may reveal stack traces or DB details to clients if exceptions bubble differently.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
+        },
+        {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+        }
+      ],
+      "suggested_fix": "Use a centralized, structured error handler with sanitized messages. Avoid printing raw exceptions to stdout. Log with appropriate levels (e.g., ERROR) and include correlation IDs. Return consistent, non-revealing error payloads to clients. Catch and handle specific exception types (e.g., psycopg2.Error) separately from application logic errors.",
+      "location": "backend/main.py - overview endpoint",
+      "snippet": "except Exception as e:\n        if isinstance(e,psycopg2.Error):\n            raise HTTPException(status_code=500, detail=\"Server is busy, please try again later\")\n        if isinstance(e,HTTPException):\n            raise e\n        print(f\"\ud83d\udfe5 Error in overview: {e}\")\n        raise HTTPException(status_code=400, detail=\"An error occurred while fetching the overview, please try again later\")",
+      "cves": []
+    }
+  },
+  {
+    "logical_component_title": "Authentication and Per-user Scan Overview (Header-based Auth and Per-user Data Aggregation)",
+    "vulnerability": {
+      "title": "CORS misconfiguration enabling broad cross-origin requests with credentials",
+      "description": "The FastAPI app initializes CORSMiddleware with allow_origins set to '*' and allow_credentials set to True. This combination allows credentialed requests from any origin, increasing risk of CSRF and data leakage in a browser context. It undermines defense in depth for cross-origin requests.",
+      "impact": "Medium",
+      "owasp_top_10": [
+        {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        }
+      ],
+      "compliance_controls": [
+        {
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        {
+          "ISO27002_7_1": "ISO 27002 - 7.1 Prior to employment"
+        },
+        {
+          "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+        }
+      ],
+      "suggested_fix": "Restrict allowed origins to known frontends (e.g., https://threatshield... and localhost during dev). Avoid allow_credentials unless necessary, and if needed, restrict origins and implement proper CSRF protections. Move CORS config to environment-specific settings.",
+      "location": "backend/main.py - CORSMiddleware configuration",
+      "snippet": "app = FastAPI(..., middleware=[Middleware(CORSMiddleware, allow_origins=[\"*\"], allow_credentials=True, ...))])",
+      "cves": []
+    }
+  }
+]

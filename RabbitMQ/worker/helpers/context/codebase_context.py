@@ -12,6 +12,7 @@ from rich.console import Console
 from helpers.context.base_context import BaseResult, BaseContextManager
 from pathlib import Path
 from helpers.context.base_summary_manager import BaseSummaryManager
+from helpers.context.measure_size import get_size_of_documents
 import re
 console = Console()
 
@@ -127,6 +128,11 @@ def file_path_matches_pattern(file_path:str, path_array: list[str])->bool:
                 regex= rf"{path_array[0]}" + r"[\\/]" + rf"{path_array[1]}" 
             else:
                 regex = r"[\\/]" + rf"{path_array[0]}" 
+            
+
+            # if path array is simply an extension , then use the extension as the regex
+            if len(path_array) == 1 and path_array[0].startswith("."):
+                regex = rf"{path_array[0]}"
                 
 
 
@@ -253,6 +259,9 @@ class CodebaseContext(BaseContextManager):
         splits the documents into smaller chunks
         """
         try:
+            if len(documents) == 0 or not documents:
+                raise ValueError(f"No documents found to split")
+            
             codebase_splitter = RecursiveCharacterTextSplitter.from_language(
                 language=language, chunk_size=chunk_size, chunk_overlap=chunk_overlap
             )
@@ -275,6 +284,9 @@ class CodebaseContext(BaseContextManager):
         splits the documents into smaller chunks without using the language
         """
         try:
+            if len(documents) == 0 or not documents:
+                raise ValueError(f"No documents found to split")
+            
             document_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             split_documents = document_splitter.split_documents(documents)
             console.print(f"{len(split_documents)} Documents without language split successfully",style="dim yellow")
@@ -295,14 +307,19 @@ class CodebaseContext(BaseContextManager):
                 if language!= None and isinstance(language, Language):
                     console.print(f"Loading documents of language: {language}",style="dim green")
                     documents = self.load_documents_of_extension(file_extension)
+                    if len(documents) == 0 :
+                        console.print(f"No language documents found of extension : {file_extension} , skipping .... ",style="dim red")
+                        continue
                     split_documents = self.split_documents_of_language(documents, language)
         
                     split_documents_list.extend(split_documents)
                 else:
                     console.print(f"Loading documents without language: {file_extension}",style="dim green")
                     documents = self.load_documents_of_extension(file_extension)
+                    if len(documents) == 0 :
+                        console.print(f"No non-language documents found of extension : {file_extension} , skipping .... ",style="dim red")
+                        continue
                     split_documents = self.split_documents_without_language(documents)
-                    
                     split_documents_list.extend(split_documents)
             
 
@@ -324,6 +341,19 @@ class CodebaseContext(BaseContextManager):
             return split_documents_list
 
         except Exception as e:
+            included_set = set(self.metadata["included_documents"])
+            excluded_set = set(self.metadata["excluded_documents"])
+            self.metadata["included_documents"] = included_set
+            self.metadata["excluded_documents"] = excluded_set
+            
+            
+            # for testing
+            for included in self.metadata["excluded_documents"]:
+                console.print(f" -{included}",style = "dim red")
+            for included in self.metadata["included_documents"]:
+                console.print(f" -{included}",style = "dim green")
+
+
             raise ValueError(f"Error in loading and splitting codebase into documents: {e}")
     
     def split_documents_and_set_documents(self)->bool:
@@ -444,6 +474,24 @@ class CodebaseContext(BaseContextManager):
         except Exception as e:
             # return BaseResult(error_message=f"Error in preparing codebase for ingestion: {e}")
             raise e
+
+    
+
+    def estimate_size_of_documents(self)->int:
+        """
+        Estimates the size of the documents
+        Returns:
+            tuple[int, int, int] : (size_in_bytes, size_in_mb, size_in_gb)
+        """
+        try:
+            self.split_documents_and_set_documents()
+
+            documents = self.documents
+            sizes = get_size_of_documents(documents)
+
+            return sizes 
+        except Exception as e:
+            raise ValueError(f"Error in estimating size of documents: {e}")
 
 
 

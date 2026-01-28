@@ -97,7 +97,7 @@ class SASTAgent(BaseAgent):
             self.codebase_context = None
             self.open_source_context = None
             self.logical_components : type[LogicalComponents] = []
-            self.vulnerabilities : list[type[CodebaseVulnerability]] = []
+            self.vulnerabilities : list[dict[str,list[type[CodebaseVulnerability]]]] = []
 
         except Exception as e:
             raise ValueError(f"Error in initializing SASTAgent: {e}")
@@ -253,8 +253,8 @@ class SASTAgent(BaseAgent):
                 system_prompt=system_prompt,
                 output_model=self.output_model,
             )
-            vulnerabilities : list[CodebaseVulnerability] = response_model.vulnerabilities 
-            logical_comp_vulnerability = {"logical_component_title":logical_component.title, "vulnerabilities":vulnerabilities}
+            vulnerabilities : list[type[CodebaseVulnerability]] = response_model.vulnerabilities 
+            logical_comp_vulnerability = {"logical_component_title":logical_component.title, "vulnerabilities":vulnerabilities} # this is what the output will look like ⭐⭐⭐⭐
             self.vulnerabilities.append(logical_comp_vulnerability) # APPEND ⭐ logical_comp_vulnerability to the existing list
 
 
@@ -358,9 +358,11 @@ class SASTAgent(BaseAgent):
                 raise Exception(f"Logical Components == None ? : {self.logical_components == None } and Logical component isinstance ? : {isinstance(self.logical_components,LogicalComponents)}")
             
 
+            
+            console.print("---"*10 , style = "bold orange1 ")
             for index, logical_component in enumerate(self.logical_components.logical_components[:10]):
 
-                console.print(f"Analyzing Logical Component # {index + 1} : {logical_component.title} ... 🔃 " , style = "bold yellow ")
+                console.print(f"⏩ Analyzing Logical Component # {index + 1} : {logical_component.title} ... 🔃 " , style = "bold orange1 ")
                 
                 # running checks 
                 if not self.open_source_collection_name or not self.codebase_collection_name:
@@ -393,6 +395,8 @@ class SASTAgent(BaseAgent):
                     relevant_code_snippets=codebase_rag_formatted_string,
                     relevant_open_source_results=opensource_rag_formatted_string
                 )
+
+                console.print("---"*10 , style = "bold orange1 ")
             
 
             # STEP [ 5 ] ================================ Final checks and cleanup =====================================================================
@@ -401,6 +405,7 @@ class SASTAgent(BaseAgent):
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
             return self.vulnerabilities
+        
 
 
         except Exception as e:
@@ -408,3 +413,17 @@ class SASTAgent(BaseAgent):
             self.clean_up()
             raise Exception(f"Error occured while running agent : {str(e)}")
     
+
+    def to_dict_list(self,output:list[type[CodebaseVulnerability]]) -> list[dict]:
+        """
+        Parse the output of the agent into a list of dictionaries ( customized for SAST Agent )
+        """
+        try:
+            parsed_output = []
+            for item in output:
+                logical_component_title = item["logical_component_title"]
+                vulnerabilities = item["vulnerabilities"]
+                parsed_output.append({"logical_component_title":logical_component_title,"vulnerabilities":super().to_dict_list(vulnerabilities)})
+            return parsed_output
+        except Exception as e:
+            raise e
