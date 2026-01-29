@@ -126,7 +126,7 @@ class SASTAgent(BaseAgent):
             self.codebase_context = codebase_context # SET codebase_context ⭐
 
             summary : type[LogicalComponents] = output.summary
-            console.print(f"Summary {summary}",style="dim yellow")
+            
             self.logical_components = summary # SET logical_components ⭐
 
             console.print(f"Codebase context id set successfully",style="bold blue1")
@@ -416,7 +416,7 @@ class SASTAgent(BaseAgent):
 
     def to_dict_list(self,output:list[type[CodebaseVulnerability]]) -> list[dict]:
         """
-        Parse the output of the agent into a list of dictionaries ( customized for SAST Agent )
+        Parse the output list of vulnerabilities into a list of dictionaries ( customized for SAST Agent )
         """
         try:
             parsed_output = []
@@ -427,3 +427,38 @@ class SASTAgent(BaseAgent):
             return parsed_output
         except Exception as e:
             raise e
+    
+
+    def estimate_credits_required(self)->int:
+        """
+        Estimates the credits required for the sast scan
+        """
+        try:
+            total_credits = 0
+            credits_from_codebase_context , credits_from_open_source_context = 0,0
+
+            # calculate credits from codebase context
+            console.print(f"Populating codebase context for estimation ...",style="bold yellow")
+            codebase_context = CodebaseContext(
+                directory=self.directory , 
+                include_files_extensions=self.include_files_extensions, 
+                exclude_path_arrays=self.exclude_path_arrays,
+            )
+            codebase_size_in_b , codebase_size_in_mb , codebase_size_in_gb = codebase_context.estimate_size_of_documents()
+            credits_from_codebase_context_summary = codebase_size_in_mb / 0.5 # 1 credit ~ 0.5 MB 
+            credits_from_codebase_vuln_mapping = 0.04 / 0.836 # 1 credit ~ 0.836 $ ( note : 0.04 $ is a constant cost for the vuln mapping )
+            credits_from_codebase_context = credits_from_codebase_context_summary + credits_from_codebase_vuln_mapping
+
+            # calculate credits from open source context
+            credits_from_open_source_context = 0 # because open source context is not being summarized ( the open source results are used in Vuln mapping )
+
+            # calculate total credits
+            total_credits = credits_from_codebase_context + credits_from_open_source_context
+            return total_credits
+            
+        except Exception as e:
+            raise e
+        
+        finally:
+            console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
+            self.clean_up()

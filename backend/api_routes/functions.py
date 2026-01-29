@@ -190,7 +190,7 @@ def get_Table_from_type(type: scan_types) -> SASTConversation | LLMBenchmarkingC
 def get_messages_from_conversation(
     conversation_id: int,
     user_id: int, 
-    Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation | GitleaksConversation | SBOM_SCAConversation | Agent_DiscoveryConversation | DASTConversation, 
+    Table: SASTConversation | LLMBenchmarkingConversation | MCPConversation | IACConversation  | SBOM_SCAConversation | Agent_DiscoveryConversation | DASTConversation, 
     engine: Engine, 
     mongo_db: Database):
     try:

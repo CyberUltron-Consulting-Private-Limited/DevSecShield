@@ -37,7 +37,7 @@ class VerificationCode(SQLModel,table=True):
 
 class SASTConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
@@ -55,7 +55,7 @@ class SASTConversation(SQLModel,table=True):
     
 class LLMBenchmarkingConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
     model_type : Literal["openai", "anthropic", "gemini", "custom"] | None = Field(default=None,sa_type=String)
     model_name : str | None
@@ -75,7 +75,7 @@ class LLMBenchmarkingConversation(SQLModel,table=True):
 
 class MCPConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
     scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
     title : str = Field(default="New SAST Conversation")
@@ -90,7 +90,7 @@ class MCPConversation(SQLModel,table=True):
 
 class IACConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
@@ -105,26 +105,11 @@ class IACConversation(SQLModel,table=True):
     class Config:
         arbitrary_types_allowed = True
 
-class GitleaksConversation(SQLModel,table=True):
-    id : int | None = Field(default=None,primary_key=True)
-    user_id : int
-    task_id : str | None = Field(default=None)
-    mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
-    repo_url : str | None = Field(default=None)
-    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
-    title : str = Field(default="New SAST Conversation")
-    conversation_id : str #mongo db conversation id
-    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
-    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
-    scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
-    message_limit : int
 
-    class Config:
-        arbitrary_types_allowed = True
 
 class SBOM_SCAConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
@@ -141,7 +126,7 @@ class SBOM_SCAConversation(SQLModel,table=True):
 
 class Agent_DiscoveryConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
     mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
     repo_url : str | None = Field(default=None)
@@ -160,7 +145,7 @@ class Agent_DiscoveryConversation(SQLModel,table=True):
 
 class DASTConversation(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     task_id : str | None = Field(default=None)
 
     auth_mode : Literal["form_based" , "header_cookie_based"] | None = Field(default=None,sa_type=String)
@@ -194,7 +179,7 @@ default_settings = {
 
 class GuardrailsIntegration(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     api_key : str
     title : str = Field(default="New Guardrails Integration")
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
@@ -214,7 +199,7 @@ scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "ag
 
 class CicdIntegration(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    user_id : int
+    user_id : int = Field(foreign_key="user.id")
     api_key : str
     title : str = Field(default="New CI/CD Integration")
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)

@@ -118,6 +118,7 @@ def validate_dict_with_context(dict_context: dict) -> GithubContext | GitlabCont
     except Exception as e:
         raise ValueError(f"Invalid context JSON: {e}")
 
+
 def clone_repo_from_context(context: GithubContext | GitlabContext | BitbucketContext) -> Path:
     if context and isinstance(context, GithubContext):
         return clone_repo(context.repo_url, context.branch)
@@ -150,6 +151,14 @@ def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
         return directory
     except Exception as e:
         raise ValueError(f"Error in getting directory from zip context: {e}")
+    
+def validate_dict_with_zip_context(dict_context: dict) -> ZipContext:
+    try:
+        json_context = json.dumps(dict_context)
+        context = ZipContext.model_validate_json(json_context)
+        return context
+    except Exception as e:
+        raise ValueError(f"Invalid zip context JSON: {e}")
 
 
 class FileContext(BaseModel):
@@ -161,3 +170,11 @@ def get_file_from_file_context(file_context: FileContext) -> str | Path | None:
         return download_file(file_context.bucket_name, file_context.object_name)
     except Exception as e:
         raise ValueError(f"Error in getting file from file context: {e}")
+
+def validate_dict_with_file_context(dict_context: dict) -> FileContext:
+    try:
+        json_context = json.dumps(dict_context)
+        context = FileContext.model_validate_json(json_context)
+        return context
+    except Exception as e:
+        raise ValueError(f"Invalid file context JSON: {e}")

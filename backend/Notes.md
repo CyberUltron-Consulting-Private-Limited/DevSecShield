@@ -1,142 +1,182 @@
-## Adding Dashboard fields to All features :
+## Userflow 
 
-### AI Guardrails 
+- landing page will be a page with analytics that accumulate data across all teams and there will be a sidebar with navigation to specific teams.
+- each team related screen on the ui will have a team_id in the path parameter ( this is how we will be maintaining the current active team that the user is interacting with ) ( validation will need to be done for team_ids to ensure this user is allowed to access this team ) 
 
-1. total scans ( Card UI )
-2. successful scans ( Card UI )
-3. failed scans ( Card UI )
-4. pending scans ( Card UI )
-5. started scans ( Card UI )
-6. not started scans ( Card UI )
-
-7. Line Chart UI ( scanners and their scores for each log ( top 6 most recent logs ))
-- y axis : risk score
-- x axis : scan log time 
-
-8. Line chart UI ( log trends ( past 7 days , past 30 days ))
-- y axis : number of scans run
-- x axis : time 
-
-9. Pie chart UI ( to show how many have been flagged as high risk , medium risk , low risk  or not flagged )
-- labels : high risk , medium risk , low risk , not flagged
-- values : number of scans
-Note: High risk is 80% or more , Medium risk is 50% to 80% , Low risk is 20% to 50% , Not flagged is 0% to 20%
-
-10 . Hexagon Chart UI ( to show the average risk scores for each scanner taking into consideration the past 7 days logs , past 30 days logs )
-- endpoints : Scanner types 
-- the lines correspond to average risk scores for each scanner type
-
----------------------------------------------------------------------------------------------------
-
-### CI CD Integrations 
-
-1. total scans ( Card UI )
-2. successful scans ( Card UI )
-3. failed scans ( Card UI )
-4. pending scans ( Card UI )
-5. started scans ( Card UI )
-6. not started scans ( Card UI )
-
-7. Line Chart UI ( scan trends ( past 7 days , past 30 days ))
-- y axis : number of scans run
-- x axis : time 
-
-8. Pie chart UI ( to show how many have been flagged as high risk , medium risk , low risk  or not flagged )
-- labels : high risk , medium risk , low risk , not flagged ( use semgrep provided risk categories )
-- values : number of scans
-
-9. Hexagon Chart UI ( to show the average risk scores for each scanner type taking into consideration the past 7 days logs , past 30 days logs )
-- endpoints : Scanner types 
-- the lines correspond to average risk scores for each scanner type
-
----------------------------------------------------------------------------------------------------
-
-### SAST 
-
-1. total scans ( Card UI )
-2. successful scans ( Card UI )
-3. failed scans ( Card UI )
-4. pending scans ( Card UI )
-5. started scans ( Card UI )
-6. not started scans ( Card UI )
+- 1 credit is : 
+    - **0.5 MB** of source code files ( ~ 71 source code files ) 
+    - **~ 0.836 $** ( ~ 76 INR )
+    - assuming 1 message costs 0.0048 $ ( 12.6K input + 10.3K output tokens ) 
+        - therefore **1 message = 0.0048/0.836 = 0.006 credits** 
 
 
-7. Line chart UI ( to show how many have been flagged as high risk , medium risk , low risk  or not flagged )
-- y axis : impact categories of findings
-- x axis : finding
 
-8. Pie chart UI ( to show classification of findings based on finding class ex: path traversal , sql injection , etc )
-- labels : path traversal , sql injection , etc
-- values : number of findings
+## Database Architecture 
 
-9. Linechart UI ( to show how many owasp vulns for each finding)
-- y axis : number of owasp vulns
-- x axis : finding name
+**User** ✅ confirmed 
+- id ( int  )  # PK, auto
+- email ( str )
+- password ( str )
+- first_name ( str , None by default )
+- last_name ( str , None by default )
+- profile_photo ( str , None by default )
+- session_active ( bool , False by default )
+- last_active ( datetime , now UTC by default )
+- is_superuser ( bool , False by default )
 
-10. Barchart UI ( to show how many CWEs mapped to specific findings )
-- y axis : number of CWEs
-- x axis : finding name
+**Team** ✅ confirmed 
+- id ( int  )  # PK, auto
+- name ( str )
+- description ( str , None by default )
+- created_at ( datetime , now UTC by default )
+- credit_balance ( int , 0 by default )
+- integration_settings ( dict/JSON , { "jira" : {} } by default )
 
----------------------------------------------------------------------------------------------------
 
-### SBOM_SCA 
+Note : every user by default is a member of the "default-team"
 
-1. total scans ( Card UI )
-2. successful scans ( Card UI )
-3. failed scans ( Card UI )
-4. pending scans ( Card UI )
-5. started scans ( Card UI )
-6. not started scans ( Card UI )
+**TeamMembers** ✅ confirmed 
+- id ( int  )  # PK, auto
+- team_id ( int ) ( foreign key to team.id ) ( index ) 
+- user_id ( int ) ( foreign key to user.id ) ( index )
+- role ( "admin"/"member" , "member" by default , "admin" when creating Team ) ( admin can remove / add members to the team )
 
-7. Line Chart UI ( to show how many have been flagged as high risk , medium risk , low risk  or not flagged )
-- y axis : severity categories of findings
-- x axis : finding
 
-8. Pie chart UI ( findings based on package )
-- labels : package name
-- values : number of findings
+**VerificationCode** ✅ confirmed 
+- id ( int , None by default )  # PK, auto
+- email ( str )
+- code ( str )
+- created_at ( datetime , now UTC by default )
+- expires_at ( datetime , now + 10 min by default )
 
-9. Bar Chart UI ( to show each finding and their CVSS scores )
-- y axis : CVSS score
-- x axis : finding 
+**Conversations** ⭐⭐⭐ Main conversation table  ✅ confirmed 
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id ) ( index )
+- task_id ( str , None by default )
+- conversation_type ( "sast"/"llm"/"mcp"/"iac"/"leakage"/"sbom_sca"/"agent_discovery"/"dast" )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan )
+- scan_status ( "pending"/"started"/"retry"/"failure"/"success"/"NOT_STARTED" , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
 
-10 . Line Chart UI ( to show each finding and their risk scores)
-- y axis : risk score
-- x axis : finding 
 
-11. Triangle Chart UI ( to show the average risk scores ( on a scale of 10 ) between CVSS scores , Risk score and EPSS scores ) 
-each finding will have its risk score , EPSS score and CVSS score ( out of 10 )
+**GuardrailsIntegration** ✅ confirmed 
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id ) ( index )
+- api_key ( str )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- settings ( dict/JSON , default_settings by default )
 
----------------------------------------------------------------------------------------------------
+**CicdIntegration** ✅ confirmed 
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id ) ( index )
+- api_key ( str )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_type ( "sast"/"llm"/"mcp"/"iac"/"leakage"/"sbom_sca"/"agent_discovery" , None by default )
+- results ( dict/JSON , {} by default )
 
-### IAC 
+Changes : 
+- get rid of mongo conversations and use the postgres conversation id in the mongo message log to query all messages of a conversation . 
+- no need to maintain messages array since we query messages based on conversation id . 
+- no need to maintain user_id or team_id in messages log or active context log since we query messages based on conversation id . 
 
-1. total scans ( Card UI )
-2. successful scans ( Card UI )
-3. failed scans ( Card UI )
-4. pending scans ( Card UI )
-5. started scans ( Card UI )
-6. not started scans ( Card UI )
 
-7. 
----------------------------------------------------------------------------------------------------
-## Guardrails API 
+Examples of Conversation Types : 
+*SAST*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan like repo url , mode , or zip file used or not , app language , etc )
+- scan_status ( "pending"/"started"/"retry"/"failure"/"success"/"NOT_STARTED" , "NOT_STARTED" by default )
+- title ( str ) 
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
 
-Public API Routes : 
-1. route to send input prompt to guardrails and start the scan
-2. route to get the scan task status / results 
+*LLM*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan like model type , model name , probes used , generations )
+- scan_status ( "pending"/"started"/... , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
 
-Dashboard API Routes : 
-1. route to create a new integration 
-2. route to get all integrations for a user
-3. route to delete an integration
-4. route to update an integration ( renaming , adding/ deleting scanners , modifying scanner settings )
-5. route to get a specific integration dashboard data
-6. route to get the integration settings of all the scanners in the integration
+*MCP*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan )
+- scan_status ( "pending"/"started"/... , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
+
+*IAC*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan like repo url , mode , or zip file used or not , IAC contexts scanned for )
+- scan_status ( "pending"/"started"/... , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
+
+
+*SBOM_SCA*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan like repo url , mode , or zip file used or not , SBOM file used or not  )
+- scan_status ( "pending"/"started"/... , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
+
+*Agent_Discovery*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan like repo url , mode , or zip file used or not , Agent Discovery contexts scanned for )
+- scan_status ( "pending"/"started"/... , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
+
+*DAST*
+- id ( int , None by default )  # PK, auto
+- team_id ( int ) ( foreign key to team.id )
+- task_id ( str , None by default )
+- metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan like target url , auth mode )
+- scan_status ( "pending"/"started"/... , "NOT_STARTED" by default )
+- title ( str )
+- created_at ( datetime , now UTC by default )
+- last_updated ( datetime , now UTC by default )
+- scan_data ( dict/JSON , {} by default )
+- message_limit ( int )
 
 
 ## Notes 
-
+- ORM: SQLModel. PostgreSQL via Alembic. Conversation messages live in MongoDB; conversation_id links to Mongo.
 - the last_updated field is updated on 3 occasions : 
     - when the conversation is created
     - when the conversation task status is fetched from the celery backend
@@ -147,9 +187,5 @@ Dashboard API Routes :
 - To create mongo db tables , from root directory run ``uv run python -m backnend.init_mongo_db`` ( for MONGO DB ) 
 - To create postgres db tables , use alembic 
 
-- add branch selection to repo cloning 
-``Repo.clone_from(url, tmp_dir, depth=1,branch="branch_name")``
-
-- find integrations for all other repos to figure out size of repo before accepting the scan request
 
 - the UI uses an auto incrementing integer for message id , but the backend uses the mongo db message id ( _id ) to store the messages in the database . But when fetching the messages from the database , we return the messages with integer ids that increment from 1 to n ( n being the number of messages )

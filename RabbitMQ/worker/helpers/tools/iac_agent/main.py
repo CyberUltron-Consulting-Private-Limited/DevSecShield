@@ -34,7 +34,7 @@ class IACAgent(BaseAgent):
             
             if not directory:
                 raise ValueError(f"Directory not found")
-            if not iac_contexts:
+            if not iac_contexts or len(iac_contexts) == 0:
                 raise ValueError(f"IAC contexts not found")
 
 
@@ -118,28 +118,7 @@ class IACAgent(BaseAgent):
         except Exception as e:
             raise ValueError(f"Error in populating codebase context: {e}")
     
-    # def populate_opensource_context(self)->None:
-    #     """
-    #     Populates the open source context
-    #     """
-    #     try:
-    #         console.print(f"Populating open source context ...",style="bold yellow")
-    #         open_source_context = OpenSourceContext(
-    #             open_source_tool=run_sast_scan_on_directory,
-    #             directory=self.directory,
-    #             app_lang=self.app_lang,
-    #         )
-    #         output = open_source_context.prepare_context()
-    #         self.open_source_doc_ids = open_source_context.doc_ids # SET open_source_context ⭐
-    #         self.opensource_context_id = output.context_id # SET open_source_context_id ⭐
-    #         self.open_source_collection_name = open_source_context.collection_name # SET open_source_collection_name 
-            
-    #         self.open_source_context = open_source_context # SET open_source_context ⭐
 
-    #         console.print(f"Open source context id set successfully",style="bold blue1")
-    #     except Exception as e:
-    #         raise ValueError(f"Error in populating open source context: {e}")
-    
     def clean_up(self)->None:
         """
         Removes the temporary directory
@@ -170,6 +149,11 @@ class IACAgent(BaseAgent):
 
     def run_agent(self):
         """
+        Runs the IAC agent
+        Requires :
+        - __init__ to have run 
+        Returns:
+        - list[type[CodebaseVulnerability]] : list of vulnerabilities
         """
         try:
 
@@ -189,4 +173,34 @@ class IACAgent(BaseAgent):
             console.print(f"Error occured in run_agent : {str(e)}",style="bold red")
             self.clean_up()
             return None
+    
+
+    def estimate_credits_required(self)->int:
+        """
+        Estimates the credits required for the iac scan
+        """
+        try:
+            total_credits = 0
+            credits_from_codebase_context = 0
+
+            # calculate credits from codebase context
+            console.print(f"Populating codebase context for estimation ...",style="bold yellow")
+            codebase_context = CodebaseContext(
+                directory=self.directory , 
+                include_files_extensions=self.include_files_extensions, 
+                include_path_arrays=self.include_path_arrays,
+            )
+            _ , codebase_size_in_mb , _ = codebase_context.estimate_size_of_documents()
+            credits_from_codebase_context_summary = codebase_size_in_mb / 0.5 # 1 credit ~ 0.5 MB 
+
+            # calculate total credits
+            total_credits = credits_from_codebase_context_summary
+            return total_credits
+            
+        except Exception as e:
+            raise e
+        
+        finally:
+            console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
+            self.clean_up()
     

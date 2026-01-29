@@ -21,7 +21,7 @@ SenderType = Literal["user", "assistant"]
 class Conversation(TypedDict, total=False):
 
     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
-    user_id: int
+    # user_id: int 
     messages: List[str]  # Array of ObjectIds ( as string ) of message collection documents in order (earliest to latest)
     created_at: datetime
     conv_type: ConversationType
@@ -32,7 +32,7 @@ class MessageLog(TypedDict, total=False):
 
     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
     conversation_id: str # ObjectId as string of conversation collection document 
-    user_id: int
+    # user_id: int
     content: str
     created_at: datetime
     type: MessageType
@@ -43,7 +43,7 @@ class ActiveContextLog(TypedDict, total=False):
 
     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
     conversation_id: str # ObjectId as string of conversation collection document 
-    user_id: int
+    # user_id: int
     content: str
     created_at: datetime
     type: MessageType
@@ -55,7 +55,7 @@ class GuardrailLogs(TypedDict, total=False):
     integration_id: str  
     task_id: str # celery task id ( has to be created when the task is initiated or log created )
     status: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = "NOT_STARTED"
-    user_id: int
+    # user_id: int
     input_prompt: str
     created_at: datetime
 
@@ -73,7 +73,7 @@ class CicdLogs(TypedDict, total=False):
 
     _id: str  # MongoDB ObjectId as string (auto-generated, always present when reading)
     ci_cd_integration_id: str # ObjectId as string of guardrails integration collection document 
-    user_id: int
+    # user_id: int
     task_id: str # celery task id ( has to be created when the task is initiated or log created )
     status: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = "NOT_STARTED"
     created_at: datetime

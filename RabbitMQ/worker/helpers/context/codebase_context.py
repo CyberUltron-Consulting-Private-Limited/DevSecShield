@@ -299,6 +299,9 @@ class CodebaseContext(BaseContextManager):
         """
         Responsible for loading codebase as documents and splitting them based on their language inferred from the file extension
         Cyles through all the file extensions and load the documents accordingly
+
+        Requires :
+        - __init__ to have run 
         """
         try:
             split_documents_list = []
@@ -359,6 +362,8 @@ class CodebaseContext(BaseContextManager):
     def split_documents_and_set_documents(self)->bool:
         """
         Responsible for splitting the documents and setting the documents attribute
+        Requires :
+        - __init__ to have run 
         """
         try:
             split_documents = self.load_and_split_codebase_into_documents()
@@ -480,6 +485,8 @@ class CodebaseContext(BaseContextManager):
     def estimate_size_of_documents(self)->int:
         """
         Estimates the size of the documents
+        Requires :
+        - __init__ to have run 
         Returns:
             tuple[int, int, int] : (size_in_bytes, size_in_mb, size_in_gb)
         """

@@ -6,15 +6,14 @@ import time
 from dotenv import load_dotenv
 import os
 import sys
-from tools.sast_utils.sast_runner import run_sast_scan
-from tools.sbom_sca_utils.sbom_runner import run_sbom_scan
-from tools.iac_utils.iac_runner import run_iac_scan
-from tools.gitleaks_utils.gitleaks_runner import run_gitleaks_scan
-from tools.discovery_utils.discovery_runner import run_discovery_scan
-from tools.llm_utils.llm_runner import run_garak_scan
-from tools.mcp_utils.mcp_runner import run_mcp_scan
-from tools.context.scan_context import validate_dict_with_context
-import json
+from helpers.tools.sast_agent.main import SASTAgent
+from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
+from helpers.tools.iac_agent.main import IACAgent
+from helpers.tools.iac_agent.context import IACTypeContext, validate_dict_with_iac_context
+# from helpers.tools.discovery_utils.discovery_runner import run_discovery_scan
+# from helpers.tools.llm_utils.llm_runner import run_garak_scan
+# from helpers.tools.mcp_utils.mcp_runner import run_mcp_scan
+from helpers.context.scan_context import validate_dict_with_context, validate_dict_with_zip_context, validate_dict_with_file_context
 
 console = Console()
 
@@ -93,20 +92,45 @@ try:
     
     @app.task(track_started=True)
     def sast(
-        dict_context: dict , 
-        app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"]):
+        app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],
+        repo_dict_context: dict | None = None , 
+        zip_dict_context: dict | None = None , 
+        exclude_path_arrays:Optional[list[list[str]]] = None,
+        ):
 
 
         try :
             
             # STEP [ 1 ] : =========== Validate the context ======================
-            context = validate_dict_with_context(dict_context)
-            
-            # STEP [ 2 ] : =========== Run the sast scan ======================
-            results = run_sast_scan( context=context,app_lang=app_lang)  
+            repo_context , zip_context = None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            if zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
 
-            # STEP [ 3 ] : =========== Return the results ======================
-            return results
+            
+            
+            # STEP [ 2 ] : =========== Initialize the agent , and run the agent ======================
+            if repo_context:
+                agent = SASTAgent(
+                    context=repo_context,
+                    app_lang=app_lang,
+                    exclude_path_arrays=exclude_path_arrays,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            elif zip_context:
+                agent = SASTAgent(
+                    zip_context=zip_context,
+                    app_lang=app_lang,
+                    exclude_path_arrays=exclude_path_arrays,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            else:
+                raise Exception("No context provided")
 
         except Exception as e:
             console.print(f"Error in sast task: {str(e)}",style="bold red")
@@ -117,126 +141,348 @@ try:
      # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True)
     def sbom_sca(
-        dict_context: dict , 
-        sbom_json_file: str | None = None # this is optional and only used for testing purposes
+        repo_dict_context: dict | None = None , 
+        zip_dict_context: dict | None = None , 
+        file_dict_context: dict | None = None , 
         ):
 
         
-        context = validate_dict_with_context(dict_context)
+        try:
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context , zip_context , file_context = None, None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            elif file_dict_context:
+                file_context = validate_dict_with_file_context(file_dict_context)
+            else:
+                raise Exception("No context provided")
+            
 
-        results = run_sbom_scan(
-            context=context,
-            sbom_json_file=sbom_json_file,
-        )  
-        return results 
+            # STEP [ 3 ] : =========== Initialize the agent , and run the agent ======================
+            if repo_context:
+                agent = SCASBOMAgent(
+                    context=repo_context,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            elif zip_context:
+                agent = SCASBOMAgent(
+                    zip_context=zip_context,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            elif file_context:
+                agent = SCASBOMAgent(
+                    sbom_json_file_context=file_context,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            else:
+                raise Exception("Unable to run sbom_sca scan with the provided context")
+
+        except Exception as e:
+            console.print(f"Error in sbom_sca task: {str(e)}",style="bold red")
+            raise e
+
+       
     console.print(f"Registered SBOM SCA task",style="bold green")
 
 
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True)
     def iac(
-        dict_context: dict , 
-        mode: Literal["tfsec", "trivy"] = "tfsec", # this is optional and only used for testing purposes
+        iac_dict_contexts: Optional[list[dict]] = None,
+        repo_dict_context: dict | None = None , 
+        zip_dict_context: dict | None = None , 
         ):
 
 
-        context = validate_dict_with_context(dict_context)
-        results = run_iac_scan(
-            context=context,
-            mode=mode,
-        ) 
-        return results 
+        try:
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context , zip_context = None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            else:
+                raise Exception("No context provided")
+            
+
+            iac_contexts : list[IACTypeContext] = []
+            if not iac_dict_contexts or len(iac_dict_contexts) == 0:
+                raise Exception("IAC contexts not provided")
+            else: 
+                iac_contexts = [validate_dict_with_iac_context(iac_dict_context) for iac_dict_context in iac_dict_contexts]
+            
+            
+            # STEP [ 3 ] : =========== Initialize the agent , and run the agent ======================
+            if repo_context:
+                agent = IACAgent(
+                    context=repo_context,
+                    iac_contexts=iac_contexts,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            elif zip_context:
+                agent = IACAgent(
+                    zip_context=zip_context,
+                    iac_contexts=iac_contexts,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                return parsed_output
+            else:
+                raise Exception("Unable to run iac scan with the provided context")
+        
+        except Exception as e:
+            console.print(f"Error in iac task: {str(e)}",style="bold red")
+            raise e
+
     console.print(f"Registered IAC task with context pattern",style="bold green")
 
-     # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
+
+
+
+    # -------------------------------------------------- Estimation tasks -----------------------------------------------------------------------
+
     @app.task(track_started=True)
-    def discovery(
-        dict_context: dict , 
+    def sast_estimation(
+        app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],
+        repo_dict_context: dict | None = None , 
+        zip_dict_context: dict | None = None , 
+        exclude_path_arrays:Optional[list[list[str]]] = None,
         ):
 
-        context = validate_dict_with_context(dict_context)
 
-        results = run_discovery_scan(
-            context=context,
-        )  
+        try :
+            
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context , zip_context = None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            if zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
 
-        return results
-    console.print(f"Registered Agent discovery task",style="bold green")
+            
+            # STEP [ 2 ] : =========== Initialize the agent , and estimate the credits required ======================
+            agent = None
+            if repo_context:
+                agent = SASTAgent(
+                    context=repo_context,
+                    app_lang=app_lang,
+                    exclude_path_arrays=exclude_path_arrays,
+                )
+            elif zip_context:
+                agent = SASTAgent(
+                    zip_context=zip_context,
+                    app_lang=app_lang,
+                    exclude_path_arrays=exclude_path_arrays,
+                )
+            else:
+                raise Exception("No context provided")
+            
+            credits_required = agent.estimate_credits_required()
+            return credits_required
+
+        except Exception as e:
+            console.print(f"Error in sast_estimation task: {str(e)}",style="bold red")
+            raise e
+    console.print(f"Registered SAST estimation task",style="bold green")
 
 
-     # ------------------------------------------- LLM benchmark Scanning task -------------------------------------------------------------------------------------------
+     # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True)
-    def llm_benchmark(
-        model_type: Literal["openai", "anthropic", "gemini","custom"],
-        model_name: str,
-        probes: Literal["all", "ansiescape", "atkgen", "audio", "av_spam_scanning", "continuation", "dan", "divergence", "doctor", "donotanswer", "encoding", "exploitation", "fileformats", "glitch", "goodside", "grandma", "latentinjection", "leakreplay", "lmrc", "malwaregen", "misleading", "packagehallucination", "phrasing", "promptinject", "realtoxicityprompts", "sata", "snowball", "suffix", "tap", "test", "topic", "visual_jailbreak", "xss"] = "all",
-        api_key: Optional[str] = None,
-        headers: Optional[dict] = None,
-        request_template: Optional[dict] = None,
-        response_json_field: Optional[str] = None,
-        generations: Optional[int] = 1,
-        method: Literal["get", "post"] = "post",
-        model_uri: Optional[str] = None,):
-
-        
-        if (model_type not in ["openai", "anthropic", "gemini","custom"]):
-            raise Exception("Arguments are invalid/incorrect")
-
-        results = run_garak_scan(
-            model_type=model_type,
-            model_name=model_name,
-            probes=probes,
-            api_key=api_key,
-            headers=headers,
-            request_template=request_template,
-            response_json_field=response_json_field,
-            generations=generations,
-            method=method,
-            model_uri=model_uri,
-        ) 
-
-        # for testing purposes , using a mock result
-        # for i in range(10):
-        #     console.print(f"Sleeping {i} ....",style="bold yellow")
-        #     time.sleep(1)
-        # with open("mock_result.json", "r") as f:
-        #     results = json.load(f)
-
-        return results 
-    console.print(f"Registered LLM task",style="bold green")
-
-
-     # ------------------------------------------- MCP Scanning task -------------------------------------------------------------------------------------------
-    @app.task(track_started=True)
-    def mcp(
-        server_config_json:str
+    def sbom_sca_estimation(
+        repo_dict_context: dict | None = None , 
+        zip_dict_context: dict | None = None , 
+        file_dict_context: dict | None = None , 
         ):
 
         
-        if not server_config_json:
-            raise Exception("Arguments are invalid/incorrect")
+        try:
+            
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context , zip_context , file_context = None, None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            elif file_dict_context:
+                file_context = validate_dict_with_file_context(file_dict_context)
+            else:
+                raise Exception("No context provided")
+            
 
-        results = run_mcp_scan(
-            server_config_json=server_config_json
-        )
+            # STEP [ 2 ] : =========== Initialize the agent , and estimate the credits required ======================
+            agent = None
+            if repo_context:
+                agent = SCASBOMAgent(
+                    context=repo_context,
+                )
+            elif zip_context:
+                agent = SCASBOMAgent(
+                    zip_context=zip_context,
+                )
+            elif file_context:
+                agent = SCASBOMAgent(
+                    sbom_json_file_context=file_context,
+                )
+            else:
+                raise Exception("Unable to run sbom_sca scan with the provided context")
+            
 
-        return results 
+            credits_required = agent.estimate_credits_required()
+            return credits_required
 
-    console.print(f"Registered MCP task",style="bold green")
+        except Exception as e:
+            console.print(f"Error in sbom_sca_estimation task: {str(e)}",style="bold red")
+            raise e
+
+       
+    console.print(f"Registered SBOM SCA estimation task",style="bold green")
 
 
-     # ------------------------------------------- Gitleaks Scanning task -------------------------------------------------------------------------------------------
-    @app.task(track_started=True)  
-    def gitleaks(
-        dict_context: dict , ):
+     # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
+    @app.task(track_started=True)
+    def iac_estimation(
+        iac_dict_contexts: Optional[list[dict]] = None,
+        repo_dict_context: dict | None = None , 
+        zip_dict_context: dict | None = None , 
+        ):
 
-        context = validate_dict_with_context(dict_context)
 
-        results = run_gitleaks_scan(
-            context=context,
-        )  
-        return results
-    console.print(f"Registered Gitleaks task",style="bold green")
+        try:
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context , zip_context = None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            else:
+                raise Exception("No context provided")
+            
+
+            iac_contexts : list[IACTypeContext] = []
+            if not iac_dict_contexts or len(iac_dict_contexts) == 0:
+                raise Exception("IAC contexts not provided")
+            else: 
+                iac_contexts = [validate_dict_with_iac_context(iac_dict_context) for iac_dict_context in iac_dict_contexts]
+            
+            
+            # STEP [ 2 ] : =========== Initialize the agent , and estimate the credits required ======================
+            agent = None
+            if repo_context:
+                agent = IACAgent(
+                    context=repo_context,
+                    iac_contexts=iac_contexts,
+                )
+            elif zip_context:
+                agent = IACAgent(
+                    zip_context=zip_context,
+                    iac_contexts=iac_contexts,
+                )
+            else:
+                raise Exception("Unable to run iac scan with the provided context")
+            
+            credits_required = agent.estimate_credits_required()
+            return credits_required
+        
+        except Exception as e:
+            console.print(f"Error in iac_estimation task: {str(e)}",style="bold red")
+            raise e
+
+    console.print(f"Registered IAC estimation task",style="bold green")
+
+
+
+
+
+
+
+
+    #  # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
+    # @app.task(track_started=True)
+    # def discovery(
+    #     dict_context: dict , 
+    #     ):
+
+    #     context = validate_dict_with_context(dict_context)
+
+    #     results = run_discovery_scan(
+    #         context=context,
+    #     )  
+
+    #     return results
+    # console.print(f"Registered Agent discovery task",style="bold green")
+
+
+    #  # ------------------------------------------- LLM benchmark Scanning task -------------------------------------------------------------------------------------------
+    # @app.task(track_started=True)
+    # def llm_benchmark(
+    #     model_type: Literal["openai", "anthropic", "gemini","custom"],
+    #     model_name: str,
+    #     probes: Literal["all", "ansiescape", "atkgen", "audio", "av_spam_scanning", "continuation", "dan", "divergence", "doctor", "donotanswer", "encoding", "exploitation", "fileformats", "glitch", "goodside", "grandma", "latentinjection", "leakreplay", "lmrc", "malwaregen", "misleading", "packagehallucination", "phrasing", "promptinject", "realtoxicityprompts", "sata", "snowball", "suffix", "tap", "test", "topic", "visual_jailbreak", "xss"] = "all",
+    #     api_key: Optional[str] = None,
+    #     headers: Optional[dict] = None,
+    #     request_template: Optional[dict] = None,
+    #     response_json_field: Optional[str] = None,
+    #     generations: Optional[int] = 1,
+    #     method: Literal["get", "post"] = "post",
+    #     model_uri: Optional[str] = None,):
+
+        
+    #     if (model_type not in ["openai", "anthropic", "gemini","custom"]):
+    #         raise Exception("Arguments are invalid/incorrect")
+
+    #     results = run_garak_scan(
+    #         model_type=model_type,
+    #         model_name=model_name,
+    #         probes=probes,
+    #         api_key=api_key,
+    #         headers=headers,
+    #         request_template=request_template,
+    #         response_json_field=response_json_field,
+    #         generations=generations,
+    #         method=method,
+    #         model_uri=model_uri,
+    #     ) 
+
+    #     # for testing purposes , using a mock result
+    #     # for i in range(10):
+    #     #     console.print(f"Sleeping {i} ....",style="bold yellow")
+    #     #     time.sleep(1)
+    #     # with open("mock_result.json", "r") as f:
+    #     #     results = json.load(f)
+
+    #     return results 
+    # console.print(f"Registered LLM task",style="bold green")
+
+
+    #  # ------------------------------------------- MCP Scanning task -------------------------------------------------------------------------------------------
+    # @app.task(track_started=True)
+    # def mcp(
+    #     server_config_json:str
+    #     ):
+
+        
+    #     if not server_config_json:
+    #         raise Exception("Arguments are invalid/incorrect")
+
+    #     results = run_mcp_scan(
+    #         server_config_json=server_config_json
+    #     )
+
+    #     return results 
+
+    # console.print(f"Registered MCP task",style="bold green")
+
+
 
 except Exception as e:
     console.print(f"Error occured while registering tasks : {str(e)}",style="bold red")

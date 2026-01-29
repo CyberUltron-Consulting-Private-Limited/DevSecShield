@@ -71,9 +71,6 @@ class SCASBOMAgent(BaseAgent):
 
             results = open_source_context.results # GET results ⭐
 
-            #for testing
-            # with open("sbom_agent_results.json", "w+") as f:
-            #     json.dump(results, f, indent=2)
 
             # process each finding one by one to get documents for each finding ( to be passed to map reduce summary )
             parsed_results = parse_sbom_results_to_strings(results)
@@ -217,4 +214,26 @@ class SCASBOMAgent(BaseAgent):
             console.print(f"Error occured in run_agent : {str(e)}",style="bold red")
             self.clean_up()
             raise Exception(f"Error occured while running agent : {str(e)}")
+    
+
+    def estimate_credits_required(self)->int:
+        """
+        Estimates the credits required for the sbom sca scan
+        """
+        try:
+            total_credits = 0
+
+            # credits from open source context
+            credits_from_open_source_context = 0.01 / 0.836 # 1 credit ~ 0.836 $ ( note : 0.01 $ is a constant cost for the sbom sca scan )
+            
+            # calculate total credits
+            total_credits = credits_from_open_source_context
+            return total_credits
+            
+        except Exception as e:
+            raise e
+        
+        finally:
+            console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
+            self.clean_up()
     
