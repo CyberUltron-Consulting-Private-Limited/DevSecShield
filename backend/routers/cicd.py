@@ -1,24 +1,29 @@
 import datetime
 from io import BytesIO
 from typing import Annotated
+
 from bson import ObjectId
 from celery.result import AsyncResult
-from fastapi import Form, HTTPException, Header, UploadFile, status, Depends , APIRouter
-from sqlmodel import Session, select
-from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception
-from backend.celery_connection import get_celery_app
-from backend.cicd_utils.auth import create_api_key, get_user_and_integration_id
-from backend.general_utils.s3_utils import delete_file, upload_file
-from backend.models import  CicdIntegration
-from rich.console import Console
-from backend.mongo_models import CicdLogs
-from backend.api_routes.functions import * 
+from fastapi import APIRouter, Depends, Form, HTTPException, Header, UploadFile, status
 from fastapi_throttle import RateLimiter
-from backend.cicd_utils.schemas import CreateCicdIntegrationData,  UpdateCicdIntegrationData
-from backend.cicd_utils.parser import get_vulns
+from rich.console import Console
+from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
+
+from backend.get_db import get_db, get_mongo_client_db
+from backend.mongo_models import CicdLogs
+from backend.new_models import CicdIntegration , scan_types
+from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
+from backend.utilities.celery.celery_connection import get_celery_app
+from backend.utilities.cicd.auth import create_api_key, get_user_and_integration_id
+from backend.utilities.cicd.parser import get_vulns
 from backend.utilities.cicd.poll import poll_for_results
-from backend.get_db import get_db , get_mongo_client_db
+from backend.utilities.cicd.schemas import (
+    CreateCicdIntegrationData,
+    UpdateCicdIntegrationData,
+)
+
+from backend.utilities.db.s3_utils import delete_file, upload_file
 
 console = Console()
 

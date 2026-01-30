@@ -1,7 +1,11 @@
 from rich.console import Console
 from fastapi import HTTPException, status
 from backend.new_models import Team, Scan
+from sqlmodel import Session, select 
+from backend.get_db import get_db
 console = Console()
+
+dev_environment = True # for local development ⚠️⚠️
 
 def deduct_credits_from_team(
     team_id: int, 
@@ -20,8 +24,28 @@ def deduct_credits_from_team(
     - HTTPException : 500 if error in deducting credits from team
     """
     try:
-        #TODO : Implement this function
-        pass
+        if team_object:
+            team_object.credits -= credits
+            return team_object
+
+        engine = get_db(dev_environment=dev_environment)
+        
+        with Session(engine) as session:
+            team = session.exec(select(Team).where(Team.id == team_id)).first()
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+            
+            new_credit_balance = team.credit_balance - credits
+            team.credits = new_credit_balance
+            session.add(team)
+            session.commit()
+            session.refresh(team)
+
+            if team.credit_balance != new_credit_balance:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team, please try again later")
+            return team
+
+        
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -44,13 +68,33 @@ def deduct_credits_from_team_for_message(
     - HTTPException : 500 if error in deducting credits from team for message
     """
     try:
-        #TODO : Implement this function
-        pass
+        credit_deduction = 0.006
+
+        engine = get_db(dev_environment=dev_environment)
+        
+        if team_object:
+            team_object.credits -= credit_deduction
+            return team_object
+ 
+        with Session(engine) as session:
+            team = session.exec(select(Team).where(Team.id == team_id)).first()
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+            
+            new_credit_balance = team.credit_balance - credit_deduction
+            team.credits = new_credit_balance
+            session.add(team)
+            session.commit()
+            session.refresh(team)
+            if team.credit_balance != new_credit_balance:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team for message, please try again later")
+            return team
     except HTTPException as e:
         raise e
     except Exception as e:
         console.print(f"Error in deduct_credits_from_team_for_message: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team for message, please try again later")
+
 
 def check_if_team_has_enough_credits(
     team_id: int, 
@@ -66,8 +110,15 @@ def check_if_team_has_enough_credits(
     - bool
     """
     try:
-        #TODO : Implement this function
-        pass
+        if team_object:
+            return team_object.credit_balance >= credits_required
+
+        engine = get_db(dev_environment=dev_environment)
+        with Session(engine) as session:
+            team = session.exec(select(Team).where(Team.id == team_id)).first()
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+            return team.credit_balance >= credits_required
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -89,8 +140,24 @@ def update_scan_credit_consumed(
     - Scan | None
     """
     try:
-        #TODO : Implement this function
-        pass
+        if scan_object:
+            scan_object.credits_consumed = credits_consumed
+            return scan_object
+        
+        engine = get_db(dev_environment=dev_environment)
+        with Session(engine) as session:
+            scan = session.exec(select(Scan).where(Scan.id == scan_id)).first()
+            if not scan:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+            scan.credits_consumed = credits_consumed
+            session.add(scan)
+            session.commit()
+            session.refresh(scan)
+            if scan.credits_consumed != credits_consumed:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in updating scan credit consumed, please try again later")
+            return scan
+
+            
     except HTTPException as e:
         raise e
     except Exception as e:

@@ -3,7 +3,7 @@ import tempfile
 from typing import Annotated
 
 from bson import ObjectId
-from fastapi import APIRouter
+from fastapi import APIRouter, Form, UploadFile
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, status
 from fastapi.responses import FileResponse
 from fastapi_throttle import RateLimiter
@@ -15,7 +15,7 @@ from backend.new_models import Scan
 from backend.utilities.team.credits import deduct_credits_from_team_for_message
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
-from backend.utilities.db.functions import *
+from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.pdf import generate_pdf_for_type
 from backend.utilities.ai.chatbot import create_response
@@ -26,16 +26,16 @@ from backend.utilities.team import (
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed
+from backend.utilities.db.schemas import * 
+from backend.utilities.celery.celery_connection import get_status_and_update_db
+from backend.new_models import scan_types
+from rich.console import Console
 
 
 
 dev_environment = True # for local development ⚠️⚠️⚠️⚠️
-
-router = APIRouter(
-    tags=["scans"]
-)   
-
-
+router = APIRouter( tags=["scans"])   
+console = Console()
 limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
     
 # revamped ✅
@@ -334,7 +334,8 @@ async def start_scan(
     type: scan_types,
     scan_id: int, 
     team_id: int,
-    start_scan_payload: StartScanPayload,
+    start_scan_payload_string: str = Form(...),
+    uploaded_file: UploadFile | None = None,
     Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
     """
     Start a scan.
@@ -345,6 +346,9 @@ async def start_scan(
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
+
+        # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
+        start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         
 
 
@@ -386,6 +390,7 @@ async def start_scan(
             team_id=team_id,
             engine=engine,
             scan_type=type,
+            uploaded_file=uploaded_file,
         )
 
 
@@ -501,6 +506,7 @@ async def update_scan(
             if scan.owner_user_id != user.id: # only the user who created the scan can update the scan ⭐
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to update this scan")
             scan.title = data.title
+            session.add(scan)
             session.commit()
             session.refresh(scan)
             return {
@@ -580,7 +586,8 @@ async def reinitialize_scan(
     type: scan_types,
     scan_id: int, 
     team_id: int,
-    start_scan_payload: StartScanPayload,
+    start_scan_payload_string: str = Form(...),
+    uploaded_file: UploadFile | None = None,
     Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
     """
     Reinitialize a scan.
@@ -590,8 +597,9 @@ async def reinitialize_scan(
         engine = get_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
-        
 
+        # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
+        start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
@@ -607,17 +615,18 @@ async def reinitialize_scan(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
             if scan.scan_status != "pending" : 
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan is not pending, cannot reinitialize")
-            if scan.owner_user_id != user.id: # only the user who created the scan can start the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to start this scan")
+            if scan.owner_user_id != user.id: # only the user who created the scan can reinitialize the scan ⭐
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to reinitialize this scan")
             
         
-        # STEP [ 3 ] : =========== Start the scan and update the main db ======================
+        # STEP [ 3 ] : =========== Reinitialize the scan and update the main db ======================
         start_scan_and_update_db(
             scan_id=scan_id,
             start_scan_payload=start_scan_payload,
             team_id=team_id,
             engine=engine,
             scan_type=type,
+            uploaded_file=uploaded_file,
         )
 
         return {
@@ -639,7 +648,8 @@ async def estimate_credits_for_scan(
     type: scan_types,
     scan_id: int, 
     team_id: int,
-    start_scan_payload: StartScanPayload,
+    start_scan_payload_string: str = Form(...),
+    uploaded_file: UploadFile | None = None,
     Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
     """
     Estimate the credits for a scan.
@@ -647,10 +657,11 @@ async def estimate_credits_for_scan(
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
         engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
-        
+
+        # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
+        start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
 
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
@@ -668,8 +679,8 @@ async def estimate_credits_for_scan(
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
-            if scan.owner_user_id != user.id: # only the user who created the scan can start the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to start this scan")
+            if scan.owner_user_id != user.id: # only the user who created the scan can estimate the credits for the scan ⭐
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to estimate the credits for this scan")
             if scan.scan_status != "NOT_STARTED":
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User cannot estimate credits")
         
@@ -680,6 +691,7 @@ async def estimate_credits_for_scan(
             scan_type=type,
             engine=engine,
             start_scan_payload=start_scan_payload,
+            uploaded_file=uploaded_file,
         )
 
         # STEP [ 4 ] : =========== Update the main db scan the credit_consumed ======================

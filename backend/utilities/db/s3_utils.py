@@ -17,7 +17,12 @@ def show_upload_progress(no_of_bytes_uploaded : int ):
 def show_download_progress(no_of_bytes_downloaded : int ):
     console.print(f"Downloaded {no_of_bytes_downloaded} bytes of the file ",style="bold orange3")
 
-def upload_file(file_handle : any , bucket):
+def upload_file(
+    file_handle : any , 
+    bucket : str , 
+    extension : str = ".zip",
+    file_name : str = None,
+    ):
     try:
         # STEP [ 1 ] : =========================== create a s3 client ========================================
         console.print(f"Creating a s3 client",style="bold yellow")
@@ -36,7 +41,10 @@ def upload_file(file_handle : any , bucket):
 
         # STEP [ 2 ] : ============================= create name for the file in the s3 bucket ========================================
         console.print(f"Creating a name for the file in the s3 bucket",style="bold yellow")
-        object_name = "file-" + str(datetime.now().strftime("%Y%m%d%H%M%S%f")) + "-" + str(uuid.uuid4())[:8] + ".zip"
+        if file_name:
+            object_name = file_name 
+        else:
+            object_name = "file-" + str(datetime.now().strftime("%Y%m%d%H%M%S%f")) + "-" + str(uuid.uuid4())[:8] + extension
     
     
         # STEP [ 3 ] : =========================== upload the file to the s3 bucket ========================================

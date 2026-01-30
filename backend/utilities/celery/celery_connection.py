@@ -134,6 +134,7 @@ def get_status_and_update_db(
             else:  
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
             
+            session.add(scan)
             session.commit()
             session.refresh(scan)
             SCAN_OBJECT = scan
