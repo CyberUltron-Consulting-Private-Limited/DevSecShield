@@ -15,6 +15,15 @@ Path param `{type}`: sast, llm, mcp, iac, leakage, sbom_sca, agent_discovery, da
 - GET `/{type}/conversation/{conversation_id}/export` — Export the results of a scan conversation
 - POST `/{type}/conversation/{conversation_id}/reinitialize` — Reinitialize a scan
 
+**Authentication** *( no major changes in database structure , only need to use the APIRouter for these routes )*
+- POST `/auth/signup` — Create a new user
+- POST `/auth/login` — Login a user
+- POST `/auth/logout` — Logout a user
+- POST `/auth/refresh` — Refresh a token
+- GET `/auth/user` — Get the current user
+- POST `/auth/send_code` — Send a verification code to a user
+- POST `/auth/reset_password` — Reset a password for a user
+
 **Guardrails**  *( no major changes in database structure , only need to use the APIRouter for these routes )*
 
 - GET `/guardrails/integrations` — List all guardrails integrations

@@ -436,7 +436,7 @@ export function SASTOptionsSidebar({
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully on the repository <span className="text-teal-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.repo_url}</span>
+              Scan has run successfully on the repository <span className="text-teal-500 mx-1  text-xs p-1 bg-zinc-800 rounded-md">{query.data?.repo_url?.split("/").pop()}</span>
               You can now chat with your scan results
             </p>
             <Button 

@@ -31,6 +31,7 @@
 - created_at ( datetime , now UTC by default )
 - credit_balance ( int , 0 by default )
 - integration_settings ( dict/JSON , { "jira" : {} } by default )
+- settings ( dict/JSON , { } by default ) ( for future ise if it comes in handy )
 
 
 Note : every user by default is a member of the "default-team"
@@ -49,18 +50,19 @@ Note : every user by default is a member of the "default-team"
 - created_at ( datetime , now UTC by default )
 - expires_at ( datetime , now + 10 min by default )
 
-**Conversations** ⭐⭐⭐ Main conversation table  ✅ confirmed 
+**Scans** ⭐⭐⭐ Main Scans table  ✅ confirmed 
 - id ( int , None by default )  # PK, auto
 - team_id ( int ) ( foreign key to team.id ) ( index )
 - task_id ( str , None by default )
-- conversation_type ( "sast"/"llm"/"mcp"/"iac"/"leakage"/"sbom_sca"/"agent_discovery"/"dast" )
+- scan_type ( "sast"/"llm"/"mcp"/"iac"/"leakage"/"sbom_sca"/"agent_discovery"/"dast" ) ( index )
 - metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan )
-- scan_status ( "pending"/"started"/"retry"/"failure"/"success"/"NOT_STARTED" , "NOT_STARTED" by default )
+- scan_status ( "pending"/"started"/"retry"/"failure"/"success"/"NOT_STARTED" , "NOT_STARTED" by default ) 
 - title ( str )
 - created_at ( datetime , now UTC by default )
 - last_updated ( datetime , now UTC by default )
 - scan_data ( dict/JSON , {} by default )
-- message_limit ( int )
+
+Note : messages will be limited by credits . 
 
 
 **GuardrailsIntegration** ✅ confirmed 
@@ -88,7 +90,7 @@ Changes :
 - no need to maintain user_id or team_id in messages log or active context log since we query messages based on conversation id . 
 
 
-Examples of Conversation Types : 
+Old tables ( for reference ) : 
 *SAST*
 - id ( int , None by default )  # PK, auto
 - team_id ( int ) ( foreign key to team.id )

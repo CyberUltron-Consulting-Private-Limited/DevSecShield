@@ -19,12 +19,7 @@ from ..models import *
 from ..auth_utils.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
 from fastapi_throttle import RateLimiter
 import psycopg2
-"""
-lot of problems here 
-fix it tomorrow 
-user id should not be uuid btw
 
-"""
 reuseable_oauth = OAuth2PasswordBearer(
     tokenUrl="/login",
     scheme_name="JWT"

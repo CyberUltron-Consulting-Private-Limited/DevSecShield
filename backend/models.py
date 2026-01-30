@@ -162,7 +162,22 @@ class DASTConversation(SQLModel,table=True):
     class Config:
         arbitrary_types_allowed = True
 
+class GitleaksConversation(SQLModel,table=True):
+    id : int | None = Field(default=None,primary_key=True)
+    user_id : int
+    task_id : str | None = Field(default=None)
+    mode : Literal["github", "gitlab", "bitbucket","not_initiated"] = Field(default="not_initiated",sa_type=String)
+    repo_url : str | None = Field(default=None)
+    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
+    title : str = Field(default="New SAST Conversation")
+    conversation_id : str #mongo db conversation id
+    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+    message_limit : int
 
+    class Config:
+        arbitrary_types_allowed = True
 # ========================================= Guardrails Integration =========================================
 """
 threshold should not be 0 or it will fail the scan ( add validation for this )
