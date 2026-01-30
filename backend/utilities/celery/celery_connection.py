@@ -10,6 +10,8 @@ from sqlmodel import Session, select
 from sqlalchemy.engine import Engine
 import datetime
 from datetime import timezone
+
+from backend.new_models import Scan
 console = Console()
 
 def get_celery_app():
@@ -67,17 +69,18 @@ def get_celery_app():
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app, please try again later")
 
+# revamped ✅
 def get_status_and_update_db(
-    conversation_id: int,
+    scan_id: int,
     task_id: str,
-    table: SASTConversation | LLMBenchmarkingConversation | DASTConversation | Agent_DiscoveryConversation | SBOM_SCAConversation | IACConversation | GitleaksConversation | MCPConversation, 
+    table: Scan, 
     engine: Engine,
      ):
     """
     ### Args : 
-    - conversation_id (Required) : int ( id of the conversation in the main db )
+    - scan_id (Required) : int ( id of the scan in the main db )
     - task_id (Required) : str ( id of the task in celery )
-    - table (Required) : SQLModel Object ( SQLModel Object of the table to update )
+    - table (Required) : Scan ( Scan object from the main db )
     - engine (Required) : Engine ( SQLAlchemy Engine object )
 
 
@@ -89,13 +92,13 @@ def get_status_and_update_db(
     It returns 
     1. scan status 
     2. scan_data 
-    3. Updated Table Conversation Object ( SQLModel Object )
+    3. Updated Scan Object ( SQLModel Object )
     """
     try:
         SCAN_STATUS = None
         SCAN_DATA = {}
-        CONVERSATION = None
-        console.print(f"Getting status and updating db for conversation id: {conversation_id} and task id: {task_id}" ,style="bold magenta2")
+        SCAN_OBJECT = None
+        console.print(f"Getting status and updating db for scan id: {scan_id} and task id: {task_id}" ,style="bold magenta2")
         
         # STEP [ 1 ] : =================== Get celery app and status of task  =======================
         simple_app = get_celery_app()
@@ -110,33 +113,33 @@ def get_status_and_update_db(
 
         # STEP [ 2 ] : =================== Update the status in the main db ( if it has changed )=======================
         with Session(engine) as session:
-            conversation = session.exec(select(table).where(table.id == conversation_id)).first()
-            if not conversation:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+            scan : Scan | None = session.exec(select(table).where(table.id == scan_id)).first()
+            if not scan:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
             
             #updating last_updated field
-            conversation.last_updated = datetime.datetime.now(timezone.utc)
+            scan.last_updated = datetime.datetime.now(timezone.utc)
 
 
-            if conversation.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
-                conversation.scan_status = SCAN_STATUS
+            if scan.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
+                scan.scan_status = SCAN_STATUS
                 console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
             if SCAN_STATUS == "success":
                 results = simple_app.AsyncResult(task_id).result 
                 if not results:
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
                 SCAN_DATA = results
-                conversation.scan_data = SCAN_DATA
+                scan.scan_data = SCAN_DATA
                 console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
             else:  
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
             
             session.commit()
-            session.refresh(conversation)
-            CONVERSATION = conversation
+            session.refresh(scan)
+            SCAN_OBJECT = scan
         
             
-        return (SCAN_STATUS , SCAN_DATA , CONVERSATION)
+        return (SCAN_STATUS , SCAN_DATA , SCAN_OBJECT)
 
     except Exception as e:
         console.print(f"{e}" ,style="dim red")

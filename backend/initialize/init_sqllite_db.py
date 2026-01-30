@@ -2,7 +2,8 @@ import os
 from sqlmodel import SQLModel, create_engine
 from pymongo import MongoClient
 from rich.console import Console
-from backend.models import *
+# from backend.models import *
+from backend.new_models import *
 import argparse
 from dotenv import load_dotenv
 
@@ -12,7 +13,7 @@ def create_db_and_tables():
     try:
         console = Console()
         # creating the SQL engine to communicate to the db
-        sqlite_file_name = os.path.join(os.path.dirname(__file__),"database.db")
+        sqlite_file_name = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\new_database.db"
         sqlite_url = f"sqlite:///{sqlite_file_name}"
         db_url = sqlite_url
 

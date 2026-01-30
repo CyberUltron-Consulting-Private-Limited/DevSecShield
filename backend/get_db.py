@@ -22,7 +22,8 @@ def get_db(dev_environment : bool = False):
             db_url = postgres_url
 
         elif dev_environment:
-            sqlite_file_name = os.path.join(os.path.dirname(__file__),"database.db")
+            # sqlite_file_name = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\database.db"
+            sqlite_file_name = "C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\new_database.db"
             sqlite_url = f"sqlite:///{sqlite_file_name}"
             db_url = sqlite_url
         else:
@@ -61,5 +62,6 @@ def get_mongo_client_db(dev_environment : bool = False):
         mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
     
     mongo_client = MongoClient(mongo_url)
-    db = mongo_client['devsecshield_backend_server_db']
+    # db = mongo_client['devsecshield_backend_server_db']
+    db = mongo_client['new_devsecshield_backend_server_db']
     return db

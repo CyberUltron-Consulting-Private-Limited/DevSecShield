@@ -1,3 +1,12 @@
+## Methods left to implement : 
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\team\credits.py*  
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\estimate_scan.py*
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\start_scan.py*
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\db\metadata.py*
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\pdf\combined.py*
+
+
+
 ## Userflow 
 
 - landing page will be a page with analytics that accumulate data across all teams and there will be a sidebar with navigation to specific teams.
@@ -53,6 +62,8 @@ Note : every user by default is a member of the "default-team"
 **Scans** ⭐⭐⭐ Main Scans table  ✅ confirmed 
 - id ( int , None by default )  # PK, auto
 - team_id ( int ) ( foreign key to team.id ) ( index )
+- owner_user_id ( int ) ( foreign key to user.id ) 
+- credit_consumed ( float , 0 by default )
 - task_id ( str , None by default )
 - scan_type ( "sast"/"llm"/"mcp"/"iac"/"leakage"/"sbom_sca"/"agent_discovery"/"dast" ) ( index )
 - metadata ( dict/JSON , {} by default ) ( stores the metadata of the scan )
@@ -62,7 +73,11 @@ Note : every user by default is a member of the "default-team"
 - last_updated ( datetime , now UTC by default )
 - scan_data ( dict/JSON , {} by default )
 
-Note : messages will be limited by credits . 
+Note : 
+- messages will be limited by credits . 
+- only the user who created the scan can start the scan or update the scan or send messages to the scan 
+- scan can only be started after the user has estimated the credits for the scan and the credits are available in the user's credit balance
+- reinitialize will not deduct credits for scan ( only starting scan will deduct credits )
 
 
 **GuardrailsIntegration** ✅ confirmed 

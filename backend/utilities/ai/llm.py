@@ -1,6 +1,8 @@
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ProviderStrategy, ToolStrategy
 from langchain_aws import ChatBedrock
+from langchain_openai import ChatOpenAI
+import os
 from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -13,63 +15,47 @@ import base64
 
 console = Console()
 
-def generate_llm_response ( 
-    prompt : str,
-    system_prompt : str | None = None ,
-    output_model : BaseModel | None = None ,
-     ):
-    try :
-        model = ChatBedrock(
-            model="anthropic.claude-3-5-sonnet-20240620-v1:0",
-            temperature=0,
-            max_tokens=None,
-            region_name='us-east-1',
-            aws_access_key_id="AKIA5T2YUFAY5IVCRYEY",
-            aws_secret_access_key="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")
 
-
-        structured_llm = model.with_structured_output(output_model,include_raw=True)
-
-        result = structured_llm.invoke([SystemMessage(content=system_prompt) , HumanMessage(content=prompt)])
-
-
-        return result.get("parsed")
-
-    except Exception as e:
-        console.print(f"Error in generate_llm_response: {e}",style="bold red")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating LLM response , please try again later")
-
-
-
-def generate_structured_response_bedrock(input_prompt: str, system_prompt: str, output_model: BaseModel) -> BaseModel:
+def get_llm(
+    model: str = "gpt-5-nano",
+    temperature: float = 0.0,
+    max_tokens: int | None = None,
+    output_model: type[BaseModel] = None,
+    timeout: int = 60*10, # 10 minutes
+    ):
     """
-    ### Returns :
-    - The structured response from the LLM as BaseModel
-    ### Description :
-    This function is used to generate a structured response from an LLM.
-    It takes in an input prompt, a system prompt, and an output model.
-    It returns the structured response from the LLM.
-    ### Args :
-    - input_prompt : The input prompt to send to the LLM
-    - system_prompt : The system prompt to send to the LLM
-    - output_model : The output model to use for the structured response
+    Responsible for getting OpenAI LLM, based on the specified model, temperature, max_tokens
     """
-    try :
+    try:
         load_dotenv()
-        client = instructor.from_provider("bedrock/anthropic.claude-3-haiku-20240307-v1:0")
-        response = client.create(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
-            messages=[
-                {"role": "user", "content": input_prompt},
-            ],
-            response_model=output_model,
-        )
-
-        return response
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY not found")
+        else:
+            pass
+        
+        if output_model:
+            llm = ChatOpenAI(
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                api_key=OPENAI_API_KEY,
+                timeout=timeout,
+            ).with_structured_output(schema=output_model)
+            console.print(f"Structured OpenAI LLM fetched successfully",style="dim green")
+        else:
+            llm = ChatOpenAI(
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                api_key=OPENAI_API_KEY,
+                timeout=timeout,
+            )
+            console.print(f"Unstructured OpenAI LLM fetched successfully",style="dim green")
+        
+        return llm
     except Exception as e:
-        console.print(f"Error in generate_structured_response: {e}",style="bold red")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating structured response , please try again later")
-
+        raise ValueError(f"Error in getting LLM: {e}")
 
 def generate_structured_response(input_prompt:str,
                       model:str="gpt-5-nano",

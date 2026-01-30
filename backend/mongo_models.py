@@ -18,20 +18,20 @@ MessageType = Literal["message", "tool"]
 SenderType = Literal["user", "assistant"]
 
 
-class Conversation(TypedDict, total=False):
+# class Conversation(TypedDict, total=False): # removed from use ⚠️
 
-    _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
-    # user_id: int 
-    messages: List[str]  # Array of ObjectIds ( as string ) of message collection documents in order (earliest to latest)
-    created_at: datetime
-    conv_type: ConversationType
-    title: str
+#     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
+#     # user_id: int 
+#     messages: List[str]  # Array of ObjectIds ( as string ) of message collection documents in order (earliest to latest)
+#     created_at: datetime
+#     conv_type: ConversationType
+#     title: str
 
 
 class MessageLog(TypedDict, total=False):
 
     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
-    conversation_id: str # ObjectId as string of conversation collection document 
+    scan_id: int # int of scan collection document 
     # user_id: int
     content: str
     created_at: datetime
@@ -42,7 +42,7 @@ class MessageLog(TypedDict, total=False):
 class ActiveContextLog(TypedDict, total=False):
 
     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
-    conversation_id: str # ObjectId as string of conversation collection document 
+    scan_id: int # int of scan collection document 
     # user_id: int
     content: str
     created_at: datetime

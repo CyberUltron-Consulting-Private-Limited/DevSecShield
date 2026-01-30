@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 
 
 
-def mongo_db_create_collections_and_documents(dev_environment: bool = False):
+def mongo_db_create_collections_and_documents(
+    dev_environment: bool = False,
+    db_name: str = 'devsecshield_backend_server_db'
+    ):
     """
     Mongo connection url format : 
     mongodb://<username>:<password>@<host>:<port>
@@ -24,15 +27,15 @@ def mongo_db_create_collections_and_documents(dev_environment: bool = False):
         
         # mongo_url = "mongodb://Nikhil:testing123@localhost:27018/"
         mongo_client = MongoClient(mongo_url)
-        db = mongo_client['devsecshield_backend_server_db']
+        db = mongo_client[db_name]
         collections = db.list_collection_names()
         console = Console()
         console.print(f"collections: {collections}",style="bold green")
 
-        # conversations collection
-        if 'conversations' not in collections:
-            db.create_collection('conversations')
-            console.print(f"conversations collection created",style="bold green")
+        # conversations collection ( removed in the new architecture ⚠️ )
+        # if 'conversations' not in collections:
+        #     db.create_collection('conversations')
+        #     console.print(f"conversations collection created",style="bold green")
 
         # message_log collection
         if 'message_log' not in collections:
@@ -77,6 +80,6 @@ if __name__=="__main__":
     parser.add_argument("--dev", action="store_true", default=False, help="Run in development environment")
     args = parser.parse_args()
     if args.dev:
-        mongo_db_create_collections_and_documents(dev_environment=True)
+        mongo_db_create_collections_and_documents(dev_environment=True, db_name="new_devsecshield_backend_server_db")
     else:
-        mongo_db_create_collections_and_documents(dev_environment=False)
+        mongo_db_create_collections_and_documents(dev_environment=False, db_name="new_devsecshield_backend_server_db")

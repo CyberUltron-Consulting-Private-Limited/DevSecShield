@@ -3,9 +3,10 @@ from typing import Annotated
 from fastapi import  APIRouter, HTTPException, Header, status, BackgroundTasks, Depends
 from sqlmodel import Session, select
 from rich.console import Console
-from backend.api_routes.functions import * 
-from backend.guardrails_api_utils.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
-from backend.guardrails_api_utils.auth import *
+from backend.utilities.db.functions import * 
+from backend.utilities.guardrails.auth import create_api_key
+from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
+from backend.utilities.auth.auth_utils import *
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
 

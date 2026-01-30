@@ -1,13 +1,13 @@
 from datetime import datetime
 from bson import ObjectId
 from celery.result import AsyncResult
-from backend.celery_connection import get_celery_app
+from backend.utilities.celery.celery_connection import get_celery_app
 from fastapi import FastAPI, Depends, APIRouter, HTTPException, status
 from sqlalchemy.engine import Engine
 from pymongo.database import Database
 from pydantic import BaseModel
-from backend.guardrails_api_utils.auth import get_user_and_integration_id
-from backend.models import GuardrailsIntegration
+from backend.utilities.guardrails.auth import get_user_and_integration_id
+from backend.new_models import GuardrailsIntegration
 from backend.mongo_models import GuardrailLogs
 from sqlmodel import Session, select
 from rich.console import Console

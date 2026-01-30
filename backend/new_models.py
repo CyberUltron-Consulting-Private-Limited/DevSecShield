@@ -1,7 +1,7 @@
 import datetime
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String
-scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery"]
+scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast"]
 
 class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
@@ -47,10 +47,12 @@ class TeamMember(SQLModel,table=True): # many-to-many relationship between team 
     user_id : int = Field(foreign_key="user.id",index=True)
     role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
 
-
+# only the user who created the scan can run the scan or update the scan  or send messages to the scan 
 class Scan(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     team_id : int = Field(foreign_key="team.id")
+    owner_user_id : int = Field(foreign_key="user.id") 
+    credit_consumed : float | None = Field(default=None)
     scan_type : Literal["sast" , "llm" , "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery" , "dast"] = Field(default="sast",sa_type=String , index=True)
     title : str = Field(default="New Scan")
     task_id : str | None = Field(default=None)
