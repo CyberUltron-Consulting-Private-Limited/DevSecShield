@@ -72,12 +72,10 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
             integration_id=integration.id,
             task_id=task.id,
             status=status,
-            user_id=user_id,
             input_prompt=data.input_prompt,
             created_at=datetime.now(),
             settings=integration.settings,
             results=None,
-            check_passed=None,
         ))
         inserted_id = None
         if result and result.inserted_id:
@@ -101,6 +99,9 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Error starting guardrails scan")
+
+
+
 
 @router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan")
 async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)] ):

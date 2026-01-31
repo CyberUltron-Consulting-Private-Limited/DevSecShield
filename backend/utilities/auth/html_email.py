@@ -101,6 +101,83 @@ def create_user_password_email_html(password, email):
     """
     return html_string
 
+
+def create_user_password_email_html_for_team_membership(password, email, team_name):
+    """
+    Generates the HTML string for an email that sends the user their username and password
+    to log in after being invited to join a team.
+    """
+    html_string = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Team Invitation - Your Login Details</title>
+    <style>
+        @media (prefers-color-scheme: dark) {{
+            body {{ background-color: #121212 !important; }}
+            .main-table {{ background-color: #1e1e1e !important; }}
+            .title, .text, .credential-label, .credential-value, .footer-text {{ color: #e0e0e0 !important; }}
+            .credential-box {{ background-color: #333333 !important; border-color: #444 !important; }}
+            .footer-cell {{ background-color: #262626 !important; }}
+        }}
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td style="padding: 20px 0;">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="main-table" style="margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    <tr>
+                        <td style="padding: 40px; text-align: center;">
+                            <h1 class="title" style="color: #333333; font-size: 28px; font-weight: bold; margin: 0 0 20px 0;">Cyberultron Consulting Pvt Ltd</h1>
+                            <p class="text" style="color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">
+                                You have been invited to join the team <strong>"{team_name}"</strong>.
+                            </p>
+                            <p class="text" style="color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 24px 0;">
+                                Use the credentials below to log in to your account:
+                            </p>
+                            <div style="text-align: left;">
+                                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="credential-box" style="margin: 0 auto; background-color: #e8e8e8; border-radius: 6px; padding: 24px; border: 1px solid #ddd;">
+                                    <tr>
+                                        <td class="credential-label" style="color: #333333; font-size: 14px; font-weight: bold; padding: 8px 0 4px 0; text-align: left;">Username (email)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="credential-value" style="color: #333333; font-size: 16px; padding: 0 0 16px 0; word-break: break-all; text-align: left;">{email}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="credential-label" style="color: #333333; font-size: 14px; font-weight: bold; padding: 8px 0 4px 0; text-align: left;">Password</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="credential-value" style="color: #333333; font-size: 16px; font-weight: bold; padding: 0; text-align: left;">{password}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <p class="text" style="color: #666666; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">
+                                Please keep these credentials secure and do not share them with anyone.
+                                <br>
+                                If you did not expect this invitation, please disregard this email.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="footer-cell" style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
+                            <p class="footer-text" style="color: #999999; font-size: 12px; margin: 0;">
+                                &copy; 2024 Cyberultron Consulting Pvt Ltd. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+    return html_string
+
 # Example usage:
 if __name__ == "__main__":
     # Generate a random 6-digit code for demonstration

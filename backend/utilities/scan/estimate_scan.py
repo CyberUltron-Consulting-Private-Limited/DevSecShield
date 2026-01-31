@@ -37,7 +37,7 @@ def poll_for_estimated_credits (
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in polling for result of task , please try again later")
 
 
-def estimate_credits(
+async def estimate_credits(
     scan_type: scan_types,
     engine: Engine, 
     start_scan_payload: StartScanPayload,
@@ -50,16 +50,16 @@ def estimate_credits(
         if simple_app==None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app , please try again later")
         task_result = None
-        scan_kwargs = format_input_for_scan(
+        scan_kwargs = await format_input_for_scan(
                 scan_type=scan_type, 
                 start_scan_payload=start_scan_payload,
                 uploaded_file=uploaded_file)
         if scan_type == "sast":
-            task_result = simple_app.send_task(name="scan_worker.sast", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.sast_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
         elif scan_type == "iac":
-            task_result = simple_app.send_task(name="scan_worker.iac", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.iac_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
         elif scan_type == "sbom_sca":
-            task_result = simple_app.send_task(name="scan_worker.sbom_sca", kwargs=scan_kwargs, queue="scan_worker_queue")
+            task_result = simple_app.send_task(name="scan_worker.sbom_sca_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 

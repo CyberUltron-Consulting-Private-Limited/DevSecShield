@@ -55,22 +55,22 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
 
 
 
-def create_api_key(user_id: int) -> str:
+def create_api_key(team_id: int) -> str:
     """
     Create a new API key for a user
     Args:
-        user_id: int
+        team_id: int
     Returns:
         str: The new API key
     Raises:
         HTTPException: 401 if the user is missing or invalid
     Example:
-        >>> api_key = create_api_key(user_id=1)
+        >>> api_key = create_api_key(team_id=1)
         >>> print(api_key)
         >>> gr1-weasjdfbwejf12313ksdnc
     """
     try:
-        return "gr" + str(user_id) + "-" + secrets.token_hex(64) # example : gr1-weasjdfbwejf12313ksdnc
+        return "gr" + str(team_id) + "-" + secrets.token_hex(64) # example : gr1-weasjdfbwejf12313ksdnc
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e

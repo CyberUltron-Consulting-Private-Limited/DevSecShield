@@ -1,9 +1,9 @@
 ## Methods left to implement : 
 - *C:\Users\HP\Desktop\DevSecShield\backend\utilities\team\credits.py*  ✅ Done 
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\estimate_scan.py*
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\format_input.py*
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\db\metadata.py*
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\pdf\combined.py*
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\estimate_scan.py* ✅ Done 
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\format_input.py* ✅ Done 
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\db\metadata.py* ✅ Done 
+- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\pdf\combined.py* ✅ Done 
 
 
 
@@ -75,7 +75,7 @@ Note : every user by default is a member of the "default-team"
 
 Note : 
 - messages will be limited by credits . 
-- only the user who created the scan can start the scan or update the scan or send messages to the scan 
+- only the user who created the scan can start the scan or update the scan or send messages to the scan / guardrails integration / cicd integration
 - scan can only be started after the user has estimated the credits for the scan and the credits are available in the user's credit balance
 - reinitialize will not deduct credits for scan ( only starting scan will deduct credits )
 

@@ -379,12 +379,18 @@ async def start_scan(
                 )
                 if FETCHED_STATUS == "success" or FETCHED_STATUS == "started" or FETCHED_STATUS == "failure" or FETCHED_STATUS == "pending" or FETCHED_DATA != {} :
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
-        
+            
+            scan_metadata = get_scan_metadata_for_type(type, start_scan_payload)
+            if scan_metadata == None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error in getting scan metadata")
+            scan.scan_metadata = scan_metadata
+            session.add(scan)
+            session.commit()
         
 
 
         # STEP [ 3 ] : =========== Start the scan and update the main db ======================
-        start_scan_and_update_db(
+        await start_scan_and_update_db(
             scan_id=scan_id,
             start_scan_payload=start_scan_payload,
             team_id=team_id,
@@ -620,7 +626,7 @@ async def reinitialize_scan(
             
         
         # STEP [ 3 ] : =========== Reinitialize the scan and update the main db ======================
-        start_scan_and_update_db(
+        await start_scan_and_update_db(
             scan_id=scan_id,
             start_scan_payload=start_scan_payload,
             team_id=team_id,
@@ -687,7 +693,7 @@ async def estimate_credits_for_scan(
         
         
         # STEP [ 3 ] : =========== Estimate the credits for the scan ======================
-        credits_required = estimate_credits(
+        credits_required = await estimate_credits(
             scan_type=type,
             engine=engine,
             start_scan_payload=start_scan_payload,

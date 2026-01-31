@@ -19,10 +19,17 @@ def show_download_progress(no_of_bytes_downloaded : int ):
 
 def upload_file(
     file_handle : any , 
-    bucket : str , 
+    bucket : str = "devsecshield-storage", 
     extension : str = ".zip",
     file_name : str = None,
     ):
+    """
+    Returns 
+    {
+        "bucket": bucket,
+        "object_name": object_name
+    }
+    """
     try:
         # STEP [ 1 ] : =========================== create a s3 client ========================================
         console.print(f"Creating a s3 client",style="bold yellow")

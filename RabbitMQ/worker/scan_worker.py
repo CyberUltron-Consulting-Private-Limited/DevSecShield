@@ -196,7 +196,7 @@ try:
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True)
     def iac(
-        iac_dict_contexts: Optional[list[dict]] = None,
+        iac_dict_contexts: list[dict],
         repo_dict_context: dict | None = None , 
         zip_dict_context: dict | None = None , 
         ):

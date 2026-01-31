@@ -22,7 +22,7 @@ from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
     UpdateCicdIntegrationData,
 )
-
+from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 
 console = Console()
@@ -72,7 +72,7 @@ async def run_cicd_scan(
         
         # STEP [ 1 ] : ================= Upload zip file to s3 bucket ================================
         bytes_io_zip_file_object = BytesIO(await zip_file.read())
-        response = upload_file(bytes_io_zip_file_object, "devsecshield-storage")
+        response = upload_file(bytes_io_zip_file_object)
         bucket_name = response["bucket"] if response and "bucket" in response else None
         object_name = response["object_name"] if response and "object_name" in response else None
         if not bucket_name or not object_name:
@@ -131,76 +131,33 @@ async def run_cicd_scan(
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
-@router.get("/cicd/log/{log_id}",summary="Get a cicd log")
-async def get_cicd_log(log_id: str, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)]):
-    """
-    Get a cicd log
-    """
-    try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-
-        user_id = user_and_integration["user_id"]
-        cicd_integration_id = user_and_integration["integration_id"]
-        console.print(f"User ID: {user_id}, Integration ID: {cicd_integration_id} has requested the log", style="bold yellow")
-        if not user_id or not cicd_integration_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CICD API key")
-
-
-        # STEP [ 1 ] : ================= Get the log from the mongo db =================================
-        cicd_log_collection = mongo_db["cicd_logs"]
-        cicd_log = cicd_log_collection.find_one({"_id": ObjectId(log_id)})
-        if not cicd_log:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd log not found")
-
-        #STEP [ 2 ] : ============ check if status needs update =================================
-        celery_app = get_celery_app()
-        if cicd_log["status"] in [ "pending", "started", "NOT_STARTED" ]:
-            task_id = cicd_log["task_id"]
-            task_status = AsyncResult(task_id, app=celery_app).status.lower()
-            if task_status:
-                cicd_log["status"] = task_status
-                cicd_log_collection.update_one({"_id": ObjectId(log_id)}, {"$set": {"status": task_status}})
-                console.print(f"Cicd log {log_id} updated with status {task_status}", style="bold green")
-
-        if cicd_log["results"] == None and (task_status == "success" or cicd_log["status"] == "success"):
-            result = AsyncResult(cicd_log["task_id"], app=celery_app).result if (cicd_log["task_id"] and AsyncResult(cicd_log["task_id"], app=celery_app).result )else None
-            if result:
-                cicd_log["results"] = result
-                cicd_log_collection.update_one({"_id": ObjectId(log_id)}, {"$set": {"results": result}})
-                console.print(f"Cicd log {log_id} updated with results {result}", style="bold green")
-        
-        #STEP [ 3 ] : ============ return the log =================================
-        return {
-            "results": cicd_log["results"],
-            "status": task_status,
-            "cicd_log_id": str(cicd_log["_id"]),
-
-        }
-    except Exception as e:
-        console.print(f"Error getting cicd log: {str(e)}", style="bold red")
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
 
 # ==================================== INTERNAL API ROUTES =============================================================
-
-@router.get("/cicd/integrations",summary="List all cicd integrations")
-async def list_cicd_integrations(Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+# revamped ✅
+@router.get("/{team_id}/cicd/integrations",summary="List all cicd integrations")
+async def list_cicd_integrations(
+    team_id: int, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     List all cicd integrations
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+
+        
+        # STEP [ 3 ] : ======================================== Get the integrations ========================================
         with Session(engine) as session:
-            integrations = session.exec(select(CicdIntegration).where(CicdIntegration.user_id == user.id)).all()
+            integrations = session.exec(select(CicdIntegration).where(CicdIntegration.team_id == team_id)).all()
         
         integrations_data = []
         for integration in integrations:
@@ -220,26 +177,36 @@ async def list_cicd_integrations(Authorization: Annotated[str | None, Header()] 
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
-@router.post("/cicd/integration",summary="Create a new cicd integration")
-async def create_cicd_integration(data: CreateCicdIntegrationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+# revamped ✅
+@router.post("/{team_id}/cicd/integration",summary="Create a new cicd integration")
+async def create_cicd_integration(
+    team_id: int, 
+    data: CreateCicdIntegrationData, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Create a new cicd integration
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-        # STEP [ 1 ] : ================= Validate the data =================================
+        user = await get_user_from_header_or_raise_exception(engine , Authorization)
         if data.title is None or data.scan_type is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title and scan type are required")
-        # STEP [ 2 ] : ================= Get the user from the header =================================
-        user = await get_user_from_header_or_raise_exception(engine , Authorization)
-        # STEP [ 3 ] : ================= Create the api key =================================
-        api_key = create_api_key(user.id)
-        # STEP [ 4 ] : ================= Create the integration =================================
+
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+
+        # STEP [ 3 ] : ======================================== Create the integration ====================================
+        api_key = create_api_key(team_id)
         with Session(engine) as session:
             integration = CicdIntegration(
-                user_id=user.id, 
+                team_id=team_id, 
+                owner_user_id=user.id, 
                 title=data.title, 
                 scan_type=data.scan_type, 
                 api_key=api_key)
@@ -256,26 +223,39 @@ async def create_cicd_integration(data: CreateCicdIntegrationData, Authorization
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
-@router.delete("/cicd/integration/{integration_id}",summary="Delete a cicd integration")
-async def delete_cicd_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+# revamped ✅
+@router.delete("/{team_id}/cicd/integration/{integration_id}",summary="Delete a cicd integration")
+async def delete_cicd_integration(
+    team_id: int, 
+    integration_id: int, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Delete a cicd integration
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-        
-        # STEP [ 1 ] : ================= Get the user from the header =================================
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
-        # STEP [ 2 ] : ================= Delete the integration =================================
+
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        
+        # STEP [ 3 ] : ======================================== Delete the integration ====================================
         with Session(engine) as session:
-            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id, CicdIntegration.user_id == user.id)).first()
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
+            if integration.owner_user_id != user.id: # only the owner of the integration can delete it ⭐⭐
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this cicd integration")
             session.delete(integration)
             session.commit()
         
-        # STEP [ 3 ] : ================= Delete the logs =================================
+        # STEP [ 4 ] : ======================================== Delete the logs ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
         cicd_logs_collection.delete_many({"ci_cd_integration_id": integration_id})
         console.print(f"Cicd logs deleted successfully for integration {integration_id}", style="bold green")
@@ -289,25 +269,41 @@ async def delete_cicd_integration(integration_id: int, Authorization: Annotated[
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
-@router.put("/cicd/integration/{integration_id}",summary="Update a cicd integration")
-async def update_cicd_integration(integration_id: int, data: UpdateCicdIntegrationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+
+# revamped ✅
+@router.put("/{team_id}/cicd/integration/{integration_id}",summary="Update a cicd integration")
+async def update_cicd_integration(
+    team_id: int, 
+    integration_id: int, 
+    data: UpdateCicdIntegrationData, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Update a cicd integration
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-        
-        # STEP [ 1 ] : ================= Validate the data =================================
+        user = await get_user_from_header_or_raise_exception(engine , Authorization)
         if data.title is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title is required")
-        # STEP [ 2 ] : ================= Get the user from the header =================================
-        user = await get_user_from_header_or_raise_exception(engine , Authorization)
-        # STEP [ 3 ] : ================= Update the integration =================================
+
+
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        
+
+        # STEP [ 3 ] : ======================================== Update the integration ====================================
         with Session(engine) as session:
-            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id, CicdIntegration.user_id == user.id)).first()
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
+            if integration.owner_user_id != user.id: # only the owner of the integration can update it ⭐⭐
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this cicd integration")
             integration.title = data.title
             session.add(integration)
             session.commit()
@@ -321,26 +317,36 @@ async def update_cicd_integration(integration_id: int, data: UpdateCicdIntegrati
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
-@router.get("/cicd/integration/{integration_id}",summary="Get a cicd integration")
-async def get_cicd_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+
+# revamped ✅
+@router.get("/{team_id}/cicd/integration/{integration_id}",summary="Get a cicd integration")
+async def get_cicd_integration(
+    team_id: int, 
+    integration_id: int, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Get a cicd integration
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-        
-        # STEP [ 1 ] : ================= Get the user from the header =================================
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
-        # STEP [ 2 ] : ================= Get the integration =================================
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        # STEP [ 3 ] : ================= Get the integration =================================
         with Session(engine) as session:
-            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id, CicdIntegration.user_id == user.id)).first()
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             
 
-        # STEP [ 3 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
+        # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
         cicd_logs = cicd_logs_collection.find(
             {"$and": [{"ci_cd_integration_id": integration_id}, {"status": {"$in": ["pending", "started", "NOT_STARTED" , "success"]}}]}
@@ -348,7 +354,7 @@ async def get_cicd_integration(integration_id: int, Authorization: Annotated[str
     
         
 
-        # STEP [ 4 ] : ======================================= Cycle through the logs and see if there are any tasks that need status update =======================================
+        # STEP [ 5 ] : ======================================= Cycle through the logs and see if there are any tasks that need status update =======================================
         celery_app = get_celery_app()
         result , task_status = None, None
         for log in cicd_logs:
@@ -382,7 +388,7 @@ async def get_cicd_integration(integration_id: int, Authorization: Annotated[str
                 console.print(f"Cicd log {log['_id']} updated with results", style="bold green") 
         
         
-        # STEP [ 5 ] : =============== Get ci cd mongo logs for integration ================================
+        # STEP [ 6 ] : =============== Get ci cd mongo logs for integration ================================
         logs = mongo_db["cicd_logs"].find({"ci_cd_integration_id": integration_id}).sort("created_at", -1)
         logs_data = []
         for log in logs:
@@ -393,7 +399,7 @@ async def get_cicd_integration(integration_id: int, Authorization: Annotated[str
                 "results": log["results"],
             })
         
-        # STEP [ 6 ] : ================= Return the integration and logs ================================
+        # STEP [ 7 ] : ================= Return the integration and logs ================================
         return {
             "cicd_integration_id": integration.id,
             "api_key": integration.api_key,

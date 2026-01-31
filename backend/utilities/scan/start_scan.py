@@ -20,7 +20,7 @@ from backend.utilities.db.metadata import get_scan_metadata_for_type
 console = Console()
 
 
-def start_scan_and_update_db(
+async def start_scan_and_update_db(
     scan_type: scan_types,
     engine: Engine, 
     scan_id: int,
@@ -35,7 +35,7 @@ def start_scan_and_update_db(
         if simple_app==None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in getting celery app , please try again later")
         task_result = None
-        scan_kwargs = format_input_for_scan(
+        scan_kwargs = await format_input_for_scan(
                 scan_type=scan_type, 
                 start_scan_payload=start_scan_payload,
                 uploaded_file=uploaded_file)

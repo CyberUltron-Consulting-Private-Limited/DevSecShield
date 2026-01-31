@@ -3,32 +3,47 @@ from typing import Annotated
 from fastapi import  APIRouter, HTTPException, Header, status, BackgroundTasks, Depends
 from sqlmodel import Session, select
 from rich.console import Console
-from backend.utilities.db.functions import * 
+from backend.utilities.celery.celery_connection import get_celery_app
+from celery.result import AsyncResult
+from backend.utilities.db.functions import get_user_from_header_or_raise_exception
+from backend.new_models import GuardrailsIntegration
 from backend.utilities.guardrails.auth import create_api_key
 from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
 from backend.utilities.auth.auth_utils import *
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
-
+from backend.utilities.team.validation import check_if_user_is_in_team
 console = Console()
 dev_environment = True # for local development
 
 router = APIRouter(prefix="/guardrails",tags=["Guardrails"])
 
-
+# revamped ✅
 limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
-@router.get("/integrations",summary="List all guardrails conversations")
-async def list_guardrails_integrations( background_tasks: BackgroundTasks, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team")
+async def list_guardrails_integrations( 
+    team_id: int,
+    background_tasks: BackgroundTasks, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     List all guardrails integrations.
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         
+        
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+        
+        
+        
+        # STEP [ 3 ] : ======================================== Get the guardrails integrations for the team ====================================
         with Session(engine) as session:
-            statement = select(GuardrailsIntegration).where(GuardrailsIntegration.user_id == user.id)
+            statement = select(GuardrailsIntegration).where(GuardrailsIntegration.team_id == team_id)
             integrations = session.exec(statement).all()
         
         response_data = []
@@ -43,25 +58,42 @@ async def list_guardrails_integrations( background_tasks: BackgroundTasks, Autho
                 "last_updated": integration.last_updated
             })
         return response_data
+    
+    except HTTPException as e:
+        raise e
     except Exception as e:
         console.print(f"Error fetching guardrails integrations: {str(e)}", style="bold red")
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail="Error fetching guardrails integrations")
 
-@router.post("/integration",summary="Create a new guardrails integration")
-async def create_guardrails_integration(data: CreateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+
+# revamped ✅
+@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team")
+async def create_guardrails_integration(
+    team_id: int, 
+    data: CreateGuardrailsIntegrationData, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Create a new guardrails integration.
     """
     try:
+        # STEP [ 1 ] : ======================================== Get the database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
+        
+        
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+        
+        
+        # STEP [ 3 ] : ======================================== Create the guardrails integration ====================================
         with Session(engine) as session:
-            api_key = create_api_key(user.id)
+            api_key = create_api_key(team_id)
             new_integration = GuardrailsIntegration(
-                user_id=user.id,
+                owner_user_id=user.id,
+                team_id=team_id,
                 title=data.title,
                 api_key=api_key,
             )
@@ -72,42 +104,54 @@ async def create_guardrails_integration(data: CreateGuardrailsIntegrationData, A
                 "message": "Guardrails integration created successfully",
                 "integration_id": new_integration.id
             }
+    except HTTPException as e:
+        raise e
     except Exception as e:
         console.print(f"Error creating guardrails integration: {str(e)}", style="bold red")
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail="Error creating guardrails integration")
 
-@router.get("/integration/{integration_id}",summary="Get a guardrails integration")
-async def get_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+# revamped ✅
+@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration")
+async def get_guardrails_integration(
+    team_id: int, 
+    integration_id: int, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Get a guardrails integration dashboard data
     Run a scan status update for all the scans in this integration 
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
-        # STEP [ 1 ] : ==================================== Get the integration from the main database ====================================
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        # STEP [ 3 ] : ==================================== Get the integration from the main database ====================================
         with Session(engine) as session:
-            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
+            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.team_id == team_id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
             integration.last_updated = datetime.datetime.now(datetime.timezone.utc)
             session.add(integration)
             session.commit()
             session.refresh(integration)
+
+
         
-        # STEP [ 2 ] : ==================================== Get the integration logs from the mongo db ====================================
+        # STEP [ 4 ] : ======================================== Get the integration logs from the mongo db ====================================
         guardrails_logs_collection = mongo_db["guardrails_logs"]
         guardrails_logs = guardrails_logs_collection.find(
             {"$and": [{"integration_id": integration_id}, {"status": {"$in": ["pending", "started", "NOT_STARTED" , "success"]}}]}
         ) # including success because sometimes the scan  might have comepleted quickly and we might need to get results after status is success            
-    
+
         
 
-        # STEP [ 3 ] : ======================================= Cycle through the logs and see if there are any tasks that need status update =======================================
+        # STEP [ 5 ] : ======================================== Cycle through the logs and see if there are any tasks that need status update ========================================
         celery_app = get_celery_app()
         result , status = None, None
         for log in guardrails_logs:
@@ -128,7 +172,9 @@ async def get_guardrails_integration(integration_id: int, Authorization: Annotat
 
 
 
-        # STEP [ 4 ] : =========================================Fetch and Calculate Metrics =======================================================================
+
+
+        # STEP [ 6 ] : ======================================== Fetch and Calculate Metrics ========================================
         total_logs , successful_logs , failed_logs , pending_logs , started_logs , not_started_logs = 0 , 0 , 0 , 0 , 0 , 0 
         log_data = []
         with guardrails_logs_collection.find({"integration_id": integration_id}).sort("created_at", -1) as cursor:
@@ -171,21 +217,39 @@ async def get_guardrails_integration(integration_id: int, Authorization: Annotat
             raise e
         raise HTTPException(status_code=500, detail="Error getting guardrails integration")
 
-@router.put("/integration/{integration_id}",summary="Update a guardrails integration")
-async def update_guardrails_integration(integration_id: int, data: UpdateGuardrailsIntegrationData, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+
+
+
+# revamped ✅
+@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration")
+async def update_guardrails_integration(
+    team_id: int, 
+    integration_id: int, 
+    data: UpdateGuardrailsIntegrationData, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Update a guardrails integration.
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
-        
 
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+        
+        
+        # STEP [ 3 ] : ======================================== Update the guardrails integration ========================================
         with Session(engine) as session:
-            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
+            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.team_id == team_id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
+            if integration.owner_user_id != user.id: # only the owner of the integration can update it ⭐⭐
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this guardrails integration")
             if data.title is not None:
                 integration.title = data.title
             if data.settings is not None:
@@ -195,30 +259,49 @@ async def update_guardrails_integration(integration_id: int, data: UpdateGuardra
             return {
                 "message": f"Guardrails integration {integration_id} updated successfully"
             }
+    
+    except HTTPException as e:
+        raise e
     except Exception as e:
         console.print(f"Error updating guardrails integration: {str(e)}", style="bold red")
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail="Error updating guardrails integration")
 
-@router.delete("/integration/{integration_id}",summary="Delete a guardrails integration")
-async def delete_guardrails_integration(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+
+
+
+# revamped ✅
+@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration")
+async def delete_guardrails_integration(
+    team_id: int, 
+    integration_id: int, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
     """
     Delete a guardrails integration.
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+
+        # STEP [ 3 ] : ======================================== Delete the guardrails integration ========================================
 
         # deleting the integration from the main database
         with Session(engine) as session:
             integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
+            if integration.owner_user_id != user.id: # only the owner of the integration can delete it ⭐⭐
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this guardrails integration")
             session.delete(integration)
             session.commit()
         console.print(f"Guardrails integration {integration_id} deleted from main database", style="bold green")
+
 
         # deleting the integration logs from the mongo db
         guardrails_logs_collection = mongo_db["guardrails_logs"]
@@ -228,24 +311,38 @@ async def delete_guardrails_integration(integration_id: int, Authorization: Anno
         return {
             "message": f"Guardrails integration {integration_id} deleted successfully"
         }
-
+    
+    except HTTPException as e:
+        raise e
     except Exception as e:
         console.print(f"Error deleting guardrails integration: {str(e)}", style="bold red")
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=500, detail="Error deleting guardrails integration")
 
-@router.get("/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration")
-async def get_guardrails_integration_settings(integration_id: int, Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)] ):
+
+
+# revamped ✅
+@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration")
+async def get_guardrails_integration_settings(
+    team_id: int, 
+    integration_id: int, 
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)] ):
     """
     Get the integration settings of all the scanners in the integration.
     """
     try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await  get_user_from_header_or_raise_exception(engine , Authorization)
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+
+        # STEP [ 3 ] : ======================================== Get the integration settings ========================================
         with Session(engine) as session:
-            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
+            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.team_id == team_id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
             return {

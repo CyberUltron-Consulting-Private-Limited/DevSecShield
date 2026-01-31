@@ -1,22 +1,8 @@
 import datetime
 from typing import Dict, Literal
-from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String
+from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast"]
 
-class User(SQLModel,table=True):
-    id : int | None = Field(default=None,primary_key=True)
-    email : str
-    password : str
-    first_name : str | None
-    last_name : str | None
-    profile_photo : str | None
-
-    
-    session_active : bool | None = Field(default=False)
-    last_active : datetime.datetime | None = Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
-
-    # superuser
-    is_superuser : bool | None = Field(default=False)
 
 
 class VerificationCode(SQLModel,table=True):
@@ -30,6 +16,18 @@ class VerificationCode(SQLModel,table=True):
         arbitrary_types_allowed = True
 
 
+
+# every user is a member of the "default-team" by default when a user is created ⭐
+class TeamMembership(SQLModel,table=True): # many-to-many relationship between team and user
+    team_id : int = Field(default=None,foreign_key="team.id",primary_key=True)
+    user_id : int = Field(default=None,foreign_key="user.id",primary_key=True)
+    role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
+
+    team : "Team" = Relationship(back_populates="team_memberships")
+    user : "User" = Relationship(back_populates="team_memberships")
+
+
+
 class Team(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     name : str = Field(default="New Team")
@@ -39,13 +37,23 @@ class Team(SQLModel,table=True):
     integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON)) 
     settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
 
+    # many-to-many relationship between team and user
+    team_memberships : list[TeamMembership] = Relationship(back_populates="team")
 
-# every user is a member of the "default-team" by default when a user is created ⭐
-class TeamMember(SQLModel,table=True): # many-to-many relationship between team and user
+class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    team_id : int = Field(foreign_key="team.id",index=True)
-    user_id : int = Field(foreign_key="user.id",index=True)
-    role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
+    email : str
+    password : str
+    first_name : str | None
+    last_name : str | None
+    profile_photo : str | None
+    session_active : bool | None = Field(default=False)
+    last_active : datetime.datetime | None = Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
+    is_superuser : bool | None = Field(default=False)
+
+    # many-to-many relationship between user and team
+    team_memberships : list[TeamMembership] = Relationship(back_populates="user")
+
 
 # only the user who created the scan can run the scan or update the scan  or send messages to the scan 
 class Scan(SQLModel,table=True):
@@ -82,6 +90,7 @@ default_settings = {
 class GuardrailsIntegration(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     team_id : int = Field(foreign_key="team.id")
+    owner_user_id : int = Field(foreign_key="user.id")
     api_key : str
     title : str = Field(default="New Guardrails Integration")
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
@@ -96,6 +105,7 @@ class GuardrailsIntegration(SQLModel,table=True):
 class CicdIntegration(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     team_id : int = Field(foreign_key="team.id")
+    owner_user_id : int = Field(foreign_key="user.id")
     api_key : str
     title : str = Field(default="New CI/CD Integration")
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)

@@ -12,6 +12,19 @@ class SendMessageToScanData(BaseModel):
 class UpdateScanData(BaseModel):
     title: str
 
+class CreateTeamData(BaseModel):
+    name: str
+    description: str | None = None
+
+class UpdateTeamData(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    integration_settings: dict | None = None
+
+class RemoveOrAddMembersToTeamData(BaseModel):
+    intent : Literal["remove" , "add"]
+    email_ids: list[str]
+
 
 # ----------------------------------------------------- Start scan related schemas --------------------------------------------
 

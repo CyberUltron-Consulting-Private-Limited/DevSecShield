@@ -1,4 +1,7 @@
 from backend.utilities.db.functions import scan_types
+from backend.utilities.pdf.sast_pdf import generate_pdf_for_sast
+from backend.utilities.pdf.iac_pdf import generate_pdf_for_iac
+from backend.utilities.pdf.sbom_sca_pdf import generate_pdf_for_sbom_sca
 
 
 
@@ -6,5 +9,10 @@ def generate_pdf_for_type(type: scan_types , scan_data: dict , output_path: str)
     """
     This function generates a pdf for a given scan type.
     """
-    # TODO : Implement this function
-    pass
+    match type:
+        case "sast":
+            return generate_pdf_for_sast(scan_data, output_path)
+        case "iac":
+            return generate_pdf_for_iac(scan_data, output_path)
+        case "sbom_sca":
+            return generate_pdf_for_sbom_sca(scan_data, output_path)

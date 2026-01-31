@@ -1,7 +1,7 @@
 import asyncio
 from email.message import EmailMessage
 import smtplib
-from backend.auth_utils.html_email import create_verification_email_html
+from backend.utilities.auth.html_email import create_verification_email_html
 from passlib.context import CryptContext
 import os
 from datetime import datetime, timedelta, timezone
@@ -11,8 +11,8 @@ from sqlmodel import Session, select
 from sqlalchemy import Engine
 from fastapi import Depends, HTTPException, status
 from pydantic import ValidationError
-from backend.auth_utils.auth_schema import TokenPayload
-from backend.models import User, VerificationCode
+from backend.utilities.auth.auth_schema import TokenPayload
+from backend.new_models import User, VerificationCode
 from dotenv import load_dotenv
 import smtplib
 from email.mime.text import MIMEText

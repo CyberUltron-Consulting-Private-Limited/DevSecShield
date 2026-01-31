@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status , Header
 from rich.console import Console
 from sqlmodel import Session, delete, select, update
+from backend.new_models import Team, TeamMember
 from backend.utilities.auth.auth_utils import (
     create_access_token,
     create_refresh_token,
@@ -13,11 +14,13 @@ from backend.utilities.auth.auth_utils import (
     get_current_user_from_access_token,
     get_user_from_header_or_raise_exception
 )
-from ..models import *
-from ..auth_utils.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
+from backend.new_models import *
+from backend.utilities.auth.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
 from fastapi_throttle import RateLimiter
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
+from rich.console import Console
+console = Console()
 
 
 router = APIRouter(
@@ -68,16 +71,26 @@ async def create_user(data: UserSignup):
                 detail="User with this email already exist"
             )
         with Session(engine) as session:
+            new_team = Team(
+                name=f"{new_user.first_name}'s Team",
+                description=f"Default team for {new_user.first_name}",
+            )
             new_user = User(
                 email=data.email, 
                 password=get_hashed_password(data.password),
                 first_name=data.first_name,
                 last_name=data.last_name,
                 session_active=True, # activating session for new user
+                teams =  [ new_team ]
             )
-            session.add(new_user)
+            team_membership = TeamMembership( team=new_team, user=new_user, role="admin" )
+            session.add(team_membership)
             session.commit()
             session.refresh(new_user)
+        
+
+        
+
         return {
         "access_token": create_access_token(new_user.email),
         "refresh_token": create_refresh_token(new_user.email),
