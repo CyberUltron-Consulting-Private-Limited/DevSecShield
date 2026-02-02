@@ -3,7 +3,6 @@ from dotenv import load_dotenv
 import psycopg2
 from rich.console import Console
 import os
-from backend.models import LLMBenchmarkingConversation, SASTConversation, DASTConversation, Agent_DiscoveryConversation, SBOM_SCAConversation, IACConversation, GitleaksConversation, MCPConversation
 from fastapi import HTTPException, status
 from celery.result import AsyncResult
 from sqlmodel import Session, select

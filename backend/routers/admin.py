@@ -3,10 +3,10 @@ from fastapi import FastAPI, HTTPException, Header, status, APIRouter
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from pydantic import BaseModel
-from backend.auth_utils.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email
-from backend.models import User
-from backend.auth_utils.plans import plans
-from backend.auth_utils.html_email import create_user_password_email_html
+from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email
+from backend.new_models import User
+from backend.utilities.auth.plans import plans
+from backend.utilities.auth.html_email import create_user_password_email_html
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
 

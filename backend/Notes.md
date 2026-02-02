@@ -1,10 +1,3 @@
-## Methods left to implement : 
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\team\credits.py*  ✅ Done 
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\estimate_scan.py* ✅ Done 
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\scan\format_input.py* ✅ Done 
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\db\metadata.py* ✅ Done 
-- *C:\Users\HP\Desktop\DevSecShield\backend\utilities\pdf\combined.py* ✅ Done 
-
 
 
 ## Userflow 
@@ -201,7 +194,8 @@ Old tables ( for reference ) :
 
 - Do a ``uv pip install -U "langchain[aws]"`` 
 
-- To create mongo db tables , from root directory run ``uv run python -m backnend.init_mongo_db`` ( for MONGO DB ) 
+- To create mongo db tables , from root directory run ``uv run python -m backend.initialize.init_mongo_db`` ( for MONGO DB ) 
+- To create sqlite db tables , from root directory run ``uv run python -m backend.initialize.init_sqllite_db`` ( for SQLITE DB )
 - To create postgres db tables , use alembic 
 
 

@@ -4,7 +4,8 @@ services:
     container_name: devsecshield-zap-daemon
     ports:
       - 8090:8090
-    command: zap-x.sh -daemon -host 0.0.0.0 -port 8090 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=${ZAP_API_KEY}
+    command: zap-x.sh -daemon -host 0.0.0.0 -port 8090 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=${ZAP_API_KEY} -config network.localServers.aliases.alias.name=13.203.233.15
+    # command: zap-x.sh -daemon -host 0.0.0.0 -port 8090 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=${ZAP_API_KEY}
     # command: zap-x.sh -daemon -host 0.0.0.0 -port 8090 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.disablekey=true
     volumes:
       - zap_volume:/zap

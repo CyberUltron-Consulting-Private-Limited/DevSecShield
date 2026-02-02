@@ -1,7 +1,7 @@
-from backend.utilities.db.functions import scan_types
-from backend.utilities.pdf.sast_pdf import generate_pdf_for_sast
-from backend.utilities.pdf.iac_pdf import generate_pdf_for_iac
-from backend.utilities.pdf.sbom_sca_pdf import generate_pdf_for_sbom_sca
+from backend.new_models import scan_types
+from backend.utilities.pdf.sast_pdf import generate_pdf as generate_pdf_for_sast
+from backend.utilities.pdf.iac_pdf import generate_pdf as generate_pdf_for_iac
+from backend.utilities.pdf.sbom_sca_pdf import generate_pdf as generate_pdf_for_sbom_sca
 
 
 

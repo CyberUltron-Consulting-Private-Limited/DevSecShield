@@ -96,6 +96,7 @@ class GuardrailsIntegration(SQLModel,table=True):
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     settings : Dict | None = Field(default=default_settings,sa_column=Column(JSON))  # scanner settings 
+    integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
     class Config:
         arbitrary_types_allowed = True
 
@@ -112,6 +113,6 @@ class CicdIntegration(SQLModel,table=True):
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_type : scan_types | None= Field(default=None,sa_type=String)
     results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
-
+    integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
     class Config:
         arbitrary_types_allowed = True

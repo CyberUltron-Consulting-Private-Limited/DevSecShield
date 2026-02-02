@@ -1,18 +1,12 @@
-import datetime
-from typing import Annotated, Literal
-from bson import ObjectId
+
 from celery.result import AsyncResult
-from fastapi import FastAPI, HTTPException, Header, status, UploadFile
+from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.engine import Engine
-from sqlmodel import Sequence, Session, select
-from pydantic import BaseModel, model_validator
-from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
-from backend.models import * 
+from sqlmodel import Session, select
+from backend.utilities.celery.celery_connection import get_celery_app
 from rich.console import Console
 from pymongo.database import Database
-import json
 import time
-import uuid
 from backend.new_models import Scan , scan_types
 from backend.utilities.db.schemas import StartScanPayload
 from backend.utilities.scan.format_input import format_input_for_scan

@@ -1,32 +1,32 @@
 from atlassian import Jira
 from rich.console import Console
 from requests.exceptions import HTTPError
+import requests
+from requests.auth import HTTPBasicAuth
+import json
 console = Console()
 
 
-def list_projects(jira_url: str, jira_token: str):
+def list_projects(jira_url: str, jira_token: str, jira_email: str = "support@zeroshield.ai"):
     """
     List all Jira projects visible to the authenticated user.
     """
-    jira = Jira(
-        url=jira_url,
-        token=jira_token,
-        cloud=True,
+    url = f"{jira_url}/rest/api/3/project/search"
+
+    auth = HTTPBasicAuth(jira_email, jira_token)
+
+    headers = {
+    "Accept": "application/json"
+    }
+
+    response = requests.request(
+    "GET",
+    url,
+    headers=headers,
+    auth=auth
     )
 
-    projects = jira.projects()
-
-    if not projects:
-        console.print("[yellow]No projects found for the provided credentials.[/yellow]")
-        return []
-
-    console.print("[bold green]Accessible Jira projects:[/bold green]")
-    for project in projects:
-        key = project.get("key") or project.get("projectKey") or "UNKNOWN"
-        name = project.get("name") or "Unnamed project"
-        console.print(f"- [cyan]{key}[/cyan]: {name}")
-
-    return projects
+    return response.json()
 
 
 def create_issue_in_project(
@@ -36,43 +36,60 @@ def create_issue_in_project(
     issue_type: str,
     summary: str,
     description: str,
+    jira_email: str = "support@zeroshield.ai"
 ):
     """
     Create an issue in the specified Jira project.
     """
-    jira = Jira(
-        url=jira_url,
-        token=jira_token,
-        cloud=True,
-    )
+    
 
-    fields = {
-        "project": {"key": project_key},
-        "issuetype": {"name": issue_type},
-        "summary": summary,
-        "description": description,
+    url = f"{jira_url}/rest/api/3/issue"
+
+    auth = HTTPBasicAuth(jira_email, jira_token)
+
+    headers = {
+    "Accept": "application/json",
+    "Content-Type": "application/json"
     }
 
-    issue = jira.create_issue(fields=fields)
+    payload = json.dumps({
+        "fields": {
+            "project": {"key": project_key},
+            "issuetype": {"name": issue_type},
+            "summary": summary,
+            "description": {
+                "content": [
+                    {
+                        "content": [
+                            {"text": description, "type": "text"}
+                        ],
+                        "type": "paragraph"
+                    }
+                ],
+                "type": "doc",
+                "version": 1
+            }
+        }
+    })
 
-    issue_key = issue.get("key") if isinstance(issue, dict) else getattr(issue, "key", None)
-    if issue_key:
-        console.print(
-            f"[bold green]Created issue[/bold green] "
-            f"[cyan]{issue_key}[/cyan] in project [cyan]{project_key}[/cyan]."
-        )
-    else:
-        console.print("[yellow]Issue created but response did not contain an issue key.[/yellow]")
+    response = requests.request(
+    "POST",
+    url,
+    data=payload,
+    headers=headers,
+    auth=auth
+    )
 
-    return issue
+    print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
 
 
 if __name__ == "__main__":
     try:
-        list_projects(
+        response = list_projects(
             jira_url="https://zapisec.atlassian.net",
             jira_token="ATATT3xFfGF0uEi3aYaG43RCe5rsIG1JCpwWF1kISjQzDinypUNH_RdktE8yPdZWngR4-ZgW1_ezt5jLI58F_pCL4VfIcaSRCHGhNsFz6_1clUOa-aEehsXY3mg3IUB_ftgTwLop2hyfeSDlIwxbHXGN8qM0DsoM2nVMG3GQ8xFBGXKV3Q5milQ=77A114FB",
         )
+        console.print(response)
     except HTTPError as e:
         console.print(f"Error listing projects: {e} with status code {e.response.status_code}",style="bold red")
         console.print(f"Error response: {e.response.text}",style="bold red")

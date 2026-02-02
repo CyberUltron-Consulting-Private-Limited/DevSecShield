@@ -1,11 +1,16 @@
-from sqlmodel import Engine , Session , select
+from sqlmodel import  Session , select
+from sqlalchemy.engine import Engine
 from backend.new_models import User , Team , TeamMembership
-from rich import Console
-
+from rich.console import Console
+import random
+import string
 from backend.utilities.auth.email import send_email_with_credentials
 
 console = Console()
 
+
+def generate_random_password() -> str:
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
 
 def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
     
@@ -17,10 +22,16 @@ def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine) -> No
         for email in email_ids:
             user = session.exec(select(User).where(User.email == email)).first()
             if not user:
-                user = User(email=email)
+                generated_password = generate_random_password()
+                user = User(
+                    email=email, 
+                    password=generated_password,
+                    first_name=email.split("@")[0],
+                    last_name="user",
+                    )
                 session.add(user)
                 session.commit()
-                send_email_with_credentials(email, user.password)
+                send_email_with_credentials(email=email, password=generated_password,team_name=team.name)
                 console.print(f"Email {email} does not exist for any user , creating a new user and sending email with credentials", style="bold orange1")
         
         query_statement = select(User)

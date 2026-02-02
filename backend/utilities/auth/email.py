@@ -1,4 +1,4 @@
-from rich import Console
+from rich.console import Console
 from backend.utilities.auth.html_email import create_user_password_email_html_for_team_membership
 from backend.utilities.auth.auth_utils import send_outlook_email
 console = Console()

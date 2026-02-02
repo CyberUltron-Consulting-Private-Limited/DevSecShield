@@ -43,6 +43,10 @@ class SettingsData(BaseModel):
     code_context: CodeContext | None = None
     secrets_context: SecretsContext | None = None
 
+class IntegrationSettingsData(BaseModel):
+    jira_enabled: bool = Field(description="Whether to enable Jira integration or not.",default=False)
+
+
 
 class CreateGuardrailsIntegrationData(BaseModel):
     title: str
@@ -52,3 +56,4 @@ class CreateGuardrailsIntegrationData(BaseModel):
 class UpdateGuardrailsIntegrationData(BaseModel):
     title: str | None = None
     settings: SettingsData | None = None
+    integration_settings: IntegrationSettingsData | None = None

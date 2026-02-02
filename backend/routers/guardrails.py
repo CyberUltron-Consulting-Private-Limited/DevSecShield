@@ -1,11 +1,12 @@
-import datetime
+from datetime import datetime
+from datetime import timezone
 from typing import Annotated
 from fastapi import  APIRouter, HTTPException, Header, status, BackgroundTasks, Depends
 from sqlmodel import Session, select
 from rich.console import Console
 from backend.utilities.celery.celery_connection import get_celery_app
 from celery.result import AsyncResult
-from backend.utilities.db.functions import get_user_from_header_or_raise_exception
+from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.new_models import GuardrailsIntegration
 from backend.utilities.guardrails.auth import create_api_key
 from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
@@ -136,7 +137,7 @@ async def get_guardrails_integration(
             integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.team_id == team_id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
-            integration.last_updated = datetime.datetime.now(datetime.timezone.utc)
+            integration.last_updated = datetime.now(timezone.utc)
             session.add(integration)
             session.commit()
             session.refresh(integration)
@@ -254,6 +255,8 @@ async def update_guardrails_integration(
                 integration.title = data.title
             if data.settings is not None:
                 integration.settings = data.settings.model_dump()
+            if data.integration_settings is not None:
+                integration.integration_settings = data.integration_settings.model_dump()
             session.add(integration)
             session.commit()
             return {

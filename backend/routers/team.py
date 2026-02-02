@@ -37,26 +37,33 @@ async def get_team(
 
         # STEP [ 2 ] : =========== get the team details from the main db ======================
         team = None 
+        is_team_admin = False
         with Session(engine) as session:
             team = session.exec(select(Team).where(Team.id == team_id)).first()
             if team == None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-            console.print(f"Team details: {team}", style="bold green")
+            console.print(f"Team with id: {team_id} found", style="dim green")
+            
+            #---------------------> check if user is team admin
+            for membership in team.team_memberships:
+                if membership.user.email == user.email and membership.role == "admin":
+                    is_team_admin = True
+                    break
         
 
 
-        # STEP [ 3 ] : =========== return the team details ======================
-        return {
-            "team_id": team.id,
-            "team_name": team.name,
-            "team_description": team.description,
-            "team_members": [member.user.email for member in team.team_memberships],
-            "team_created_at": team.created_at,
-            "team_updated_at": team.last_updated,
-            "team_credit_balance": team.credit_balance,
-            "team_integration_settings": team.integration_settings,
-            "team_settings": team.settings,
-        }
+            # STEP [ 3 ] : =========== return the team details ======================
+            return {
+                "team_id": team.id,
+                "team_name": team.name,
+                "team_description": team.description,
+                "is_team_admin": is_team_admin,
+                "team_members": [member.user.email for member in team.team_memberships],
+                "team_created_at": team.created_at,
+                "team_credit_balance": team.credit_balance,
+                "team_integration_settings": team.integration_settings,
+                "team_settings": team.settings,
+            }
         
 
     except HTTPException as e:
@@ -84,6 +91,9 @@ async def list_teams(
         # STEP [ 2 ] : =========== get the teams from the main db ======================
         teams = []
         with Session(engine) as session:
+
+            user = session.exec(select(User).where(User.id == user.id)).first()
+            
             query_statement = select(Team)
             for membership in user.team_memberships:
                 query_statement = query_statement.where(Team.id == membership.team_id)
@@ -95,7 +105,6 @@ async def list_teams(
                     "team_description": team_object.description,
                     "team_members": [member.user.email for member in team_object.team_memberships],
                     "team_created_at": team_object.created_at,
-                    "team_updated_at": team_object.last_updated,
                     "team_credit_balance": team_object.credit_balance,
                 })
         
@@ -251,32 +260,6 @@ async def delete_team(
 
 
 
-        # STEP [ 2 ] ------------------ Delete team -----------------------------
-        with Session(engine) as session:
-            team = session.exec(select(Team).where(Team.id == team_id)).first()
-            if not team:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-            
-            
-            #---------------------> removing membership from user object 
-            for user_team_membership in user.team_memberships:
-                user.team_memberships.remove(user_team_membership)
-                session.add(user)
-            session.commit()
-            
-            #---------------------> removing membership from team object
-            for team_membership in team.team_memberships:
-                team.team_memberships.remove(team_membership)
-                session.add(team)
-            session.commit()
-
-            # ⚠️⚠️⚠️ Check and see if the link table record also goes away with these operations above ⚠️⚠️⚠️            
-
-            #---------------------> deleting team object
-            session.delete(team)
-            session.commit()
-        console.print(f"Team with id: {team_id} deleted from main database" ,style="bold orange3")
-
 
 
 
@@ -338,6 +321,36 @@ async def delete_team(
             guardrails_logs_collection = mongo_db["guardrails_logs"]
             guardrails_logs_collection.delete_many({"guardrails_integration_id": guardrails_id})
             console.print(f"Guardrails logs deleted successfully for integration {guardrails_id}", style="bold green")
+        
+
+
+        
+
+        # STEP [ 2 ] ------------------ Delete team -----------------------------
+        with Session(engine) as session:
+            team = session.exec(select(Team).where(Team.id == team_id)).first()
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+            
+            
+            #---------------------> removing membership from user object 
+            for user_team_membership in user.team_memberships:
+                user.team_memberships.remove(user_team_membership)
+                session.add(user)
+            session.commit()
+            
+            #---------------------> removing membership from team object
+            for team_membership in team.team_memberships:
+                team.team_memberships.remove(team_membership)
+                session.add(team)
+            session.commit()
+
+            # ⚠️⚠️⚠️ Check and see if the link table record also goes away with these operations above ⚠️⚠️⚠️            
+
+            #---------------------> deleting team object
+            session.delete(team)
+            session.commit()
+        console.print(f"Team with id: {team_id} deleted from main database" ,style="bold orange3")
         
 
         

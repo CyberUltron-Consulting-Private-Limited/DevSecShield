@@ -541,9 +541,101 @@ const logout = async () => {
     }
 }
 
+// -------------------------------------------------------------- Teams API Routes --------------------------------------------------------------
+
+export interface TeamListItem {
+    team_id: number
+    team_name: string
+    team_description: string | null
+    team_members: string[]
+    team_created_at: string
+    team_updated_at: string
+    team_credit_balance: number
+}
+
+export interface TeamDetails {
+    team_id: number
+    team_name: string
+    team_description: string | null
+    is_team_admin: boolean
+    team_members: string[]
+    team_created_at: string
+    team_credit_balance: number
+    team_integration_settings: Record<string, unknown> | null
+    team_settings: Record<string, unknown> | null
+}
+
+export interface UpdateTeamData {
+    name?: string
+    description?: string | null
+    integration_settings?: Record<string, unknown> | null
+}
+
+export interface RemoveOrAddMembersToTeamData {
+    intent: "remove" | "add"
+    email_ids: string[]
+}
+
+const getTeams = async (): Promise<TeamListItem[]> => {
+    try {
+        const response = await api.get("/teams")
+        return response.data as TeamListItem[]
+    } catch (error) {
+        showErrorToast(error, "Error fetching teams")
+        throw error
+    }
+}
+
+const getTeam = async (team_id: number): Promise<TeamDetails> => {
+    try {
+        const response = await api.get(`/team/${team_id}`)
+        return response.data as TeamDetails
+    } catch (error) {
+        showErrorToast(error, "Error fetching team details")
+        throw error
+    }
+}
+
+const updateTeam = async (team_id: number, data: UpdateTeamData) => {
+    try {
+        const response = await api.put(`/team/${team_id}`, data)
+        toast.success("Team updated successfully")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error updating team")
+        throw error
+    }
+}
+
+const removeOrAddTeamMembers = async (team_id: number, data: RemoveOrAddMembersToTeamData) => {
+    try {
+        const response = await api.patch(`/team/${team_id}`, data)
+        toast.success(`Members ${data.intent === "add" ? "added" : "removed"} successfully`)
+        return response.data
+    } catch (error) {
+        showErrorToast(error, `Error ${data.intent === "add" ? "adding" : "removing"} members`)
+        throw error
+    }
+}
+
+const deleteTeam = async (team_id: number) => {
+    try {
+        await api.delete(`/team/${team_id}`)
+        toast.success("Team deleted successfully")
+    } catch (error) {
+        showErrorToast(error, "Error deleting team")
+        throw error
+    }
+}
+
 export {
     getUserProfile,
-    logout
+    logout,
+    getTeams,
+    getTeam,
+    updateTeam,
+    removeOrAddTeamMembers,
+    deleteTeam
 }
 
 // -------------------------------------------------------------- IAC API Routes --------------------------------------------------------------
@@ -1129,9 +1221,9 @@ export interface GuardrailsIntegration {
     scanners_enabled?: string[]
 }
 
-const getGuardrailsIntegrations = async (): Promise<GuardrailsIntegration[]> => {
+const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsIntegration[]> => {
     try {
-        const response = await api.get("/guardrails/integrations")
+        const response = await api.get(`/guardrails/${team_id}/integrations`)
         toast.success("Guardrails integrations fetched successfully")
         return response.data as GuardrailsIntegration[]
     } catch (error) {
@@ -1140,9 +1232,9 @@ const getGuardrailsIntegrations = async (): Promise<GuardrailsIntegration[]> => 
     }
 }
 
-const deleteGuardrailsIntegration = async (integration_id: number) => {
+const deleteGuardrailsIntegration = async (team_id: number, integration_id: number) => {
     try {
-        const response = await api.delete(`/guardrails/integration/${integration_id}`)
+        const response = await api.delete(`/guardrails/${team_id}/integration/${integration_id}`)
         toast.success("Guardrails integration deleted successfully")
         return response.data
     } catch (error) {
@@ -1151,15 +1243,8 @@ const deleteGuardrailsIntegration = async (integration_id: number) => {
     }
 }
 
-const renameGuardrailsIntegration = async ({integration_id, title}: {integration_id: number, title: string}) => {
-    try {
-        const response = await api.put(`/guardrails/integration/${integration_id}`, { title: title })
-        toast.success("Guardrails integration renamed successfully")
-        return response.data
-    } catch (error) {
-        showErrorToast(error,"Error renaming guardrails integration")
-        throw error
-    }
+const renameGuardrailsIntegration = async ({ team_id, integration_id, title }: { team_id: number; integration_id: number; title: string }) => {
+    return updateGuardrailsIntegration({ team_id, integration_id, data: { title } })
 }
 
 export interface GuardrailsIntegrationLog {
@@ -1253,10 +1338,10 @@ export interface GuardrailsIntegrationDashboard {
     settings: SettingsData
 }
 
-const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string]}): Promise<GuardrailsIntegrationDashboard> => {
-    const integration_id = queryKey[1]
+const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string, string]}): Promise<GuardrailsIntegrationDashboard> => {
+    const [, team_id, integration_id] = queryKey
     try {
-        const response = await api.get(`/guardrails/integration/${integration_id}`)
+        const response = await api.get(`/guardrails/${team_id}/integration/${integration_id}`)
         toast.success("Guardrails integration dashboard fetched successfully")
         return response.data as GuardrailsIntegrationDashboard
     } catch (error) {
@@ -1269,9 +1354,9 @@ export interface CreateGuardrailsIntegrationData {
     title: string
 }
 
-const createGuardrailsIntegration = async (data: CreateGuardrailsIntegrationData) => {
+const createGuardrailsIntegration = async (team_id: number, data: CreateGuardrailsIntegrationData) => {
     try {
-        const response = await api.post("/guardrails/integration", data)
+        const response = await api.post(`/guardrails/${team_id}/integration`, data)
         toast.success("Guardrails integration created successfully")
         return response.data
     } catch (error) {
@@ -1280,18 +1365,33 @@ const createGuardrailsIntegration = async (data: CreateGuardrailsIntegrationData
     }
 }
 
+export interface IntegrationSettingsData {
+    jira_enabled?: boolean
+}
+
 export interface UpdateGuardrailsIntegrationData {
     title?: string
     settings?: SettingsData
+    integration_settings?: IntegrationSettingsData
 }
 
-const updateGuardrailsIntegration = async (integration_id: number, data: UpdateGuardrailsIntegrationData) => {
+const updateGuardrailsIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateGuardrailsIntegrationData }) => {
     try {
-        const response = await api.put(`/guardrails/integration/${integration_id}`, data)
+        const response = await api.put(`/guardrails/${team_id}/integration/${integration_id}`, data)
         toast.success("Guardrails integration updated successfully")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error updating guardrails integration")
+        throw error
+    }
+}
+
+const getGuardrailsIntegrationSettings = async (team_id: number, integration_id: number) => {
+    try {
+        const response = await api.get(`/guardrails/${team_id}/integration/${integration_id}/settings`)
+        return response.data as { settings: SettingsData }
+    } catch (error) {
+        showErrorToast(error,"Error fetching guardrails integration settings")
         throw error
     }
 }
@@ -1302,7 +1402,8 @@ export {
     renameGuardrailsIntegration,
     getGuardrailsIntegrationDashboard,
     createGuardrailsIntegration,
-    updateGuardrailsIntegration
+    updateGuardrailsIntegration,
+    getGuardrailsIntegrationSettings
 }
 
 // -------------------------------------------------------------- DAST API Routes --------------------------------------------------------------
@@ -1505,9 +1606,9 @@ export interface CicdIntegration {
     api_key: string
 }
 
-const getCicdIntegrations = async (): Promise<CicdIntegration[]> => {
+const getCicdIntegrations = async (team_id: number): Promise<CicdIntegration[]> => {
     try {
-        const response = await api.get("/cicd/integrations")
+        const response = await api.get(`/${team_id}/cicd/integrations`)
         toast.success("CI/CD integrations fetched successfully")
         return response.data as CicdIntegration[]
     } catch (error) {
@@ -1521,9 +1622,9 @@ export interface CreateCicdIntegrationData {
     scan_type: "sast"
 }
 
-const createCicdIntegration = async (data: CreateCicdIntegrationData) => {
+const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData) => {
     try {
-        const response = await api.post("/cicd/integration", data)
+        const response = await api.post(`/${team_id}/cicd/integration`, data)
         toast.success("CI/CD integration created successfully")
         return response.data
     } catch (error) {
@@ -1550,10 +1651,10 @@ export interface CicdIntegrationDashboard {
     logs: CicdLog[]
 }
 
-const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string]}): Promise<CicdIntegrationDashboard> => {
-    const integration_id = queryKey[1]
+const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string, string]}): Promise<CicdIntegrationDashboard> => {
+    const [, team_id, integration_id] = queryKey
     try {
-        const response = await api.get(`/cicd/integration/${integration_id}`)
+        const response = await api.get(`/${team_id}/cicd/integration/${integration_id}`)
         toast.success("CI/CD integration dashboard fetched successfully")
         return response.data as CicdIntegrationDashboard
     } catch (error) {
@@ -1562,9 +1663,9 @@ const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integra
     }
 }
 
-const deleteCicdIntegration = async (integration_id: number) => {
+const deleteCicdIntegration = async (team_id: number, integration_id: number) => {
     try {
-        const response = await api.delete(`/cicd/integration/${integration_id}`)
+        const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}`)
         toast.success("CI/CD integration deleted successfully")
         return response.data
     } catch (error) {
@@ -1574,18 +1675,24 @@ const deleteCicdIntegration = async (integration_id: number) => {
 }
 
 export interface UpdateCicdIntegrationData {
-    title: string
+    title?: string
+    integration_settings?: { jira_enabled?: boolean }
 }
 
-const renameCicdIntegration = async ({integration_id, title}: {integration_id: number, title: string}) => {
+const updateCicdIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateCicdIntegrationData }) => {
     try {
-        const response = await api.put(`/cicd/integration/${integration_id}`, { title: title })
-        toast.success("CI/CD integration renamed successfully")
+        const response = await api.put(`/${team_id}/cicd/integration/${integration_id}`, data)
+        toast.success("CI/CD integration updated successfully")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error renaming CI/CD integration")
+        showErrorToast(error,"Error updating CI/CD integration")
         throw error
     }
+}
+
+/** @deprecated Use updateCicdIntegration with { team_id, integration_id, data: { title } } */
+const renameCicdIntegration = async ({ team_id, integration_id, title }: { team_id: number; integration_id: number; title: string }) => {
+    return updateCicdIntegration({ team_id, integration_id, data: { title } })
 }
 
 export { 
@@ -1593,5 +1700,6 @@ export {
     createCicdIntegration,
     getCicdIntegrationDashboard,
     deleteCicdIntegration,
+    updateCicdIntegration,
     renameCicdIntegration
 }

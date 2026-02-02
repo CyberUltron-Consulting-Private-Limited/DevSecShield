@@ -282,7 +282,7 @@ async def get_scan(
 
 
         # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
-        console.print(f"SCAN_STATUS: {SCAN_STATUS} TASK_ID: {TASK_ID}",style="bold yellow",style="dim yellow")
+        console.print(f"SCAN_STATUS: {SCAN_STATUS} TASK_ID: {TASK_ID}",style="dim yellow")
         if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {} or SCAN_STATUS == "started") and (TASK_ID != None) and (TASK_ID != ""):
             FETCHED_SCAN_STATUS , FETCHED_SCAN_DATA , scan = get_status_and_update_db(
                 scan_id=scan_id,

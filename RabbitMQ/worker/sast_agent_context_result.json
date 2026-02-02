@@ -1,0 +1,172 @@
+{
+    "logical_components": [
+        {
+            "title": "Garak Scan Orchestrator (run_garak_scan)",
+            "description": "Orchestrates the end-to-end Garak scan process. It loads a configuration template for the specified model type, updates it for custom vs non-custom models, creates a per-job temporary config, builds and runs the Garak CLI, and aggregates results into per-probe summaries and an overall risk summary.",
+            "dependencies": [
+                "json",
+                "uuid",
+                "pathlib.Path",
+                "subprocess",
+                "os",
+                "typing.Literal",
+                "typing.Optional",
+                "typing.Dict",
+                "typing.Any",
+                "typing.List",
+                "dotenv.load_dotenv",
+                "garak (external tool)"
+            ],
+            "business_logic": "Orchestrate the scan by (1) loading rest_configs/{model_type}.json, (2) applying custom model updates or replacing placeholders <API_KEY>/<MODEL_NAME> for non-custom models, (3) creating a unique job_id and ensuring a results directory with a per-job report_prefix, (4) writing the updated config to temp_configs/{job_id}.json for Garak to consume, (5) constructing a Garak invocation via python -m garak with the prepared temp config and target probes, optionally including --generations, (6) executing Garak with subprocess.run to perform the scan, (7) cleaning up the temp config, (8) locating and parsing generated results (jsonl/html/hitlog) using known naming conventions, (9) aggregating totals, per-probe hit rates, probe usage, and a per-probe vulnerability map keyed by detector+probe, (10) deriving a global risk level from digest entries, (11) computing overall hit rate and assembling a concise summary, and (12) cleaning up result artifacts before returning the final summary."
+        },
+        {
+            "title": "Garak Configuration Management (config loading and templating)",
+            "description": "Loads the base Garak configuration template for the chosen model type and applies updates depending on whether the model is custom or not. Produces a JSON string that can be used to drive the Garak scan.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing.Optional",
+                "typing.Dict",
+                "typing.Any"
+            ],
+            "business_logic": "Load rest_configs/{model_type}.json; if model_type == 'custom', copy the config and set RestGenerator.method, RestGenerator.headers, RestGenerator.req_template_json_object, RestGenerator.response_json_field, and RestGenerator.uri from arguments; re-serialize to JSON. If not custom, substitute <API_KEY> and <MODEL_NAME> placeholders within the JSON string, then re-parse into a dict. Return the updated config object for use by the orchestrator, while logging the updated JSON for debugging. "
+        },
+        {
+            "title": "Garak Job and Results Directory Manager",
+            "description": "Generates a unique job_id, ensures a results directory exists, and defines a per-job report prefix used for all output artifacts.",
+            "dependencies": [
+                "uuid",
+                "pathlib.Path",
+                "typing"
+            ],
+            "business_logic": "Create a UUID-based job_id (string). Ensure a 'results' directory exists in the current working directory. Define report_prefix as the path to the per-job results (e.g., results/garak_{job_id})."
+        },
+        {
+            "title": "Garak Temporary Configuration Writer",
+            "description": "Writes the updated configuration (config) to a per-job temporary file under temp_configs, which Garak reads for the scan.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing"
+            ],
+            "business_logic": "Construct a path temp_configs/{job_id}.json and write the current config dictionary into that file as JSON so Garak can consume it during execution."
+        },
+        {
+            "title": "Garak Command Builder",
+            "description": "Assembles the Garak CLI invocation arguments to run a scan against the prepared temporary config file with the specified probes and reporting options.",
+            "dependencies": [
+                "list",
+                "typing",
+                "subprocess"
+            ],
+            "business_logic": "Build a command list to invoke Garak as: [\"python\",\"-m\",\"garak\",\"--model_type\",\"rest\",\"-G\", temp_config_path, \"--probes\", probes, \"--report_prefix\", str(report_prefix)]. Optionally append --generations if provided."
+        },
+        {
+            "title": "Garak Runner Execution",
+            "description": "Executes the constructed Garak command using subprocess.run and handles exception flow. This is the actual trigger that runs the external risk scan.",
+            "dependencies": [
+                "subprocess",
+                "typing",
+                "logging"
+            ],
+            "business_logic": "Print the command for debugging, run the command with check=True to raise on non-zero exit codes, and proceed to cleanup and result parsing upon successful completion."
+        },
+        {
+            "title": "Garak Results Parser and Per-Probe Summary",
+            "description": "Parses generated Garak results (JSONL/HTML/Hitlog), aggregates per-probe metrics, and computes per-probe hit rates as well as overall hit rate. Builds the per-probe vulnerability summary keyed by detector and probe.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing",
+                "collections"
+            ],
+            "business_logic": "Locate result files using candidate filenames, iterate over jsonl lines parsing JSON entries, collect 'eval' (probe results) and 'digest' (risk scoring). For each 'eval', accumulate total tests and hits, track probe usage, and build a probe_bucket with fields like probe, detector, passed, total, and hit_rate. Use 'digest' entries to derive a system-wide risk level from the _summary DEFCON-like score. Finalize per-probe hit rates and compute overall hit_rate across all tests."
+        },
+        {
+            "title": "Garak Summary Builder and Cleanup",
+            "description": "Builds a concise summary dictionary of the scan results and attempts to clean up temporary result artifacts (jsonl, html, hitlog). Returns a high-level summary for downstream use.",
+            "dependencies": [
+                "json",
+                "pathlib.Path",
+                "typing",
+                "os",
+                "typing.Optional",
+                "typing.Dict"
+            ],
+            "business_logic": "Compose a summary with status, model_name, total_tests, total_hits, hit_rate_percent, risk_level, probes_used, and probes_summary. Attempt to remove generated artifact files (jsonl, html, hitlog) to clean up traces; ignore errors during cleanup to avoid blocking the workflow."
+        },
+        {
+            "title": "OWASP Top 10 Tracker (llm_owasp_tracker)",
+            "description": "Prompts a LLM to identify potential OWASP Top 10 vulnerabilities based on a probe and detector results. Returns a structured mapping of risks to descriptions.",
+            "dependencies": [
+                "enum",
+                "pydantic.BaseModel",
+                "typing",
+                "llm (external)"
+            ],
+            "business_logic": "Define OWASPTop10 enum with 2021 categories. Define OWASPTop10_Response and OWASP_Response models. Prepare system prompt and composite prompt with specific probe/detector/results. Call generate_structured_response to obtain a structured output and map it to a list of {risk, description} entries for downstream use."
+        },
+        {
+            "title": "OWASP Result Formatter (transformer)",
+            "description": "Converts the structured LLM response into a simple list of dictionaries with risk and description. Logs or prints the transformed results.",
+            "dependencies": [
+                "typing",
+                "json",
+                "pydantic (for model_dump)"
+            ],
+            "business_logic": "Transform response.model_dump()[\"tracker_data\"] into a list of {risk, description} and print the formatted OWASP results for visibility before returning them."
+        },
+        {
+            "title": "LLM Compliance Tracker",
+            "description": "Parses scan results to produce a tracker of compliance-related vulnerabilities by modeling outputs with Pydantic and querying an LLM via a structured response utility.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "pydantic.Field",
+                "Compliance (inner model)",
+                "Compliance_Response (inner model)",
+                "generate_structured_response (from utilities)",
+                "system_prompt string",
+                "prompt construction (Probe/Detector/Results)",
+                "response.model_dump()"
+            ],
+            "business_logic": "Define Compliance and Compliance_Response data models. Build a system_prompt instructing the LLM to enumerate compliance vulnerabilities and a prompt containing the Probe, Detector, and Results. Use generate_structured_response with the Compliance_Response model to obtain a structured LLM output and return response.model_dump()[\"tracker_data\"]."
+        },
+        {
+            "title": "LLM Probe Fix Generator",
+            "description": "Generates a remediation for a given probe by encoding the request in a structured prompt and parsing the LLM\u2019s fix through a defined data model.",
+            "dependencies": [
+                "pydantic.BaseModel",
+                "pydantic.Field",
+                "Fix (inner model)",
+                "generate_structured_response (from utilities)",
+                "system_prompt string",
+                "prompt construction (Probe/Detector/Results/ModelType/ModelName)",
+                "response.model_dump()"
+            ],
+            "business_logic": "Define Fix with a single field 'fix'. Construct a system_prompt describing the task (return a fix for the probe). Build a prompt that includes Probe, Detector, Results, Model Type, and Model Name, then call generate_structured_response with output_model=Fix and return response.model_dump()[\"fix\"]. It also logs the prompt before sending."
+        },
+        {
+            "title": "OWASP Tracker (Unimplemented Placeholder)",
+            "description": "Represents a planned component for tracking OWASP vulnerabilities; currently indicated by code comments and a test harness, but no actual implementation present in the snippet.",
+            "dependencies": [
+                "llm_owasp_tracker (expected function)",
+                "commented code placeholders",
+                "__main__ test harness references"
+            ],
+            "business_logic": "Intended to implement an llm_owasp_tracker(probe_name, results, detector_name) that would return structured data about discovered vulnerabilities. As currently unimplemented, it serves as a placeholder signaling intended behavior and testing scaffolding."
+        },
+        {
+            "title": "Test Harness / Main Execution Block",
+            "description": "A demonstration/test harness guarded by if __name__ == '__main__' that exercises the OWASP tracker with static test data and prints results, serving as a development aid.",
+            "dependencies": [
+                "__main__ guard",
+                "hardcoded test data",
+                "print statements",
+                "try/except for error handling",
+                "llm_owasp_tracker (referenced)",
+                "ENOENT/NameError handling (via try/except)"
+            ],
+            "business_logic": "Provide a self-contained test scenario: define test_probe_name, test_detector_name, and test_results; print status messages, invoke llm_owasp_tracker within a try block, and report success or failure. It uses static data and mocks for development testing, which should be removed or isolated in production."
+        }
+    ]
+}

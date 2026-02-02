@@ -7,14 +7,13 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from pydantic import BaseModel, model_validator
 from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
-from backend.models import * 
 from rich.console import Console
 from pymongo.database import Database
 import json
 import time
 import uuid
 from backend.new_models import Scan , scan_types
-from backend.utilities.db.functions import StartScanPayload
+from backend.utilities.db.schemas import StartScanPayload
 from backend.utilities.scan.format_input import format_input_for_scan
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from celery import Celery

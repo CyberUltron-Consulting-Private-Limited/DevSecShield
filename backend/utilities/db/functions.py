@@ -7,13 +7,12 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from pydantic import BaseModel, model_validator
 from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
-from backend.models import * 
 from rich.console import Console
 from pymongo.database import Database
 import json
 import time
 import uuid
-from backend.new_models import Scan , scan_types
+from backend.new_models import Scan
 
 
 console = Console()

@@ -1,9 +1,8 @@
 import secrets
 from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader
-from backend.models import *
+from backend.new_models import GuardrailsIntegration
 from sqlmodel import Session, select
-from sqlalchemy import Engine
 from backend.get_db import get_db
 from rich.console import Console
 console = Console()

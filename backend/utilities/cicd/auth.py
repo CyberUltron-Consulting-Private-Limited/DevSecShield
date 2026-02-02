@@ -1,16 +1,17 @@
 import secrets
 from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader
-from backend.models import *
+from backend.new_models import CicdIntegration
 from sqlmodel import Session, select
-from sqlalchemy import Engine
 from backend.get_db import get_db
 from rich.console import Console
 console = Console()
 
+dev_environment = True # for local development
+
 def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
     try:
-        engine = get_db(dev_environment=True)
+        engine = get_db(dev_environment=dev_environment)
         with Session(engine) as session:
             integration = session.exec(select(CicdIntegration).where(CicdIntegration.api_key == api_key)).first()
             if not integration:

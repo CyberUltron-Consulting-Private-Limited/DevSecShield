@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status , Header
 from rich.console import Console
 from sqlmodel import Session, delete, select, update
-from backend.new_models import Team, TeamMember
+from backend.new_models import Team
 from backend.utilities.auth.auth_utils import (
     create_access_token,
     create_refresh_token,
@@ -72,8 +72,8 @@ async def create_user(data: UserSignup):
             )
         with Session(engine) as session:
             new_team = Team(
-                name=f"{new_user.first_name}'s Team",
-                description=f"Default team for {new_user.first_name}",
+                name=f"{data.first_name}'s Team",
+                description=f"Default team for {data.first_name}",
             )
             new_user = User(
                 email=data.email, 
@@ -87,14 +87,11 @@ async def create_user(data: UserSignup):
             session.add(team_membership)
             session.commit()
             session.refresh(new_user)
-        
 
-        
-
-        return {
-        "access_token": create_access_token(new_user.email),
-        "refresh_token": create_refresh_token(new_user.email),
-    }
+            return {
+                "access_token": create_access_token(new_user.email),
+                "refresh_token": create_refresh_token(new_user.email),
+            }
     except Exception as e:
         Console().print(f"An error has occured : {str(e)}",style="bold red")
         if isinstance(e,psycopg2.Error):

@@ -1,0 +1,22 @@
+version: '3.9'
+
+networks:
+  net:
+    driver: bridge
+services:
+  chromadb:
+    image: chromadb/chroma:0.6.3
+    container_name: devsecshield-chroma-db
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma # this is the default path, change it as needed
+      - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-TRUE}
+    ports:
+      - 9090:8000
+    networks:
+      - net
+volumes:
+  chroma-data:
+    driver: local

@@ -1,0 +1,56 @@
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                route_config:
+                  name: chroma_route
+                  virtual_hosts:
+                    - name: local_chromadb
+                      domains: [ "*" ]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: chromadb_service
+                            prefix_rewrite: "/"
+                http_filters:
+                  - name: envoy.filters.http.rbac
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC
+                      rules:
+                        action: ALLOW
+                        policies:
+                          "static-token-policy":
+                            permissions:
+                              - header:
+                                  name: %CHROMA_AUTH_TOKEN_TRANSPORT_HEADER%
+                                  string_match:
+                                    exact: %CHROMA_SERVER_AUTHN_CREDENTIALS%
+                            principals:
+                              - any: true
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: chromadb_service
+      connect_timeout: 0.25s
+      type: LOGICAL_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: chromadb_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: chromadb
+                      port_value: 8000

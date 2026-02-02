@@ -1,57 +1,51 @@
 "use client";
 
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default function HomePage() {
   return (
-    <div className="flex items-center justify-center h-full bg-white dark:bg-zinc-900">
-      <div className="text-center space-y-4">
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-          Welcome to DevSec Shield
-        </h1>
-        <p className="text-zinc-600 dark:text-zinc-400">
-          Select a scan type from the sidebar to get started.
-        </p>
-        <div className="flex flex-col gap-2">
-        <Link href="/home/sast">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start a SAST Scan
-            </Button>
-          </Link>
-          <Link href="/home/sca_sbom">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start a SCA + SBOM Scan
-            </Button>
-          </Link>
-          <Link href="/home/dast">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start a DAST Scan
-            </Button>
-          </Link>
-          <Link href="/home/mcp">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start a MCP Scan
-            </Button>
-          </Link>
-          <Link href="/home/llm">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start a LLM Benchmark Scan
-            </Button>
-          </Link>
-          <Link href="/home/iac">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start an IAC Scan
-            </Button>
-          </Link>
-          <Link href="/home/discovery">
-            <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer">
-              Start a Discovery Scan
-            </Button>
-          </Link>
+    <div className="flex flex-col h-full min-h-[calc(100vh-2rem)] bg-background">
+      <Card className="rounded-none border-x-0 border-t-0 border-b shadow-none">
+        <CardHeader className="px-6 py-4">
+          <CardTitle className="text-xl">Dashboard</CardTitle>
+          <CardDescription>
+            Select a team from the sidebar to get started. Charts will appear
+            here.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      <main className="flex-1 p-6 overflow-auto">
+        {/* Placeholder for charts — add your charts here later */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="min-h-[200px] flex flex-col">
+            <CardContent className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+              Chart 1
+            </CardContent>
+          </Card>
+          <Card className="min-h-[200px] flex flex-col">
+            <CardContent className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+              Chart 2
+            </CardContent>
+          </Card>
+          <Card className="min-h-[200px] flex flex-col">
+            <CardContent className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+              Chart 3
+            </CardContent>
+          </Card>
         </div>
-      </div>
+        <Card className="mt-6 min-h-[280px] flex flex-col">
+          <CardContent className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+            Chart 4 (wider)
+          </CardContent>
+        </Card>
+      </main>
     </div>
   );
 }
-
