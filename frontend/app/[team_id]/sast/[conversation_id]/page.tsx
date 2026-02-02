@@ -100,7 +100,7 @@ export default function SASTPage({ params }: SASTPageProps) {
   }
   if (query.isLoading) {
     return <div className="flex h-screen w-full items-center justify-center">
-      <Loader2 className="size-10 animate-spin text-teal-600" />
+      <Loader2 className="size-10 animate-spin text-blue-600" />
     </div>;
   }
   return (

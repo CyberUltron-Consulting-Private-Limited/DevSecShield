@@ -74,13 +74,13 @@ function TeamSwitcher() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger asChild >
         <Button
           variant="ghost"
-          className="w-full justify-between gap-2  h-auto rounded-md hover:bg-zinc-800 text-white hover:text-white font-medium"
+          className="w-full has-[>svg]:px-1 justify-between gap-2  h-auto rounded-md hover:bg-zinc-800 text-white hover:text-white cursor-pointer font-medium"
         >
           <div className="flex items-center gap-2 min-w-0">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-teal-600">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-600">
               <Users className="size-4 text-white" />
             </div>
             <span className="truncate text-left">
@@ -112,7 +112,7 @@ function TeamSwitcher() {
                   className="flex items-center gap-2 px-2 py-1.5"
                 >
                   {isActive ? (
-                    <Check className="size-4 shrink-0 text-teal-400" />
+                    <Check className="size-4 shrink-0 text-blue-400" />
                   ) : (
                     <span className="size-4 shrink-0" />
                   )}
@@ -205,7 +205,7 @@ function UserFooter() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer">
-            <div className="h-10 w-10 rounded-full bg-teal-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+            <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
               {getInitials(userProfile.first_name, userProfile.last_name)}
             </div>
             <div className="flex-1 min-w-0 text-left">
@@ -262,7 +262,7 @@ export default function HomeLayout({
     return (
     <QueryClientProvider client={queryClient}>
     <SidebarProvider>
-      <Sidebar className="border-r border-teal-600 ">
+      <Sidebar>
           <SidebarHeader>
             <div className="px-2 pt-4 pb-2">
               <TeamSwitcher />
@@ -280,8 +280,8 @@ export default function HomeLayout({
                         isActive={isHomeActive}
                         className={
                           isHomeActive
-                            ? "bg-teal-600 text-white hover:bg-teal-600 data-[active=true]:bg-teal-600 cursor-pointer"
-                            : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-teal-800 active:text-white px-2 py-2 cursor-pointer"
+                            ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
+                            : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-blue-800 active:text-white px-2 py-2 cursor-pointer"
                         }
                       >
                         <Link href={homeHref}>
@@ -311,8 +311,8 @@ export default function HomeLayout({
                             isActive={isActive}
                             className={
                               isActive
-                                ? "bg-teal-600 text-white hover:bg-teal-600 data-[active=true]:bg-teal-600 cursor-pointer"
-                                : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-teal-800 active:text-white cursor-pointer"
+                                ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
+                                : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-blue-800 active:text-white cursor-pointer"
                             }
                           >
                             <Link href={href}>
@@ -344,8 +344,8 @@ export default function HomeLayout({
                             isActive={isActive}
                             className={
                               isActive
-                                ? "bg-teal-600 text-white hover:bg-teal-600 data-[active=true]:bg-teal-600 cursor-pointer"
-                                : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-teal-800 active:text-white cursor-pointer"
+                                ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
+                                : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-blue-800 active:text-white cursor-pointer"
                             }
                           >
                             <Link href={href}>
@@ -367,10 +367,26 @@ export default function HomeLayout({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
+                  isActive={pathname === "/home"}
+                  className={
+                    pathname === "/home"
+                      ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
+                      : "text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
+                  }
+                >
+                  <Link href="/home">
+                    <Users className="h-5 w-5" />
+                    <span>Teams</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
                   isActive={pathname === `/${team_id}/settings` || pathname?.startsWith(`/${team_id}/settings/`)}
                   className={
                     pathname === `/${team_id}/settings` || pathname?.startsWith(`/${team_id}/settings/`)
-                      ? "bg-teal-600 text-white hover:bg-teal-600 data-[active=true]:bg-teal-600 cursor-pointer"
+                      ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
                       : "text-zinc-300 hover:bg-zinc-800 hover:text-white cursor-pointer"
                   }
                 >

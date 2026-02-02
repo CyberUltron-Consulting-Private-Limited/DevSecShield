@@ -9,6 +9,8 @@ from backend.get_db import get_db , get_mongo_client_db
 from sqlmodel import Session, select
 from backend.new_models import Team, TeamMembership , User , Scan , CicdIntegration , GuardrailsIntegration
 from backend.utilities.team.membership import add_emails_to_team , remove_emails_from_team
+from sqlalchemy import or_
+from backend.utilities.dashboard.team import generate_team_dashboard_data
 
 dev_environment = True # for local development ⚠️⚠️⚠️⚠️
 router = APIRouter( tags=["team"] )   
@@ -58,7 +60,7 @@ async def get_team(
                 "team_name": team.name,
                 "team_description": team.description,
                 "is_team_admin": is_team_admin,
-                "team_members": [member.user.email for member in team.team_memberships],
+                "team_members": [{"email": member.user.email, "role": member.role} for member in team.team_memberships],
                 "team_created_at": team.created_at,
                 "team_credit_balance": team.credit_balance,
                 "team_integration_settings": team.integration_settings,
@@ -94,10 +96,10 @@ async def list_teams(
 
             user = session.exec(select(User).where(User.id == user.id)).first()
             
-            query_statement = select(Team)
+            or_statements = []
             for membership in user.team_memberships:
-                query_statement = query_statement.where(Team.id == membership.team_id)
-            team_objects = session.exec(query_statement).all()
+                or_statements.append(Team.id == membership.team_id)
+            team_objects = session.exec(select(Team).where(or_(*or_statements))).all()
             for team_object in team_objects:
                 teams.append({
                     "team_id": team_object.id,
@@ -135,8 +137,6 @@ async def create_team(
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
-        if len(user.team_memberships) >= MAX_TEAMS_PER_USER:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum number of teams reached")
         
         # STEP [ 2 ] : =========== create the team in the main db ======================
         with Session(engine) as session:
@@ -144,17 +144,22 @@ async def create_team(
                 name=data.name, 
                 description=data.description,
             )
+            user = session.exec(select(User).where(User.id == user.id)).first()
+            if user == None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            if len(user.team_memberships) >= MAX_TEAMS_PER_USER:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum number of teams reached")
             membership = TeamMembership(user=user, team=team, role="admin")
             session.add(membership)
             session.commit()
 
-        # STEP [ 3 ] : =========== return the team details ======================
-        return {
-            "team_id": team.id,
-            "team_name": team.name,
-            "team_description": team.description,
-            "team_members": [member.user.email for member in team.team_memberships],
-        }
+            # STEP [ 3 ] : =========== return the team details ======================
+            return {
+                "team_id": team.id,
+                "team_name": team.name,
+                "team_description": team.description,
+                "team_members": [member.user.email for member in team.team_memberships],
+            }
 
     except HTTPException as e:
         raise e
@@ -221,9 +226,9 @@ async def remove_or_add_members_to_team(
 
         # STEP [ 3 ] : =========== remove or add members to the team ======================
         if data.intent == "remove":
-            remove_emails_from_team(data.email_ids, team_id, engine)
+            await remove_emails_from_team(data.email_ids, team_id, engine)
         elif data.intent == "add":
-            add_emails_to_team(data.email_ids, team_id, engine)
+            await add_emails_to_team(data.email_ids, team_id, engine)
         
 
         return {
@@ -251,15 +256,11 @@ async def delete_team(
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        # user = User(id=1) # for testing purposes
+        if user.default_team_id == team_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete default team")
         
         # STEP [ 1 ] : =========== check if user is admin of team ======================
         check_if_user_is_admin_of_team(user.id, team_id, engine)
-
-
-
-
-
 
 
 
@@ -327,27 +328,18 @@ async def delete_team(
         
 
         # STEP [ 2 ] ------------------ Delete team -----------------------------
-        with Session(engine) as session:
-            team = session.exec(select(Team).where(Team.id == team_id)).first()
-            if not team:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-            
-            
-            #---------------------> removing membership from user object 
-            for user_team_membership in user.team_memberships:
-                user.team_memberships.remove(user_team_membership)
-                session.add(user)
-            session.commit()
-            
-            #---------------------> removing membership from team object
-            for team_membership in team.team_memberships:
-                team.team_memberships.remove(team_membership)
-                session.add(team)
+        with Session(engine) as session:        
+            team_memberships = session.exec(select(TeamMembership).where(TeamMembership.team_id == team_id)).all()
+            for team_membership in team_memberships:
+                session.delete(team_membership)
             session.commit()
 
             # ⚠️⚠️⚠️ Check and see if the link table record also goes away with these operations above ⚠️⚠️⚠️            
 
             #---------------------> deleting team object
+            team = session.exec(select(Team).where(Team.id == team_id)).first()
+            if team == None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
             session.delete(team)
             session.commit()
         console.print(f"Team with id: {team_id} deleted from main database" ,style="bold orange3")
@@ -360,3 +352,33 @@ async def delete_team(
     except Exception as e:
         console.print(f"Error in deleting team: {e}", style="red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in deleting team: {e}")
+
+
+# new ✅
+@router.get("/team/{team_id}/dashboard",summary="Get the dashboard data for a team")
+async def get_team_dashboard(
+    team_id: int,
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
+    """
+    Get the dashboard data for a team
+    """
+    try:
+        # STEP [ 1 ] : =========== Get the engine and user ======================
+        engine = get_db(dev_environment=dev_environment)
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+
+        # STEP [ 2 ] : =========== check if user is in team ======================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        # STEP [ 3 ] : =========== get the dashboard data for the team ======================
+        dashboard_data = generate_team_dashboard_data(team_id, engine)
+
+        # STEP [ 4 ] : =========== return the dashboard data ======================
+        return dashboard_data
+    
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error in getting team dashboard: {e}", style="red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in getting team dashboard: {e}")

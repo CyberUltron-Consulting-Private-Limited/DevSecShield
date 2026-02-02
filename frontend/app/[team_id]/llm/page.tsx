@@ -188,13 +188,13 @@ export default function LLMPage() {
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Scan
               </Button>
-              <Button className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['llm-conversations'] })}>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['llm-conversations'] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
@@ -210,7 +210,7 @@ export default function LLMPage() {
             </div>
           ) : query.isLoading ? (
             <div className="flex h-full items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-teal-600" />
+                <Loader2 className="size-10 animate-spin text-blue-600" />
             </div>
           ) : conversations.length === 0 ? (
             <div className="text-center py-12">
@@ -218,7 +218,7 @@ export default function LLMPage() {
                 No scans yet. Create your first LLM scan to get started.
               </p>
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -245,7 +245,7 @@ export default function LLMPage() {
                       <TableCell className="font-medium">
                         <Link
                           href={`/home/llm/${conversation.id}`}
-                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline cursor-pointer"
+                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
                         </Link>
@@ -354,7 +354,7 @@ export default function LLMPage() {
             <Button
               onClick={confirmRename}
               disabled={!newName.trim()}
-              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
               Save
             </Button>
@@ -428,7 +428,7 @@ export default function LLMPage() {
             <Button
               onClick={confirmCreate}
               disabled={!newScanTitle.trim() || createLLMConversationMutation.isPending}
-              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
               {createLLMConversationMutation.isPending ? "Creating..." : "Create"}
             </Button>

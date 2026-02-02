@@ -4,7 +4,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlmodel import SQLModel
 from alembic import context
-from backend.models import *
+from backend.new_models import *
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,7 +16,7 @@ load_dotenv()
 # access to the values within the .ini file in use.
 config = context.config
 # config.set_main_option("sqlalchemy.url", DATABASE_URL) # for production only ⚠️⭐
-config.set_main_option("sqlalchemy.url", "sqlite:///C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\database.db") # for testing only ⚠️
+config.set_main_option("sqlalchemy.url", "sqlite:///C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\new_database.db") # for testing only ⚠️
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -33,8 +33,6 @@ target_metadata = SQLModel.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-
-
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.

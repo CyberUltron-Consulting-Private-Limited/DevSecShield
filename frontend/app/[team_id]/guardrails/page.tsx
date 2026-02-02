@@ -37,6 +37,7 @@ import { GuardrailsIntegration, deleteGuardrailsIntegration, getGuardrailsIntegr
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const defaultLanguages = ["ARM Assembly", "AppleScript", "C", "C#", "C++", "COBOL", "Erlang", "Fortran", "Go", "Java", "JavaScript", "Kotlin", "Lua", "Mathematica/Wolfram Language", "PHP", "Pascal", "Perl", "PowerShell", "Python", "R", "Ruby", "Rust", "Scala", "Swift", "Visual Basic .NET", "jq"];
 
@@ -196,14 +197,14 @@ export default function GuardrailsPage() {
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => queryClient.invalidateQueries({ queryKey: ['guardrails-integrations', team_id] })}
               >
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
               <Button 
-                className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -221,7 +222,7 @@ export default function GuardrailsPage() {
             </div>
           ) : query.isLoading ? (
             <div className="flex h-full items-center justify-center">
-              <Loader2 className="size-10 animate-spin text-teal-600" />
+              <Loader2 className="size-10 animate-spin text-blue-600" />
             </div>
           ) : integrations.length === 0 ? (
             <div className="text-center py-12">
@@ -235,6 +236,7 @@ export default function GuardrailsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[300px]">Title</TableHead>
+                    <TableHead>Owner</TableHead>
                     <TableHead>Created At</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead>API Key</TableHead>
@@ -247,10 +249,43 @@ export default function GuardrailsPage() {
                       <TableCell className="font-medium">
                         <Link
                           href={`/${team_id}/guardrails/${integration.id}`}
-                          className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 hover:underline cursor-pointer"
+                          className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {integration.title}
                         </Link>
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        {integration.owner_user_full_name != null && integration.owner_user_full_name !== "" || integration.owner_user_email ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-8 w-8 shrink-0">
+                              <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
+                                {integration.owner_user_full_name
+                                  ? integration.owner_user_full_name
+                                      .trim()
+                                      .split(/\s+/)
+                                      .map((p) => p.charAt(0))
+                                      .slice(0, 2)
+                                      .join("")
+                                      .toUpperCase() || (integration.owner_user_email?.[0] ?? "?").toUpperCase()
+                                  : (integration.owner_user_email?.[0] ?? "?").toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              {integration.owner_user_full_name != null && integration.owner_user_full_name !== "" && (
+                                <span className="block truncate max-w-[160px]" title={integration.owner_user_email ?? ""}>
+                                  {integration.owner_user_full_name}
+                                </span>
+                              )}
+                              {integration.owner_user_email != null && integration.owner_user_email !== "" && (
+                                <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">
+                                  {integration.owner_user_email}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {formatDate(integration.created_at)}
@@ -352,7 +387,7 @@ export default function GuardrailsPage() {
             <Button
               onClick={confirmRename}
               disabled={!newName.trim()}
-              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
               Save
             </Button>
@@ -444,7 +479,7 @@ export default function GuardrailsPage() {
                 });
               }}
               disabled={!formTitle.trim() || createGuardrailsIntegrationMutation.isPending}
-              className="bg-teal-600 hover:bg-teal-700 text-white cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
               {createGuardrailsIntegrationMutation.isPending && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

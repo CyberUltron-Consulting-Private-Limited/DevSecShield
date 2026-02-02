@@ -20,25 +20,25 @@ interface DisplaySuggestionsProps {
 export function DisplaySuggestions({ onSuggestionClick, className }: DisplaySuggestionsProps) {
   const suggestions: SuggestionCard[] = [
     {
-      icon: <AlertTriangle className="h-4 w-4 text-teal-500" />,
+      icon: <AlertTriangle className="h-4 w-4 text-blue-500" />,
       title: 'List the top 10 vulnerabilities found',
       description: 'Displays top 10 discovered vulnerabilities',
       onClick: () => onSuggestionClick?.('List the top 10 vulnerabilities found'),
     },
     {
-      icon: <AlertCircle className="h-4 w-4 text-teal-500" />,
+      icon: <AlertCircle className="h-4 w-4 text-blue-500" />,
       title: 'List the vulnerabilities found that map to recentcritical CVEs',
       description: 'Shows vulnerabilities that map to recent critical CVEs',
       onClick: () => onSuggestionClick?.('List the vulnerabilities found that map to recentcritical CVEs'),
     },
     {
-      icon: <Shield className="h-4 w-4 text-teal-500" />,
+      icon: <Shield className="h-4 w-4 text-blue-500" />,
       title: 'List the vulnerabilities found that map to recent medium CVEs',
       description: 'Shows vulnerabilities that map to recent medium CVEs',
       onClick: () => onSuggestionClick?.('List the vulnerabilities found that map to recent medium CVEs'),
     },
     {
-      icon: <Activity className="h-4 w-4 text-teal-500" />,
+      icon: <Activity className="h-4 w-4 text-blue-500" />,
       title: 'List the vulnerabilities found that map to recent low CVEs',
       description: 'Shows vulnerabilities that map to recent low CVEs',
       onClick: () => onSuggestionClick?.('List the vulnerabilities found that map to recent low CVEs'),
@@ -51,7 +51,7 @@ export function DisplaySuggestions({ onSuggestionClick, className }: DisplaySugg
         <Card
           key={index}
           onClick={suggestion.onClick}
-          className="cursor-pointer transition-all hover:shadow-md hover:border-teal-300 dark:hover:border-teal-600 bg-white dark:bg-zinc-900"
+          className="cursor-pointer transition-all hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 bg-white dark:bg-zinc-900"
         >
           <CardContent className="flex flex-col gap-1 p-2">
             <div className="flex items-center gap-2">

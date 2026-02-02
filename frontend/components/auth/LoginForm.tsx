@@ -173,7 +173,7 @@ export default function LoginPage({
         <CardHeader className="space-y-1 text-center">
           {/* === START: UPDATED LOGO/TITLE SECTION (Matches Sidebar) === */}
           <div className="flex flex-col items-center justify-center space-y-2 mb-2">
-            <div className="w-10 h-10 bg-teal-600 rounded-lg flex items-center justify-center text-white text-xl font-bold">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white text-xl font-bold">
               <Shield className="h-6 w-6" /> {/* Shield icon */}
             </div>
             <CardTitle className="text-2xl font-bold">DevSec Shield </CardTitle>

@@ -323,7 +323,7 @@ export function SCASBOMOptionsSidebar({
               });
               setOptionsSidebarState("scanning");
               }}
-              className="w-fit h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="w-fit h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <ScanIcon className="size-4" />
               <span className="ml-1">Run Scan</span>
@@ -334,7 +334,7 @@ export function SCASBOMOptionsSidebar({
 
       {optionsSidebarState === "scanning" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 text-teal-500 animate-spin mb-4" />
+          <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-300 text-center">
             Scan has started, this might take a while
           </p>
@@ -345,7 +345,7 @@ export function SCASBOMOptionsSidebar({
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully on the repository <span className="text-teal-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.repo_url}</span>
+              Scan has run successfully on the repository <span className="text-blue-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.repo_url}</span>
               You can now chat with your scan results
             </p>
             <Button 
@@ -354,7 +354,7 @@ export function SCASBOMOptionsSidebar({
               onClick={() => {
                 router.push(`/home/sbom_sca/${conversation_id}/results?origin=chat`);
               }}
-              className="w-full h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <Eye className="size-4" />
               <span className="ml-1">View Results</span>

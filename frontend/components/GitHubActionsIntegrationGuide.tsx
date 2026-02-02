@@ -171,7 +171,7 @@ jobs:
                   <div className="mt-2 p-2 bg-zinc-50 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
                     <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-1">Example:</p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all">
-                      Name: <span className="text-teal-600 dark:text-teal-400">CICD_API_KEY</span>
+                      Name: <span className="text-blue-600 dark:text-blue-400">CICD_API_KEY</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all mt-1">
                       Secret: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>

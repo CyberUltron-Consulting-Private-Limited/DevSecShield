@@ -263,7 +263,7 @@ const ChatWindow = ({
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/home/${type}`)}>{Heading}</span>
             <ChevronRightIcon className="size-4 text-zinc-500" />
-            <span className="text-teal-700 font-medium">{query.data?.title}</span>
+            <span className="text-blue-700 font-medium">{query.data?.title}</span>
           </div>
           <div className="h-4 w-px bg-border" />
           <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
@@ -271,7 +271,7 @@ const ChatWindow = ({
 
         <div className="flex flex-row justify-end items-center gap-3">
             {/* Refresh Button */}
-            <Button onClick={refreshQuery} className='bg-teal-600 hover:bg-teal-700 text-white cursor-pointer'>
+            <Button onClick={refreshQuery} className='bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'>
               <RefreshCcwIcon className="size-4" />
               Refresh
             </Button>

@@ -47,18 +47,22 @@ async def list_guardrails_integrations(
             statement = select(GuardrailsIntegration).where(GuardrailsIntegration.team_id == team_id)
             integrations = session.exec(statement).all()
         
-        response_data = []
-        
-        for integration in integrations:
-            response_data.append({
-                "id": integration.id,
-                "title": integration.title,
-                "scanners_enabled": list(integration.settings.keys()),
-                "api_key": integration.api_key,
-                "created_at": integration.created_at,
-                "last_updated": integration.last_updated
-            })
-        return response_data
+            response_data = []
+            
+            for integration in integrations:
+                # owner_user = session.exec(select(User).where(User.id == integration.owner_user_id)).first()
+                owner_user = integration.owner_user
+                response_data.append({
+                    "id": integration.id,
+                    "title": integration.title,
+                    "scanners_enabled": list(integration.settings.keys()),
+                    "owner_user_email": owner_user.email,
+                    "owner_user_full_name": f"{owner_user.first_name} {owner_user.last_name}",
+                    "api_key": integration.api_key,
+                    "created_at": integration.created_at,
+                    "last_updated": integration.last_updated
+                })
+            return response_data
     
     except HTTPException as e:
         raise e

@@ -109,6 +109,8 @@ def return_scan_list_for_type(
                 "created_at": scan.created_at,
                 "last_updated": scan.last_updated,
                 "scan_status": scan.scan_status.lower(),
+                "owner_user_email": scan.owner_user.email,
+                "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
             })
 
         return (scans_list_data,scans_to_update)

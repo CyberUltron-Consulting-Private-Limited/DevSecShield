@@ -378,23 +378,23 @@ console.log(result);`}
         <CardContent>
           <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
             <li className="flex items-start gap-2">
-              <span className="text-teal-600 dark:text-teal-400 mt-1">•</span>
+              <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
               <span><strong className="text-zinc-900 dark:text-white">Polling Strategy:</strong> After starting a scan, poll the status endpoint every 1-2 seconds until the status is "success" or "failed".</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-teal-600 dark:text-teal-400 mt-1">•</span>
+              <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
               <span><strong className="text-zinc-900 dark:text-white">API Key Security:</strong> Never expose your API key in client-side code or public repositories. Store it securely in environment variables or secure vaults.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-teal-600 dark:text-teal-400 mt-1">•</span>
+              <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
               <span><strong className="text-zinc-900 dark:text-white">Error Handling:</strong> Always implement proper error handling for network failures, timeouts, and API errors.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-teal-600 dark:text-teal-400 mt-1">•</span>
+              <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
               <span><strong className="text-zinc-900 dark:text-white">Rate Limiting:</strong> Be mindful of rate limits. Implement exponential backoff for retries.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-teal-600 dark:text-teal-400 mt-1">•</span>
+              <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
               <span><strong className="text-zinc-900 dark:text-white">Timeout Handling:</strong> Set appropriate timeouts for API requests. Scans may take several seconds to complete.</span>
             </li>
           </ul>

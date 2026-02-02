@@ -259,7 +259,7 @@ export function MCPOptionsSidebar({
               setOptionsSidebarState("scanning");
             }}
             disabled={!serverConfigJson.trim() || !!jsonError}
-            className="w-full h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ScanIcon className="size-4" />
             <span className="ml-1">Run Scan</span>
@@ -269,7 +269,7 @@ export function MCPOptionsSidebar({
 
       {optionsSidebarState === "scanning" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 text-teal-500 animate-spin mb-4" />
+          <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-300 text-center">
             Scan has started, this might take a while
           </p>
@@ -288,7 +288,7 @@ export function MCPOptionsSidebar({
               onClick={() => {
                 router.push(`/home/mcp/${conversation_id}/results?origin=chat`);
               }}
-              className="w-full h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <Eye className="size-4" />
               <span className="ml-1">View Results</span>

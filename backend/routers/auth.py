@@ -75,13 +75,17 @@ async def create_user(data: UserSignup):
                 name=f"{data.first_name}'s Team",
                 description=f"Default team for {data.first_name}",
             )
+            session.add(new_team)
+            session.commit()
+            session.refresh(new_team)
             new_user = User(
                 email=data.email, 
                 password=get_hashed_password(data.password),
                 first_name=data.first_name,
                 last_name=data.last_name,
                 session_active=True, # activating session for new user
-                teams =  [ new_team ]
+                teams =  [ new_team ],
+                default_team_id = new_team.id
             )
             team_membership = TeamMembership( team=new_team, user=new_user, role="admin" )
             session.add(team_membership)

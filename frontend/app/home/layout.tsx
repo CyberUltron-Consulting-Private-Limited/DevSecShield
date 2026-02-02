@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ShieldCheck,
   Users,
+  Plus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -32,7 +33,17 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -44,7 +55,8 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { getUserProfile, logout, getTeams, type TeamListItem } from "@/utils/backend_api";
+import { getUserProfile, logout, getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
+import { showErrorToast } from "@/utils/error-handler";
 
 function UserFooter() {
   const router = useRouter();
@@ -105,8 +117,8 @@ function UserFooter() {
           variant="ghost"
           className="w-full flex items-center gap-3 px-3 py-2 h-auto rounded-md hover:bg-zinc-800 text-zinc-300 hover:text-white cursor-pointer"
         >
-          <Avatar className="h-10 w-10 shrink-0 rounded-full bg-teal-600">
-            <AvatarFallback className="rounded-full bg-teal-600 text-white font-semibold text-sm">
+          <Avatar className="h-10 w-10 shrink-0 rounded-full bg-blue-600">
+            <AvatarFallback className="rounded-full bg-blue-600 text-white font-semibold text-sm">
               {getInitials(userProfile.first_name, userProfile.last_name)}
             </AvatarFallback>
           </Avatar>
@@ -131,6 +143,99 @@ function UserFooter() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function CreateTeamTriggerWithDialog() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const createTeamMutation = useMutation({
+    mutationFn: (data: CreateTeamData) => createTeam(data),
+    onSuccess: (data: { team_id: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      setOpen(false);
+      setName("");
+      setDescription("");
+      router.push(`/${data.team_id}`);
+    },
+    onError: (error) => showErrorToast(error),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    createTeamMutation.mutate({
+      name: trimmedName,
+      description: description.trim() || undefined,
+    });
+  };
+
+  return (
+    <>
+      <SidebarMenuButton
+        onClick={() => setOpen(true)}
+        className="text-zinc-300 hover:bg-zinc-800 hover:text-white px-2 py-2 cursor-pointer"
+      >
+        <Plus className="h-5 w-5" />
+        <span>Create team</span>
+      </SidebarMenuButton>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create team</DialogTitle>
+            <DialogDescription>
+              Create a new team. You will be the admin and can add members later from settings.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="create-team-name">Team name</Label>
+              <Input
+                id="create-team-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Engineering"
+                required
+                disabled={createTeamMutation.isPending}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-team-description">Description (optional)</Label>
+              <Input
+                id="create-team-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Short description"
+                disabled={createTeamMutation.isPending}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpen(false)}
+                className="cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!name.trim() || createTeamMutation.isPending}
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+              >
+                {createTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create team
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -170,8 +275,8 @@ function TeamsList() {
               isActive={isActive}
               className={
                 isActive
-                  ? "bg-teal-600 text-white hover:bg-teal-600 data-[active=true]:bg-teal-600 cursor-pointer"
-                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-teal-800 active:text-white px-2 py-2 cursor-pointer"
+                  ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
+                  : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-blue-800 active:text-white px-2 py-2 cursor-pointer"
               }
             >
               <Link href={href}>
@@ -191,6 +296,7 @@ export default function HomeLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const queryClient = new QueryClient();
@@ -220,11 +326,11 @@ export default function HomeLayout({
   return (
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
-        <Sidebar className="border-r border-teal-600">
+        <Sidebar className="">
           <SidebarHeader>
             <div className="px-3 pt-4 pb-2">
               <div className="flex flex-row items-center gap-2">
-                <ShieldCheck className="size-9 bg-teal-600 rounded-md p-2" />
+                <ShieldCheck className="size-9 bg-blue-600 rounded-md p-2" />
                 <div className="flex flex-col">
                   <h1 className="text-lg font-medium text-white">
                     DevSec Shield
@@ -244,6 +350,11 @@ export default function HomeLayout({
                   Teams
                 </SidebarGroupLabel>
                 <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <CreateTeamTriggerWithDialog />
+                    </SidebarMenuItem>
+                  </SidebarMenu>
                   <TeamsList />
                 </SidebarGroupContent>
               </SidebarGroup>

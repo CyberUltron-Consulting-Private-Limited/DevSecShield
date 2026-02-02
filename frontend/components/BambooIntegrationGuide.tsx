@@ -218,13 +218,13 @@ echo "$RESPONSE"`;
                 <li>Create a new variable:
                   <div className="mt-2 p-2 bg-zinc-50 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100">
-                      Variable: <span className="text-teal-600 dark:text-teal-400">cicd_api_key</span>
+                      Variable: <span className="text-blue-600 dark:text-blue-400">cicd_api_key</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
                       Value: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
-                      Type: <span className="text-teal-600 dark:text-teal-400">Password</span> (to hide the value)
+                      Type: <span className="text-blue-600 dark:text-blue-400">Password</span> (to hide the value)
                     </p>
                   </div>
                 </li>

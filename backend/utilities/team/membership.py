@@ -1,10 +1,13 @@
 from sqlmodel import  Session , select
 from sqlalchemy.engine import Engine
+from sqlalchemy import or_
 from backend.new_models import User , Team , TeamMembership
 from rich.console import Console
 import random
 import string
 from backend.utilities.auth.email import send_email_with_credentials
+from backend.utilities.auth.auth_utils import get_hashed_password
+from fastapi import HTTPException , status
 
 console = Console()
 
@@ -12,41 +15,61 @@ console = Console()
 def generate_random_password() -> str:
     return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
 
-def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
+async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
     
     with Session(engine) as session:
         team = session.exec(select(Team).where(Team.id == team_id)).first()
 
 
-        # if email doesnt exist for any user , create a new user and send email with credentials 
+        # STEP [ 1 ] : =============================== create users if they dont exist ================================================= 
         for email in email_ids:
+            # ---------------------------> creating a new default team for this new user 
+            new_team = Team(
+                name=f"{email.split('@')[0]}'s Team",
+                description=f"Default team for {email.split('@')[0]}",
+            )
+            session.add(new_team)
+            session.commit()
+            session.refresh(new_team)
+
+            # ---------------------------> creating a new user and send them an email with credentials 
             user = session.exec(select(User).where(User.email == email)).first()
             if not user:
                 generated_password = generate_random_password()
                 user = User(
                     email=email, 
-                    password=generated_password,
+                    password=get_hashed_password(generated_password),
                     first_name=email.split("@")[0],
                     last_name="user",
+                    default_team_id=new_team.id
                     )
                 session.add(user)
                 session.commit()
-                send_email_with_credentials(email=email, password=generated_password,team_name=team.name)
+                await send_email_with_credentials(email=email, password=generated_password,team_name=team.name)
                 console.print(f"Email {email} does not exist for any user , creating a new user and sending email with credentials", style="bold orange1")
         
-        query_statement = select(User)
+        
+        
+        # STEP [ 2 ] : =============================== get all the users and add them to the team  ================================================= 
+        
+        # ----------------------------> get all users by their email ids 
+        or_statements = []
         for email in email_ids:
-            query_statement = query_statement.where(User.email == email)
-        users = session.exec(query_statement).all()
+            or_statements.append(User.email == email)
+        users = session.exec(select(User).where(or_(*or_statements))).all()
+
+        # ----------------------------> add them to the team 
         for user in users:
+            for membership in user.team_memberships:
+                if membership.team_id == team_id:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already in team")
             team_membership = TeamMembership(user=user, team=team)
-            user.team_memberships.append(team_membership)
-            session.add(user)
+            session.add(team_membership)
         session.commit()
         console.print(f"Emails {email_ids} added to team {team_id}", style="bold green")
 
 
-def remove_emails_from_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
+async def remove_emails_from_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
     with Session(engine) as session:
         query_statement = select(User)
         for email in email_ids:
@@ -54,12 +77,14 @@ def remove_emails_from_team(email_ids: list[str], team_id: int, engine: Engine) 
         users = session.exec(query_statement).all()
 
         for user in users:
+            
             team_membership = session.exec(select(TeamMembership).where(TeamMembership.user_id == user.id and TeamMembership.team_id == team_id)).first()
             if not team_membership:
                 console.print(f"Email {user.email} not found in team {team_id}", style="bold red")
                 continue
-            user.team_memberships.remove(team_membership)
-            session.add(user)
+            session.delete(team_membership)
+            session.commit()
+            
         
 
         session.commit()

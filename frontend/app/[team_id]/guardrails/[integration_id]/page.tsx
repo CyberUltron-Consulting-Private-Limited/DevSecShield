@@ -359,7 +359,7 @@ export default function GuardrailsIntegrationDashboardPage() {
               onClick={handleRefresh} 
               disabled={query.isFetching}
               variant="outline"
-              className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               {query.isFetching ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -376,7 +376,7 @@ export default function GuardrailsIntegrationDashboardPage() {
               onClick={() => setActiveTab("dashboard")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "dashboard"
-                  ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
                   : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
@@ -389,7 +389,7 @@ export default function GuardrailsIntegrationDashboardPage() {
               onClick={() => setActiveTab("settings")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "settings"
-                  ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
                   : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
@@ -402,7 +402,7 @@ export default function GuardrailsIntegrationDashboardPage() {
               onClick={() => setActiveTab("docs")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "docs"
-                  ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
                   : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
@@ -525,7 +525,7 @@ export default function GuardrailsIntegrationDashboardPage() {
                   {!editSettings ? (
                     <Button
                       onClick={() => setEditSettings(true)}
-                      className="bg-teal-600 hover:bg-teal-700 text-white"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                       <Settings className="w-4 h-4 mr-2" />
                       Edit Settings
@@ -609,7 +609,7 @@ export default function GuardrailsIntegrationDashboardPage() {
                           updateSettingsMutation.mutate({ settings: cleanedSettings });
                         }}
                         disabled={updateSettingsMutation.isPending}
-                        className="bg-teal-600 hover:bg-teal-700 text-white"
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
                       >
                         {updateSettingsMutation.isPending ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />

@@ -418,7 +418,7 @@ export function DASTOptionsSidebar({
                     <ScrollArea className="max-h-[60vh] pr-4">
                       <div className="space-y-6 pt-4">
                         <div className="space-y-3">
-                          <h4 className="text-lg font-semibold text-teal-400 flex items-center gap-2">
+                          <h4 className="text-lg font-semibold text-blue-400 flex items-center gap-2">
                             <Key className="h-5 w-5" />
                             Form Based Authentication
                           </h4>
@@ -481,7 +481,7 @@ export function DASTOptionsSidebar({
                           </div>
                         </div>
                         <div className="space-y-3 pt-4 border-t border-zinc-700">
-                          <h4 className="text-lg font-semibold text-teal-400 flex items-center gap-2">
+                          <h4 className="text-lg font-semibold text-blue-400 flex items-center gap-2">
                             <Shield className="h-5 w-5" />
                             Header/Cookie Based Authentication
                           </h4>
@@ -780,7 +780,7 @@ export function DASTOptionsSidebar({
                                 id={`attack-module-${module}`}
                                 checked={headerAttackModules.includes(module)}
                                 onCheckedChange={() => toggleAttackModule(module)}
-                                className="border-zinc-600 data-[state=checked]:bg-teal-600 data-[state=checked]:border-teal-600"
+                                className="border-zinc-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                               />
                               <Label
                                 htmlFor={`attack-module-${module}`}
@@ -965,7 +965,7 @@ export function DASTOptionsSidebar({
               variant="ghost" 
               size="icon-lg"
               onClick={handleRunScan}
-              className="w-fit h-8 px-4 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="w-fit h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <ScanIcon className="size-4" />
               <span className="ml-1">Run Scan</span>
@@ -976,7 +976,7 @@ export function DASTOptionsSidebar({
 
       {optionsSidebarState === "scanning" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 text-teal-500 animate-spin mb-4" />
+          <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-300 text-center">
             Scan has started, this might take a while
           </p>
@@ -987,7 +987,7 @@ export function DASTOptionsSidebar({
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully on the target <span className="text-teal-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.target_url || "N/A"}</span>
+              Scan has run successfully on the target <span className="text-blue-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.target_url || "N/A"}</span>
               You can now chat with your scan results
             </p>
             <Button 
@@ -996,7 +996,7 @@ export function DASTOptionsSidebar({
               onClick={() => {
                 router.push(`/home/dast/${conversation_id}/results?origin=chat`);
               }}
-              className="w-full h-8 px-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <Eye className="size-4" />
               <span className="ml-1">View Results</span>

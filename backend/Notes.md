@@ -1,4 +1,6 @@
-
+## Notes : 
+- when using linktable with additional fields , to add or remove/delete associations . simple delete or add a linktable record . 
+- Relationships in SQLModel are not actual fields to worry about , they are dynamically queried 
 
 ## Userflow 
 

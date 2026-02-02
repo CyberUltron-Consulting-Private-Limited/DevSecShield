@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getTeam,
   updateTeam,
@@ -12,13 +12,6 @@ import {
   type UpdateTeamData,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,8 +32,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Trash2, UserPlus, UserMinus } from "lucide-react";
+import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { JiraIcon } from "@/components/icons/arcticons-jira";
 
 interface JiraIntegrationSettings {
   url?: string;
@@ -68,6 +62,8 @@ export default function TeamSettingsPage() {
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [addMemberEmail, setAddMemberEmail] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const saveFromEditDialogRef = useRef(false);
 
   useEffect(() => {
     if (team) {
@@ -85,6 +81,10 @@ export default function TeamSettingsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team-details", team_id] });
       queryClient.invalidateQueries({ queryKey: ["teams"] });
+      if (saveFromEditDialogRef.current) {
+        setEditDialogOpen(false);
+        saveFromEditDialogRef.current = false;
+      }
     },
     onError: (error) => showErrorToast(error),
   });
@@ -109,7 +109,8 @@ export default function TeamSettingsPage() {
     onError: (error) => showErrorToast(error),
   });
 
-  const handleSaveNameDescription = () => {
+  const handleSaveNameDescription = (fromEditDialog?: boolean) => {
+    if (fromEditDialog) saveFromEditDialogRef.current = true;
     updateTeamMutation.mutate({
       name: name.trim() || undefined,
       description: description.trim() || undefined,
@@ -171,68 +172,51 @@ export default function TeamSettingsPage() {
   const is_team_admin = team.is_team_admin ?? false;
 
   return (
-    <div className="flex flex-col h-full min-h-[calc(100vh-2rem)] bg-background">
-      <Card className="rounded-none border-x-0 border-t-0 border-b shadow-none">
-        <CardHeader className="px-6 py-4">
-          <CardTitle className="text-xl">{team.team_name} <div className="py-1 px-2 inline rounded-md bg-teal-600 text-white w-fit text-sm font-normal">Settings</div></CardTitle>
-          <CardDescription>
+    <div className="flex flex-col h-full min-h-[calc(100vh-2rem)] bg-neutral-900">
+      <header className="px-6 py-4 border-b border-border flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold">
+            {team.team_name}{" "}
+            {/* <span className="py-1 px-2 rounded-md bg-blue-600 text-white text-sm font-normal">Settings</span> */}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {team.team_description ?? "Manage team details, members, and integrations."}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-sm font-medium text-muted-foreground">
+            <Coins className="h-4 w-4" />
+            {team.team_credit_balance ?? 0} credits
+          </span>
+          {is_team_admin && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setEditDialogOpen(true)}
+            className="shrink-0 cursor-pointer text-neutral-300 hover:text-neutral-200"
+            aria-label="Edit team name and description"
+          >
+            <PenLine className="size-4" />
+          </Button>
+          )}
+        </div>
+      </header>
 
-      <main className="flex-1 p-6 overflow-auto space-y-6">
-        {/* 1. Name & Description */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Team name & description</CardTitle>
-            <CardDescription>Update the display name and description of this team.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="team-name">Name</Label>
-              <Input
-                id="team-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Team name"
-                disabled={!is_team_admin}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="team-description">Description</Label>
-              <Input
-                id="team-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Short description"
-                disabled={!is_team_admin}
-              />
-            </div>
-            {is_team_admin && (
-              <Button
-                onClick={handleSaveNameDescription}
-                disabled={updateTeamMutation.isPending}
-                className="bg-teal-600 hover:bg-teal-700 text-white"
-              >
-                {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Save
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 2. Team members */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Team members</CardTitle>
-            <CardDescription>
-              {is_team_admin
-                ? "Add or remove members by email. Only admins can manage members."
-                : "List of members in this team."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <main className="flex-1 p-6 overflow-auto">
+        {/* 1. Team members */}
+        <section className="pb-6 mb-6 border-b border-border">
+          <h2 className="text-lg font-medium flex items-center gap-2">
+            <span className="inline-flex items-center justify-center rounded-md bg-blue-600 p-1.5">
+              <Users className="h-5 w-5 stroke-1 text-white" />
+            </span>
+            Team members
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">
+            {is_team_admin
+              ? "Add or remove members by email. Only admins can manage members."
+              : "List of members in this team."}
+          </p>
+          <div className="space-y-4">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -240,20 +224,28 @@ export default function TeamSettingsPage() {
                     <TableHead className="w-12">Select</TableHead>
                   )}
                   <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(team.team_members ?? []).map((email) => (
-                  <TableRow key={email}>
+                {(team.team_members ?? []).map((member) => (
+                  <TableRow key={member.email}>
                     {is_team_admin && (
                       <TableCell>
-                        <Checkbox
-                          checked={selectedEmails.has(email)}
-                          onCheckedChange={() => toggleMemberSelection(email)}
-                        />
+                        {member.role === "admin" ? (
+                          <span className="text-muted-foreground text-xs" title="Admin cannot be removed">
+                            —
+                          </span>
+                        ) : (
+                          <Checkbox
+                            checked={selectedEmails.has(member.email)}
+                            onCheckedChange={() => toggleMemberSelection(member.email)}
+                          />
+                        )}
                       </TableCell>
                     )}
-                    <TableCell>{email}</TableCell>
+                    <TableCell>{member.email}</TableCell>
+                    <TableCell className="capitalize">{member.role}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -274,6 +266,7 @@ export default function TeamSettingsPage() {
                   variant="outline"
                   onClick={handleAddMember}
                   disabled={!addMemberEmail.trim() || membersMutation.isPending}
+                  className="cursor-pointer"
                 >
                   <UserPlus className="h-4 w-4 mr-2" />
                   Add
@@ -282,23 +275,26 @@ export default function TeamSettingsPage() {
                   variant="outline"
                   onClick={handleRemoveSelected}
                   disabled={selectedEmails.size === 0 || membersMutation.isPending}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  className="text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer"
                 >
                   <UserMinus className="h-4 w-4 mr-2" />
                   Remove selected ({selectedEmails.size})
                 </Button>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {/* 3. Integration settings (Jira) */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Ticketing integrations</CardTitle>
-            <CardDescription>Configure Jira (and other integrations later) for this team.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section className="pb-6 mb-6 border-b border-border">
+          <h2 className="text-lg font-medium flex items-center gap-2">
+            <span className="inline-flex items-center justify-center rounded-md bg-blue-600 p-1.5">
+              <JiraIcon size={20} className="text-white" />
+            </span>
+            Jira integration
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">Configure Jira (and other integrations later) for this team.</p>
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="jira-url">Jira URL</Label>
               <Input
@@ -331,37 +327,77 @@ export default function TeamSettingsPage() {
             <Button
               onClick={handleSaveJira}
               disabled={updateTeamMutation.isPending}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
               {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save integration settings
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         {/* 4. Delete team (bottom, destructive) */}
         {is_team_admin && (
-          <Card className="border-destructive/50 bg-destructive/5">
-            <CardHeader>
-              <CardTitle className="text-destructive">Danger zone</CardTitle>
-              <CardDescription>
-                Deleting this team is permanent. All integrations, scans, and data for this team will be removed.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                variant="destructive"
-                onClick={() => setDeleteDialogOpen(true)}
-                disabled={deleteTeamMutation.isPending}
-                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete team
-              </Button>
-            </CardContent>
-          </Card>
+          <section className="w-full pb-6">
+            <h2 className="text-lg font-medium text-destructive ">Danger zone</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Deleting this team is permanent. All integrations, scans, and data for this team will be removed.
+            </p>
+            <Button
+              variant="default"
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={deleteTeamMutation.isPending}
+              className="bg-red-900 cursor-pointer hover:bg-red-800/50 font-normal text-red-300"
+            >
+              <Trash2 className="h-4 w-4 " />
+              Delete team
+            </Button>
+          </section>
         )}
       </main>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit team</DialogTitle>
+            <DialogDescription>
+              Update the display name and description of this team.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-team-name">Name</Label>
+              <Input
+                id="edit-team-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Team name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-team-description">Description</Label>
+              <Input
+                id="edit-team-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Short description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)} className="cursor-pointer">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleSaveNameDescription(true)}
+              disabled={updateTeamMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+            >
+              {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -373,14 +409,14 @@ export default function TeamSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} className="cursor-pointer">
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteTeam}
               disabled={deleteTeamMutation.isPending}
-              className="bg-destructive hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 cursor-pointer"
             >
               {deleteTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Delete team

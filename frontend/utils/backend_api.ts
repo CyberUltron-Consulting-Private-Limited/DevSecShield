@@ -553,12 +553,17 @@ export interface TeamListItem {
     team_credit_balance: number
 }
 
+export interface TeamMember {
+    email: string
+    role: string
+}
+
 export interface TeamDetails {
     team_id: number
     team_name: string
     team_description: string | null
     is_team_admin: boolean
-    team_members: string[]
+    team_members: TeamMember[]
     team_created_at: string
     team_credit_balance: number
     team_integration_settings: Record<string, unknown> | null
@@ -576,12 +581,46 @@ export interface RemoveOrAddMembersToTeamData {
     email_ids: string[]
 }
 
+export interface CreateTeamData {
+    name: string
+    description?: string | null
+}
+
+export interface TeamDashboardData {
+    scans_created_at_data: { date: string; count: number }[]
+    guardrails_integrations_created_at_data: { date: string; count: number }[]
+    cicd_integrations_created_at_data: { date: string; count: number }[]
+    scan_type_count: Record<string, number>
+    high_and_critical_vuln_in_past_month: Record<string, number>
+}
+
+const getTeamDashboard = async (team_id: number): Promise<TeamDashboardData> => {
+    try {
+        const response = await api.get(`/team/${team_id}/dashboard`)
+        return response.data as TeamDashboardData
+    } catch (error) {
+        showErrorToast(error, "Error fetching team dashboard")
+        throw error
+    }
+}
+
 const getTeams = async (): Promise<TeamListItem[]> => {
     try {
         const response = await api.get("/teams")
         return response.data as TeamListItem[]
     } catch (error) {
         showErrorToast(error, "Error fetching teams")
+        throw error
+    }
+}
+
+const createTeam = async (data: CreateTeamData) => {
+    try {
+        const response = await api.post("/team", data)
+        toast.success("Team created successfully")
+        return response.data as { team_id: number; team_name: string; team_description: string | null; team_members: string[] }
+    } catch (error) {
+        showErrorToast(error, "Error creating team")
         throw error
     }
 }
@@ -632,7 +671,9 @@ export {
     getUserProfile,
     logout,
     getTeams,
+    createTeam,
     getTeam,
+    getTeamDashboard,
     updateTeam,
     removeOrAddTeamMembers,
     deleteTeam
@@ -1219,6 +1260,8 @@ export interface GuardrailsIntegration {
     last_updated: string
     api_key: string
     scanners_enabled?: string[]
+    owner_user_email?: string
+    owner_user_full_name?: string
 }
 
 const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsIntegration[]> => {

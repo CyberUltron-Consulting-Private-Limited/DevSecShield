@@ -159,17 +159,19 @@ async def list_cicd_integrations(
         with Session(engine) as session:
             integrations = session.exec(select(CicdIntegration).where(CicdIntegration.team_id == team_id)).all()
         
-        integrations_data = []
-        for integration in integrations:
-            integrations_data.append({
-                "id": integration.id,
-                "title": integration.title,
-                "created_at": integration.created_at,
-                "last_updated": integration.last_updated,
-                "scan_type": integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
-                "api_key": integration.api_key,
-            })
-        return integrations_data
+            integrations_data = []
+            for integration in integrations:
+                integrations_data.append({
+                    "id": integration.id,
+                    "title": integration.title,
+                    "created_at": integration.created_at,
+                    "owner_user_email": integration.owner_user.email,
+                    "owner_user_full_name": f"{integration.owner_user.first_name} {integration.owner_user.last_name}",
+                    "last_updated": integration.last_updated,
+                    "scan_type": integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
+                    "api_key": integration.api_key,
+                })
+            return integrations_data
     except Exception as e:
         console.print(f"Error listing cicd integrations: {str(e)}", style="bold red")
         if isinstance(e, HTTPException):

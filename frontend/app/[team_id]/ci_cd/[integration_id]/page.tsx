@@ -198,7 +198,7 @@ export default function CicdIntegrationDashboardPage() {
               <div className="flex items-center gap-3 mb-2">
                 <Link 
                   href={`/${team_id}/ci_cd`}
-                  className="text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 text-sm font-medium"
+                  className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium"
                 >
                   ← Back to Integrations
                 </Link>
@@ -246,7 +246,7 @@ export default function CicdIntegrationDashboardPage() {
               onClick={handleRefresh} 
               disabled={query.isFetching}
               variant="outline"
-              className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white cursor-pointer hover:text-white"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               {query.isFetching ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -263,7 +263,7 @@ export default function CicdIntegrationDashboardPage() {
               onClick={() => setActiveTab("dashboard")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "dashboard"
-                  ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
                   : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
@@ -276,7 +276,7 @@ export default function CicdIntegrationDashboardPage() {
               onClick={() => setActiveTab("integration-guide")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "integration-guide"
-                  ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
                   : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
               }`}
             >
@@ -382,7 +382,7 @@ export default function CicdIntegrationDashboardPage() {
                   onClick={() => setActiveSubTab("github-actions")}
                   className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                     activeSubTab === "github-actions"
-                      ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                      ? "border-blue-600 text-blue-600 dark:text-blue-400"
                       : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                   }`}
                 >
@@ -392,7 +392,7 @@ export default function CicdIntegrationDashboardPage() {
                   onClick={() => setActiveSubTab("jenkins")}
                   className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                     activeSubTab === "jenkins"
-                      ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                      ? "border-blue-600 text-blue-600 dark:text-blue-400"
                       : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                   }`}
                 >
@@ -402,7 +402,7 @@ export default function CicdIntegrationDashboardPage() {
                   onClick={() => setActiveSubTab("bamboo")}
                   className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                     activeSubTab === "bamboo"
-                      ? "border-teal-600 text-teal-600 dark:text-teal-400"
+                      ? "border-blue-600 text-blue-600 dark:text-blue-400"
                       : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                   }`}
                 >

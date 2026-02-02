@@ -19,8 +19,8 @@ class VerificationCode(SQLModel,table=True):
 
 # every user is a member of the "default-team" by default when a user is created ⭐
 class TeamMembership(SQLModel,table=True): # many-to-many relationship between team and user
-    team_id : int = Field(default=None,foreign_key="team.id",primary_key=True)
-    user_id : int = Field(default=None,foreign_key="user.id",primary_key=True)
+    team_id : int | None = Field(default=None,foreign_key="team.id",primary_key=True)
+    user_id : int | None = Field(default=None,foreign_key="user.id",primary_key=True)
     role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
 
     team : "Team" = Relationship(back_populates="team_memberships")
@@ -50,10 +50,20 @@ class User(SQLModel,table=True):
     session_active : bool | None = Field(default=False)
     last_active : datetime.datetime | None = Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     is_superuser : bool | None = Field(default=False)
+    default_team_id : int | None = Field(default=None,foreign_key="team.id")
 
     # many-to-many relationship between user and team
     team_memberships : list[TeamMembership] = Relationship(back_populates="user")
 
+    # guardrails integrations that this user owns 
+    guardrails_integrations : list["GuardrailsIntegration"] = Relationship(back_populates="owner_user")
+
+    # cicd integrations that this user owns 
+    cicd_integrations : list["CicdIntegration"] = Relationship(back_populates="owner_user")
+
+    # scans that this user owns 
+    scans : list["Scan"] = Relationship(back_populates="owner_user")
+    
 
 # only the user who created the scan can run the scan or update the scan  or send messages to the scan 
 class Scan(SQLModel,table=True):
@@ -69,6 +79,9 @@ class Scan(SQLModel,table=True):
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+
+    # owner user relationship
+    owner_user : "User" = Relationship(back_populates="scans")
 
     class Config:
         arbitrary_types_allowed = True
@@ -97,6 +110,11 @@ class GuardrailsIntegration(SQLModel,table=True):
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     settings : Dict | None = Field(default=default_settings,sa_column=Column(JSON))  # scanner settings 
     integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
+    
+    # owner user relationship
+    owner_user : "User" = Relationship(back_populates="guardrails_integrations")
+    
+    
     class Config:
         arbitrary_types_allowed = True
 
@@ -114,5 +132,9 @@ class CicdIntegration(SQLModel,table=True):
     scan_type : scan_types | None= Field(default=None,sa_type=String)
     results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
     integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
+    
+    # owner user relationship
+    owner_user : "User" = Relationship(back_populates="cicd_integrations")
+    
     class Config:
         arbitrary_types_allowed = True
