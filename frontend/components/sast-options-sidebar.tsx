@@ -4,13 +4,6 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -20,39 +13,32 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Upload,
-  Link2 as LinkIcon,
-  Circle,
-  Github,
-  GitBranch,
-  Cloud,
-  GitCommit,
-  Server,
-  Workflow,
   ScanIcon,
   Download,
   Loader2,
   Eye,
+  Filter,
+  Code,
+  ScanLine,
 } from "lucide-react";
-import { AppLang } from "@/app/home/sast/[conversation_id]/page";
-import { Mode } from "@/app/home/sast/[conversation_id]/page";
-import { useMutation, useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { SastConversationResponse, startSastScan, getExportResults, reinitializeSastScan } from "@/utils/backend_api";
+import { PathArraysInput } from "@/components/path-arrays-input";
+import { RepositoryCard } from "@/components/repository-card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
+import {
+  SastConversationResponse,
+  getExportResults,
+  reinitializeSastScan,
+  estimateCreditsForScan,
+  startScan,
+  type StartScanPayload,
+  type SastAppLang,
+  type RepoMode,
+} from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 
-const cicdPlatforms = [
-  { name: "Circle CI", icon: Circle },
-  { name: "Buddy", icon: Server },
-  { name: "Codeship", icon: Workflow },
-  { name: "GitHub", icon: Github },
-  { name: "Bamboo", icon: Server },
-  { name: "GitLab", icon: GitBranch },
-  { name: "AWS", icon: Cloud },
-  { name: "Bitbucket", icon: GitCommit },
-  { name: "Travis", icon: Server },
-  { name: "Jenkins", icon: Server },
-];
+
 
 const languages = [
   "c",
@@ -66,6 +52,9 @@ const languages = [
   "kotlin",
   "javascript",
 ];
+
+export type AppLang = SastAppLang | "unknown";
+export type Mode = RepoMode | "unknown";
 
 export function SASTOptionsSidebar({
   query,
@@ -96,53 +85,108 @@ export function SASTOptionsSidebar({
   }, [app_lang, mode, repo_url, PAT]);
 
   const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" >("ready");
-
-  const handleStartScan = ({
-    conversation_id,
-    repo_url,
-    PAT,
-    app_lang,
-    mode
-  }: {
-    conversation_id: number;
-    repo_url: string;
-    PAT: string;
-    app_lang: AppLang;
-    mode: Mode;
-  }) => {
-    setOptionsSidebarState("scanning");
-    if (app_lang === "unknown") {
-      toast.error("Please select a language");
-      setOptionsSidebarState("error");
-      throw new Error("Please select a language");
-    }
-    if (mode === "unknown") {
-      toast.error("Please select a repository platform");
-      setOptionsSidebarState("error");
-      throw new Error("Please select a repository platform");
-    }
-    return startSastScan({
-      conversation_id,
-      repo_url,
-      PAT,
-      app_lang,
-      mode
-    });
-  };
+  const [ estimatedCredits, setEstimatedCredits ] = useState<number | null>(null);
+  /** Schema: exclude_path_arrays — list[list[str]] | null */
+  const [ exclude_path_arrays, setExcludePathArrays ] = useState<string[][]>([]);
+  const [ uploaded_file, setUploadedFile ] = useState<File | null>(null);
+  /** Derived for API: true when user provides zip file, false when using repo */
+  const zip_file_used = uploaded_file !== null;
 
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { conversation_id } = useParams();
-  const startScanMutation = useMutation({
-    mutationFn: handleStartScan,
-    onSuccess: () => {
-      setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', parseInt(conversation_id as string)] });
+  const params = useParams();
+  const team_id = parseInt(params?.team_id as string, 10);
+  const scan_id = parseInt(params?.scan_id as string, 10);
+
+  /** Validate required inputs before estimate/start. exclude_path_arrays is optional. */
+  const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
+    if (app_lang === "unknown") {
+      return { valid: false, message: "Please select an application language." };
+    }
+    if (uploaded_file) {
+      return { valid: true };
+    }
+    if (mode === "unknown") {
+      return { valid: false, message: "Please select a repository platform (GitHub, GitLab, or Bitbucket)." };
+    }
+    if (!repo_url?.trim()) {
+      return { valid: false, message: "Please enter the repository URL." };
+    }
+    if (!PAT?.trim()) {
+      return { valid: false, message: "Please enter a Personal Access Token." };
+    }
+    return { valid: true };
+  };
+
+  /** Build StartScanPayload per schema: repo_context, zip_file_used, exclude_path_arrays, app_lang. */
+  const buildStartScanPayloadString = (): string => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      throw new Error(validation.message);
+    }
+    const normalizedExclude = exclude_path_arrays
+      .map((p) => p.map((s) => s.trim()).filter(Boolean))
+      .filter((p) => p.length > 0);
+    const payload: StartScanPayload = {
+      sast: {
+        repo_context: zip_file_used ? null : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT },
+        zip_file_used,
+        exclude_path_arrays: normalizedExclude.length > 0 ? normalizedExclude : null,
+        app_lang: app_lang as SastAppLang,
+      },
+    };
+    return JSON.stringify(payload);
+  };
+
+  const estimateCreditsMutation = useMutation({
+    mutationFn: () => estimateCreditsForScan(team_id, "sast", scan_id, buildStartScanPayloadString(), uploaded_file ?? undefined),
+    onSuccess: (data) => {
+      setEstimatedCredits(data.credits_required);
+      toast.success(`This scan will use ${data.credits_required} credits`);
     },
     onError: () => {
       setOptionsSidebarState("error");
-    }
+    },
   });
+
+  const startScanMutation = useMutation({
+    mutationFn: () => startScan(team_id, "sast", scan_id, buildStartScanPayloadString(), uploaded_file ?? undefined),
+    onSuccess: () => {
+      setEstimatedCredits(null);
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ["sast-conversation-data", team_id, scan_id] });
+    },
+    onError: () => {
+      setOptionsSidebarState("error");
+    },
+  });
+
+  const handleRunScan = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
+    }
+    estimateCreditsMutation.mutate();
+  };
+
+  const handleStartScanAfterEstimate = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
+    }
+    startScanMutation.mutate();
+  };
+
+  const scanInputsValid = validateScanInputs().valid;
+
+  /** Run scan is active only when estimated_credits is set (from API or from local estimate). */
+  const creditsFromApi = query.data?.estimated_credits ?? null;
+  const hasEstimatedCredits =
+    (estimatedCredits != null && estimatedCredits > 0) ||
+    (creditsFromApi != null && creditsFromApi !== 0);
+  const displayCredits = estimatedCredits ?? creditsFromApi ?? null;
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
@@ -162,7 +206,7 @@ export function SASTOptionsSidebar({
 
 
   const exportMutation = useMutation({
-    mutationFn: getExportResults,
+    mutationFn: () => getExportResults(team_id, scan_id),
     onSuccess: (data, variables , context) => {
       const blob = new Blob([data], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
@@ -181,13 +225,15 @@ export function SASTOptionsSidebar({
   })
 
   const handleReinitializeScan = ({
-    conversation_id,
+    team_id,
+    scan_id,
     repo_url,
     PAT,
     app_lang,
     mode
   }: {
-    conversation_id: number;
+    team_id: number;
+    scan_id: number;
     repo_url: string;
     PAT: string;
     app_lang: AppLang;
@@ -205,7 +251,8 @@ export function SASTOptionsSidebar({
       throw new Error("Please select a repository platform");
     }
     return reinitializeSastScan({
-      conversation_id,
+      team_id,
+      scan_id,
       repo_url,
       PAT,
       app_lang,
@@ -217,7 +264,7 @@ export function SASTOptionsSidebar({
     mutationFn: handleReinitializeScan,
     onSuccess: () => {
       setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', parseInt(conversation_id as string)] });
+      queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });
     },
     onError: () => {
       setOptionsSidebarState("error");
@@ -226,11 +273,14 @@ export function SASTOptionsSidebar({
 
 
   return (
-    <ScrollArea className="w-80 h-screen bg-zinc-900 dark:bg-zinc-950 border-l border-zinc-800">
+    <ScrollArea className="w-96 h-screen bg-neutral-900/70 border-l border-zinc-800">
       <div className="p-6">
-        <h2 className="text-xl font-bold text-white mb-2">SAST Options</h2>
+        <div className="flex items-center gap-2 flex-row mb-2">
+          <h2 className="text-xl font-bold text-white">SAST Configuration</h2>
+          <ScanLine className="h-5 w-5 text-blue-400 shrink-0" />
+        </div>
         <p className="text-sm text-zinc-400">
-          Configure your scanning options.
+          Configure scan options to run a SAST scan 
         </p>
       </div>
 
@@ -238,187 +288,123 @@ export function SASTOptionsSidebar({
 
       {optionsSidebarState === "ready" && (
         <>
-          <div className="p-6">
-            {/* Quick Actions */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold text-zinc-300 mb-4">Quick Actions</h3>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="primary-language" className="text-zinc-300">
-                    Application Primary Language
-                  </Label>
-                  <Select value={app_lang} onValueChange={(value) => setAppLang(value as AppLang)}>
-                    <SelectTrigger
-                      id="primary-language"
-                      className="bg-zinc-800 border-zinc-700 text-white focus:text-white cursor-pointer"
-                    >
-                      {app_lang !== "unknown" ? <SelectValue className="text-white placeholder:text-zinc-400 focus:text-white " /> : <div className="text-zinc-400 placeholder:text-zinc-400 focus:text-zinc-400">Select Language</div>}
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-800 border-zinc-700">
-                      {languages.map((language) => (
-                        <SelectItem
-                          key={language}
-                          value={language}
-                          className="text-white hover:bg-zinc-700 focus:bg-zinc-700 focus:text-white cursor-pointer"
-                        >
-                          {language.charAt(0).toUpperCase() + language.slice(1)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
+          <div className="p-6 space-y-4">
+            <RepositoryCard
+              uploadedFile={uploaded_file}
+              setUploadedFile={setUploadedFile}
+              repoUrl={repo_url}
+              setRepoUrl={setRepoUrl}
+              pat={PAT}
+              setPat={setPAT}
+              mode={mode}
+              setMode={setMode}
+            />
 
-            <Separator className="mb-6 bg-zinc-800" />
+            {/* Scan scope — exclude path arrays */}
+            <Card className="border-zinc-700 bg-zinc-800/50 py-4 shadow-none">
+              <CardHeader className="pb-2 px-4">
+                <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-zinc-400 shrink-0" />
+                  Scan scope
+                </CardTitle>
+                <CardDescription className="text-zinc-500 text-xs">
+                  Paths or patterns to exclude from the scan (e.g. vendor, node_modules).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 pt-0">
+                <PathArraysInput
+                  label="Exclude path patterns"
+                  value={exclude_path_arrays}
+                  onChange={setExcludePathArrays}
+                  segmentPlaceholder="ex: directory or file_name.extension"
+                />
+              </CardContent>
+            </Card>
 
-            {/* Integration Inputs */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold text-zinc-300 mb-4 flex flex-row items-center gap-2">
-                Repository Selection <p className="text-red-500">*</p>
-              </h3>
-              <Accordion type="single" collapsible className="w-full">
-                {/* GitHub Integration */}
-                <AccordionItem value="github" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <Github className="h-4 w-4" />
-                      <span>GitHub</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="github-repo-url" className="text-zinc-300">
-                        Repository URL
-                      </Label>
-                      <Input
-                        id="github-repo-url"
-                        placeholder="https://github.com/username/repo"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        onChange={(e) => {
-                          setRepoUrl(e.target.value);
-                          setMode("github");
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="github-token" className="text-zinc-300">
-                        Personal Access Token
-                      </Label>
-                      <Input
-                        id="github-token"
-                        type="password"
-                        placeholder="Enter your GitHub token"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        onChange={(e) => {
-                          setPAT(e.target.value);
-                        }}
-                      />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                {/* GitLab Integration */}
-                <AccordionItem value="gitlab" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <GitBranch className="h-4 w-4" />
-                      <span>GitLab</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="gitlab-repo-url" className="text-zinc-300">
-                        Repository URL
-                      </Label>
-                      <Input
-                        id="gitlab-repo-url"
-                        placeholder="https://gitlab.com/username/repo"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        onChange={(e) => {
-                          setRepoUrl(e.target.value);
-                          setMode("gitlab");
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="gitlab-token" className="text-zinc-300">
-                        Personal Access Token
-                      </Label>
-                      <Input
-                        id="gitlab-token"
-                        type="password"
-                        placeholder="Enter your GitLab token"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        onChange={(e) => {
-                          setPAT(e.target.value);
-                        }}
-                      />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                {/* Bitbucket Integration */}
-                <AccordionItem value="bitbucket" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <GitCommit className="h-4 w-4" />
-                      <span>Bitbucket</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="bitbucket-repo-url" className="text-zinc-300">
-                        Repository URL
-                      </Label>
-                      <Input
-                        id="bitbucket-repo-url"
-                        placeholder="https://bitbucket.org/username/repo"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        onChange={(e) => {
-                          setRepoUrl(e.target.value);
-                          setMode("bitbucket");
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bitbucket-token" className="text-zinc-300">
-                        Personal Access Token
-                      </Label>
-                      <Input
-                        id="bitbucket-token"
-                        type="password"
-                        placeholder="Enter your Bitbucket token"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        onChange={(e) => {
-                          setPAT(e.target.value);
-                        }}
-                      />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
+            {/* App language */}
+            <Card className="border-zinc-700 bg-zinc-800/50 py-4 shadow-none">
+              <CardHeader className="pb-2 px-4">
+                <CardTitle className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                  <Code className="h-4 w-4 text-zinc-400 shrink-0" />
+                  App language
+                </CardTitle>
+                <CardDescription className="text-zinc-500 text-xs">
+                  Primary language of the application being scanned (used for analysis).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 pt-0">
+                <Label htmlFor="primary-language" className="text-zinc-300 text-sm">Primary app language <span className="text-red-500">*</span></Label>
+                <Select value={app_lang} onValueChange={(value) => setAppLang(value as AppLang)}>
+                  <SelectTrigger
+                    id="primary-language"
+                    className="bg-zinc-800 border-zinc-700 text-white focus:text-white cursor-pointer mt-1"
+                  >
+                    {app_lang !== "unknown" ? <SelectValue /> : <span className="text-zinc-400">Select language</span>}
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-700">
+                    {languages.map((language) => (
+                      <SelectItem key={language} value={language} className="text-white hover:bg-zinc-700 cursor-pointer">
+                        {language.charAt(0).toUpperCase() + language.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
           </div>
+
+          <Separator className="bg-zinc-800" />
+
+          {/* Estimate scan credits */}
           <div className="p-6">
-            <Button 
-              variant="ghost" 
-              size="icon-lg"
-              onClick={() =>{ 
-                startScanMutation.mutate({
-                conversation_id: parseInt(conversation_id as string),
-                repo_url,
-                PAT,
-                app_lang,
-                mode
-              });
-              setOptionsSidebarState("scanning");
-              }}
-              className="w-fit h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRunScan}
+              disabled={!scanInputsValid || estimateCreditsMutation.isPending}
+              className="w-full h-9 px-4 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer disabled:opacity-50"
             >
-              <ScanIcon className="size-4" />
-              <span className="ml-1">Run Scan</span>
+              {estimateCreditsMutation.isPending ? (
+                <><Loader2 className="size-4 animate-spin mr-2" />Estimating...</>
+              ) : (
+                <>Estimate credits required</>
+              )}
             </Button>
+            {displayCredits != null && displayCredits > 0 && (
+              <p className="text-sm text-zinc-300 mt-3">
+                Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span>
+              </p>
+            )}
+          </div>
+
+          <Separator className="bg-zinc-800" />
+
+          {/* Run scan — active only when estimated_credits is set */}
+          <div className="p-6">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            {hasEstimatedCredits ? (
+              <div className="space-y-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleStartScanAfterEstimate}
+                  disabled={!scanInputsValid || startScanMutation.isPending}
+                  className="w-full h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer disabled:opacity-50"
+                >
+                  {startScanMutation.isPending ? (
+                    <><Loader2 className="size-4 animate-spin mr-2" />Starting...</>
+                  ) : (
+                    <>Start scan</>
+                  )}
+                </Button>
+                {displayCredits != null && displayCredits > 0 && (
+                  <p className="text-xs text-zinc-500">Uses {displayCredits} credits (run estimate first if not set).</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">Estimate credits above to enable starting the scan.</p>
+            )}
           </div>
         </>
       )}
@@ -436,14 +422,13 @@ export function SASTOptionsSidebar({
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully on the repository <span className="text-blue-500 mx-1  text-xs p-1 bg-zinc-800 rounded-md">{query.data?.repo_url?.split("/").pop()}</span>
-              You can now chat with your scan results
+              Scan has run successfully. You can now chat with your scan results.
             </p>
             <Button 
               variant="ghost" 
               size="sm"
               onClick={() => {
-                router.push(`/home/sast/${conversation_id}/results?origin=chat`);
+                router.push(`/${team_id}/sast/${scan_id}/results?origin=chat`);
               }}
               className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
@@ -454,7 +439,7 @@ export function SASTOptionsSidebar({
               variant="ghost" 
               size="sm"
               onClick={async () => {
-                exportMutation.mutate(parseInt(conversation_id as string));
+                exportMutation.mutate();
               }}
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
@@ -491,7 +476,8 @@ export function SASTOptionsSidebar({
             size="sm"
             onClick={() => {
               reinitializeScanMutation.mutate({
-                conversation_id: parseInt(conversation_id as string),
+                team_id,
+                scan_id,
                 repo_url,
                 PAT,
                 app_lang,
@@ -516,8 +502,8 @@ export function SASTOptionsSidebar({
         </div>
       )}
       {/* <Button onClick={() => {
-        console.log(`Refreshing conversation ${conversation_id} data`);
-        queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', parseInt(conversation_id as string)] });
+        console.log(`Refreshing conversation ${scan_id} data`);
+        queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });
       }}
       className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white active:bg-zinc-600 active:text-white">
         

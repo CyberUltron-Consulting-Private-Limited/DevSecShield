@@ -253,7 +253,7 @@ async def delete_cicd_integration(
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             if integration.owner_user_id != user.id: # only the owner of the integration can delete it ⭐⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this cicd integration")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are not the owner of this cicd integration")
             session.delete(integration)
             session.commit()
         
@@ -304,7 +304,7 @@ async def update_cicd_integration(
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             if integration.owner_user_id != user.id: # only the owner of the integration can update it ⭐⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this cicd integration")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are not the owner of this cicd integration")
             if data.title : 
                 integration.title = data.title
             if data.integration_settings :

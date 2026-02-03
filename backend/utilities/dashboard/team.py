@@ -1,8 +1,7 @@
 from sqlmodel import Session, select
 from sqlalchemy.engine import Engine
 from backend.new_models import Scan, GuardrailsIntegration, CicdIntegration
-import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
     

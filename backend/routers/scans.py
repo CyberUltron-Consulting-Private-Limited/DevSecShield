@@ -66,7 +66,7 @@ async def list_scans(
             if scans==None :
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No scans found")
             console.print(f"{len(scans)} {type} scans found for team: {team_id}" ,style="bold green")
-            scans_list_data,scans_list_to_update = return_scan_list_for_type(scans=scans)
+            scans_list_data,scans_list_to_update = return_scan_list_for_type(sequence=scans)
 
             if len(scans_list_to_update) > 0:
                 background_tasks.add_task(update_status_of_scan_in_main_db, scans = scans_list_to_update, engine = engine)
@@ -174,7 +174,7 @@ async def send_message_to_scan(
         
 
         if SCAN.owner_user_id != user.id: # only the user who created the scan can send messages to the scan 
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to send messages to this scan")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to send messages to this scan")
         if not SCAN:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
         if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS == "started" or SCAN_STATUS != "success":
@@ -310,6 +310,7 @@ async def get_scan(
         # STEP [ 4 ] : =================== Return the scan data ======================
         return {
                 "title": scan.title,
+                "estimated_credits": scan.credit_consumed,
                 "scan_metadata": scan.scan_metadata,
                 "scan_status": SCAN_STATUS.lower(),
                 "data": SCAN_DATA,
@@ -367,7 +368,7 @@ async def start_scan(
             if scan.credit_consumed == None or scan.credit_consumed == 0 :
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not been estimated yet , please estimate the credits for the scan first")
             if scan.owner_user_id != user.id: # only the user who created the scan can start the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to start this scan")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to start this scan")
             if scan.scan_status == "success" or scan.scan_status == "started" or scan.scan_data != {} or  scan.scan_status == "started" or scan.scan_status == "failure":
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
             if (scan.scan_status == "pending" or scan.scan_status == "NOT_STARTED" or scan.scan_status == "started") and (scan.task_id != None) and (scan.task_id != "") :
@@ -438,8 +439,8 @@ async def delete_scan(
         # user = User(id=1) # for testing purposes
         
 
-        # STEP [ 1 ] : =========== Check if user is admin of team ======================
-        check_if_user_is_admin_of_team(user.id, team_id, engine)
+        # STEP [ 1 ] : =========== Check if user is in team ======================
+        check_if_user_is_in_team(user.id, team_id, engine)
 
         # STEP [ 2 ] : =========== Delete the scan from the main db ======================
         with Session(engine) as session:
@@ -447,7 +448,7 @@ async def delete_scan(
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.owner_user_id != user.id: # only the user who created the scan can delete the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to delete this scan")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to delete this scan")
             session.delete(scan)
             session.commit()
         console.print(f"Scan id: {scan.id} deleted from main database" ,style="bold orange3")
@@ -510,7 +511,7 @@ async def update_scan(
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.owner_user_id != user.id: # only the user who created the scan can update the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to update this scan")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to update this scan")
             scan.title = data.title
             session.add(scan)
             session.commit()
@@ -622,7 +623,7 @@ async def reinitialize_scan(
             if scan.scan_status != "pending" : 
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan is not pending, cannot reinitialize")
             if scan.owner_user_id != user.id: # only the user who created the scan can reinitialize the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to reinitialize this scan")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to reinitialize this scan")
             
         
         # STEP [ 3 ] : =========== Reinitialize the scan and update the main db ======================
@@ -673,26 +674,22 @@ async def estimate_credits_for_scan(
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
         
-
-
-        # STEP [ 2 ] : =========== Check if team has enough credits ======================
-        check_if_team_has_enough_credits(team_id=team_id, credits_required=credits_required)
         
         
-        # STEP [ 3 ] : =========== Validate getting the conversation from the main db ======================
+        # STEP [ 2 ] : =========== Validate getting the scan from the main db ======================
         with Session(engine) as session:
             scan = None
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
             if scan.owner_user_id != user.id: # only the user who created the scan can estimate the credits for the scan ⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to estimate the credits for this scan")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to estimate the credits for this scan")
             if scan.scan_status != "NOT_STARTED":
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User cannot estimate credits")
         
         
         
-        # STEP [ 3 ] : =========== Estimate the credits for the scan ======================
+        # STEP [ 3 ] : =========== Estimate the credits for the scan and update the main db ======================
         credits_required = await estimate_credits(
             scan_type=type,
             engine=engine,

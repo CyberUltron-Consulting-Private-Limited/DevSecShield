@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -39,6 +39,8 @@ type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not
 
 export default function SCASBOMPage() {
   const router = useRouter();
+  const params = useParams();
+  const team_id = params?.team_id as string;
   const [conversations, setConversations] = useState<SCASBOMConversation[]>([]);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -87,7 +89,7 @@ export default function SCASBOMPage() {
       queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversations'] });
       setCreateDialogOpen(false);
       setNewScanTitle("");
-      router.push(`/home/sbom_sca/${conversationId}`);
+      router.push(`/${team_id}/sbom_sca/${conversationId}`);
     },
     onError: (error) => {
       showErrorToast(error);
@@ -234,7 +236,7 @@ export default function SCASBOMPage() {
                     <TableRow key={conversation.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/home/sbom_sca/${conversation.id}`}
+                          href={`/${team_id}/sbom_sca/${conversation.id}`}
                           className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
@@ -262,7 +264,7 @@ export default function SCASBOMPage() {
                             {conversation.scan_status === "success" && (
                               <DropdownMenuItem
                                 className="cursor-pointer"
-                                onClick={() => router.push(`/home/sbom_sca/${conversation.id}/results?origin=list`)}
+                                onClick={() => router.push(`/${team_id}/sbom_sca/${conversation.id}/results?origin=list`)}
                               >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Results

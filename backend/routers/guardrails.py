@@ -8,6 +8,7 @@ from backend.utilities.celery.celery_connection import get_celery_app
 from celery.result import AsyncResult
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.new_models import GuardrailsIntegration
+from backend.utilities.dashboard.guardrail_integration import get_guardrails_integration_dashboard_data
 from backend.utilities.guardrails.auth import create_api_key
 from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
 from backend.utilities.auth.auth_utils import *
@@ -179,12 +180,10 @@ async def get_guardrails_integration(
 
 
 
-        # STEP [ 6 ] : ======================================== Fetch and Calculate Metrics ========================================
-        total_logs , successful_logs , failed_logs , pending_logs , started_logs , not_started_logs = 0 , 0 , 0 , 0 , 0 , 0 
+        # STEP [ 6 ] : ======================================== Fetch and Calculate Metrics =======================================
         log_data = []
         with guardrails_logs_collection.find({"integration_id": integration_id}).sort("created_at", -1) as cursor:
             for log in cursor:
-                total_logs += 1
                 log_data.append({
                     "id": str(log["_id"]),
                     "status": log["status"],
@@ -192,25 +191,13 @@ async def get_guardrails_integration(
                     "input_prompt": log["input_prompt"],
                     "results": log["results"],
                 })
-                if log["status"] == "success":
-                    successful_logs += 1
-                elif log["status"] == "failed":
-                    failed_logs += 1
-                elif log["status"] == "pending":
-                    pending_logs += 1
-                elif log["status"] == "started":
-                    started_logs += 1
-                elif log["status"] == "NOT_STARTED":
-                    not_started_logs += 1
                     
 
+        # STEP [ 7 ] : ======================================== Fetch and Calculate Metrics ========================================
+        dashboard_data = get_guardrails_integration_dashboard_data(team_id, integration_id)
+        
         return {
-            "total_logs": total_logs,
-            "successful_logs": successful_logs,
-            "failed_logs": failed_logs,
-            "pending_logs": pending_logs,
-            "started_logs": started_logs,
-            "not_started_logs": not_started_logs,
+            "dashboard_data" : dashboard_data,
             "api_key": integration.api_key,
             "log_data": log_data,
             "settings": integration.settings
@@ -254,7 +241,7 @@ async def update_guardrails_integration(
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
             if integration.owner_user_id != user.id: # only the owner of the integration can update it ⭐⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this guardrails integration")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are not the owner of this guardrails integration")
             if data.title is not None:
                 integration.title = data.title
             if data.settings is not None:
@@ -300,11 +287,11 @@ async def delete_guardrails_integration(
 
         # deleting the integration from the main database
         with Session(engine) as session:
-            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.user_id == user.id)).first()
+            integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id, GuardrailsIntegration.team_id == team_id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
             if integration.owner_user_id != user.id: # only the owner of the integration can delete it ⭐⭐
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this guardrails integration")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are not the owner of this guardrails integration")
             session.delete(integration)
             session.commit()
         console.print(f"Guardrails integration {integration_id} deleted from main database", style="bold green")

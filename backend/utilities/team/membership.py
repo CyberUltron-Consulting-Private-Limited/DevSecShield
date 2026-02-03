@@ -24,29 +24,37 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
         # STEP [ 1 ] : =============================== create users if they dont exist ================================================= 
         for email in email_ids:
             # ---------------------------> creating a new default team for this new user 
-            new_team = Team(
+            default_team_for_new_user = Team(
                 name=f"{email.split('@')[0]}'s Team",
                 description=f"Default team for {email.split('@')[0]}",
             )
-            session.add(new_team)
+            session.add(default_team_for_new_user)
             session.commit()
-            session.refresh(new_team)
+            session.refresh(default_team_for_new_user)
 
             # ---------------------------> creating a new user and send them an email with credentials 
             user = session.exec(select(User).where(User.email == email)).first()
             if not user:
+                # ---------------------------> create user model 
                 generated_password = generate_random_password()
                 user = User(
                     email=email, 
                     password=get_hashed_password(generated_password),
                     first_name=email.split("@")[0],
                     last_name="user",
-                    default_team_id=new_team.id
+                    default_team_id=default_team_for_new_user.id
                     )
                 session.add(user)
+
+
+                # ---------------------------> add the user to the team 
+                team_membership = TeamMembership(user=user, team=default_team_for_new_user , role="admin")
+                session.add(team_membership)
+
+
                 session.commit()
                 await send_email_with_credentials(email=email, password=generated_password,team_name=team.name)
-                console.print(f"Email {email} does not exist for any user , creating a new user and sending email with credentials", style="bold orange1")
+                console.print(f"Email {email} does not exist for any user , creating a new user and sending email with credentials 📧", style="bold orange1")
         
         
         
@@ -71,14 +79,14 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
 
 async def remove_emails_from_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
     with Session(engine) as session:
-        query_statement = select(User)
+        or_statements = []
         for email in email_ids:
-            query_statement = query_statement.where(User.email == email)
-        users = session.exec(query_statement).all()
+            or_statements.append(User.email == email)
+        users = session.exec(select(User).where(or_(*or_statements))).all()
 
         for user in users:
-            
-            team_membership = session.exec(select(TeamMembership).where(TeamMembership.user_id == user.id and TeamMembership.team_id == team_id)).first()
+            team_membership = session.exec(select(TeamMembership).where(TeamMembership.user_id == user.id , TeamMembership.team_id == team_id)).first()
+            console.print(f"Team membership: {team_membership} removed ! ", style="bold yellow")
             if not team_membership:
                 console.print(f"Email {user.email} not found in team {team_id}", style="bold red")
                 continue

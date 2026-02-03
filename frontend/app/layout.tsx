@@ -43,7 +43,7 @@ export default function RootLayout({
           expand
           duration={1500}
           visibleToasts={1}
-          theme="light"
+          theme="dark"
           />
       </body>
     </html>

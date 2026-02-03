@@ -61,6 +61,7 @@ export default function TeamSettingsPage() {
   const [jiraProjectId, setJiraProjectId] = useState("");
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [addMemberEmail, setAddMemberEmail] = useState("");
+  const [pendingMemberAction, setPendingMemberAction] = useState<"add" | "remove" | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const saveFromEditDialogRef = useRef(false);
@@ -98,6 +99,7 @@ export default function TeamSettingsPage() {
       setAddMemberEmail("");
     },
     onError: (error) => showErrorToast(error),
+    onSettled: () => setPendingMemberAction(null),
   });
 
   const deleteTeamMutation = useMutation({
@@ -145,12 +147,14 @@ export default function TeamSettingsPage() {
 
   const handleRemoveSelected = () => {
     if (selectedEmails.size === 0) return;
+    setPendingMemberAction("remove");
     membersMutation.mutate({ intent: "remove", email_ids: Array.from(selectedEmails) });
   };
 
   const handleAddMember = () => {
     const email = addMemberEmail.trim();
     if (!email) return;
+    setPendingMemberAction("add");
     membersMutation.mutate({ intent: "add", email_ids: [email] });
   };
 
@@ -268,6 +272,9 @@ export default function TeamSettingsPage() {
                   disabled={!addMemberEmail.trim() || membersMutation.isPending}
                   className="cursor-pointer"
                 >
+                  {membersMutation.isPending && pendingMemberAction === "add" && (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  )}
                   <UserPlus className="h-4 w-4 mr-2" />
                   Add
                 </Button>
@@ -277,6 +284,9 @@ export default function TeamSettingsPage() {
                   disabled={selectedEmails.size === 0 || membersMutation.isPending}
                   className="text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 cursor-pointer"
                 >
+                  {membersMutation.isPending && pendingMemberAction === "remove" && (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  )}
                   <UserMinus className="h-4 w-4 mr-2" />
                   Remove selected ({selectedEmails.size})
                 </Button>
@@ -324,14 +334,16 @@ export default function TeamSettingsPage() {
                 placeholder="10000"
               />
             </div>
-            <Button
-              onClick={handleSaveJira}
-              disabled={updateTeamMutation.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-            >
-              {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save integration settings
-            </Button>
+            {is_team_admin && (
+              <Button
+                onClick={handleSaveJira}
+                disabled={updateTeamMutation.isPending}
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+              >
+                {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save integration settings
+              </Button>
+            )}
           </div>
         </section>
 

@@ -3,22 +3,57 @@ import { showErrorToast } from "./error-handler"
 import { toast } from "sonner"
 
 
+// -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------
+
+export type RepoMode = "github" | "gitlab" | "bitbucket";
+export type SastAppLang = "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin";
+
+export interface GithubContextSchema {
+  mode: "github";
+  repo_url: string;
+  PAT: string;
+}
+export interface GitlabContextSchema {
+  mode: "gitlab";
+  repo_url: string;
+  PAT: string;
+}
+export interface BitbucketContextSchema {
+  mode: "bitbucket";
+  repo_url: string;
+  PAT: string;
+}
+
+export type RepoContextSchema = GithubContextSchema | GitlabContextSchema | BitbucketContextSchema;
+
+export interface StartSastScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  exclude_path_arrays?: string[][] | null;
+  app_lang: SastAppLang;
+}
+
+export interface StartScanPayload {
+  sast?: StartSastScanData | null;
+}
+
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
 
 export interface SastConversation {
     id: number
-    repo_url: string | null
-    mode: string
-    app_lang: string
     title: string
     created_at: string
     last_updated: string
     scan_status: string
+    scan_metadata?: Record<string, unknown> | null
+    estimated_credits?: number | null
+    owner_user_email?: string
+    owner_user_full_name?: string
 }
 
-const getSastConversations = async (): Promise<SastConversation[]> => {
+const getSastConversations = async (team_id: number): Promise<SastConversation[]> => {
     try {
-        const response = await api.get("/sast/conversations")
+        const response = await api.get(`/${team_id}/sast/scans`)
         toast.success("Sast conversations fetched successfully")
         return response.data
     } catch (error) {
@@ -27,9 +62,9 @@ const getSastConversations = async (): Promise<SastConversation[]> => {
     }
 }
 
-const deleteSastConversation = async (conversation_id: number) => {
+const deleteSastConversation = async (team_id: number, scan_id: number) => {
     try {
-        const response = await api.delete(`/sast/conversation/${conversation_id}`)
+        const response = await api.delete(`/${team_id}/sast/scan/${scan_id}`)
         toast.success("Sast conversation deleted successfully")
         return response.data
     } catch (error) {
@@ -37,9 +72,9 @@ const deleteSastConversation = async (conversation_id: number) => {
     }
 }
 
-const renameSastConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+const renameSastConversation = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
-        const response = await api.put(`/sast/conversation/${conversation_id}`, { title: title })
+        const response = await api.put(`/${team_id}/sast/scan/${scan_id}`, { title })
         toast.success("Sast conversation renamed successfully")
         return response.data
     } catch (error) {
@@ -47,11 +82,11 @@ const renameSastConversation = async ({conversation_id, title}: {conversation_id
     }
 }
 
-const createSastConversation = async (title: string) => {
+const createSastConversation = async (team_id: number, title: string): Promise<number> => {
     try {
-        const response = await api.post("/sast/conversation", { title: title })
+        const response = await api.post(`/${team_id}/sast/scan`, { title })
         toast.success("Sast conversation created successfully")
-        return response.data.conversation_id as number  
+        return response.data.scan_id as number
     } catch (error) {
         throw error
     }
@@ -66,16 +101,17 @@ export interface SastConversationMessage {
 }   
 export interface SastConversationResponse {
     title: string
-    repo_url: string | null 
     scan_status: string
+    estimated_credits: number | null
+    scan_metadata?: Record<string, unknown> | null
     data: any
     messages: SastConversationMessage[]
 }
 
-const getSastConversationMessages = async ({queryKey}: {queryKey: ['sast-conversation-data', number]}): Promise<SastConversationResponse> => {
-    const conversation_id = queryKey[1]
+const getSastConversationMessages = async ({ queryKey }: { queryKey: ['sast-conversation-data', number, number] }): Promise<SastConversationResponse> => {
+    const [, team_id, scan_id] = queryKey
     try {
-        const response = await api.get(`/sast/conversation/${conversation_id}`)
+        const response = await api.get(`/${team_id}/sast/scan/${scan_id}`)
         toast.success("Sast conversation messages fetched successfully")
         return response.data as SastConversationResponse
     } catch (error) {
@@ -84,38 +120,30 @@ const getSastConversationMessages = async ({queryKey}: {queryKey: ['sast-convers
     }
 }
 
-const startSastScan = async (
-    {
-        conversation_id, 
-        repo_url, 
-        PAT, 
-        app_lang,
-        mode
-    }: {
-            conversation_id: number, 
-            repo_url: string, 
-            PAT: string, 
-            app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin" , 
-            mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/sast/conversation/${conversation_id}/scan`, 
-            { 
-                sast_data : { repo_url: repo_url, PAT: PAT, app_lang: app_lang, mode: mode }, 
-            } , 
-        )
-        toast.success("Sast scan started successfully")
-        return response.data
-    } catch (error) {
-        throw error
+const startSastScan = async (params: {
+    team_id: number
+    scan_id: number
+    repo_url: string
+    PAT: string
+    app_lang: SastAppLang
+    mode: RepoMode
+}) => {
+    const payload: StartScanPayload = {
+        sast: {
+            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT },
+            zip_file_used: false,
+            exclude_path_arrays: null,
+            app_lang: params.app_lang,
+        },
     }
+    return startScan(params.team_id, "sast", params.scan_id, JSON.stringify(payload), null)
 }
 
 
 
-const getExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/sast/conversation/${conversation_id}/export`)
+const getExportResults = async (team_id: number, scan_id: number): Promise<any> => {
+    try {
+        const response = await api.get(`/${team_id}/sast/scan/${scan_id}/export`, { responseType: "blob" })
         toast.success("Sast export results fetched successfully")
         return response.data
     } catch (error) {
@@ -124,31 +152,82 @@ const getExportResults = async (conversation_id: number): Promise<any> => {
     }
 }
 
-const reinitializeSastScan = async (
-    {
-        conversation_id, 
-        repo_url, 
-        PAT, 
-        app_lang,
-        mode
-    }: {
-            conversation_id: number, 
-            repo_url: string, 
-            PAT: string, 
-            app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin" , 
-            mode: "github" | "gitlab" | "bitbucket"
-    }) => {
-    try {
-        const response = await api.post(`/sast/conversation/${conversation_id}/reinitialize`, 
-            { 
-                sast_data : { repo_url: repo_url, PAT: PAT, app_lang: app_lang, mode: mode }, 
-            } , 
-        )
-        toast.success("Sast scan reinitialized successfully")
-        return response.data
-    } catch (error) {
-        throw error
+const reinitializeSastScan = async (params: {
+    team_id: number
+    scan_id: number
+    repo_url: string
+    PAT: string
+    app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin"
+    mode: "github" | "gitlab" | "bitbucket"
+}) => {
+    const payload: StartScanPayload = {
+        sast: {
+            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT },
+            zip_file_used: false,
+            exclude_path_arrays: null,
+            app_lang: params.app_lang,
+        },
     }
+    const form = buildScanFormData(JSON.stringify(payload), null)
+    const response = await api.post(`/${params.team_id}/sast/scan/${params.scan_id}/reinitialize`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+    })
+    toast.success("Sast scan reinitialized successfully")
+    return response.data
+}
+
+/** Send a message to a scan. POST /{team_id}/{type}/scan/{scan_id}/message */
+const sendMessageToScan = async (
+    team_id: number,
+    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast",
+    scan_id: number,
+    user_message: string
+): Promise<{ content: string }> => {
+    const response = await api.post<{ content: string }>(`/${team_id}/${type}/scan/${scan_id}/message`, { user_message })
+    return response.data
+}
+
+/** Build FormData for scan estimate/start: start_scan_payload_string (JSON) and optional file. */
+const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: File | null): FormData => {
+  const form = new FormData();
+  form.append("start_scan_payload_string", start_scan_payload_string);
+  if (uploaded_file) form.append("uploaded_file", uploaded_file);
+  return form;
+};
+
+/** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
+const estimateCreditsForScan = async (
+  team_id: number,
+  type: "sast" | "iac" | "sbom_sca",
+  scan_id: number,
+  start_scan_payload_string: string,
+  uploaded_file?: File | null
+): Promise<{ credits_required: number }> => {
+  const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+  const response = await api.post<{ credits_required: number }>(
+    `/${team_id}/${type}/scan/${scan_id}/estimate_credits`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return response.data;
+};
+
+/** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
+const startScan = async (
+  team_id: number,
+  type: "sast" | "iac" | "sbom_sca",
+  scan_id: number,
+  start_scan_payload_string: string,
+  uploaded_file?: File | null
+): Promise<{ message: string }> => {
+  const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+  const response = await api.post<{ message: string }>(
+    `/${team_id}/${type}/scan/${scan_id}/start`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  toast.success("Scan started successfully");
+  return response.data;
 }
 
 export { 
@@ -159,7 +238,10 @@ export {
     getSastConversationMessages, 
     startSastScan, 
     getExportResults,
-    reinitializeSastScan }
+    reinitializeSastScan,
+    estimateCreditsForScan,
+    startScan,
+    sendMessageToScan }
 
 // -------------------------------------------------------------- LLM API Routes --------------------------------------------------------------
 
@@ -1369,13 +1451,37 @@ export interface SettingsData {
     code_context?: CodeContext
     secrets_context?: SecretsContext
 }
-export interface GuardrailsIntegrationDashboard {
+/** Dashboard card metrics (total/successful/failed/etc.) */
+export interface GuardrailsDashboardCardData {
     total_logs: number
     successful_logs: number
     failed_logs: number
     pending_logs: number
     started_logs: number
     not_started_logs: number
+}
+
+/** Risk score counts by severity (critical/high/medium/low) */
+export interface GuardrailsRiskScoreData {
+    critical: number
+    high: number
+    medium: number
+    low: number
+}
+
+/** Dashboard data returned by get_guardrails_integration_dashboard_data */
+export interface GuardrailsDashboardData {
+    card_data: GuardrailsDashboardCardData
+    /** Date string (YYYY-MM-DD) -> count */
+    recent_daily_detections_usage: Record<string, number>
+    /** Date string (YYYY-MM-DD) -> count of high or critical risks that day */
+    high_or_critical_risks_daily_usage: Record<string, number>
+    past_30_days_risk_score_data: GuardrailsRiskScoreData
+    past_60_days_risk_score_data: GuardrailsRiskScoreData
+}
+
+export interface GuardrailsIntegrationDashboard {
+    dashboard_data: GuardrailsDashboardData
     api_key: string
     log_data: GuardrailsIntegrationLog[]
     settings: SettingsData

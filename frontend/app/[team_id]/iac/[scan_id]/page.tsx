@@ -3,41 +3,42 @@
 import {
   Loader2,
 } from "lucide-react";
-import { SCASBOMOptionsSidebar } from "@/components/sca-sbom-options-sidebar";
+import { IACOptionsSidebar } from "@/components/iac-options-sidebar";
 import ChatWindow, { ChatMessage } from "@/components/ai/ChatWindow";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getSCASBOMConversationMessages } from "@/utils/backend_api";
-import { usePathname } from "next/navigation";
+import { getIACConversationMessages } from "@/utils/backend_api";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Mode } from "@/app/home/sast/[conversation_id]/page";
+import { Mode } from "@/app/[team_id]/sast/[scan_id]/page";
 
-export default function SCASBOMPage() {
+export default function IACPage() {
   const [mode, setMode] = useState<Mode>("unknown");
   const [repo_url, setRepoUrl] = useState<string>("");
   const [PAT, setPAT] = useState<string>("");
   const [scan_status, setScanStatus] = useState<string>("unknown");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
-  const conversation_id = parseInt(usePathname().split('/').pop() || '0');
-  if (!conversation_id) {
-    toast.error("Conversation id not found");
+  const params = useParams();
+  const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
+  if (!scan_id) {
+    toast.error("Scan id not found");
     return <div className="flex h-screen w-full items-center justify-center">
       <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-        Conversation id not found
+        Scan id not found
       </p>
     </div>
-  } 
+  }
   const queryClient = useQueryClient();
-  const query = useQuery({queryKey: ['sbom_sca-conversation-data', conversation_id] , queryFn : getSCASBOMConversationMessages});
+  const query = useQuery({queryKey: ['iac-conversation-data', scan_id] , queryFn : getIACConversationMessages});
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setTimeout(()=>{
-        queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversation-data', conversation_id] });
+        queryClient.invalidateQueries({ queryKey: ['iac-conversation-data', scan_id] });
       }, 6 * 1000);
     }
-  }, [query.dataUpdatedAt, conversation_id]);
+  }, [query.dataUpdatedAt, scan_id]);
 
   useEffect(() => {
     setScanStatus(query.data?.scan_status || "unknown");
@@ -63,7 +64,7 @@ export default function SCASBOMPage() {
           <ChatWindow query={query}/>
         </div>
       </div>
-      <SCASBOMOptionsSidebar query={query} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} />
+      <IACOptionsSidebar query={query} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} />
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, BarChart3, CheckCircle, X, Hourglass, Play, Square, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen } from "lucide-react";
+import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, X, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -23,6 +23,7 @@ import SettingsForm from "@/components/Settings";
 import { defaultLanguages } from "@/components/Settings";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import GuardrailsApiDocs from "@/components/GuardrailsApiDocs";
+import { GuardrailsDashboardData } from "@/components/GuardrailsDashboardData";
 
 
 const extractResultMetadata = (results: any) => {
@@ -264,64 +265,35 @@ export default function GuardrailsIntegrationDashboardPage() {
     );
   }
 
-  const dashboardData: GuardrailsIntegrationDashboard = query.data || {
-    total_logs: 0,
-    successful_logs: 0,
-    failed_logs: 0,
-    pending_logs: 0,
-    started_logs: 0,
-    not_started_logs: 0,
-    api_key: "",
-    log_data: [],
-    settings: {
-      anonymize_context: { preamble: "", threshold: 0.1, allowed_names: [] },
-      toxicity_context: { threshold: 0.1 },
-      tokenlimit_context: { max_tokens: 2000 },
-      promptinjection_context: { threshold: 0.1 },
-      regex_context: { regex_patterns: [], redact: false },
-      code_context: { languages: defaultLanguages, is_blocked: true },
-      secrets_context: { redact_mode: "REDACT_PARTIAL" },
-    } as SettingsData,
+  const defaultSettings: SettingsData = {
+    anonymize_context: { preamble: "", threshold: 0.1, allowed_names: [] },
+    toxicity_context: { threshold: 0.1 },
+    tokenlimit_context: { max_tokens: 2000 },
+    promptinjection_context: { threshold: 0.1 },
+    regex_context: { regex_patterns: [], redact: false },
+    code_context: { languages: defaultLanguages, is_blocked: true },
+    secrets_context: { redact_mode: "REDACT_PARTIAL" },
   };
 
-  const metricsCards = [
-    {
-      title: "Total Logs",
-      value: dashboardData.total_logs,
-      description: "Total number of logs",
-      icon: BarChart3,
+  const dashboardData: GuardrailsIntegrationDashboard = query.data || {
+    dashboard_data: {
+      card_data: {
+        total_logs: 0,
+        successful_logs: 0,
+        failed_logs: 0,
+        pending_logs: 0,
+        started_logs: 0,
+        not_started_logs: 0,
+      },
+      recent_daily_detections_usage: {},
+      high_or_critical_risks_daily_usage: {},
+      past_30_days_risk_score_data: { critical: 0, high: 0, medium: 0, low: 0 },
+      past_60_days_risk_score_data: { critical: 0, high: 0, medium: 0, low: 0 },
     },
-    {
-      title: "Successful",
-      value: dashboardData.successful_logs,
-      description: "Successfully processed logs",
-      icon: CheckCircle,
-    },
-    {
-      title: "Failed",
-      value: dashboardData.failed_logs,
-      description: "Failed logs",
-      icon: XCircle,
-    },
-    {
-      title: "Pending",
-      value: dashboardData.pending_logs,
-      description: "Logs waiting to be processed",
-      icon: Hourglass,
-    },
-    {
-      title: "Started",
-      value: dashboardData.started_logs,
-      description: "Logs currently being processed",
-      icon: Play,
-    },
-    {
-      title: "Not Started",
-      value: dashboardData.not_started_logs,
-      description: "Logs not yet started",
-      icon: Square,
-    },
-  ];
+    api_key: "",
+    log_data: [],
+    settings: defaultSettings,
+  };
 
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
@@ -416,27 +388,8 @@ export default function GuardrailsIntegrationDashboardPage() {
           {/* Dashboard Tab */}
           {activeTab === "dashboard" && (
             <>
-              {/* Metrics Cards */}
-              <div className="flex flex-row gap-3 mb-8 overflow-x-auto">
-                {metricsCards.map((card) => {
-                  const IconComponent = card.icon;
-                  return (
-                    <div 
-                      key={card.title} 
-                      className="flex-1 min-w-0 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 bg-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
-                          {card.title}
-                        </span>
-                        <IconComponent className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
-                      </div>
-                      <div className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-                        {card.value}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="mb-8">
+                <GuardrailsDashboardData dashboardData={query.data?.dashboard_data} />
               </div>
 
               {/* Logs Table */}

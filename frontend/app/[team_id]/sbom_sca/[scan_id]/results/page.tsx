@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -8,24 +8,22 @@ import SbomResults from "@/components/SbomResults";
 import { getSCASBOMConversationMessages } from "@/utils/backend_api";
 
 export default function SbomResultsPage() {
-  const pathname = usePathname();
-  // Path format: /home/sbom_sca/[conversation_id]/results
-  const pathParts = pathname.split('/').filter(Boolean);
-  const conversation_id = parseInt(pathParts[2] || '0');
-  
-  if (!conversation_id) {
-    toast.error("Conversation id not found");
+  const params = useParams();
+  const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
+
+  if (!scan_id) {
+    toast.error("Scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Conversation id not found
+          Scan id not found
         </p>
       </div>
     );
   }
 
   const query = useQuery({
-    queryKey: ['sbom_sca-conversation-data', conversation_id],
+    queryKey: ['sbom_sca-conversation-data', scan_id],
     queryFn: getSCASBOMConversationMessages,
   });
 
@@ -55,7 +53,7 @@ export default function SbomResultsPage() {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          No SBOM results found for this conversation.
+          No SBOM results found for this scan.
         </p>
       </div>
     );
@@ -63,7 +61,7 @@ export default function SbomResultsPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
-      <SbomResults data={sbomData} conversationId={conversation_id} />
+      <SbomResults data={sbomData} conversationId={scan_id} />
     </div>
   );
 }

@@ -1,39 +1,37 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import SASTResults from "@/components/SASTResults";
-import { getSastConversationMessages } from "@/utils/backend_api";
+import IACResults from "@/components/IACResults";
+import { getIACConversationMessages } from "@/utils/backend_api";
 
-export default function SASTResultsPage() {
-  const pathname = usePathname();
-  // Path format: /home/sast/[conversation_id]/results
-  const pathParts = pathname.split('/').filter(Boolean);
-  const conversation_id = parseInt(pathParts[2] || '0');
-  
-  if (!conversation_id) {
-    toast.error("Conversation id not found");
+export default function IACResultsPage() {
+  const params = useParams();
+  const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
+
+  if (!scan_id) {
+    toast.error("Scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Conversation id not found
+          Scan id not found
         </p>
       </div>
     );
   }
 
   const query = useQuery({
-    queryKey: ['sast-conversation-data', conversation_id],
-    queryFn: getSastConversationMessages,
+    queryKey: ['iac-conversation-data', scan_id],
+    queryFn: getIACConversationMessages,
   });
 
   if (query.isError) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Error fetching SAST results. Please try again later.
+          Error fetching IAC results. Please try again later.
         </p>
       </div>
     );
@@ -47,15 +45,15 @@ export default function SASTResultsPage() {
     );
   }
 
-  // Extract SAST results from the conversation data
-  // The SAST results should be in query.data.data
-  const sastData = query.data?.data;
+  // Extract IAC results from the conversation data
+  // The IAC results should be in query.data.data
+  const iacData = query.data?.data;
 
-  if (!sastData) {
+  if (!iacData || !iacData.results) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          No SAST results found for this conversation.
+          No IAC results found for this scan.
         </p>
       </div>
     );
@@ -63,7 +61,7 @@ export default function SASTResultsPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
-      <SASTResults data={sastData} conversationId={conversation_id} />
+      <IACResults data={iacData} conversationId={scan_id} />
     </div>
   );
 }

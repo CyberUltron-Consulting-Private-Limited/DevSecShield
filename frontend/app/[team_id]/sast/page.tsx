@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -34,24 +34,33 @@ import { SastConversation  , deleteSastConversation, getSastConversations, renam
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
 
 export default function SASTPage() {
   const router = useRouter();
+  const params = useParams();
+  const team_id = params?.team_id as string;
   const [conversations, setConversations] = useState<SastConversation[]>([]);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<SastConversation | null>(null);
+  const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
+  const [metadataScan, setMetadataScan] = useState<SastConversation | null>(null);
   const [newName, setNewName] = useState("");
   const [newScanTitle, setNewScanTitle] = useState("");
   // Access the client
   const queryClient = useQueryClient()
 
   // Queries
-  const query = useQuery({ queryKey: ['sast-conversations'], queryFn: getSastConversations })
+  const query = useQuery({
+    queryKey: ['sast-conversations', team_id],
+    queryFn: () => getSastConversations(parseInt(team_id)),
+    enabled: !!team_id,
+  })
 
   useEffect(() => {
     if (query.data) {
@@ -64,9 +73,9 @@ export default function SASTPage() {
 
   //mutations
   const deleteSastConversationMutation = useMutation({
-    mutationFn: deleteSastConversation,
+    mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteSastConversation(team_id, scan_id),
     onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
       toast.success('Sast conversation deleted successfully');
     },
     onError: (error) => {
@@ -77,7 +86,7 @@ export default function SASTPage() {
   const renameSastConversationMutation = useMutation({
     mutationFn: renameSastConversation,
     onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
       toast.success('Sast conversation renamed successfully');
     },
     onError: (error) => {
@@ -86,12 +95,12 @@ export default function SASTPage() {
   })
 
   const createSastConversationMutation = useMutation({
-    mutationFn: createSastConversation,
-    onSuccess: (conversationId, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['sast-conversations'] });
+    mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createSastConversation(team_id, title),
+    onSuccess: (scan_id, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
       setCreateDialogOpen(false);
       setNewScanTitle("");
-      router.push(`/home/sast/${conversationId}`);
+      router.push(`/${variables.team_id}/sast/${scan_id}`);
     },
     onError: (error) => {
       showErrorToast(error);
@@ -150,8 +159,8 @@ export default function SASTPage() {
   };
 
   const confirmRename = () => {
-    if (selectedConversation && newName.trim()) {
-      renameSastConversationMutation.mutate({ conversation_id: selectedConversation.id, title: newName.trim() });
+    if (selectedConversation && newName.trim() && team_id) {
+      renameSastConversationMutation.mutate({ team_id: parseInt(team_id), scan_id: selectedConversation.id, title: newName.trim() });
       setRenameDialogOpen(false);
       setSelectedConversation(null);
       setNewName("");
@@ -159,16 +168,16 @@ export default function SASTPage() {
   };
 
   const confirmDelete = () => {
-    if (selectedConversation) {
-      deleteSastConversationMutation.mutate(selectedConversation.id);
+    if (selectedConversation && team_id) {
+      deleteSastConversationMutation.mutate({ team_id: parseInt(team_id), scan_id: selectedConversation.id });
       setDeleteDialogOpen(false);
       setSelectedConversation(null);
     }
   };
 
   const confirmCreate = () => {
-    if (newScanTitle.trim()) {
-      createSastConversationMutation.mutate(newScanTitle.trim());
+    if (newScanTitle.trim() && team_id) {
+      createSastConversationMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
     }
   };
 
@@ -194,7 +203,7 @@ export default function SASTPage() {
                 <Plus className="h-4 w-4 mr-2" />
                 New Scan
               </Button>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations'] })}>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['sast-conversations', team_id] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
@@ -230,14 +239,13 @@ export default function SASTPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[300px]">Conversation Name</TableHead>
-                    <TableHead>Repository URL</TableHead>
-                    <TableHead>Mode</TableHead>
-                    <TableHead>App Language</TableHead>
-                    <TableHead>Created At</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead>Scan Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="w-[220px]">Title</TableHead>
+                    <TableHead>Owner</TableHead>
+                    <TableHead>Created at</TableHead>
+                    <TableHead>Last updated</TableHead>
+                    <TableHead>Scan status</TableHead>
+                    <TableHead className="w-[180px]">View scan metadata</TableHead>
+                    <TableHead className="text-right w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -245,48 +253,68 @@ export default function SASTPage() {
                     <TableRow key={conversation.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/home/sast/${conversation.id}`}
+                          href={`/${team_id}/sast/${conversation.id}`}
                           className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
                         </Link>
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
-                        {conversation.repo_url ? (
-                          <a
-                            href={conversation.repo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline truncate block max-w-[200px]"
-                            title={conversation.repo_url}
-                          >
-                            {conversation.repo_url}
-                          </a>
+                        {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" || conversation.owner_user_email ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-8 w-8 shrink-0">
+                              <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
+                                {conversation.owner_user_full_name
+                                  ? conversation.owner_user_full_name
+                                      .trim()
+                                      .split(/\s+/)
+                                      .map((p) => p.charAt(0))
+                                      .slice(0, 2)
+                                      .join("")
+                                      .toUpperCase() || (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
+                                  : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" && (
+                                <span className="block truncate max-w-[160px]" title={conversation.owner_user_email ?? ""}>
+                                  {conversation.owner_user_full_name}
+                                </span>
+                              )}
+                              {conversation.owner_user_email != null && conversation.owner_user_email !== "" && (
+                                <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">
+                                  {conversation.owner_user_email}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         ) : (
-                          <span className="text-zinc-400 dark:text-zinc-500 italic">Not set</span>
+                          "—"
                         )}
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">
-                        <Badge variant="outline" className="capitalize">
-                          {conversation.mode}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">
-                        {conversation.app_lang ? (
-                          <Badge variant="outline" className="capitalize">
-                            {conversation.app_lang}
-                          </Badge>
-                        ) : (
-                          <span className="text-zinc-400 dark:text-zinc-500 italic">Not set</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                      <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
                         {formatDate(conversation.created_at)}
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                      <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
                         {formatDate(conversation.last_updated)}
                       </TableCell>
-                      <TableCell>{getStatusBadge(conversation.scan_status as ScanStatus)}</TableCell>
+                      <TableCell className="text-sm">
+                        {getStatusBadge(conversation.scan_status as ScanStatus)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="cursor-pointer"
+                          onClick={() => {
+                            setMetadataScan(conversation);
+                            setMetadataDialogOpen(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1.5" />
+                          View
+                        </Button>
+                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -302,7 +330,7 @@ export default function SASTPage() {
                             {conversation.scan_status === "success" && (
                               <DropdownMenuItem
                                 className="cursor-pointer"
-                                onClick={() => router.push(`/home/sast/${conversation.id}/results?origin=list`)}
+                                onClick={() => router.push(`/${team_id}/sast/${conversation.id}/results?origin=list`)}
                               >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Results
@@ -406,6 +434,34 @@ export default function SASTPage() {
               Delete
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scan metadata dialog (depth-1: key / value) */}
+      <Dialog open={metadataDialogOpen} onOpenChange={setMetadataDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Scan metadata</DialogTitle>
+            <DialogDescription>
+              {metadataScan ? `Metadata for "${metadataScan.title}"` : "Scan metadata"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {metadataScan?.scan_metadata && typeof metadataScan.scan_metadata === "object" && Object.keys(metadataScan.scan_metadata).length > 0 ? (
+              <dl className="space-y-2 text-sm">
+                {Object.entries(metadataScan.scan_metadata).map(([key, value]) => (
+                  <div key={key} className="flex gap-2 border-b border-zinc-200 dark:border-zinc-700 pb-2">
+                    <dt className="font-medium text-zinc-700 dark:text-zinc-300 shrink-0 min-w-[120px]">{key}</dt>
+                    <dd className="text-zinc-600 dark:text-zinc-400 break-all">
+                      {value !== null && typeof value === "object" ? JSON.stringify(value) : String(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-zinc-500 dark:text-zinc-400 text-sm">No metadata for this scan.</p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
