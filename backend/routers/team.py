@@ -194,7 +194,12 @@ async def update_team(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
             team.name = data.name
             team.description = data.description
-            team.integration_settings = data.integration_settings
+            if data.integration_settings is not None:
+                if data.integration_settings.jira is not None:
+                    specific_settings_dict = data.integration_settings.model_dump()
+                    settings_dict = team.integration_settings.copy() or {}
+                    settings_dict["jira"] = specific_settings_dict["jira"]
+                    team.integration_settings = settings_dict
             session.add(team)
             session.commit()
 

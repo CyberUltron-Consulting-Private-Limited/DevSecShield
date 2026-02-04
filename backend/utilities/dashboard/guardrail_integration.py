@@ -89,8 +89,18 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                     card_data["not_started_logs"] += 1
 
                 
-                # dashboard data below requires results to be not None
-                if log["results"] is not None:
+                
+                
+                created_at : datetime = log["created_at"]
+                created_at = created_at.replace(tzinfo=timezone.utc)
+
+                # -------------------> recent ( past 30 days ) daily detections / usage 
+                if created_at > datetime.now(timezone.utc) - timedelta(days=30):
+                    console.print(f"Log : {log}", style="bold yellow")
+                    console.print(f"Log created at: {created_at.date()}", style="bold bright_cyan")
+                    recent_daily_detections_usage[created_at.date()] += 1 
+                
+                if log["results"] is None:
                         continue
                 
                 
@@ -98,10 +108,9 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
 
                 try : 
                     # ------------------> categorizing risk scores in the past 30 days 
-                    
-                    if log["created_at"] > datetime.now(timezone.utc) - timedelta(days=30):
+                    if created_at > datetime.now(timezone.utc) - timedelta(days=30):
                         for key , value in log["results"].items():
-                            if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
+                            if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ]:
                                 if value["score"] > 0.9: 
                                     past_30_days_risk_score_data["critical"] += 1
                                 elif value["score"] > 0.7 and value["score"] <= 0.9:
@@ -114,9 +123,9 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                                     past_30_days_risk_score_data["low"] += 1
                     
                     # ------------------> categorizing risk scores in the past 60 days 
-                    if log["created_at"] > datetime.now(timezone.utc) - timedelta(days=60):
+                    if created_at > datetime.now(timezone.utc) - timedelta(days=60):
                         for key , value in log["results"].items():
-                            if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
+                            if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ]:
                                 if value["score"] > 0.9: 
                                     past_60_days_risk_score_data["critical"] += 1
                                 elif value["score"] > 0.7 and value["score"] <= 0.9:
@@ -129,33 +138,17 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                                     past_60_days_risk_score_data["low"] += 1
                     
 
-                    # ------------------> categorizing risk scores in the past 30 days 
-                    past_30_days_risk_score_data : Past30DaysRiskScoreData = defaultdict(int)
-                    if log["created_at"] > datetime.now(timezone.utc) - timedelta(days=30):
-                        for key , value in log["results"].items():
-                            if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
-                                if value["score"] > 0.9: 
-                                    past_30_days_risk_score_data["critical"] += 1
-                                elif value["score"] > 0.7 and value["score"] <= 0.9:
-                                    past_30_days_risk_score_data["high"] += 1
-                                elif value["score"] > 0.5 and value["score"] <= 0.7:
-                                    past_30_days_risk_score_data["medium"] += 1
-                                elif value["score"] > 0.3 and value["score"] <= 0.5:
-                                    past_30_days_risk_score_data["low"] += 1
-                                elif value["score"] > 0.1 and value["score"] <= 0.3:
-                                    past_30_days_risk_score_data["low"] += 1
                     
-                    # -------------------> recent ( past 30 days ) daily detections / usage 
-                    recent_daily_detections_usage[log["created_at"].date()] += 1 
+                    
 
                     # -------------------> categorizing high or critical risks in the past 30 days 
-                    if log["created_at"] > datetime.now(timezone.utc) - timedelta(days=30):
+                    if created_at > datetime.now(timezone.utc) - timedelta(days=30):
                         for key , value in log["results"].items():
                             if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
                                 if value["score"] > 0.9: 
-                                    high_or_critical_risks_daily_usage[log["created_at"].date()] += 1
+                                    high_or_critical_risks_daily_usage[created_at.date()] += 1
                                 elif value["score"] > 0.7 and value["score"] <= 0.9:
-                                    high_or_critical_risks_daily_usage[log["created_at"].date()] += 1
+                                    high_or_critical_risks_daily_usage[created_at.date()] += 1
 
                   
                 except Exception as e:
@@ -163,67 +156,72 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                     continue
             
 
-            # return {
-            #     "card_data": card_data,
-            #     "recent_daily_detections_usage": recent_daily_detections_usage,
-            #     "past_30_days_risk_score_data": past_30_days_risk_score_data,
-            #     "past_60_days_risk_score_data": past_60_days_risk_score_data,
-            # }
-
-            return {
-                "card_data": { 
-                    "total_logs": 12,
-                    "successful_logs": 1,
-                    "failed_logs": 2,
-                    "pending_logs": 3,
-                    "started_logs": 4,
-                    "not_started_logs": 1
-                },
-                "recent_daily_detections_usage": {
-                    "2026-01-01": 1,
-                    "2026-01-02": 1,
-                    "2026-01-03": 13,
-                    "2026-01-04": 14,
-                    "2026-01-05": 11,
-                    "2026-01-06": 1,
-                    "2026-01-07": 111,
-                    "2026-01-08": 19,
-                    "2026-01-09": 20,
-                    "2026-01-10": 1
-                },
-                "past_30_days_risk_score_data": {
-                    "critical": 1,
-                    "high": 7,
-                    "medium": 4,
-                    "low": 1
-                },
-                "past_60_days_risk_score_data": {
-                    "critical": 1,
-                    "high": 7,
-                    "medium": 1,
-                    "low": 4
-                },
-                "high_or_critical_risks_daily_usage": {
-                    "2026-01-01": 1,
-                    "2026-01-02": 1,
-                    "2026-01-03": 13,
-                    "2026-01-04": 14,
-                    "2026-01-05": 11,
-                    "2026-01-06": 1,
-                    "2026-01-07": 111,
-                    "2026-01-08": 19,
-                    "2026-01-09": 20,
-                    "2026-01-10": 1,
-                    "2026-01-11": 1,
-                    "2026-01-12": 1,
-                    "2026-01-13": 1,
-                    "2026-01-14": 1,
-                    "2026-01-15": 1,
-                    "2026-01-16": 1,
-                    "2026-01-17": 1,
-                    "2026-01-18": 1,
-                }
+            data =  {
+                "card_data": card_data,
+                "recent_daily_detections_usage": recent_daily_detections_usage,
+                "past_30_days_risk_score_data": past_30_days_risk_score_data,
+                "past_60_days_risk_score_data": past_60_days_risk_score_data,
+                "high_or_critical_risks_daily_usage": high_or_critical_risks_daily_usage,
             }
+
+            console.print(data, style="bold bright_cyan")
+
+            return data
+
+            # return {
+            #     "card_data": { 
+            #         "total_logs": 12,
+            #         "successful_logs": 1,
+            #         "failed_logs": 2,
+            #         "pending_logs": 3,
+            #         "started_logs": 4,
+            #         "not_started_logs": 1
+            #     },
+            #     "recent_daily_detections_usage": {
+            #         "2026-01-01": 1,
+            #         "2026-01-02": 1,
+            #         "2026-01-03": 13,
+            #         "2026-01-04": 14,
+            #         "2026-01-05": 11,
+            #         "2026-01-06": 1,
+            #         "2026-01-07": 111,
+            #         "2026-01-08": 19,
+            #         "2026-01-09": 20,
+            #         "2026-01-10": 1
+            #     },
+            #     "past_30_days_risk_score_data": {
+            #         "critical": 1,
+            #         "high": 7,
+            #         "medium": 4,
+            #         "low": 1
+            #     },
+            #     "past_60_days_risk_score_data": {
+            #         "critical": 1,
+            #         "high": 7,
+            #         "medium": 1,
+            #         "low": 4
+            #     },
+            #     "high_or_critical_risks_daily_usage": {
+            #         "2026-01-01": 1,
+            #         "2026-01-02": 1,
+            #         "2026-01-03": 13,
+            #         "2026-01-04": 14,
+            #         "2026-01-05": 11,
+            #         "2026-01-06": 1,
+            #         "2026-01-07": 111,
+            #         "2026-01-08": 19,
+            #         "2026-01-09": 20,
+            #         "2026-01-10": 1,
+            #         "2026-01-11": 1,
+            #         "2026-01-12": 1,
+            #         "2026-01-13": 1,
+            #         "2026-01-14": 1,
+            #         "2026-01-15": 1,
+            #         "2026-01-16": 1,
+            #         "2026-01-17": 1,
+            #         "2026-01-18": 1,
+            #     }
+            # }
 
 
                 

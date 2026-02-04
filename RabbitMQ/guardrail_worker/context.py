@@ -87,3 +87,14 @@ class GuardrailContext(BaseModel):
             if self.secrets_context.redact_mode == None:
                 self.secrets_context.redact_mode = "REDACT_PARTIAL"
         return self
+
+
+
+class JiraTeamSettingsData(BaseModel):
+    jira_project_id: str | None = Field(description="The project ID of the Jira project",default=None)
+    jira_api_token: str | None = Field(description="The API token of the Jira project",default=None)
+    jira_url: str | None = Field(description="The URL of the Jira project",default=None)
+    jira_email: str | None = Field(description="The email of the Jira project",default=None)
+
+class TicketingIntegrationContext(BaseModel):
+    jira: JiraTeamSettingsData | None = Field(description="The context for the Jira integration",default=None)

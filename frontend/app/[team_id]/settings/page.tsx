@@ -10,6 +10,7 @@ import {
   deleteTeam,
   type TeamDetails,
   type UpdateTeamData,
+  type TicketingIntegrationSettingsData,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { Button } from "@/components/ui/button";
@@ -36,11 +37,6 @@ import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users } f
 import { Skeleton } from "@/components/ui/skeleton";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 
-interface JiraIntegrationSettings {
-  url?: string;
-  api_token?: string;
-  project_id?: string;
-}
 
 export default function TeamSettingsPage() {
   const params = useParams();
@@ -56,9 +52,9 @@ export default function TeamSettingsPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [jiraEmail, setJiraEmail] = useState("");
   const [jiraUrl, setJiraUrl] = useState("");
   const [jiraApiToken, setJiraApiToken] = useState("");
-  const [jiraProjectId, setJiraProjectId] = useState("");
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [addMemberEmail, setAddMemberEmail] = useState("");
   const [pendingMemberAction, setPendingMemberAction] = useState<"add" | "remove" | null>(null);
@@ -70,10 +66,10 @@ export default function TeamSettingsPage() {
     if (team) {
       setName(team.team_name ?? "");
       setDescription(team.team_description ?? "");
-      const jira = (team.team_integration_settings?.jira ?? {}) as JiraIntegrationSettings;
-      setJiraUrl(jira.url ?? "");
-      setJiraApiToken(jira.api_token ?? "");
-      setJiraProjectId(jira.project_id ?? "");
+      const jira = (team.team_integration_settings as TicketingIntegrationSettingsData | null)?.jira ?? undefined;
+      setJiraEmail(jira?.email ?? "");
+      setJiraUrl(jira?.url ?? "");
+      setJiraApiToken(jira?.api_token ?? "");
     }
   }, [team]);
 
@@ -121,13 +117,14 @@ export default function TeamSettingsPage() {
   };
 
   const handleSaveJira = () => {
-    const integration_settings = {
-      ...(team?.team_integration_settings ?? {}),
-      jira: {
-        url: jiraUrl.trim() || undefined,
-        api_token: jiraApiToken.trim() || undefined,
-        project_id: jiraProjectId.trim() || undefined,
-      },
+    const email = jiraEmail.trim();
+    const api_token = jiraApiToken.trim();
+    const url = jiraUrl.trim();
+    const integration_settings: TicketingIntegrationSettingsData = {
+      ...(team?.team_integration_settings && typeof team.team_integration_settings === "object" && !Array.isArray(team.team_integration_settings)
+        ? (team.team_integration_settings as TicketingIntegrationSettingsData)
+        : {}),
+      jira: email && api_token && url ? { email, api_token, url } : null,
     };
     updateTeamMutation.mutate({
       name: team?.team_name ?? undefined,
@@ -303,8 +300,18 @@ export default function TeamSettingsPage() {
             </span>
             Jira integration
           </h2>
-          <p className="text-sm text-muted-foreground mb-4 mt-1">Configure Jira (and other integrations later) for this team.</p>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">Configure Jira (and other integrations later) for this team. Use an email that has access to the Jira project.</p>
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="jira-email">Email (Jira account with project access)</Label>
+              <Input
+                id="jira-email"
+                type="email"
+                value={jiraEmail}
+                onChange={(e) => setJiraEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="jira-url">Jira URL</Label>
               <Input
@@ -323,15 +330,6 @@ export default function TeamSettingsPage() {
                 value={jiraApiToken}
                 onChange={(e) => setJiraApiToken(e.target.value)}
                 placeholder="••••••••"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="jira-project">Jira project ID</Label>
-              <Input
-                id="jira-project"
-                value={jiraProjectId}
-                onChange={(e) => setJiraProjectId(e.target.value)}
-                placeholder="10000"
               />
             </div>
             {is_team_admin && (

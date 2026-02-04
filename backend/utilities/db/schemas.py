@@ -16,10 +16,20 @@ class CreateTeamData(BaseModel):
     name: str
     description: str | None = None
 
+class JiraTeamSettingsData(BaseModel):
+    email: str
+    api_token: str
+    url: str
+
+class TicketingIntegrationSettingsData(BaseModel):
+    jira: JiraTeamSettingsData | None = None
+
+
+
 class UpdateTeamData(BaseModel):
     name: str | None = None
     description: str | None = None
-    integration_settings: dict | None = None
+    integration_settings: TicketingIntegrationSettingsData | None = None
 
 class RemoveOrAddMembersToTeamData(BaseModel):
     intent : Literal["remove" , "add"]

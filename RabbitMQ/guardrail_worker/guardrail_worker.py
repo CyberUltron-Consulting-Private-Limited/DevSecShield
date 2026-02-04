@@ -6,7 +6,9 @@ import os
 import sys
 import json
 from context import GuardrailContext
+from context import TicketingIntegrationContext
 from guardrail_runner import run_guardrail
+from ticketing.main import create_issue_in_for_results
 
 console = Console()
 
@@ -76,7 +78,8 @@ try:
     @app.task(track_started=True)
     def input_guardrail(
         input_prompt: str,
-        context : dict 
+        context : dict ,
+        ticketing_integration_context : dict | None = None ,
         ):
         """
         Expected context format : 
@@ -90,6 +93,14 @@ try:
                 "regex_context": { "regex_patterns": [], "redact": False },
                 "code_context": { "languages": [], "is_blocked": True },
                 "secrets_context": { "redact_mode": "REDACT_PARTIAL" }
+            }
+            "ticketing_integration_context": {
+                "jira": {
+                    "jira_project_id": "1234567890"
+                    "jira_api_token": "1234567890"
+                    "jira_url": "https://your-jira-instance.atlassian.net"
+                    "jira_email": "your-jira-email@example.com"
+                }
             }
         }
         
@@ -107,6 +118,24 @@ try:
             input_prompt=input_prompt,
             context=context,
         )
+
+        try:
+            if ticketing_integration_context:
+                print(ticketing_integration_context)
+                # if ticketing integration context is provided , then validate it
+                json_ticketing_integration_context = json.dumps(ticketing_integration_context)
+                ticketing_integration_context_model = TicketingIntegrationContext.model_validate_json(json_ticketing_integration_context)
+                print(ticketing_integration_context_model)
+
+                # create issue with ticketing integration context 
+                create_issue_in_for_results(
+                    input_prompt=input_prompt, 
+                    results=results, 
+                    ticketing_integration_context=ticketing_integration_context_model)
+        except Exception as e:
+            console.print(f"Error in creating issue in ticketing integration: {str(e)}",style="dim red")
+            pass
+            
         return results
     Console().print(f"Registered Input guardrail task",style="bold green")
 

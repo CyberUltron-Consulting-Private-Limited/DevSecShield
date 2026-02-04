@@ -40,6 +40,15 @@ class Team(SQLModel,table=True):
     # many-to-many relationship between team and user
     team_memberships : list[TeamMembership] = Relationship(back_populates="team")
 
+    # guardrails integrations that this team owns 
+    guardrails_integrations : list["GuardrailsIntegration"] = Relationship(back_populates="team")
+
+    # cicd integrations that this team owns 
+    cicd_integrations : list["CicdIntegration"] = Relationship(back_populates="team")
+
+    # scans that this team owns 
+    scans : list["Scan"] = Relationship(back_populates="team")
+
 class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     email : str
@@ -83,6 +92,9 @@ class Scan(SQLModel,table=True):
     # owner user relationship
     owner_user : "User" = Relationship(back_populates="scans")
 
+    # team relationship
+    team : "Team" = Relationship(back_populates="scans")
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -113,6 +125,11 @@ class GuardrailsIntegration(SQLModel,table=True):
     
     # owner user relationship
     owner_user : "User" = Relationship(back_populates="guardrails_integrations")
+
+    # team relationship
+    team : "Team" = Relationship(back_populates="guardrails_integrations")
+
+    
     
     
     class Config:
@@ -135,6 +152,9 @@ class CicdIntegration(SQLModel,table=True):
     
     # owner user relationship
     owner_user : "User" = Relationship(back_populates="cicd_integrations")
+
+    # team relationship
+    team : "Team" = Relationship(back_populates="cicd_integrations")
     
     class Config:
         arbitrary_types_allowed = True

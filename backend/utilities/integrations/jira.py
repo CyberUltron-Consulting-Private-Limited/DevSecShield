@@ -32,17 +32,15 @@ def list_projects(jira_url: str, jira_token: str, jira_email: str = "support@zer
 def create_issue_in_project(
     jira_url: str,
     jira_token: str,
-    project_key: str,
+    project_id: str,
     issue_type: str,
     summary: str,
     description: str,
     jira_email: str = "support@zeroshield.ai"
 ):
     """
-    Create an issue in the specified Jira project.
+    Create an issue in the specified Jira project (by project ID).
     """
-    
-
     url = f"{jira_url}/rest/api/3/issue"
 
     auth = HTTPBasicAuth(jira_email, jira_token)
@@ -54,7 +52,7 @@ def create_issue_in_project(
 
     payload = json.dumps({
         "fields": {
-            "project": {"key": project_key},
+            "project": {"id": project_id},
             "issuetype": {"name": issue_type},
             "summary": summary,
             "description": {
@@ -85,9 +83,21 @@ def create_issue_in_project(
 
 if __name__ == "__main__":
     try:
-        response = list_projects(
+        # response = list_projects(
+        #     jira_email="nikhil@cyberultron.com",
+        #     jira_url="https://zapisec.atlassian.net",
+        #     jira_token="ATATT3xFfGF0uEi3aYaG43RCe5rsIG1JCpwWF1kISjQzDinypUNH_RdktE8yPdZWngR4-ZgW1_ezt5jLI58F_pCL4VfIcaSRCHGhNsFz6_1clUOa-aEehsXY3mg3IUB_ftgTwLop2hyfeSDlIwxbHXGN8qM0DsoM2nVMG3GQ8xFBGXKV3Q5milQ=77A114FB",
+        # )
+        # console.print(response)
+
+        response = create_issue_in_project(
+            jira_email="nikhil@cyberultron.com",
             jira_url="https://zapisec.atlassian.net",
             jira_token="ATATT3xFfGF0uEi3aYaG43RCe5rsIG1JCpwWF1kISjQzDinypUNH_RdktE8yPdZWngR4-ZgW1_ezt5jLI58F_pCL4VfIcaSRCHGhNsFz6_1clUOa-aEehsXY3mg3IUB_ftgTwLop2hyfeSDlIwxbHXGN8qM0DsoM2nVMG3GQ8xFBGXKV3Q5milQ=77A114FB",
+            project_id="10034",  # Use your project's numeric ID from Jira
+            issue_type="Task",
+            summary="Test Issue",
+            description="This is a test issue created by the Jira API",
         )
         console.print(response)
     except HTTPError as e:

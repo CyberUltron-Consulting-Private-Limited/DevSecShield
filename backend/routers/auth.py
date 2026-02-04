@@ -210,7 +210,12 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
     try:
         engine = get_db(dev_environment=dev_environment)
         mongo_client_db = get_mongo_client_db(dev_environment=True)
-
+        
+        if Authorization is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header is required"
+            )
 
 
         access_token = Authorization.split(" ")[1]

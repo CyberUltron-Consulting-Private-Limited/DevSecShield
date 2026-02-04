@@ -14,7 +14,7 @@ def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
             integration = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.api_key == api_key)).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
-            return (integration.user_id, integration.id)
+            return (integration.owner_user.id, integration.id)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e

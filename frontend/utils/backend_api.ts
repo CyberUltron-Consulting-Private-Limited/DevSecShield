@@ -640,6 +640,18 @@ export interface TeamMember {
     role: string
 }
 
+/** Jira settings for team ticketing integration (matches backend JiraTeamSettingsData) */
+export interface JiraTeamSettingsData {
+    email: string
+    api_token: string
+    url: string
+}
+
+/** Team ticketing integration settings (matches backend TicketingIntegrationSettingsData) */
+export interface TicketingIntegrationSettingsData {
+    jira?: JiraTeamSettingsData | null
+}
+
 export interface TeamDetails {
     team_id: number
     team_name: string
@@ -648,14 +660,14 @@ export interface TeamDetails {
     team_members: TeamMember[]
     team_created_at: string
     team_credit_balance: number
-    team_integration_settings: Record<string, unknown> | null
+    team_integration_settings: TicketingIntegrationSettingsData | Record<string, unknown> | null
     team_settings: Record<string, unknown> | null
 }
 
 export interface UpdateTeamData {
     name?: string
     description?: string | null
-    integration_settings?: Record<string, unknown> | null
+    integration_settings?: TicketingIntegrationSettingsData | null
 }
 
 export interface RemoveOrAddMembersToTeamData {
@@ -1485,6 +1497,7 @@ export interface GuardrailsIntegrationDashboard {
     api_key: string
     log_data: GuardrailsIntegrationLog[]
     settings: SettingsData
+    integration_settings?: IntegrationSettingsData | Record<string, unknown> | null
 }
 
 const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string, string]}): Promise<GuardrailsIntegrationDashboard> => {
@@ -1514,8 +1527,13 @@ const createGuardrailsIntegration = async (team_id: number, data: CreateGuardrai
     }
 }
 
+/** Jira settings for guardrails integration (matches backend JiraTeamSettingsData in guardrails schemas) */
+export interface GuardrailsJiraSettingsData {
+    jira_project_id?: string | null
+}
+
 export interface IntegrationSettingsData {
-    jira_enabled?: boolean
+    jira?: GuardrailsJiraSettingsData | null
 }
 
 export interface UpdateGuardrailsIntegrationData {

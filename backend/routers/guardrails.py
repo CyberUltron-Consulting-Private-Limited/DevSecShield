@@ -200,7 +200,8 @@ async def get_guardrails_integration(
             "dashboard_data" : dashboard_data,
             "api_key": integration.api_key,
             "log_data": log_data,
-            "settings": integration.settings
+            "settings": integration.settings,
+            "integration_settings": integration.integration_settings or {},
         }
     
     except Exception as e:
@@ -233,6 +234,7 @@ async def update_guardrails_integration(
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
         check_if_user_is_in_team(user.id, team_id, engine)
+
         
         
         # STEP [ 3 ] : ======================================== Update the guardrails integration ========================================
@@ -247,7 +249,19 @@ async def update_guardrails_integration(
             if data.settings is not None:
                 integration.settings = data.settings.model_dump()
             if data.integration_settings is not None:
-                integration.integration_settings = data.integration_settings.model_dump()
+                if data.integration_settings.jira is not None:
+                    """
+                    settings_dict = {
+                        "jira" : {
+                            "jira_project_id" : <jira_project_id>
+                        }
+                    }
+                    """
+                    specific_settings_dict = data.integration_settings.model_dump()
+                    settings_dict = integration.integration_settings.copy() or {}
+                    settings_dict["jira"] = specific_settings_dict["jira"]
+                    console.print(settings_dict, style="bold yellow")
+                    integration.integration_settings= settings_dict
             session.add(integration)
             session.commit()
             return {

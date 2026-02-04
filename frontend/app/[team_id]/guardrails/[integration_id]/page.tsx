@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getGuardrailsIntegrationDashboard, GuardrailsIntegrationDashboard, updateGuardrailsIntegration, CreateGuardrailsIntegrationData, SettingsData, UpdateGuardrailsIntegrationData } from "@/utils/backend_api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,16 +14,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, X, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen } from "lucide-react";
+import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, X, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen, Ticket, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import SettingsForm from "@/components/Settings";
 import { defaultLanguages } from "@/components/Settings";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import GuardrailsApiDocs from "@/components/GuardrailsApiDocs";
 import { GuardrailsDashboardData } from "@/components/GuardrailsDashboardData";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { JiraIcon } from "@/components/icons/arcticons-jira";
 
 
 const extractResultMetadata = (results: any) => {
@@ -133,7 +142,7 @@ export default function GuardrailsIntegrationDashboardPage() {
   const integration_id = pathParts[2] ?? pathname.split('/').pop() ?? '';
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "settings" | "docs">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "settings" | "docs" | "ticketing">("dashboard");
   const [editSettings, setEditSettings] = useState(false);
   const [settingsForm, setSettingsForm] = useState<SettingsData>({
     anonymize_context: { preamble: "", threshold: 0.1, allowed_names: [] },
@@ -144,6 +153,8 @@ export default function GuardrailsIntegrationDashboardPage() {
     code_context: { languages: defaultLanguages, is_blocked: true },
     secrets_context: { redact_mode: "REDACT_PARTIAL" },
   });
+  const [jiraProjectId, setJiraProjectId] = useState("");
+  const [logSearchQuery, setLogSearchQuery] = useState("");
 
   const query = useQuery({
     queryKey: ['guardrails-integration-dashboard', team_id, integration_id],
@@ -198,6 +209,19 @@ export default function GuardrailsIntegrationDashboardPage() {
     }
   }, [query.data?.settings]);
 
+  // Sync Jira project ID from integration_settings (backend stores as jira_project_id: { jira_project_id: "..." })
+  useEffect(() => {
+    const is = query.data?.integration_settings;
+    if (is && typeof is === "object" && !Array.isArray(is)) {
+      const raw = is as Record<string, unknown>;
+      const fromNested = (raw.jira_project_id as { jira_project_id?: string } | undefined)?.jira_project_id;
+      const fromJira = (raw.jira as { jira_project_id?: string } | undefined)?.jira_project_id;
+      setJiraProjectId(fromNested ?? fromJira ?? "");
+    } else {
+      setJiraProjectId("");
+    }
+  }, [query.data?.integration_settings]);
+
   const updateSettingsMutation = useMutation({
     mutationFn: (data: UpdateGuardrailsIntegrationData) =>
       updateGuardrailsIntegration({
@@ -214,6 +238,28 @@ export default function GuardrailsIntegrationDashboardPage() {
       showErrorToast(error);
     }
   });
+
+  const updateIntegrationSettingsMutation = useMutation({
+    mutationFn: (data: UpdateGuardrailsIntegrationData) =>
+      updateGuardrailsIntegration({
+        team_id: Number(team_id),
+        integration_id: Number(integration_id),
+        data,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id] });
+    },
+    onError: (error) => {
+      showErrorToast(error);
+    }
+  });
+
+  const logData = query.data?.log_data ?? [];
+  const filteredLogs = useMemo(() => {
+    if (!logSearchQuery.trim()) return logData;
+    const q = logSearchQuery.trim().toLowerCase();
+    return logData.filter((log) => (log.input_prompt ?? "").toLowerCase().includes(q));
+  }, [logData, logSearchQuery]);
 
   const getStatusBadge = (status: string) => {
     const statusLower = status.toLowerCase();
@@ -293,6 +339,7 @@ export default function GuardrailsIntegrationDashboardPage() {
     api_key: "",
     log_data: [],
     settings: defaultSettings,
+    integration_settings: { jira_enabled: false },
   };
 
   return (
@@ -303,7 +350,7 @@ export default function GuardrailsIntegrationDashboardPage() {
           <div className="mb-8 flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">
-                Guardrails Integration Dashboard
+                AI Guardrails Dashboard
               </h1>
               <div className="flex flex-row items-center gap-2 mt-4 ">
                 <p className="text-zinc-600 dark:text-zinc-400 text-sm font-medium">Copy API Key :</p>
@@ -371,6 +418,19 @@ export default function GuardrailsIntegrationDashboardPage() {
               </div>
             </button>
             <button
+              onClick={() => setActiveTab("ticketing")}
+              className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                activeTab === "ticketing"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Ticket className="w-4 h-4" />
+                Ticketing integrations
+              </div>
+            </button>
+            <button
               onClick={() => setActiveTab("docs")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "docs"
@@ -393,71 +453,95 @@ export default function GuardrailsIntegrationDashboardPage() {
               </div>
 
               {/* Logs Table */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Logs</CardTitle>
-                  <CardDescription>
-                    All logs for this integration ({dashboardData.log_data.length} total)
-                  </CardDescription>
+              <Card className="flex max-h-[75vh] flex-col overflow-hidden">
+                <CardHeader className="shrink-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <CardTitle>Logs</CardTitle>
+                      <CardDescription className="mt-2">
+                        {logSearchQuery.trim()
+                          ? `${filteredLogs.length} of ${dashboardData.log_data.length} logs`
+                          : `All Logs for this Integration (${dashboardData.log_data.length} total)`}
+                      </CardDescription>
+                    </div>
+                    <div className="relative w-full sm:w-72">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500 dark:text-zinc-400 pointer-events-none" />
+                      <Input
+                        type="text"
+                        placeholder="Search by input prompt..."
+                        value={logSearchQuery}
+                        onChange={(e) => setLogSearchQuery(e.target.value)}
+                        className="pl-8 h-9"
+                      />
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="min-h-0 flex-1 overflow-hidden p-0 ">
                   {dashboardData.log_data.length === 0 ? (
-                    <div className="text-center py-12 text-zinc-600 dark:text-zinc-400">
+                    <div className="text-center py-12 text-zinc-600 dark:text-zinc-400 px-6">
                       No logs found for this integration
                     </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-28 min-w-28">ID</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Input Prompt</TableHead>
-                            <TableHead>Created At</TableHead>
-                            <TableHead>Sanitized Prompt</TableHead>
-                            <TableHead>Result Metadata</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {dashboardData.log_data.map((log) => (
-                            <TableRow key={log.id}>
-                              <TableCell className="font-mono text-sm w-28 min-w-28">
-                                <div className="whitespace-nowrap overflow-visible">{log.id.toString().slice(-8)}</div>
-                              </TableCell>
-                              <TableCell>
-                                {getStatusBadge(log.status)}
-                              </TableCell>
-                              <TableCell className="max-w-48">
-                                <ScrollArea className="h-24 w-full">
-                                    <p className="text-sm whitespace-normal pr-2" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{log.input_prompt || "-"}</p>
-                                </ScrollArea>
-                              </TableCell>
-                              <TableCell>
-                                {log.created_at ? formatDate(log.created_at) : "-"}
-                              </TableCell>
-                              <TableCell>
-                                {log.results ? (
-                                  <ScrollArea className="max-w-48 h-24 w-full">
-                                    <p className="text-sm whitespace-normal pr-2" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{log.results.sanitized_prompt || "-"}</p>
-                                  </ScrollArea>
-                                ) : (
-                                  <span className="text-zinc-400">-</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {log.results ? (
-                                  <ScrollArea className="max-w-md h-64">
-                                    <ScannerResultsDisplay results={log.results} />
-                                  </ScrollArea>
-                                ) : (
-                                  <span className="text-zinc-400">-</span>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                  ) : filteredLogs.length === 0 ? (
+                    <div className="text-center py-12 text-zinc-600 dark:text-zinc-400 px-6">
+                      No logs match your search
                     </div>
+                  ) : (
+                    <ScrollArea className="h-[60vh] min-h-[200px] w-full rounded-none border-0 border-t border-zinc-200 dark:border-zinc-800">
+                      <div className="min-w-0 px-6 pb-6 pt-4">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-28 min-w-28">ID</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Input Prompt</TableHead>
+                              <TableHead>Created At</TableHead>
+                              <TableHead>Sanitized Prompt</TableHead>
+                              <TableHead>Result Metadata</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filteredLogs.map((log) => (
+                              <TableRow key={log.id}>
+                                <TableCell className="font-mono text-sm w-28 min-w-28 py-2 align-top">
+                                  <div className="whitespace-nowrap overflow-visible">{log.id.toString().slice(-8)}</div>
+                                </TableCell>
+                                <TableCell className="py-2 align-top">
+                                  {getStatusBadge(log.status)}
+                                </TableCell>
+                                <TableCell className="max-w-48 py-2 align-top">
+                                  <ScrollArea className="h-14 w-full">
+                                    <p className="text-sm whitespace-normal pr-2" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{log.input_prompt || "-"}</p>
+                                  </ScrollArea>
+                                </TableCell>
+                                <TableCell className="py-2 align-top whitespace-nowrap">
+                                  {log.created_at ? formatDate(log.created_at) : "-"}
+                                </TableCell>
+                                <TableCell className="max-w-48 py-2 align-top">
+                                  {log.results ? (
+                                    <ScrollArea className="max-w-48 h-14 w-full">
+                                      <p className="text-sm whitespace-normal pr-2" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{log.results.sanitized_prompt || "-"}</p>
+                                    </ScrollArea>
+                                  ) : (
+                                    <span className="text-zinc-400">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="max-w-md py-2 align-top">
+                                  {log.results ? (
+                                    <ScrollArea className="max-w-md h-36">
+                                      <ScannerResultsDisplay results={log.results} />
+                                    </ScrollArea>
+                                  ) : (
+                                    <span className="text-zinc-400">-</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <ScrollBar orientation="vertical" />
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
                   )}
                 </CardContent>
               </Card>
@@ -478,7 +562,7 @@ export default function GuardrailsIntegrationDashboardPage() {
                   {!editSettings ? (
                     <Button
                       onClick={() => setEditSettings(true)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                     >
                       <Settings className="w-4 h-4 mr-2" />
                       Edit Settings
@@ -487,6 +571,7 @@ export default function GuardrailsIntegrationDashboardPage() {
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
+                        className="cursor-pointer"
                         onClick={() => {
                           setEditSettings(false);
                           setSettingsForm(dashboardData.settings);
@@ -562,7 +647,7 @@ export default function GuardrailsIntegrationDashboardPage() {
                           updateSettingsMutation.mutate({ settings: cleanedSettings });
                         }}
                         disabled={updateSettingsMutation.isPending}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                       >
                         {updateSettingsMutation.isPending ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -581,6 +666,64 @@ export default function GuardrailsIntegrationDashboardPage() {
                   onChange={setSettingsForm}
                   disabled={!editSettings}
                 />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Ticketing integrations Tab */}
+          {activeTab === "ticketing" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Ticketing integrations</CardTitle>
+                <CardDescription>
+                  Connect this guardrails integration to ticketing systems. Configure Jira project to send findings.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="jira">
+                    <AccordionTrigger className="cursor-pointer">
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center rounded-md bg-blue-600 p-1.5">
+                          <JiraIcon size={20} className="text-white" />
+                        </span>
+                        Jira
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+                        Send guardrails findings to Jira as issues. Set the Jira project ID to link this integration to a project.
+                      </p>
+                      <div className="space-y-2 max-w-sm">
+                        <Label htmlFor="guardrails-jira-project-id">Jira project ID</Label>
+                        <Input
+                          id="guardrails-jira-project-id"
+                          value={jiraProjectId}
+                          onChange={(e) => setJiraProjectId(e.target.value)}
+                          placeholder="e.g. 10000"
+                        />
+                        <Button
+                          onClick={() => {
+                            updateIntegrationSettingsMutation.mutate({
+                              integration_settings: {
+                                jira: { jira_project_id: jiraProjectId.trim() || null },
+                              },
+                            });
+                          }}
+                          disabled={updateIntegrationSettingsMutation.isPending}
+                          className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer mt-2"
+                        >
+                          {updateIntegrationSettingsMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Save className="w-4 h-4 mr-2" />
+                          )}
+                          Save
+                        </Button>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </CardContent>
             </Card>
           )}

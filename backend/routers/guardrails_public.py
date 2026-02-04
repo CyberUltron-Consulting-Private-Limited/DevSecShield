@@ -52,13 +52,29 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
             integration : GuardrailsIntegration | None = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id)).first()
             if integration == None or not integration.id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
+            
+            # getting team instance of the integration 
+            team = integration.team
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+            if "jira" in team.integration_settings and "jira" in integration.integration_settings and integration.integration_settings["jira"]["jira_project_id"] and team.integration_settings["jira"]["api_token"] and team.integration_settings["jira"]["url"] and team.integration_settings["jira"]["email"]:
+                integration_kwargs = { "jira" : {
+                    "jira_project_id": integration.integration_settings["jira"]["jira_project_id"],
+                    "jira_api_token": team.integration_settings["jira"]["api_token"],
+                    "jira_url": team.integration_settings["jira"]["url"],
+                    "jira_email": team.integration_settings["jira"]["email"],
+                }}
+            else:
+                integration_kwargs = None
+            
         
         # STEP [ 2 ] : ======================================== Start the guardrails scan and get status  ====================================
         task_id , status = None , None 
         celery_app = get_celery_app()
         input_guardrail_kwargs = {
             "input_prompt": data.input_prompt,
-            "context": integration.settings
+            "context": integration.settings,
+            "ticketing_integration_context": integration_kwargs
         }
         task = celery_app.send_task(name="guardrail_worker.input_guardrail", kwargs=input_guardrail_kwargs , queue="guardrail_worker_queue")
         task_id = task.id
