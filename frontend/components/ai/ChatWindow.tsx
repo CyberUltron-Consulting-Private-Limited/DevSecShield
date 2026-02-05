@@ -252,7 +252,7 @@ const ChatWindow = ({
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/home/${type}`)}>{Heading}</span>
+            <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/${team_id}/${type}`)}>{Heading}</span>
             <ChevronRightIcon className="size-4 text-zinc-500" />
             <span className="text-neutral-200 font-medium">{query.data?.title}</span>
           </div>

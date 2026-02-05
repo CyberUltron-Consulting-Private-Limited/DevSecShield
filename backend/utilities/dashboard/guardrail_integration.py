@@ -4,18 +4,18 @@ from fastapi import HTTPException
 from rich.console import Console
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
-
+from backend.new_models import GuardrailsIntegration
+from sqlmodel import select , Session
 
 dev_environment = True
 console = Console()
 
 class CardData(TypedDict):
     total_logs: int
-    successful_logs: int
-    failed_logs: int
-    pending_logs: int
-    started_logs: int
-    not_started_logs: int
+    total_logs_today: int
+    percentage_increase_or_decrease_in_total_logs_compared_to_yesterday: float
+    total_logs_this_month: int
+    total_active_scanners: int
 
 class Past30DaysRiskScoreData(TypedDict):
     critical: int
@@ -30,8 +30,18 @@ class Past60DaysRiskScoreData(TypedDict):
     low: int
 
 
+class RadialChartData(TypedDict):
+    total_logs: int
+    successful_logs: int
+    failed_logs: int
+    pending_logs: int
+    started_logs: int
+    not_started_logs: int
+
+
 class DashboardData(TypedDict):
     card_data: CardData
+    radial_chart_data: RadialChartData
     recent_daily_detections_usage: dict[str, int]
     high_or_critical_risks_daily_usage: dict[str, int]
     past_30_days_risk_score_data: Past30DaysRiskScoreData
@@ -51,12 +61,20 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
        
         card_data : CardData = {
             "total_logs": 0,
+            "total_logs_today": 0,
+            "percentage_increase_or_decrease_in_total_logs_compared_to_yesterday": 0,
+            "total_logs_this_month": 0,
+            "total_active_scanners": 0
+        }
+        radial_chart_data : dict[str, int] = {
+            "total_logs": 0,
             "successful_logs": 0,
             "failed_logs": 0,
             "pending_logs": 0,
             "started_logs": 0,
             "not_started_logs": 0
         }
+
         recent_daily_detections_usage : dict[str, int] = defaultdict(int)
         past_30_days_risk_score_data : Past30DaysRiskScoreData = {
                         "critical": 0,
@@ -73,32 +91,60 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
         high_or_critical_risks_daily_usage : dict[str, int] = defaultdict(int)
 
 
+        total_logs_yesterday : int = 0
+        total_scanners : int = 0
+        with Session(engine) as session:
+            integration = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.id == integration_id)).first()
+            if integration is None:
+                raise HTTPException(status_code=404, detail="Integration not found")
+            
+            #calculating total numbers of scanners in the integration
+            for key, value in integration.settings.items():
+                if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ] and value:
+                    total_scanners += 1
+        
+        card_data["total_active_scanners"] = total_scanners
+                    
+
         with guardrails_logs_collection.find({"integration_id": integration_id}).sort("created_at", -1) as cursor:
             for log in cursor:
-                # -----------------> populating card data 
-                card_data["total_logs"] += 1
-                if log["status"] == "success":
-                    card_data["successful_logs"] += 1
-                elif log["status"] == "failed":
-                    card_data["failed_logs"] += 1
-                elif log["status"] == "pending":
-                    card_data["pending_logs"] += 1
-                elif log["status"] == "started":
-                    card_data["started_logs"] += 1
-                elif log["status"] == "NOT_STARTED":
-                    card_data["not_started_logs"] += 1
-
-                
-                
-                
                 created_at : datetime = log["created_at"]
                 created_at = created_at.replace(tzinfo=timezone.utc)
 
+
+                # -----------------> populating card data 
+                card_data["total_logs"] += 1
+                
+                
+                # calculating the total logs for today and yesterday 
+                today_date = datetime.now(timezone.utc).date()
+                yesterday_date = today_date - timedelta(days=1)
+                if created_at.date() == today_date:
+                    card_data["total_logs_today"] += 1
+                elif created_at.date() == yesterday_date:
+                    total_logs_yesterday += 1 # will later be used to calculate the % increase or decrease in total logs compared to yesterday
+                
+                # total logs this month 
+                if created_at.month == datetime.now(timezone.utc).month:
+                    card_data["total_logs_this_month"] += 1
+                
+                    
+
                 # -------------------> recent ( past 30 days ) daily detections / usage 
                 if created_at > datetime.now(timezone.utc) - timedelta(days=30):
-                    console.print(f"Log : {log}", style="bold yellow")
-                    console.print(f"Log created at: {created_at.date()}", style="bold bright_cyan")
                     recent_daily_detections_usage[created_at.date()] += 1 
+                
+                radial_chart_data["total_logs"] += 1
+                if log["status"] == "success":
+                    radial_chart_data["successful_logs"] += 1
+                elif log["status"] == "failure":
+                    radial_chart_data["failed_logs"] += 1
+                elif log["status"] == "pending":
+                    radial_chart_data["pending_logs"] += 1
+                elif log["status"] == "started":
+                    radial_chart_data["started_logs"] += 1
+                elif log["status"] == "NOT_STARTED":
+                    radial_chart_data["not_started_logs"] += 1
                 
                 if log["results"] is None:
                         continue
@@ -156,8 +202,16 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                     continue
             
 
+            
+            
+            if total_logs_yesterday > 0:
+                card_data["percentage_increase_or_decrease_in_total_logs_compared_to_yesterday"] = (card_data["total_logs_today"] - total_logs_yesterday) / total_logs_yesterday * 100
+            else:
+                card_data["percentage_increase_or_decrease_in_total_logs_compared_to_yesterday"] = 0.0
+            
             data =  {
                 "card_data": card_data,
+                "radial_chart_data": radial_chart_data,
                 "recent_daily_detections_usage": recent_daily_detections_usage,
                 "past_30_days_risk_score_data": past_30_days_risk_score_data,
                 "past_60_days_risk_score_data": past_60_days_risk_score_data,

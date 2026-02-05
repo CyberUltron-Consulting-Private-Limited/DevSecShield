@@ -32,7 +32,7 @@ def get_relative_path(file_path: str) -> str:
 
 
 def get_severity_color(severity: str) -> colors.Color:
-    """Get color based on severity level."""
+    """Get color based on severity level (Semgrep: ERROR/WARNING/INFO)."""
     severity_upper = severity.upper()
     if severity_upper == "ERROR":
         return colors.HexColor("#DC2626")  # Red
@@ -42,6 +42,51 @@ def get_severity_color(severity: str) -> colors.Color:
         return colors.HexColor("#3B82F6")  # Blue
     else:
         return colors.HexColor("#6B7280")  # Gray
+
+
+def get_impact_color(impact: str) -> colors.Color:
+    """Get color based on impact level (agent format: Critical/High/Medium/Low)."""
+    impact_upper = (impact or "").upper().strip()
+    if impact_upper == "CRITICAL":
+        return colors.HexColor("#DC2626")  # Red
+    elif impact_upper == "HIGH":
+        return colors.HexColor("#EA580C")  # Orange
+    elif impact_upper == "MEDIUM":
+        return colors.HexColor("#CA8A04")  # Amber
+    elif impact_upper == "LOW":
+        return colors.HexColor("#2563EB")  # Blue
+    else:
+        return colors.HexColor("#6B7280")  # Gray
+
+
+def _is_agent_format(scan_results: Any) -> bool:
+    """True if scan_results is agent output: list of {logical_component_title, vulnerabilities}."""
+    if not isinstance(scan_results, list) or len(scan_results) == 0:
+        return False
+    first = scan_results[0]
+    return (
+        isinstance(first, dict)
+        and "vulnerabilities" in first
+        and isinstance(first.get("vulnerabilities"), list)
+    )
+
+
+def _owasp_compliance_entries(val: Any) -> List[tuple]:
+    """Return [(key, value), ...] for OWASP or compliance_controls (dict or list of one-item dicts)."""
+    if val is None:
+        return []
+    if isinstance(val, dict) and not isinstance(val, list):
+        return [(k, v) for k, v in val.items() if v is not None and str(v).strip()]
+    if isinstance(val, list):
+        out = []
+        for item in val:
+            if isinstance(item, dict) and item:
+                for k, v in item.items():
+                    if v is not None and str(v).strip():
+                        out.append((k, v))
+                        break
+        return out
+    return []
 
 
 def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
@@ -118,12 +163,253 @@ def create_header_footer(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
     canvas_obj.restoreState()
 
 
-def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
+def _build_agent_pdf_story(
+    story: List,
+    styles: Any,
+    components: List[Dict[str, Any]],
+) -> None:
+    """Build PDF story for agent-format SAST results (list of logical components with vulnerabilities)."""
+    # Flatten vulnerabilities with component title
+    flat_vulns: List[tuple] = []  # (component_title, vuln_dict)
+    for comp in components:
+        comp_title = comp.get("logical_component_title") or "Component"
+        vulns = comp.get("vulnerabilities") or []
+        for v in vulns:
+            flat_vulns.append((comp_title, v))
+
+    total_findings = len(flat_vulns)
+    by_impact: Dict[str, int] = {}
+    for _, v in flat_vulns:
+        imp = (v.get("impact") or "").strip() or "Unknown"
+        by_impact[imp] = by_impact.get(imp, 0) + 1
+
+    title_style = ParagraphStyle(
+        "CustomTitle",
+        parent=styles["Heading1"],
+        fontSize=22,
+        textColor=colors.HexColor("#1E293B"),
+        spaceAfter=16,
+        spaceBefore=8,
+        alignment=TA_LEFT,
+        wordWrap="CJK",
+        fontName="Helvetica-Bold",
+        leading=26,
+    )
+    heading_style = ParagraphStyle(
+        "CustomHeading",
+        parent=styles["Heading2"],
+        fontSize=13,
+        textColor=colors.HexColor("#0F172A"),
+        spaceAfter=8,
+        spaceBefore=10,
+        wordWrap="CJK",
+        fontName="Helvetica-Bold",
+        leading=16,
+    )
+    normal_style = ParagraphStyle(
+        "CustomNormal",
+        parent=styles["Normal"],
+        fontSize=9,
+        spaceAfter=8,
+        spaceBefore=4,
+        wordWrap="CJK",
+        leading=12,
+        textColor=colors.HexColor("#334155"),
+        fontName="Helvetica",
+    )
+    code_style = ParagraphStyle(
+        "CustomCode",
+        parent=styles["Code"],
+        fontSize=8,
+        fontName="Courier",
+        spaceAfter=8,
+        spaceBefore=4,
+        leftIndent=12,
+        rightIndent=12,
+        backColor=colors.HexColor("#F8FAFC"),
+        borderColor=colors.HexColor("#E2E8F0"),
+        borderWidth=1,
+        borderPadding=6,
+        textColor=colors.HexColor("#1E293B"),
+        leading=10,
+    )
+
+    story.append(Paragraph("Executive Summary", title_style))
+    story.append(Spacer(1, 0.3 * inch))
+
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Findings", str(total_findings)],
+        ["Logical Components", str(len(components))],
+    ]
+    for imp in ["Critical", "High", "Medium", "Low"]:
+        cnt = by_impact.get(imp, 0)
+        if cnt > 0:
+            summary_data.append([f"Findings ({imp})", str(cnt)])
+
+    summary_table = Table(summary_data, colWidths=[3.5 * inch, 2.5 * inch], repeatRows=1)
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("FONTSIZE", (0, 1), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+        ("TOPPADDING", (0, 1), (-1, -1), 6),
+    ]))
+    story.append(KeepTogether([summary_table]))
+    story.append(Spacer(1, 0.4 * inch))
+
+    severity_data = [["Impact", "Count"]]
+    for imp in ["Critical", "High", "Medium", "Low"]:
+        cnt = by_impact.get(imp, 0)
+        if cnt > 0:
+            severity_data.append([imp, str(cnt)])
+    if len(severity_data) > 1:
+        severity_table = Table(severity_data, colWidths=[2.5 * inch, 1.5 * inch], repeatRows=1)
+        severity_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 11),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("FONTSIZE", (0, 1), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+            ("TOPPADDING", (0, 1), (-1, -1), 6),
+        ]))
+        story.append(KeepTogether([severity_table]))
+
+    story.append(PageBreak())
+
+    if total_findings == 0:
+        story.append(Paragraph("No security findings detected.", normal_style))
+        return
+
+    for idx, (comp_title, vuln) in enumerate(flat_vulns, 1):
+        if idx > 1:
+            story.append(PageBreak())
+
+        title = vuln.get("title") or "Untitled finding"
+        impact = (vuln.get("impact") or "").strip() or "—"
+        description = (vuln.get("description") or "").strip()
+        location = (vuln.get("location") or "").strip()
+        suggested_fix = (vuln.get("suggested_fix") or "").strip()
+        snippet = (vuln.get("snippet") or "").strip()
+        owasp_entries = _owasp_compliance_entries(vuln.get("owasp_top_10"))
+        compliance_entries = _owasp_compliance_entries(vuln.get("compliance_controls"))
+        cves = vuln.get("cves")
+
+        finding_title = f"Finding #{idx}: {title}"
+        story.append(Paragraph(finding_title, heading_style))
+        story.append(Spacer(1, 0.2 * inch))
+
+        finding_data = [["Property", "Value"]]
+        finding_data.append(["Logical component", comp_title])
+        finding_data.append(["Impact", impact])
+        if location:
+            loc_para = Paragraph(location[:120] + ("..." if len(location) > 120 else ""), normal_style)
+            finding_data.append(["Location", loc_para])
+        if description:
+            desc_para = Paragraph(description[:500] + ("..." if len(description) > 500 else ""), normal_style)
+            finding_data.append(["Description", desc_para])
+        if suggested_fix:
+            fix_para = Paragraph(suggested_fix[:500] + ("..." if len(suggested_fix) > 500 else ""), normal_style)
+            finding_data.append(["Suggested fix", fix_para])
+        if owasp_entries:
+            owasp_str = "; ".join(f"{k}: {v}" for k, v in owasp_entries[:5])
+            if len(owasp_entries) > 5:
+                owasp_str += f" (+{len(owasp_entries) - 5} more)"
+            finding_data.append(["OWASP Top 10", Paragraph(owasp_str, normal_style)])
+        if compliance_entries:
+            comp_str = "; ".join(f"{k}: {v}" for k, v in compliance_entries[:5])
+            if len(compliance_entries) > 5:
+                comp_str += f" (+{len(compliance_entries) - 5} more)"
+            finding_data.append(["Compliance controls", Paragraph(comp_str, normal_style)])
+        if cves and isinstance(cves, dict) and cves:
+            cve_str = ", ".join(str(k) for k in list(cves.keys())[:5])
+            finding_data.append(["Related CVEs", cve_str])
+        elif isinstance(cves, list) and cves:
+            cve_str = ", ".join(str(c) for c in cves[:5])
+            finding_data.append(["Related CVEs", cve_str])
+
+        finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
+        finding_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), get_impact_color(impact)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ("ALIGN", (1, 0), (1, -1), "LEFT"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("FONTSIZE", (0, 1), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+            ("TOPPADDING", (0, 1), (-1, -1), 6),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ]))
+        story.append(KeepTogether([finding_table]))
+        story.append(PageBreak())
+
+        if description:
+            desc_heading = ParagraphStyle(
+                "DescHeading",
+                parent=normal_style,
+                fontSize=10,
+                fontName="Helvetica-Bold",
+                textColor=colors.HexColor("#1E293B"),
+                spaceAfter=6,
+                spaceBefore=0,
+            )
+            story.append(Paragraph("Description", desc_heading))
+            story.append(Spacer(1, 0.12 * inch))
+            story.append(Paragraph(description, normal_style))
+            story.append(Spacer(1, 0.25 * inch))
+
+        if snippet:
+            code_heading = ParagraphStyle(
+                "CodeHeading",
+                parent=normal_style,
+                fontSize=10,
+                fontName="Helvetica-Bold",
+                textColor=colors.HexColor("#1E293B"),
+                spaceAfter=6,
+                spaceBefore=0,
+            )
+            story.append(Paragraph("Code Snippet", code_heading))
+            story.append(Spacer(1, 0.12 * inch))
+            code_text = snippet.strip()
+            if len(code_text) > 500:
+                code_text = code_text[:500] + "..."
+            code_lines = code_text.split("\n")[:10]
+            code_text = "\n".join(code_lines)
+            code_para = Preformatted(code_text, code_style, maxLineLength=70)
+            story.append(code_para)
+            story.append(Spacer(1, 0.2 * inch))
+
+
+def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
     """
     Generate a PDF report from SAST scan results.
+    Supports both Semgrep-style results (dict with results/errors/paths) and
+    agent-style results (list of {logical_component_title, vulnerabilities}).
     
     Args:
-        scan_results: Dictionary containing SAST scan results
+        scan_results: SAST scan results (dict for Semgrep, list for agent format).
         output_path: Optional path to save the PDF. If None, generates a timestamped filename.
     
     Returns:
@@ -133,42 +419,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"sast_scan_report_{timestamp}.pdf"
-    
-    # Extract data from scan results
-    version = scan_results.get("version", "Unknown")
-    results = scan_results.get("results", [])
-    all_errors = scan_results.get("errors", [])
-    scanned_paths = scan_results.get("paths", {}).get("scanned", [])
-    skipped_paths = scan_results.get("paths", {}).get("skipped", [])
-    engine_requested = scan_results.get("engine_requested", "Unknown")
-    
-    # Filter out incompatible rule errors - only show actual scan errors
-    errors = []
-    for error in all_errors:
-        error_type = error.get("type", "")
-        # Skip incompatible rule errors
-        if isinstance(error_type, list) and len(error_type) >= 2 and error_type[0] == "IncompatibleRule":
-            continue
-        errors.append(error)
-    
-    # Calculate statistics
-    total_findings = len(results)
-    by_severity = {}
-    by_check = {}
-    unique_files = set()
-    
-    for result in results:
-        severity = result.get("severity") or result.get("extra", {}).get("severity", "UNKNOWN")
-        by_severity[severity] = by_severity.get(severity, 0) + 1
-        
-        check_id = result.get("check_id", "Unknown")
-        check_name = check_id.split('.')[-1] if '.' in check_id else check_id
-        by_check[check_name] = by_check.get(check_name, 0) + 1
-        
-        file_path = result.get("path", "")
-        if file_path:
-            unique_files.add(get_relative_path(file_path))
-    
+
     # Create PDF document
     doc = SimpleDocTemplate(
         output_path,
@@ -178,11 +429,50 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         topMargin=72,
         bottomMargin=18
     )
-    
+
     # Container for the 'Flowable' objects
     story = []
     styles = getSampleStyleSheet()
-    
+
+    # Title page is drawn by onFirstPage; content starts on page 2
+    story.append(PageBreak())
+
+    if _is_agent_format(scan_results):
+        _build_agent_pdf_story(story, styles, scan_results)
+        doc.build(story, onFirstPage=create_title_page, onLaterPages=create_header_footer)
+        return output_path
+
+    # --- Semgrep format: dict with results, errors, paths ---
+    scan_results = scan_results if isinstance(scan_results, dict) else {}
+    version = scan_results.get("version", "Unknown")
+    results = scan_results.get("results", [])
+    all_errors = scan_results.get("errors", [])
+    scanned_paths = scan_results.get("paths", {}).get("scanned", [])
+    skipped_paths = scan_results.get("paths", {}).get("skipped", [])
+    engine_requested = scan_results.get("engine_requested", "Unknown")
+
+    errors = []
+    for error in all_errors:
+        error_type = error.get("type", "")
+        if isinstance(error_type, list) and len(error_type) >= 2 and error_type[0] == "IncompatibleRule":
+            continue
+        errors.append(error)
+
+    total_findings = len(results)
+    by_severity = {}
+    by_check = {}
+    unique_files = set()
+
+    for result in results:
+        severity = result.get("severity") or result.get("extra", {}).get("severity", "UNKNOWN")
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+        check_id = result.get("check_id", "Unknown")
+        check_name = check_id.split(".")[-1] if "." in check_id else check_id
+        by_check[check_name] = by_check.get(check_name, 0) + 1
+        file_path = result.get("path", "")
+        if file_path:
+            unique_files.add(get_relative_path(file_path))
+
     # Professional custom styles
     title_style = ParagraphStyle(
         'CustomTitle',

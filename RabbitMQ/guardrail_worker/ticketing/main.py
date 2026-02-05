@@ -13,11 +13,11 @@ def create_issue_in_for_results(
         for key,value in results.items():
             if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ]:
                 if value["score"] > 0.9:
-                    findings_description += f"Critical Risk identified in the {key} Scanner, Risk Score : {value['score']}\n"
+                    findings_description += f"Critical Risk identified in the {key} Scanner, Risk Score : {value['score']*100}%\n"
                 elif value["score"] > 0.7 and value["score"] <= 0.9:
-                    findings_description += f"High Risk identified in the {key} Scanner, Risk Score : {value['score']}\n"
+                    findings_description += f"High Risk identified in the {key} Scanner, Risk Score : {value['score']*100}%\n"
                 elif value["score"] > 0.5 and value["score"] <= 0.7:
-                    findings_description += f"Medium Risk identified in the {key} Scanner, Risk Score : {value['score']}\n"
+                    findings_description += f"Medium Risk identified in the {key} Scanner, Risk Score : {value['score']*100}%\n"
                 else:
                     continue # not a critical risk 
         

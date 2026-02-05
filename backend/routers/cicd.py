@@ -329,7 +329,10 @@ async def get_cicd_integration(
     team_id: int, 
     integration_id: int, 
     Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    dependencies=[Depends(limiter)],
+    limit : int = 100,
+    offset : int = 0,
+):
     """
     Get a cicd integration
     """
@@ -393,7 +396,7 @@ async def get_cicd_integration(
         
         
         # STEP [ 6 ] : =============== Get ci cd mongo logs for integration ================================
-        logs = mongo_db["cicd_logs"].find({"ci_cd_integration_id": integration_id}).sort("created_at", -1)
+        logs = mongo_db["cicd_logs"].find({"ci_cd_integration_id": integration_id}).sort("created_at", -1).limit(limit).skip(offset)
         logs_data = []
         for log in logs:
             logs_data.append({

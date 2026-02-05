@@ -109,6 +109,41 @@ def download_file(bucket : str, object_name : str):
         console.print(f"Error downloading file: {e}",style="bold red")
         return None
 
+def delete_file(bucket : str, object_name : str):
+    try:
+        # STEP [ 1 ] : =========================== create a s3 client ========================================
+        console.print(f"Creating a s3 client",style="bold yellow")
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+        region_name=os.getenv("AWS_DEFAULT_REGION")
+        if not aws_access_key_id or not aws_secret_access_key or not region_name:
+            raise Exception("AWS credentials are not set")
+        
+        s3_client = boto3.client('s3',
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name=region_name
+        )
+        
+        # STEP [ 2 ] : =========================== delete the file from the s3 bucket ========================================
+        console.print(f"Deleting the file from the s3 bucket",style="bold yellow")
+        response = s3_client.delete_object(Bucket=bucket, Key=object_name)
+
+        # STEP [ 3 ] : ======================= check if the file is deleted  and return true if it is deleted ========================================
+        
+        # listing out all the objects in the bucket
+        objects = s3_client.list_objects(Bucket=bucket)
+        if not objects["Contents"]:
+            return True
+        for obj in objects["Contents"]:
+            # console.print(f"Object: {obj['Key']} found in the bucket",style="bold yellow")
+            if obj["Key"] == object_name:
+                return False
+        else:
+            return True
+    except Exception as e:
+        console.print(f"Error deleting file: {e}",style="bold red")
+        return False
 
 if __name__ == "__main__":
     zip_file_path = "C:\\Users\\HP\\Downloads\\RiskPilot-main.zip"

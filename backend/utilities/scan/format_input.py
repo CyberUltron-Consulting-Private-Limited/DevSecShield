@@ -22,10 +22,10 @@ async def format_input_for_scan(
             case "sast":
                 if start_scan_payload.sast.zip_file_used:
                     bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
-                    s3_upload_response = await upload_file(bytes_io_zip_file_object)
+                    s3_upload_response = upload_file(bytes_io_zip_file_object)
                     zip_context = {
                         "bucket_name": s3_upload_response["bucket"],
-                        "object_key": s3_upload_response["object_name"],
+                        "object_name": s3_upload_response["object_name"],
                     }
                     scan_kwargs["zip_dict_context"] = zip_context
                 elif start_scan_payload.sast.repo_context:
@@ -42,10 +42,10 @@ async def format_input_for_scan(
             case "iac":
                 if start_scan_payload.iac.zip_file_used:
                     bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
-                    s3_upload_response = await upload_file(bytes_io_zip_file_object)
+                    s3_upload_response = upload_file(bytes_io_zip_file_object)
                     zip_context = {
                         "bucket_name": s3_upload_response["bucket"],
-                        "object_key": s3_upload_response["object_name"],
+                        "object_name": s3_upload_response["object_name"],
                     }
                     scan_kwargs["zip_dict_context"] = zip_context
                 elif start_scan_payload.iac.repo_context:
@@ -62,20 +62,20 @@ async def format_input_for_scan(
             case "sbom_sca":
                 if start_scan_payload.sbom_sca.zip_file_used:
                     bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
-                    s3_upload_response = await upload_file(bytes_io_zip_file_object, extension=".json")
+                    s3_upload_response = upload_file(bytes_io_zip_file_object, extension=".json")
                     zip_context = {
                         "bucket_name": s3_upload_response["bucket"],
-                        "object_key": s3_upload_response["object_name"],
+                        "object_name": s3_upload_response["object_name"],
                     }
                     scan_kwargs["zip_dict_context"] = zip_context
                 elif start_scan_payload.sbom_sca.repo_context:
                     scan_kwargs["repo_dict_context"] = start_scan_payload.sbom_sca.repo_context.model_dump()
                 elif start_scan_payload.sbom_sca.sbom_file_used:
                     bytes_io_sbom_file_object = BytesIO(await uploaded_file.read())
-                    s3_upload_response = await upload_file(bytes_io_sbom_file_object, extension=".json")
+                    s3_upload_response = upload_file(bytes_io_sbom_file_object, extension=".json")
                     file_context = {
                         "bucket_name": s3_upload_response["bucket"],
-                        "object_key": s3_upload_response["object_name"],
+                        "object_name": s3_upload_response["object_name"],
                     }
                     scan_kwargs["file_dict_context"] = file_context
                 else:

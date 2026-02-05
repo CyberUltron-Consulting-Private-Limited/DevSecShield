@@ -123,7 +123,10 @@ async def get_guardrails_integration(
     team_id: int, 
     integration_id: int, 
     Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    dependencies=[Depends(limiter)],
+    limit : int = 10,
+    offset : int = 0,
+    ):
     """
     Get a guardrails integration dashboard data
     Run a scan status update for all the scans in this integration 
@@ -157,6 +160,7 @@ async def get_guardrails_integration(
 
         
 
+
         # STEP [ 5 ] : ======================================== Cycle through the logs and see if there are any tasks that need status update ========================================
         celery_app = get_celery_app()
         result , status = None, None
@@ -182,7 +186,7 @@ async def get_guardrails_integration(
 
         # STEP [ 6 ] : ======================================== Fetch and Calculate Metrics =======================================
         log_data = []
-        with guardrails_logs_collection.find({"integration_id": integration_id}).sort("created_at", -1) as cursor:
+        with guardrails_logs_collection.find({"integration_id": integration_id}).sort("created_at", -1).limit(limit).skip(offset) as cursor:
             for log in cursor:
                 log_data.append({
                     "id": str(log["_id"]),
@@ -194,7 +198,10 @@ async def get_guardrails_integration(
                     
 
         # STEP [ 7 ] : ======================================== Fetch and Calculate Metrics ========================================
-        dashboard_data = get_guardrails_integration_dashboard_data(team_id, integration_id)
+        dashboard_data = get_guardrails_integration_dashboard_data(
+            team_id=team_id,
+            integration_id=integration_id,
+        )
         
         return {
             "dashboard_data" : dashboard_data,

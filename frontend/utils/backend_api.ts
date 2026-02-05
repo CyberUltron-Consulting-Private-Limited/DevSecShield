@@ -51,7 +51,22 @@ export interface SastConversation {
     owner_user_full_name?: string
 }
 
-const getSastConversations = async (team_id: number): Promise<SastConversation[]> => {
+/** Card counts returned by list SAST scans (card_data) */
+export interface SastListCardData {
+    pending_scans: number
+    started_scans: number
+    success_scans: number
+    failure_scans: number
+    scans_created_today: number
+    scans_updated_today: number
+}
+
+export interface SastListResponse {
+    scans_list_data: SastConversation[]
+    card_data: SastListCardData
+}
+
+const getSastConversations = async (team_id: number): Promise<SastListResponse> => {
     try {
         const response = await api.get(`/${team_id}/sast/scans`)
         toast.success("Sast conversations fetched successfully")
@@ -99,6 +114,14 @@ export interface SastConversationMessage {
     timestamp: string
     is_streaming: boolean
 }   
+/** SAST scan dashboard from backend generate_sast_dashboard */
+export interface SastDashboardData {
+  risk_metrics?: Record<string, number>;
+  owasp_top_10_metrics?: Record<string, number>;
+  compliance_controls_metrics?: Record<string, number>;
+  cves_per_vulnerability?: Record<string, number>;
+}
+
 export interface SastConversationResponse {
     title: string
     scan_status: string
@@ -106,6 +129,7 @@ export interface SastConversationResponse {
     scan_metadata?: Record<string, unknown> | null
     data: any
     messages: SastConversationMessage[]
+    dashboard?: SastDashboardData | null
 }
 
 const getSastConversationMessages = async ({ queryKey }: { queryKey: ['sast-conversation-data', number, number] }): Promise<SastConversationResponse> => {
@@ -1463,8 +1487,17 @@ export interface SettingsData {
     code_context?: CodeContext
     secrets_context?: SecretsContext
 }
-/** Dashboard card metrics (total/successful/failed/etc.) */
+/** Dashboard card metrics (total logs, today, trend, month, active scanners) */
 export interface GuardrailsDashboardCardData {
+    total_logs: number
+    total_logs_today: number
+    percentage_increase_or_decrease_in_total_logs_compared_to_yesterday: number
+    total_logs_this_month: number
+    total_active_scanners: number
+}
+
+/** Log status counts for radial chart (successful/failed/pending/started/not_started) */
+export interface GuardrailsRadialChartData {
     total_logs: number
     successful_logs: number
     failed_logs: number
@@ -1484,6 +1517,7 @@ export interface GuardrailsRiskScoreData {
 /** Dashboard data returned by get_guardrails_integration_dashboard_data */
 export interface GuardrailsDashboardData {
     card_data: GuardrailsDashboardCardData
+    radial_chart_data: GuardrailsRadialChartData
     /** Date string (YYYY-MM-DD) -> count */
     recent_daily_detections_usage: Record<string, number>
     /** Date string (YYYY-MM-DD) -> count of high or critical risks that day */
@@ -1500,10 +1534,12 @@ export interface GuardrailsIntegrationDashboard {
     integration_settings?: IntegrationSettingsData | Record<string, unknown> | null
 }
 
-const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string, string]}): Promise<GuardrailsIntegrationDashboard> => {
-    const [, team_id, integration_id] = queryKey
+const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string, string, number, number]}): Promise<GuardrailsIntegrationDashboard> => {
+    const [, team_id, integration_id, limit, offset] = queryKey
     try {
-        const response = await api.get(`/guardrails/${team_id}/integration/${integration_id}`)
+        const response = await api.get(`/guardrails/${team_id}/integration/${integration_id}`, {
+            params: { limit, offset },
+        })
         toast.success("Guardrails integration dashboard fetched successfully")
         return response.data as GuardrailsIntegrationDashboard
     } catch (error) {

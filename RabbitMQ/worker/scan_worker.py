@@ -10,9 +10,7 @@ from helpers.tools.sast_agent.main import SASTAgent
 from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
 from helpers.tools.iac_agent.main import IACAgent
 from helpers.tools.iac_agent.context import IACTypeContext, validate_dict_with_iac_context
-# from helpers.tools.discovery_utils.discovery_runner import run_discovery_scan
-# from helpers.tools.llm_utils.llm_runner import run_garak_scan
-# from helpers.tools.mcp_utils.mcp_runner import run_mcp_scan
+from helpers.context.s3_utils import delete_file
 from helpers.context.scan_context import validate_dict_with_context, validate_dict_with_zip_context, validate_dict_with_file_context
 
 console = Console()
@@ -135,6 +133,14 @@ try:
         except Exception as e:
             console.print(f"Error in sast task: {str(e)}",style="bold red")
             raise e
+        finally:
+            if zip_context:
+                # delete the files from bucket 
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
+
     console.print(f"Registered SAST task",style="bold green")
 
 
@@ -188,6 +194,17 @@ try:
         except Exception as e:
             console.print(f"Error in sbom_sca task: {str(e)}",style="bold red")
             raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket",style="bold red")
 
        
     console.print(f"Registered SBOM SCA task",style="bold green")
@@ -243,6 +260,12 @@ try:
         except Exception as e:
             console.print(f"Error in iac task: {str(e)}",style="bold red")
             raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered IAC task with context pattern",style="bold green")
 
@@ -293,6 +316,12 @@ try:
         except Exception as e:
             console.print(f"Error in sast_estimation task: {str(e)}",style="bold red")
             raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
     console.print(f"Registered SAST estimation task",style="bold green")
 
 
@@ -343,6 +372,17 @@ try:
         except Exception as e:
             console.print(f"Error in sbom_sca_estimation task: {str(e)}",style="bold red")
             raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket",style="bold red")
 
        
     console.print(f"Registered SBOM SCA estimation task",style="bold green")
@@ -396,6 +436,12 @@ try:
         except Exception as e:
             console.print(f"Error in iac_estimation task: {str(e)}",style="bold red")
             raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered IAC estimation task",style="bold green")
 

@@ -37,6 +37,7 @@ import {
 } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
+import { handleApiError } from "@/utils/error-handler";
 
 
 
@@ -85,7 +86,10 @@ export function SASTOptionsSidebar({
   }, [app_lang, mode, repo_url, PAT]);
 
   const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" >("ready");
+  const [ error_message, setErrorMessage ] = useState<string | null>(null);
   const [ estimatedCredits, setEstimatedCredits ] = useState<number | null>(null);
+  /** True only after estimation has been run successfully this session; ensures user must re-estimate when they come back. */
+  const [ estimationProcessDone, setEstimationProcessDone ] = useState(false);
   /** Schema: exclude_path_arrays — list[list[str]] | null */
   const [ exclude_path_arrays, setExcludePathArrays ] = useState<string[][]>([]);
   const [ uploaded_file, setUploadedFile ] = useState<File | null>(null);
@@ -142,9 +146,11 @@ export function SASTOptionsSidebar({
     mutationFn: () => estimateCreditsForScan(team_id, "sast", scan_id, buildStartScanPayloadString(), uploaded_file ?? undefined),
     onSuccess: (data) => {
       setEstimatedCredits(data.credits_required);
+      setEstimationProcessDone(true);
       toast.success(`This scan will use ${data.credits_required} credits`);
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
   });
@@ -153,10 +159,12 @@ export function SASTOptionsSidebar({
     mutationFn: () => startScan(team_id, "sast", scan_id, buildStartScanPayloadString(), uploaded_file ?? undefined),
     onSuccess: () => {
       setEstimatedCredits(null);
+      setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
       queryClient.invalidateQueries({ queryKey: ["sast-conversation-data", team_id, scan_id] });
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
   });
@@ -181,27 +189,35 @@ export function SASTOptionsSidebar({
 
   const scanInputsValid = validateScanInputs().valid;
 
-  /** Run scan is active only when estimated_credits is set (from API or from local estimate). */
-  const creditsFromApi = query.data?.estimated_credits ?? null;
-  const hasEstimatedCredits =
-    (estimatedCredits != null && estimatedCredits > 0) ||
-    (creditsFromApi != null && creditsFromApi !== 0);
-  const displayCredits = estimatedCredits ?? creditsFromApi ?? null;
+  /** Reset estimation state when key scan inputs change so user must re-run estimate for new config. */
+  useEffect(() => {
+    setEstimationProcessDone(false);
+    setEstimatedCredits(null);
+  }, [app_lang, mode, repo_url, PAT, uploaded_file]);
+
+  /** Run scan allowed only after estimation process has been run this session (credits from estimate response only). */
+  const displayCredits = estimatedCredits;
+  const canRunScan = estimationProcessDone;
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
+      const msg = (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ?? "The scan failed.";
+      setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
     if (query.data?.scan_status === "unknown") {
       setOptionsSidebarState("ready");
+      setErrorMessage(null);
     }
-  }, [query.data?.scan_status]);
+  }, [query.data?.scan_status, query.data?.scan_metadata]);
 
 
 
@@ -219,7 +235,8 @@ export function SASTOptionsSidebar({
 
       setOptionsSidebarState("done");
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     }
   })
@@ -240,15 +257,20 @@ export function SASTOptionsSidebar({
     mode: Mode;
   }) => {
     setOptionsSidebarState("ready");
+    setErrorMessage(null);
     if (app_lang === "unknown") {
-      toast.error("Please select a language");
+      const msg = "Please select a language";
+      toast.error(msg);
+      setErrorMessage(msg);
       setOptionsSidebarState("error");
-      throw new Error("Please select a language");
+      throw new Error(msg);
     }
     if (mode === "unknown") {
-      toast.error("Please select a repository platform");
+      const msg = "Please select a repository platform";
+      toast.error(msg);
+      setErrorMessage(msg);
       setOptionsSidebarState("error");
-      throw new Error("Please select a repository platform");
+      throw new Error(msg);
     }
     return reinitializeSastScan({
       team_id,
@@ -266,7 +288,8 @@ export function SASTOptionsSidebar({
       setOptionsSidebarState("scanning");
       queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     }
   });
@@ -371,7 +394,7 @@ export function SASTOptionsSidebar({
                 <>Estimate credits required</>
               )}
             </Button>
-            {displayCredits != null && displayCredits > 0 && (
+            {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span>
               </p>
@@ -380,10 +403,10 @@ export function SASTOptionsSidebar({
 
           <Separator className="bg-zinc-800" />
 
-          {/* Run scan — active only when estimated_credits is set */}
+          {/* Run scan — allowed only after estimation process has been run this session */}
           <div className="p-6">
             <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
-            {hasEstimatedCredits ? (
+            {canRunScan ? (
               <div className="space-y-2">
                 <Button
                   variant="ghost"
@@ -398,12 +421,12 @@ export function SASTOptionsSidebar({
                     <>Start scan</>
                   )}
                 </Button>
-                {displayCredits != null && displayCredits > 0 && (
-                  <p className="text-xs text-zinc-500">Uses {displayCredits} credits (run estimate first if not set).</p>
+                {displayCredits != null && (
+                  <p className="text-xs text-zinc-500">Uses {displayCredits} credits.</p>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-zinc-500">Estimate credits above to enable starting the scan.</p>
+              <p className="text-sm text-zinc-500">Run estimate above to enable starting the scan.</p>
             )}
           </div>
         </>
@@ -453,7 +476,7 @@ export function SASTOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            An error occurred during the scan. Please try again.
+            {error_message ?? "An error occurred during the scan. Please try again."}
           </p>
           <Button 
             variant="ghost" 

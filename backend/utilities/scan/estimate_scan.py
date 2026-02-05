@@ -20,7 +20,7 @@ from celery import Celery
 console = Console()
 
 
-def poll_for_estimated_credits ( 
+async def poll_for_estimated_credits ( 
     task_id: str,
     simple_app: Celery,
 ) -> None :
@@ -55,10 +55,13 @@ async def estimate_credits(
                 uploaded_file=uploaded_file)
         if scan_type == "sast":
             task_result = simple_app.send_task(name="scan_worker.sast_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
+            console.print(f"Sent sast estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
         elif scan_type == "iac":
             task_result = simple_app.send_task(name="scan_worker.iac_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
+            console.print(f"Sent iac estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
         elif scan_type == "sbom_sca":
             task_result = simple_app.send_task(name="scan_worker.sbom_sca_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
+            console.print(f"Sent sbom sca estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 
@@ -67,7 +70,8 @@ async def estimate_credits(
         
         
         # STEP [ 3 ] : =========== poll for results and return esitmated credit consumption for the scan ======================
-        credits_consumed = poll_for_estimated_credits(task_id=task_result.id, simple_app=simple_app)
+        credits_consumed : float = await poll_for_estimated_credits(task_id=task_result.id, simple_app=simple_app)
+        credits_consumed = round(credits_consumed, 2)
         return credits_consumed
     except Exception as e:
         console.print(f"Error in estimating credits for {scan_type} scan: {e}",style="bold red")

@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, X, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen, Ticket, Search } from "lucide-react";
+import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, X, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen, Ticket, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -79,7 +79,7 @@ const ScannerResultsDisplay = ({ results }: { results: any }) => {
   if (scannerKeys.length === 0) {
     return (
       <div className="text-center py-4">
-        <span className="text-zinc-400 text-sm">No scanner results available</span>
+        <span className="text-zinc-400 text-sm">Scanner didn't flag anything</span>
       </div>
     );
   }
@@ -155,15 +155,18 @@ export default function GuardrailsIntegrationDashboardPage() {
   });
   const [jiraProjectId, setJiraProjectId] = useState("");
   const [logSearchQuery, setLogSearchQuery] = useState("");
+  const LOGS_PAGE_SIZE = 10;
+  const [logsPage, setLogsPage] = useState(1);
+  const logsOffset = (logsPage - 1) * LOGS_PAGE_SIZE;
 
   const query = useQuery({
-    queryKey: ['guardrails-integration-dashboard', team_id, integration_id],
+    queryKey: ['guardrails-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset],
     queryFn: getGuardrailsIntegrationDashboard,
     enabled: !!team_id && !!integration_id,
   });
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id] });
+    queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
   };
 
   const formatDate = (dateString: string) => {
@@ -209,6 +212,11 @@ export default function GuardrailsIntegrationDashboardPage() {
     }
   }, [query.data?.settings]);
 
+  // Reset logs page when integration changes
+  useEffect(() => {
+    setLogsPage(1);
+  }, [team_id, integration_id]);
+
   // Sync Jira project ID from integration_settings (backend stores as jira_project_id: { jira_project_id: "..." })
   useEffect(() => {
     const is = query.data?.integration_settings;
@@ -230,7 +238,7 @@ export default function GuardrailsIntegrationDashboardPage() {
         data,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id] });
+      queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
       setEditSettings(false);
       toast.success('Settings updated successfully');
     },
@@ -247,7 +255,7 @@ export default function GuardrailsIntegrationDashboardPage() {
         data,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id] });
+      queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
     },
     onError: (error) => {
       showErrorToast(error);
@@ -255,6 +263,10 @@ export default function GuardrailsIntegrationDashboardPage() {
   });
 
   const logData = query.data?.log_data ?? [];
+  const totalLogs = query.data?.dashboard_data?.card_data?.total_logs ?? 0;
+  const hasNextPage = totalLogs > 0 && logsOffset + LOGS_PAGE_SIZE < totalLogs;
+  const showPaginationBar = totalLogs > 0 || logsPage > 1;
+
   const filteredLogs = useMemo(() => {
     if (!logSearchQuery.trim()) return logData;
     const q = logSearchQuery.trim().toLowerCase();
@@ -324,6 +336,13 @@ export default function GuardrailsIntegrationDashboardPage() {
   const dashboardData: GuardrailsIntegrationDashboard = query.data || {
     dashboard_data: {
       card_data: {
+        total_logs: 0,
+        total_logs_today: 0,
+        percentage_increase_or_decrease_in_total_logs_compared_to_yesterday: 0,
+        total_logs_this_month: 0,
+        total_active_scanners: 0,
+      },
+      radial_chart_data: {
         total_logs: 0,
         successful_logs: 0,
         failed_logs: 0,
@@ -459,9 +478,7 @@ export default function GuardrailsIntegrationDashboardPage() {
                     <div>
                       <CardTitle>Logs</CardTitle>
                       <CardDescription className="mt-2">
-                        {logSearchQuery.trim()
-                          ? `${filteredLogs.length} of ${dashboardData.log_data.length} logs`
-                          : `All Logs for this Integration (${dashboardData.log_data.length} total)`}
+                        Find all the logs for this integration here 
                       </CardDescription>
                     </div>
                     <div className="relative w-full sm:w-72">
@@ -476,6 +493,37 @@ export default function GuardrailsIntegrationDashboardPage() {
                     </div>
                   </div>
                 </CardHeader>
+                {showPaginationBar && (
+                  <div className="flex items-center justify-between gap-4 px-6 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+                    <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                      {totalLogs > 0
+                        ? `Showing logs ${logsOffset + 1} to ${Math.min(logsOffset + logData.length, logsOffset + LOGS_PAGE_SIZE)} of ${totalLogs}`
+                        : `Showing logs ${logsOffset + 1} to ${logsOffset + logData.length}`}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={logsPage <= 1}
+                        onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                        aria-label="Previous page"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={!hasNextPage}
+                        onClick={() => setLogsPage((p) => p + 1)}
+                        aria-label="Next page"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <CardContent className="min-h-0 flex-1 overflow-hidden p-0 ">
                   {dashboardData.log_data.length === 0 ? (
                     <div className="text-center py-12 text-zinc-600 dark:text-zinc-400 px-6">

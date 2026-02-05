@@ -1,353 +1,401 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  AlertTriangle, 
-  Shield, 
-  FileText, 
-  Search, 
+import {
+  AlertTriangle,
   ArrowLeft,
-  Code,
-  ExternalLink,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle
+  MessageCircle,
+  Download,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useRouter, useSearchParams, usePathname, useParams } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
+import { getExportResults, type SastDashboardData } from "@/utils/backend_api";
+import { showErrorToast } from "@/utils/error-handler";
+import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { PieChart, BarChart3, TrendingUp } from "lucide-react";
 
-interface Location {
-  line?: number;
-  col?: number;
-  offset?: number;
+// Agent output format (from worker_sast_agent_results_testing.json)
+type OwaspOrComplianceItem = Record<string, string>;
+/** OWASP / compliance: either a dict (key = title, value = description) or legacy list of one-item dicts */
+type OwaspOrCompliance = Record<string, string> | Array<OwaspOrComplianceItem> | null | undefined;
+
+interface SastAgentVulnerability {
+  title?: string | null;
+  description?: string | null;
+  impact?: string | null;
+  owasp_top_10?: OwaspOrCompliance;
+  compliance_controls?: OwaspOrCompliance;
+  suggested_fix?: string | null;
+  location?: string | null;
+  snippet?: string | null;
+  cves?: unknown[] | Record<string, unknown> | null;
+}
+interface SastAgentLogicalComponent {
+  logical_component_title?: string | null;
+  vulnerabilities?: SastAgentVulnerability[] | null;
+}
+type SastAgentResult = SastAgentLogicalComponent;
+
+function isSastAgentFormat(data: unknown): data is SastAgentLogicalComponent[] {
+  if (!Array.isArray(data) || data.length === 0) return false;
+  const first = data[0];
+  return (
+    first != null &&
+    typeof first === "object" &&
+    "vulnerabilities" in first &&
+    Array.isArray((first as SastAgentLogicalComponent).vulnerabilities)
+  );
 }
 
-interface Metavar {
-  start?: Location;
-  end?: Location;
-  abstract_content?: string;
-  propagated_value?: {
-    svalue_start?: Location;
-    svalue_end?: Location;
-    svalue_abstract_content?: string;
-  };
+/** Safe string from owasp/compliance item: { "KEY": "Label" } -> "Label" or key */
+function formatOwaspOrComplianceItem(item: OwaspOrComplianceItem): string {
+  if (item == null || typeof item !== "object") return "â€”";
+  const entries = Object.entries(item).filter(([, v]) => v != null && String(v).trim() !== "");
+  if (entries.length === 0) return Object.keys(item)[0] ?? "â€”";
+  return entries[0][1];
 }
 
-interface Metadata {
-  likelihood?: string;
-  impact?: string;
-  confidence?: string;
-  category?: string;
-  subcategory?: string[];
-  cwe?: Array<string | { min_version?: string; rule_id?: string; this_version?: string; [key: string]: any }>;
-  cwe2020_top25?: boolean;
-  cwe2021_top25?: boolean;
-  cwe2022_top25?: boolean;
-  "display-name"?: string;
-  "functional-categories"?: string[];
-  owasp?: Array<string | { [key: string]: any }>;
-  references?: Array<string | { [key: string]: any }>;
-  technology?: string[];
-  license?: string;
-  vulnerability_class?: Array<string | { [key: string]: any }>;
-  source?: string;
-  shortlink?: string;
-  semgrep?: {
-    rule?: {
-      origin?: string;
-      r_id?: number;
-      rule_id?: string;
-      rv_id?: number;
-      url?: string;
-      version_id?: string;
-    };
-  };
+/** Count for OWASP / compliance: supports dict (keys length) or legacy array (length) */
+function getOwaspComplianceCount(val: OwaspOrCompliance): number {
+  if (val == null) return 0;
+  if (Array.isArray(val)) return val.length;
+  if (typeof val === "object" && !Array.isArray(val)) return Object.keys(val).length;
+  return 0;
 }
 
-interface DataflowTrace {
-  taint_source?: Array<string | Array<{
-    path?: string;
-    start?: Location;
-    end?: Location;
-  }>>;
-  intermediate_vars?: Array<{
-    location?: {
-      path?: string;
-      start?: Location;
-      end?: Location;
-    };
-    content?: string;
-  }>;
-  taint_sink?: Array<string | Array<{
-    path?: string;
-    start?: Location;
-    end?: Location;
-  }>>;
-}
-
-interface SASTResult {
-  check_id?: string;
-  path?: string;
-  start?: Location;
-  end?: Location;
-  extra?: {
-    metavars?: Record<string, Metavar>;
-    message?: string;
-    metadata?: Metadata;
-    severity?: string;
-    fingerprint?: string;
-    lines?: string;
-    is_ignored?: boolean;
-    validation_state?: string;
-    dataflow_trace?: DataflowTrace;
-    engine_kind?: string;
-  };
-  severity?: string;
-  fingerprint?: string;
-  lines?: string;
-  snippet?: string;
-  is_ignored?: boolean;
-  validation_state?: string;
-  dataflow_trace?: DataflowTrace;
-  engine_kind?: string;
-}
-
-interface SASTError {
-  code?: number;
-  level?: string;
-  type?: string | [string, { min_version?: string; rule_id?: string; this_version?: string; [key: string]: any }];
-  message?: string;
-  path?: string;
-  rule_id?: string;
-}
-
-interface SASTResultsData {
-  version?: string;
-  results?: SASTResult[];
-  errors?: SASTError[];
-  paths?: {
-    scanned?: string[];
-    skipped?: Array<{
-      path?: string;
-      reason?: string;
-    }>;
-  };
-  time?: {
-    rules_parse_time?: number;
-    profiling_times?: {
-      config_time?: number;
-      core_time?: number;
-      ignores_time?: number;
-      total_time?: number;
-    };
-    scanning_time?: {
-      total_time?: number;
-      per_file_time?: {
-        mean?: number;
-        std_dev?: number;
-      };
-    };
-  };
-  engine_requested?: string;
-  interfile_languages_used?: string[];
-  skipped_rules?: string[];
+/** Entries for display: [title, description][] â€” supports dict or legacy list of one-item dicts */
+function getOwaspComplianceEntries(val: OwaspOrCompliance): [string, string][] {
+  if (val == null) return [];
+  if (Array.isArray(val)) {
+    return val.map((item) => {
+      const s = formatOwaspOrComplianceItem(item);
+      const k = item && typeof item === "object" ? Object.keys(item)[0] ?? s : s;
+      return [k, s] as [string, string];
+    });
+  }
+  if (typeof val === "object" && !Array.isArray(val)) {
+    return Object.entries(val).filter(([, v]) => v != null && String(v).trim() !== "") as [string, string][];
+  }
+  return [];
 }
 
 interface SASTResultsProps {
-  data: SASTResultsData;
+  data: SastAgentLogicalComponent[] | null | undefined;
   conversationId?: number;
+  dashboard?: SastDashboardData | null;
 }
 
-export default function SASTResults({ data, conversationId }: SASTResultsProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const origin = searchParams.get("origin") || "chat";
-  const [searchQuery, setSearchQuery] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [checkFilter, setCheckFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("severity");
+function getImpactBadgeClass(impact: string): string {
+  const i = (impact || "").toLowerCase();
+  if (i === "critical") return "bg-red-600 hover:bg-red-700 text-white";
+  if (i === "high") return "bg-orange-500 hover:bg-orange-600 text-white";
+  if (i === "medium") return "bg-amber-500 hover:bg-amber-600 text-white";
+  if (i === "low") return "bg-blue-500 hover:bg-blue-600 text-white";
+  return "bg-zinc-500 hover:bg-zinc-600 text-white";
+}
 
-  // Check if we're in CI/CD context and extract integration_id
-  const isCicdContext = pathname.includes("ci_cd");
-  let integrationId: string | null = null;
-  if (isCicdContext) {
-    const pathParts = pathname.split('/').filter(Boolean);
-    const cicdIndex = pathParts.indexOf('ci_cd');
-    if (cicdIndex !== -1 && cicdIndex + 1 < pathParts.length) {
-      integrationId = pathParts[cicdIndex + 1];
-    }
-  }
+const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
+const riskChartColors: Record<string, string> = {
+  Critical: "hsl(0 84% 60%)",
+  High: "hsl(25 95% 53%)",
+  Medium: "hsl(48 96% 53%)",
+  Low: "hsl(142 71% 45%)",
+};
 
-  // Parse path to show only from repo_xxxxxxx onwards
-  const getRelativePath = (path?: string): string => {
-    if (!path) return "Unknown";
-    try {
-      const repoIndex = path.indexOf("repo_");
-      if (repoIndex !== -1) {
-        return path.substring(repoIndex);
-      }
-      return path;
-    } catch {
-      return path;
-    }
-  };
+const riskRadarChartConfig = {
+  subject: { label: "Severity" },
+  count: { label: "Count", color: "hsl(0 84% 60%)" },
+} satisfies ChartConfig;
 
-  const getFileName = (filePath?: string) => {
-    if (!filePath) return "Unknown";
-    const relativePath = getRelativePath(filePath);
-    return relativePath.split('\\').pop()?.split('/').pop() || relativePath;
-  };
+const owaspRadialChartConfig = {
+  count: { label: "Count" },
+  ...Object.fromEntries(OWASP_COLORS.map((color, i) => [`fill_${i}`, { label: `Category ${i + 1}`, color }])),
+} satisfies ChartConfig;
 
-  // Safe data extraction with fallbacks
-  const results: SASTResult[] = Array.isArray(data?.results) ? data.results : [];
-  const allErrors: SASTError[] = Array.isArray(data?.errors) ? data.errors : [];
-  const scannedPaths = Array.isArray(data?.paths?.scanned) ? data.paths.scanned : [];
-  const skippedPaths = Array.isArray(data?.paths?.skipped) ? data.paths.skipped : [];
+const complianceBarChartConfig = {
+  name: { label: "Control" },
+  count: { label: "Count", color: "hsl(217 91% 60%)" },
+} satisfies ChartConfig;
 
-  // Filter out incompatible rule errors - only show actual scan errors
-  const errors: SASTError[] = allErrors.filter((error) => {
-    // Skip incompatible rule errors
-    if (Array.isArray(error.type) && error.type.length >= 2 && error.type[0] === "IncompatibleRule") {
-      return false;
-    }
-    return true;
+const cvesAreaChartConfig = {
+  cve: { label: "CVE" },
+  count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" },
+} satisfies ChartConfig;
+
+function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
+  const riskMetrics = dashboard.risk_metrics ?? {};
+  const owaspMetrics = dashboard.owasp_top_10_metrics ?? {};
+  const complianceMetrics = dashboard.compliance_controls_metrics ?? {};
+  const cvesMetrics = dashboard.cves_per_vulnerability ?? {};
+
+  const riskRadarData = RISK_ORDER.map((subject) => ({
+    subject,
+    count: riskMetrics[subject] ?? 0,
+  }));
+
+  const owaspEntries = Object.entries(owaspMetrics).map(([key, actualCount], index) => {
+    const displayValue = OWASP_KEY_TO_LABEL[key] ?? key;
+    return {
+      name: displayValue.length > 20 ? `${displayValue.slice(0, 20)}...` : displayValue,
+      key,
+      displayValue,
+      actualCount,
+      fill: OWASP_COLORS[index % OWASP_COLORS.length],
+    };
+  });
+  const maxOwasp = Math.max(1, ...owaspEntries.map((d) => d.actualCount));
+  const owaspRadialData = owaspEntries.map((d) => ({
+    ...d,
+    count: maxOwasp > 0 ? (d.actualCount / maxOwasp) * 100 : 0,
+  }));
+
+  const complianceBarData = Object.entries(complianceMetrics)
+    .map(([key, count]) => ({ name: COMPLIANCE_KEY_TO_LABEL[key] ?? key, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const cvesAreaData = Object.entries(cvesMetrics)
+    .map(([cve, count]) => ({ cve, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+  const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "â€”", count: 0 }];
+
+  return (
+    <div className="space-y-6">
+      {/* Row: Radial (OWASP) + Radar + CVEs area chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <PieChart className="w-4 h-4" />
+              OWASP Top 10 metrics
+            </CardTitle>
+            <CardDescription>Distribution by OWASP category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={owaspRadialChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+              <RadialBarChart
+                data={owaspRadialData}
+                innerRadius={40}
+                outerRadius={100}
+                startAngle={90}
+                endAngle={-270}
+              >
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      nameKey="displayValue"
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "â€”"}
+                      formatter={(_, __, ___, ____, payload) => {
+                        const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
+                        return <>Count: <span className="font-mono font-semibold tabular-nums">{count}</span></>;
+                      }}
+                    />
+                  }
+                />
+                <RadialBar dataKey="count" background className="cursor-pointer" />
+              </RadialBarChart>
+            </ChartContainer>
+            <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+              {owaspEntries.map(({ key, displayValue, fill }) => (
+                <div key={key} className="flex items-center gap-1.5 text-xs">
+                  <span
+                    className="shrink-0 w-3 h-3 rounded-full"
+                    style={{ backgroundColor: fill }}
+                    aria-hidden
+                  />
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {displayValue}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Risk metrics
+            </CardTitle>
+            <CardDescription>Findings by impact severity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={riskRadarChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+              <RadarChart data={riskRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+                <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
+                <PolarAngleAxis dataKey="subject" />
+                <PolarGrid />
+                <Radar dataKey="count" fill="hsl(0 84% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+              </RadarChart>
+            </ChartContainer>
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Number of findings for each impact level (Critical, High, Medium, Low). Each axis shows the count for that severity.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800 justify-between">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              CVEs per vulnerability
+            </CardTitle>
+            <CardDescription>Vulnerability count by CVE (top 20)</CardDescription>
+          </CardHeader>
+          <CardContent className="">
+            <ChartContainer config={cvesAreaChartConfig} className="aspect-auto h-[260px] w-full pb-8 cursor-pointer">
+              <AreaChart data={cvesAreaDisplay} margin={{ bottom: 28 }}>
+                <defs>
+                  <linearGradient id="fillSastCves" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                <XAxis
+                  dataKey="cve"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  minTickGap={20}
+                  height={56}
+                  interval={0}
+                  tickFormatter={(v) => (String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v)}
+                />
+                <YAxis hide domain={[0, "auto"]} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(value) => [value, "Vulnerabilities"]} />} />
+                <Area dataKey="count" type="monotone" fill="url(#fillSastCves)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+              </AreaChart>
+            </ChartContainer>
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Number of vulnerabilities linked to each CVE identifier. The chart shows the top 20 CVEs by count; hover for exact values.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="w-4 h-4" />
+            Compliance Controls Failed count
+          </CardTitle>
+          <CardDescription>Findings by compliance control (all). Scroll horizontally if needed.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="w-full">
+            <div className="min-w-max pb-2" style={{ minWidth: `${Math.max(400, complianceBarData.length * 56)}px` }}>
+              <ChartContainer config={complianceBarChartConfig} className="aspect-auto h-[260px] w-full min-w-0 cursor-pointer">
+                <BarChart data={complianceBarData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    height={56}
+                    interval={0}
+                    tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v)}
+                  />
+                  <YAxis type="number" tickLine={false} axisLine={false} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[8, 8, 0, 0]} style={{ cursor: "pointer" }} />
+                </BarChart>
+              </ChartContainer>
+            </div>
+            <ScrollBar orientation="horizontal" />
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SASTResultsAgentView({
+  components,
+  conversationId,
+  teamId,
+  isCicdContext,
+  integrationId,
+  origin,
+  router,
+  onDownloadReport,
+  isExporting = false,
+  dashboard,
+}: {
+  components: SastAgentLogicalComponent[];
+  conversationId?: number;
+  teamId?: string;
+  isCicdContext: boolean;
+  integrationId: string | null;
+  origin: string | null;
+  router: ReturnType<typeof useRouter>;
+  onDownloadReport?: () => void;
+  isExporting?: boolean;
+  dashboard?: SastDashboardData | null;
+}) {
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedVuln, setSelectedVuln] = useState<{ vuln: SastAgentVulnerability; componentTitle: string } | null>(null);
+
+  const totalFindings = components.reduce((sum, c) => sum + (Array.isArray(c.vulnerabilities) ? c.vulnerabilities.length : 0), 0);
+  const byImpact = components.reduce((acc, c) => {
+    (c.vulnerabilities ?? []).forEach((v) => {
+      const impact = (v.impact ?? "Unknown").trim() || "Unknown";
+      acc[impact] = (acc[impact] || 0) + 1;
+    });
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Flatten to rows: { componentTitle, vuln } for table
+  const tableRows: { componentTitle: string; vuln: SastAgentVulnerability }[] = [];
+  components.forEach((comp, compIndex) => {
+    const title = comp.logical_component_title ?? `Component ${compIndex + 1}`;
+    (comp.vulnerabilities ?? []).forEach((v) => {
+      tableRows.push({ componentTitle: title, vuln: v });
+    });
   });
 
-  // Calculate statistics
-  const stats = useMemo(() => {
-    const total = results.length;
-    const bySeverity = results.reduce((acc, result) => {
-      const severity = result.severity || result.extra?.severity || "UNKNOWN";
-      acc[severity] = (acc[severity] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const byCheck = results.reduce((acc, result) => {
-      const checkId = result.check_id || "Unknown";
-      const checkName = checkId.split('.').pop() || checkId;
-      acc[checkName] = (acc[checkName] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const byFile = results.reduce((acc, result) => {
-      const file = getRelativePath(result.path);
-      acc[file] = (acc[file] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const byCWE = results.reduce((acc, result) => {
-      const cweList = result.extra?.metadata?.cwe || [];
-      cweList.forEach((cwe) => {
-        let cweId: string;
-        if (typeof cwe === 'string') {
-          cweId = cwe.split(':')[0] || cwe;
-        } else if (cwe && typeof cwe === 'object' && 'rule_id' in cwe) {
-          cweId = (cwe as any).rule_id || JSON.stringify(cwe);
-        } else {
-          cweId = JSON.stringify(cwe);
-        }
-        acc[cweId] = (acc[cweId] || 0) + 1;
-      });
-      return acc;
-    }, {} as Record<string, number>);
-
-    const ignoredCount = results.filter((r) => r.is_ignored || r.extra?.is_ignored).length;
-    const uniqueFiles = new Set(results.map((r) => r.path).filter(Boolean)).size;
-
-    return {
-      total,
-      bySeverity,
-      byCheck,
-      byFile,
-      byCWE,
-      ignoredCount,
-      uniqueFiles,
-      errors: errors.length,
-      scannedFiles: scannedPaths.length,
-      skippedFiles: skippedPaths.length,
-    };
-  }, [results, errors, scannedPaths, skippedPaths]);
-
-  // Filter and sort results
-  const filteredResults = useMemo(() => {
-    let filtered = results.filter((result) => {
-      const searchLower = searchQuery.toLowerCase();
-      const checkId = result.check_id || "";
-      const message = result.extra?.message || "";
-      const path = getRelativePath(result.path);
-      const displayName = result.extra?.metadata?.["display-name"] || "";
-
-      const matchesSearch =
-        checkId.toLowerCase().includes(searchLower) ||
-        message.toLowerCase().includes(searchLower) ||
-        path.toLowerCase().includes(searchLower) ||
-        displayName.toLowerCase().includes(searchLower);
-
-      const severity = result.severity || result.extra?.severity || "UNKNOWN";
-      const matchesSeverity =
-        severityFilter === "all" || severity === severityFilter;
-
-      const checkName = checkId.split('.').pop() || checkId;
-      const matchesCheck =
-        checkFilter === "all" || checkName === checkFilter;
-
-      return matchesSearch && matchesSeverity && matchesCheck;
-    });
-
-    // Sort
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "severity":
-          const severityOrder: Record<string, number> = {
-            ERROR: 4,
-            WARNING: 3,
-            INFO: 2,
-            UNKNOWN: 1,
-          };
-          const aSev = a.severity || a.extra?.severity || "UNKNOWN";
-          const bSev = b.severity || b.extra?.severity || "UNKNOWN";
-          return (severityOrder[bSev] || 0) - (severityOrder[aSev] || 0);
-        case "check":
-          return (a.check_id || "").localeCompare(b.check_id || "");
-        case "file":
-          return getRelativePath(a.path).localeCompare(getRelativePath(b.path));
-        case "line":
-          return (a.start?.line || 0) - (b.start?.line || 0);
-        default:
-          return 0;
-      }
-    });
-
-    return filtered;
-  }, [results, searchQuery, severityFilter, checkFilter, sortBy]);
-
-  const getSeverityBadge = (severity?: string) => {
-    const sev = severity || "UNKNOWN";
-    const variants: Record<string, { className: string }> = {
-      ERROR: { className: "bg-red-500 hover:bg-red-600 text-white" },
-      WARNING: { className: "bg-orange-500 hover:bg-orange-600 text-white" },
-      INFO: { className: "bg-blue-500 hover:bg-blue-600 text-white" },
-    };
-    const variant = variants[sev] || { className: "bg-gray-500 hover:bg-gray-600 text-white" };
-    return (
-      <Badge variant="outline" className={variant.className}>
-        {sev}
-      </Badge>
-    );
+  const openVulnDetail = (vuln: SastAgentVulnerability, componentTitle: string) => {
+    setSelectedVuln({ vuln, componentTitle });
+    setDetailDialogOpen(true);
   };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           {(conversationId || isCicdContext) && (
@@ -355,18 +403,11 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
               variant="outline"
               size="icon"
               onClick={() => {
-                let backRoute: string;
-                if (isCicdContext && integrationId) {
-                  // Navigate back to CI/CD integration dashboard
-                  backRoute = `/home/ci_cd/${integrationId}`;
-                } else if (conversationId) {
-                  // Navigate back to SAST conversation page
-                  backRoute = origin === "list" 
-                    ? `/home/sast` 
-                    : `/home/sast/${conversationId}`;
-                } else {
-                  backRoute = `/home/sast`;
-                }
+                const backRoute = isCicdContext && integrationId
+                  ? `/home/ci_cd/${integrationId}`
+                  : origin === "chat"
+                    ? (teamId ? `/${teamId}/sast/${conversationId}` : `/home/sast/${conversationId}`)
+                    : (teamId ? `/${teamId}/sast` : "/home/sast");
                 router.push(backRoute);
               }}
               className="cursor-pointer"
@@ -377,325 +418,93 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
           <div>
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-              Static Application Security Testing results
+              Agent analysis by logical component
             </p>
           </div>
         </div>
-      </div>
-
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Findings</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">{stats.uniqueFiles} unique files</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Files Scanned</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.scannedFiles}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.skippedFiles > 0 && `${stats.skippedFiles} skipped`}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">By Severity</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {Object.entries(stats.bySeverity).map(([severity, count]) => (
-                <div key={severity} className="flex items-center justify-between text-xs">
-                  <span>{severity}:</span>
-                  <span className="font-semibold">{count}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
-
-      {/* Filters and Search */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search findings..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={severityFilter} onValueChange={setSeverityFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Severity" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Severities</SelectItem>
-                <SelectItem value="ERROR">Error</SelectItem>
-                <SelectItem value="WARNING">Warning</SelectItem>
-                <SelectItem value="INFO">Info</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={checkFilter} onValueChange={setCheckFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Check Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Checks</SelectItem>
-                {Object.keys(stats.byCheck).slice(0, 20).map((check) => (
-                  <SelectItem key={check} value={check}>
-                    {check}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sort By" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="severity">Severity</SelectItem>
-                <SelectItem value="check">Check ID</SelectItem>
-                <SelectItem value="file">File Name</SelectItem>
-                <SelectItem value="line">Line Number</SelectItem>
-              </SelectContent>
-            </Select>
+        {!isCicdContext && teamId && conversationId != null && (
+          <div className="flex items-center gap-2">
+            {onDownloadReport && (
+              <Button
+                variant="outline"
+                className="cursor-pointer bg-zinc-700 hover:bg-zinc-600 text-white border-zinc-600"
+                onClick={onDownloadReport}
+                disabled={isExporting}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {isExporting ? "Downloading..." : "Download Scan Report"}
+              </Button>
+            )}
+            <Button
+              variant="default"
+              className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => router.push(`/${teamId}/sast/${conversationId}`)}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Chat with the Results
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
-      {/* Results Table */}
+      {dashboard && (
+        <SASTDashboardCharts dashboard={dashboard} />
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle>Security Findings ({filteredResults.length})</CardTitle>
-          <CardDescription>
-            Showing {filteredResults.length} of {results.length} findings
-          </CardDescription>
+          <CardTitle>Findings</CardTitle>
+          <CardDescription>{totalFindings} vulnerability findings â€” click a title to view details</CardDescription>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[600px]">
+          <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Check</TableHead>
-                  <TableHead>File</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="w-[280px]">Vulnerability</TableHead>
+                  <TableHead className="w-[200px]">Logical component</TableHead>
+                  <TableHead className="w-[80px] text-center">OWASP Top 10</TableHead>
+                  <TableHead className="w-[80px] text-center">Compliance Controls</TableHead>
+                  <TableHead className="w-[100px]">Impact</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredResults.length === 0 ? (
+                {tableRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      No findings found matching your filters.
+                    <TableCell colSpan={5} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                      No findings to display.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredResults.map((result, index) => {
-                    const checkId = result.check_id || "Unknown";
-                    const checkName = checkId.split('.').pop() || checkId;
-                    const severity = result.severity || result.extra?.severity || "UNKNOWN";
-                    const message = result.extra?.message || "No description available";
-                    const metadata = result.extra?.metadata;
-                    const dataflowTrace = result.dataflow_trace || result.extra?.dataflow_trace;
-                    const isIgnored = result.is_ignored || result.extra?.is_ignored || false;
-                    const validationState = result.validation_state || result.extra?.validation_state || "NO_VALIDATOR";
-                    const snippet = result.snippet || result.lines || result.extra?.lines || "";
-
+                  tableRows.map(({ componentTitle, vuln }, idx) => {
+                    const vTitle = vuln.title ?? "Untitled finding";
+                    const impact = (vuln.impact ?? "").trim() || "â€”";
+                    const owaspCount = getOwaspComplianceCount(vuln.owasp_top_10);
+                    const complianceCount = getOwaspComplianceCount(vuln.compliance_controls);
                     return (
-                      <TableRow key={`${result.fingerprint || result.extra?.fingerprint || index}-${index}`}>
-                        <TableCell className="max-w-md">
-                          <Accordion type="single" collapsible className="w-full">
-                            <AccordionItem value={`item-${index}`} className="border-none">
-                              <AccordionTrigger className="py-0 hover:no-underline">
-                                <div className="text-left">
-                                  <div className="font-semibold text-sm">
-                                    {checkName}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                    {metadata?.["display-name"] || checkId}
-                                  </div>
-                                </div>
-                              </AccordionTrigger>
-                              <AccordionContent className="pt-2 pb-0">
-                                <div className="space-y-3 text-sm">
-                                  <div>
-                                    <div className="font-medium mb-1">Message:</div>
-                                    <div className="text-muted-foreground">{message}</div>
-                                  </div>
-                                  {metadata && (
-                                    <>
-                                      {metadata.likelihood && (
-                                        <div>
-                                          <div className="font-medium mb-1">Likelihood:</div>
-                                          <Badge variant="outline">{metadata.likelihood}</Badge>
-                                        </div>
-                                      )}
-                                      {metadata.impact && (
-                                        <div>
-                                          <div className="font-medium mb-1">Impact:</div>
-                                          <Badge variant="outline">{metadata.impact}</Badge>
-                                        </div>
-                                      )}
-                                      {metadata.confidence && (
-                                        <div>
-                                          <div className="font-medium mb-1">Confidence:</div>
-                                          <Badge variant="outline">{metadata.confidence}</Badge>
-                                        </div>
-                                      )}
-                                      {metadata.cwe && metadata.cwe.length > 0 && (
-                                        <div>
-                                          <div className="font-medium mb-1">CWE:</div>
-                                          <div className="flex flex-wrap gap-1">
-                                            {metadata.cwe.map((cwe, idx) => {
-                                              const cweValue = typeof cwe === 'string' ? cwe : JSON.stringify(cwe);
-                                              return (
-                                                <Badge key={idx} variant="outline" className="text-xs">
-                                                  {cweValue}
-                                                </Badge>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {metadata.owasp && metadata.owasp.length > 0 && (
-                                        <div>
-                                          <div className="font-medium mb-1">OWASP:</div>
-                                          <div className="flex flex-wrap gap-1">
-                                            {metadata.owasp.map((owasp, idx) => {
-                                              const owaspValue = typeof owasp === 'string' ? owasp : JSON.stringify(owasp);
-                                              return (
-                                                <Badge key={idx} variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
-                                                  {owaspValue}
-                                                </Badge>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {metadata.vulnerability_class && metadata.vulnerability_class.length > 0 && (
-                                        <div>
-                                          <div className="font-medium mb-1">Vulnerability Class:</div>
-                                          <div className="flex flex-wrap gap-1">
-                                            {metadata.vulnerability_class.map((vuln, idx) => {
-                                              const vulnValue = typeof vuln === 'string' ? vuln : JSON.stringify(vuln);
-                                              return (
-                                                <Badge key={idx} variant="outline" className="text-xs">
-                                                  {vulnValue}
-                                                </Badge>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {metadata.references && metadata.references.length > 0 && (
-                                        <div>
-                                          <div className="font-medium mb-1">References:</div>
-                                          <div className="flex flex-wrap gap-2">
-                                            {metadata.references.map((ref, idx) => {
-                                              const refValue = typeof ref === 'string' ? ref : JSON.stringify(ref);
-                                              return (
-                                                <a
-                                                  key={idx}
-                                                  href={typeof ref === 'string' ? ref : '#'}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="text-blue-500 hover:underline flex items-center gap-1 text-xs"
-                                                >
-                                                  <ExternalLink className="w-3 h-3" />
-                                                  Reference {idx + 1}
-                                                </a>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                  {snippet && (
-                                    <div>
-                                      <div className="font-medium mb-1">Code Snippet:</div>
-                                      <div className="text-muted-foreground font-mono text-xs bg-zinc-100 dark:bg-zinc-800 p-2 rounded">
-                                        {snippet}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {result.fingerprint || result.extra?.fingerprint ? (
-                                    <div>
-                                      <div className="font-medium mb-1">Fingerprint:</div>
-                                      <div className="text-muted-foreground font-mono text-xs">
-                                        {(result.fingerprint || result.extra?.fingerprint || "").substring(0, 50)}...
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
+                      <TableRow key={idx} className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                        <TableCell className="font-medium">
+                          <button
+                            type="button"
+                            onClick={() => openVulnDetail(vuln, componentTitle)}
+                            className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium"
+                          >
+                            {vTitle}
+                          </button>
+                        </TableCell>
+                        <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                          {componentTitle}
+                        </TableCell>
+                        <TableCell className="text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
+                          {owaspCount}
+                        </TableCell>
+                        <TableCell className="text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
+                          {complianceCount}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-muted-foreground" />
-                            <div>
-                              <div className="font-medium text-sm max-w-xs truncate">
-                                {getFileName(result.path)}
-                              </div>
-                              <div className="text-xs text-muted-foreground font-mono truncate max-w-xs">
-                                {getRelativePath(result.path)}
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium text-sm">
-                              Line {result.start?.line || "?"}
-                              {result.end?.line && result.end.line !== result.start?.line && `-${result.end.line}`}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Col {result.start?.col || "?"}
-                              {result.end?.col && result.end.col !== result.start?.col && `-${result.end.col}`}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{getSeverityBadge(severity)}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {isIgnored ? (
-                              <Badge variant="outline" className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200">
-                                Ignored
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                                Active
-                              </Badge>
-                            )}
-                            {validationState !== "NO_VALIDATOR" && (
-                              <div className="text-xs text-muted-foreground">
-                                {validationState}
-                              </div>
-                            )}
-                          </div>
+                          <Badge variant="outline" className={getImpactBadgeClass(impact)}>
+                            {impact}
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     );
@@ -707,7 +516,263 @@ export default function SASTResults({ data, conversationId }: SASTResultsProps) 
         </CardContent>
       </Card>
 
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+            <DialogTitle className="pr-8">
+              {selectedVuln?.vuln.title ?? "Vulnerability details"}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedVuln && (
+            <div className="h-[70vh] min-h-0 shrink px-6 pb-6">
+              <ScrollArea className="h-full w-full rounded-md">
+                <div className="space-y-4 pt-2 pr-4">
+              {selectedVuln.componentTitle && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Logical component</div>
+                  <p className="text-sm text-zinc-800 dark:text-zinc-200">{selectedVuln.componentTitle}</p>
+                </div>
+              )}
+              {(selectedVuln.vuln.impact ?? "").trim() && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>
+                  <Badge variant="outline" className={getImpactBadgeClass(selectedVuln.vuln.impact!.trim())}>
+                    {selectedVuln.vuln.impact!.trim()}
+                  </Badge>
+                </div>
+              )}
+              {(selectedVuln.vuln.description ?? "").trim() && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Description</div>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.vuln.description!.trim()}</p>
+                </div>
+              )}
+              {(selectedVuln.vuln.location ?? "").trim() && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Location</div>
+                  <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300">{selectedVuln.vuln.location!.trim()}</p>
+                </div>
+              )}
+              {(selectedVuln.vuln.snippet ?? "").trim() && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Code snippet</div>
+                  <pre className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono text-zinc-800 dark:text-zinc-200">
+                    {selectedVuln.vuln.snippet!.trim()}
+                  </pre>
+                </div>
+              )}
+              {(selectedVuln.vuln.suggested_fix ?? "").trim() && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Suggested fix</div>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.vuln.suggested_fix!.trim()}</p>
+                </div>
+              )}
+              {getOwaspComplianceEntries(selectedVuln.vuln.owasp_top_10).length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
+                  <div className="flex flex-wrap gap-1">
+                    {getOwaspComplianceEntries(selectedVuln.vuln.owasp_top_10).map(([, description], i) => (
+                      <Badge key={i} variant="secondary" className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
+                        {description}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {getOwaspComplianceEntries(selectedVuln.vuln.compliance_controls).length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
+                  <div className="flex flex-wrap gap-1">
+                    {getOwaspComplianceEntries(selectedVuln.vuln.compliance_controls).map(([, description], i) => (
+                      <Badge key={i} variant="outline" className="text-xs">
+                        {description}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(() => {
+                const cves = selectedVuln.vuln.cves;
+                const cveEntries: [string, string][] = [];
+                if (Array.isArray(cves) && cves.length > 0) {
+                  cves.forEach((cve, i) => {
+                    const id = typeof cve === "string" ? cve : (cve && typeof cve === "object" && "id" in (cve as object) ? String((cve as { id?: string }).id) : null);
+                    if (id) cveEntries.push([id, ""]);
+                  });
+                } else if (cves && typeof cves === "object" && !Array.isArray(cves) && Object.keys(cves).length > 0) {
+                  cveEntries.push(...(Object.entries(cves) as [string, string][]));
+                }
+                return cveEntries.length > 0 ? (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Related CVEs</div>
+                    <ul className="space-y-2 text-sm">
+                      {cveEntries.map(([id, desc], i) => (
+                        <li key={i} className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-2">
+                          <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{id}</span>
+                          {desc && <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">{desc}</p>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null;
+              })()}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
+export default function SASTResults({ data, conversationId, dashboard }: SASTResultsProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // No query param â†’ back goes to SAST list; origin=chat â†’ back goes to chat (scan_id) page
+  const origin = searchParams.get("origin");
+
+  // Check if we're in CI/CD context and extract integration_id
+  const isCicdContext = pathname.includes("ci_cd");
+  let integrationId: string | null = null;
+  if (isCicdContext) {
+    const pathParts = pathname.split("/").filter(Boolean);
+    const cicdIndex = pathParts.indexOf("ci_cd");
+    if (cicdIndex !== -1 && cicdIndex + 1 < pathParts.length) {
+      integrationId = pathParts[cicdIndex + 1];
+    }
+  }
+
+  const params = useParams();
+  const teamId = params?.team_id as string | undefined;
+
+  const exportMutation = useMutation({
+    mutationFn: () => {
+      const tid = teamId ? parseInt(teamId, 10) : NaN;
+      if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      return getExportResults(tid, conversationId);
+    },
+    onSuccess: (data) => {
+      const blob = new Blob([data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sast_scan_${conversationId}_report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err) => {
+      showErrorToast(err, "Failed to download scan report");
+    },
+  });
+
+  const handleDownloadReport = () => exportMutation.mutate();
+  const isExporting = exportMutation.isPending;
+
+  // Format detection and failsafe: no data
+  if (data == null || (Array.isArray(data) && data.length === 0)) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {(conversationId || isCicdContext) && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  const backRoute = isCicdContext && integrationId
+                    ? `/home/ci_cd/${integrationId}`
+                    : origin === "chat"
+                      ? (teamId ? `/${teamId}/sast/${conversationId}` : `/home/sast/${conversationId}`)
+                      : (teamId ? `/${teamId}/sast` : "/home/sast");
+                  router.push(backRoute);
+                }}
+                className="cursor-pointer"
+              >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            )}
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
+          </div>
+          {!isCicdContext && teamId && conversationId != null && (
+            <Button
+              variant="default"
+              className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => router.push(`/${teamId}/sast/${conversationId}`)}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Chat with the Results
+            </Button>
+          )}
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center text-zinc-600 dark:text-zinc-400">
+            No results available for this scan. The scan may not have completed yet or returned no findings.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Agent format: array of { logical_component_title, vulnerabilities }
+  if (isSastAgentFormat(data)) {
+    return (
+      <SASTResultsAgentView
+        components={data}
+        conversationId={conversationId}
+        teamId={teamId}
+        isCicdContext={isCicdContext}
+        integrationId={integrationId}
+        origin={origin}
+        router={router}
+        onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
+        isExporting={isExporting}
+        dashboard={dashboard}
+      />
+    );
+  }
+
+  // Unexpected format (not agent structure)
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {(conversationId || isCicdContext) && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                const backRoute = isCicdContext && integrationId
+                  ? `/home/ci_cd/${integrationId}`
+                  : origin === "chat"
+                    ? (teamId ? `/${teamId}/sast/${conversationId}` : `/home/sast/${conversationId ?? ""}`)
+                    : (teamId ? `/${teamId}/sast` : "/home/sast");
+                router.push(backRoute);
+              }}
+              className="cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
+        </div>
+        {!isCicdContext && teamId && conversationId != null && (
+          <Button
+            variant="default"
+            className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => router.push(`/${teamId}/sast/${conversationId}`)}
+          >
+            <MessageCircle className="h-4 w-4 mr-2" />
+            Chat with the Results
+          </Button>
+        )}
+      </div>
+      <Card>
+        <CardContent className="py-12 text-center text-zinc-600 dark:text-zinc-400">
+          Results are in an unexpected format and cannot be displayed.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

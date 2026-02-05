@@ -28,13 +28,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SastConversation  , deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
@@ -64,12 +65,12 @@ export default function SASTPage() {
 
   useEffect(() => {
     if (query.data) {
-      setConversations(query.data);
+      setConversations(query.data.scans_list_data ?? []);
     }
     if (query.error) {
       showErrorToast(query.error, 'Error fetching sast conversations');
     }
-  }, [query.data , query.error]);
+  }, [query.data, query.error]);
 
   //mutations
   const deleteSastConversationMutation = useMutation({
@@ -210,6 +211,72 @@ export default function SASTPage() {
             </div>
           </div>
 
+          {/* Summary cards (shown when we have card_data from the list API) */}
+          {query.data?.card_data && !query.isLoading && !query.isError && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</CardTitle>
+                  <Clock className="h-4 w-4 text-zinc-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.pending_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</CardTitle>
+                  <Play className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.started_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</CardTitle>
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.success_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</CardTitle>
+                  <XCircle className="h-4 w-4 text-red-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.failure_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</CardTitle>
+                  <CalendarPlus className="h-4 w-4 text-zinc-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.scans_created_today}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</CardTitle>
+                  <CalendarCheck className="h-4 w-4 text-zinc-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.scans_updated_today}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           {/* Conversations Table */}
           { query.isError ? (
             <div className="text-center py-12">
@@ -253,7 +320,7 @@ export default function SASTPage() {
                     <TableRow key={conversation.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/${team_id}/sast/${conversation.id}`}
+                          href={conversation.scan_status === "success" ? `/${team_id}/sast/${conversation.id}/results` : `/${team_id}/sast/${conversation.id}`}
                           className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}

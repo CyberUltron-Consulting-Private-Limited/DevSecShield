@@ -23,6 +23,7 @@ from backend.utilities.team import (
     check_if_user_is_admin_of_team,
     check_if_user_is_in_team,
 )
+from backend.utilities.dashboard.sast import generate_sast_dashboard
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed
@@ -30,6 +31,7 @@ from backend.utilities.db.schemas import *
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.new_models import scan_types
 from rich.console import Console
+from backend.utilities.dashboard.sast_list import generate_card_data_for_sast_list
 
 
 
@@ -72,7 +74,10 @@ async def list_scans(
                 background_tasks.add_task(update_status_of_scan_in_main_db, scans = scans_list_to_update, engine = engine)
                 console.print(f"Background task added to update statuses of scans: {scans_list_to_update}" ,style="bold green")
             
-            return scans_list_data
+            return {
+                "scans_list_data": scans_list_data,
+                "card_data": generate_card_data_for_sast_list(scans=scans)
+            }
 
     except HTTPException as e:
         raise e
@@ -148,13 +153,16 @@ async def send_message_to_scan(
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
-        # STEP [ 1 ] : =========== Check if user is in team ======================
+        # STEP [ 1 ] : =========== Check if user is in team and check if team has enough credits======================
         check_if_user_is_in_team(user.id, team_id, engine)
+        if not check_if_team_has_enough_credits(team_id, 0.006):
+            return { "content" : "Team does not have enough credits to send a message" }
 
 
         SCAN = None
         SCAN_DATA = {}
         SCAN_STATUS = None
+        MAX_MESSAGE_LIMIT = 100
 
 
         # STEP [ 1 ] : =========== Get the conversation from the main db ======================
@@ -184,6 +192,12 @@ async def send_message_to_scan(
         
         # STEP [ 3 ] : =========== Add the user message to the mongo db ====================== ⭐
         message_collection = mongo_db["message_log"]
+        
+        # enforce max message limit
+        messages_count = message_collection.count_documents({"scan_id": SCAN.id})
+        if messages_count > MAX_MESSAGE_LIMIT:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Max message limit reached")
+        
         message_instance = MessageLog(
             scan_id=SCAN.id,
             content=data.user_message,
@@ -217,10 +231,10 @@ async def send_message_to_scan(
         
         # STEP [ 5 ] : =========== Get the response from the model ======================
         AI_RESPONSE = await create_response(
+            mongo_db=mongo_db,
             scan_id=SCAN.id,
             scan_type=type,
             scan_results=SCAN_DATA,
-            history=[],
             content=data.user_message,
             role="human", # doesnt get saved to any db , jsut for functional clarity 
         )
@@ -305,15 +319,19 @@ async def get_scan(
         if not SCAN_STATUS :
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan status or scan data or messages not found")
         
-
+        # STEP [ 4 ] : =================== Get the dashboard data ======================
+        if SCAN_DATA : 
+            dashboard_data = generate_sast_dashboard(scan_results=SCAN_DATA)
+        else:
+            dashboard_data = None
         
         # STEP [ 4 ] : =================== Return the scan data ======================
         return {
                 "title": scan.title,
-                "estimated_credits": scan.credit_consumed,
                 "scan_metadata": scan.scan_metadata,
                 "scan_status": SCAN_STATUS.lower(),
                 "data": SCAN_DATA,
+                "dashboard": dashboard_data,
                 "messages": MESSAGES,
             }
         
@@ -359,6 +377,7 @@ async def start_scan(
         
         
         
+        
         # STEP [ 2 ] : =========== Validate getting the conversation from the main db ======================
         with Session(engine) as session:
             scan = None
@@ -369,6 +388,8 @@ async def start_scan(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not been estimated yet , please estimate the credits for the scan first")
             if scan.owner_user_id != user.id: # only the user who created the scan can start the scan ⭐
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to start this scan")
+            if not check_if_team_has_enough_credits(team_id, scan.credit_consumed):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Team does not have enough credits to start this scan")
             if scan.scan_status == "success" or scan.scan_status == "started" or scan.scan_data != {} or  scan.scan_status == "started" or scan.scan_status == "failure":
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
             if (scan.scan_status == "pending" or scan.scan_status == "NOT_STARTED" or scan.scan_status == "started") and (scan.task_id != None) and (scan.task_id != "") :
@@ -385,6 +406,7 @@ async def start_scan(
             if scan_metadata == None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error in getting scan metadata")
             scan.scan_metadata = scan_metadata
+            scan.last_updated = datetime.datetime.now(datetime.timezone.utc) # updating last_updated field
             session.add(scan)
             session.commit()
         
@@ -690,6 +712,7 @@ async def estimate_credits_for_scan(
         
         
         # STEP [ 3 ] : =========== Estimate the credits for the scan and update the main db ======================
+        console.print(f"Estimating credits for {type} scan. start scan payload: {start_scan_payload}" ,style="bold yellow")
         credits_required = await estimate_credits(
             scan_type=type,
             engine=engine,

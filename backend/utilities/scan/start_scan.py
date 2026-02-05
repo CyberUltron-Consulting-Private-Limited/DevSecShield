@@ -64,8 +64,11 @@ async def start_scan_and_update_db(
             scan_metadata = get_scan_metadata_for_type(scan_type=scan_type,start_scan_payload=start_scan_payload)
             scan.scan_metadata = scan_metadata
             session.commit()
+    
+    
+    except HTTPException as e:
+        console.print(f"HTTPException in start_scan_and_update_db: {e}",style="bold red")
+        raise e
     except Exception as e:
-        console.print(f"Error in start_scan: {e}",style="bold red")
-        if isinstance(e,HTTPException):
-            raise e
+        console.print(f"Error in start_scan_and_update_db: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")

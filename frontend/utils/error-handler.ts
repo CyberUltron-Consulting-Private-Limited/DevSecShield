@@ -16,7 +16,7 @@ export const handleLogout = async () => {
     if(response.status === 200){
       toast.success("Logged out user and session deactivated")
       localStorage.clear()
-      window.location.assign("/login")
+      window.location.href = "/login";
     }else{
       throw new Error(response.data.detail)
     }
@@ -45,6 +45,8 @@ export const handleApiError = (error: unknown): ApiError => {
         status: 429
       };
     } else if (status === 401) {
+      localStorage.clear()
+      window.location.href = "/login";
       return {
         message: 'Unauthorized access. Please log in again.',
         status: 401

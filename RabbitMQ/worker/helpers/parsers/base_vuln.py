@@ -14,9 +14,9 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
         if "owasp_top_10" in dumped:
             console.print(f"⚠️ Owasp top 10 found in dumped,parsing it...",style="bold yellow")
             owasp_top_10_list : list[type[OWASPTop10]] = dumped["owasp_top_10"]
-            temp_owasp_top_10 = []
+            temp_owasp_top_10 = {}
             for owasp in owasp_top_10_list:
-                temp_owasp_top_10.append({owasp.name : owasp.value})
+                temp_owasp_top_10[owasp.name] = owasp.value
             dumped["owasp_top_10"] = temp_owasp_top_10
             console.print(f"✅ Owasp top 10 parsed successfully",style="bold green")
 
@@ -25,18 +25,18 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
         if "compliance_controls" in dumped:
             console.print(f"⚠️ Compliance controls found in dumped,parsing it...",style="bold yellow")
             compliance_controls_list : list[type[ComplianceControls]] = dumped["compliance_controls"]
-            temp_compliance_controls = []
+            temp_compliance_controls = {}
             for compliance_control in compliance_controls_list:
-                temp_compliance_controls.append({compliance_control.name : compliance_control.value})
+                temp_compliance_controls[compliance_control.name] = compliance_control.value
             dumped["compliance_controls"] = temp_compliance_controls
             console.print(f"✅ Compliance controls parsed successfully",style="bold green")
         
         if "cves" in dumped:
             console.print(f"⚠️ CVE's found in dumped,parsing it...",style="bold yellow")
             cves_list : list[type[FallbackCVEEnum]] = dumped["cves"]
-            temp_cves = []
+            temp_cves = {}
             for cve in cves_list:
-                temp_cves.append({cve.name : cve.value})
+                temp_cves[cve.name] = cve.value
             dumped["cves"] = temp_cves
             console.print(f"✅ CVE's parsed successfully",style="bold green")
         

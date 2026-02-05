@@ -14,24 +14,22 @@ import { Area, AreaChart, CartesianGrid, PolarAngleAxis, PolarGrid, Radar, Radar
 import type { GuardrailsDashboardData as DashboardData } from "@/utils/backend_api";
 import {
   BarChart3,
-  CheckCircle,
-  XCircle,
-  Hourglass,
-  Play,
-  Square,
   Activity,
   AlertTriangle,
-  PieChart,
   TrendingUp,
+  Calendar,
+  Layers,
+  Percent,
+  PieChart,
+  LineChartIcon,
 } from "lucide-react";
 
 const metricCardDefs = [
   { key: "total_logs" as const, title: "Total Logs", description: "Total number of logs", icon: BarChart3 },
-  { key: "successful_logs" as const, title: "Successful", description: "Successfully processed logs", icon: CheckCircle },
-  { key: "failed_logs" as const, title: "Failed", description: "Failed logs", icon: XCircle },
-  { key: "pending_logs" as const, title: "Pending", description: "Logs waiting to be processed", icon: Hourglass },
-  { key: "started_logs" as const, title: "Started", description: "Logs currently being processed", icon: Play },
-  { key: "not_started_logs" as const, title: "Not Started", description: "Logs not yet started", icon: Square },
+  { key: "total_logs_today" as const, title: "Logs Today", description: "Logs in the last 24 hours", icon: Calendar },
+  { key: "percentage_increase_or_decrease_in_total_logs_compared_to_yesterday" as const, title: "Log trends", description: "% change vs yesterday", icon: LineChartIcon },
+  { key: "total_logs_this_month" as const, title: "Logs Received This Month", description: "Logs received this month", icon: Layers },
+  { key: "total_active_scanners" as const, title: "Scanners Active", description: "Number of enabled scanners", icon: Activity },
 ];
 
 const riskSeverityOrder = ["critical", "high", "medium", "low"] as const;
@@ -73,11 +71,11 @@ const highCriticalAreaChartConfig = {
 } satisfies ChartConfig;
 
 const logStatusChartKeys = [
-  { key: "successful_logs" as const, label: "Successful", color: "var(--chart-1)" },
-  { key: "failed_logs" as const, label: "Failed", color: "var(--chart-2)" },
-  { key: "pending_logs" as const, label: "Pending", color: "var(--chart-3)" },
-  { key: "started_logs" as const, label: "Started", color: "var(--chart-4)" },
-  { key: "not_started_logs" as const, label: "Not started", color: "var(--chart-5)" },
+  { key: "successful_logs" as const, label: "Successful", color: "hsl(142 71% 45%)" },
+  { key: "failed_logs" as const, label: "Failed", color: "hsl(0 84% 60%)" },
+  { key: "pending_logs" as const, label: "Pending", color: "hsl(48 96% 53%)" },
+  { key: "started_logs" as const, label: "Started", color: "hsl(217 91% 60%)" },
+  { key: "not_started_logs" as const, label: "Not started", color: "hsl(262 83% 58%)" },
 ];
 
 const logStatusChartConfig = {
@@ -102,6 +100,14 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
 
   const {
     card_data,
+    radial_chart_data = {
+      total_logs: 0,
+      successful_logs: 0,
+      failed_logs: 0,
+      pending_logs: 0,
+      started_logs: 0,
+      not_started_logs: 0,
+    },
     recent_daily_detections_usage,
     high_or_critical_risks_daily_usage = {},
     past_30_days_risk_score_data,
@@ -120,7 +126,7 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
 
   const radialChartData = logStatusChartKeys.map(({ key, label, color }) => ({
     name: label,
-    actualCount: card_data[key] ?? 0,
+    actualCount: radial_chart_data[key] ?? 0,
     fill: color,
   }));
   const maxCount = Math.max(1, ...radialChartData.map((d) => d.actualCount));
@@ -143,7 +149,7 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
     <div className="space-y-8">
       {/* Metric cards */}
       <div className="flex flex-row gap-3 overflow-x-auto">
-        {metricCardDefs.map(({ key, title, icon: Icon }) => (
+        {metricCardDefs.map(({ key, title, description, icon: Icon }) => (
           <div
             key={key}
             className="flex-1 min-w-0 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 bg-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors"
@@ -155,72 +161,82 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
               <Icon className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
             </div>
             <div className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-              {card_data[key] ?? 0}
+              {key === "percentage_increase_or_decrease_in_total_logs_compared_to_yesterday"
+                ? (() => {
+                    const v = card_data[key] ?? 0;
+                    if (v === -100 || !Number.isFinite(v)) return "NA";
+                    const sign = v >= 0 ? "+" : "";
+                    return `${sign}${v.toFixed(1)}%`;
+                  })()
+                : (card_data[key] ?? 0)}
             </div>
+            <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              {description}
+            </p>
           </div>
         ))}
       </div>
 
-      {/* Log status distribution + Recent daily detections + Risk score distribution */}
+      {/* Log status distribution (radial) + Daily detections + Risk score distribution */}
       <div className="w-full">
         <div className="flex gap-6 w-full">
           <Card className="border-zinc-200 dark:border-zinc-800 flex-1 min-w-0">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <PieChart className="w-4 h-4" />
-                  Log status distribution
-                </CardTitle>
-                <CardDescription>
-                  Proportion of logs by status (successful, failed, pending, started, not started)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={logStatusChartConfig}
-                  className="mx-auto aspect-square max-h-[280px]"
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <PieChart className="w-4 h-4" />
+                Log status distribution
+              </CardTitle>
+              <CardDescription>
+                Proportion of logs by status (successful, failed, pending, started, not started)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer
+                config={logStatusChartConfig}
+                className="mx-auto aspect-square max-h-[280px]"
+              >
+                <RadialBarChart
+                  data={radialChartDataNormalized}
+                  innerRadius={40}
+                  outerRadius={100}
+                  startAngle={90}
+                  endAngle={-270}
                 >
-                  <RadialBarChart
-                    data={radialChartDataNormalized}
-                    innerRadius={40}
-                    outerRadius={100}
-                    startAngle={90}
-                    endAngle={-270}
-                  >
-                    <ChartTooltip
-                      cursor={false}
-                      content={
-                        <ChartTooltipContent
-                          nameKey="name"
-                          formatter={(_, name, __, ___, payload) => {
-                            const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
-                            return (
-                              <span className="font-medium">
-                                <span className="font-mono font-semibold tabular-nums text-foreground">
-                                  {count}
-                                </span>
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        nameKey="name"
+                        formatter={(_, __, ___, ____, payload) => {
+                          const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
+                          return (
+                            <span className="font-medium">
+                              <span className="font-mono font-semibold tabular-nums text-foreground">
+                                {count}
                               </span>
-                            );
-                          }}
-                        />
-                      }
-                    />
-                    <RadialBar dataKey="count" background className="cursor-pointer" />
-                  </RadialBarChart>
-                </ChartContainer>
-                <div className="mt-10 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
-                  {logStatusChartKeys.map(({ label, color }) => (
-                    <div key={label} className="flex items-center gap-1.5 text-xs">
-                      <span
-                        className="shrink-0 w-3 h-3 rounded-full"
-                        style={{ backgroundColor: color }}
-                        aria-hidden
+                            </span>
+                          );
+                        }}
                       />
-                      <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    }
+                  />
+                  <RadialBar dataKey="count" background className="cursor-pointer" />
+                </RadialBarChart>
+              </ChartContainer>
+              <div className="mt-10 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+                {logStatusChartKeys.map(({ label, color }) => (
+                  <div key={label} className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className="shrink-0 w-3 h-3 rounded-full"
+                      style={{ backgroundColor: color }}
+                      aria-hidden
+                    />
+                    <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
           <Card className="border-zinc-200 dark:border-zinc-800 flex-1 min-w-0 flex flex-col justify-between">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">

@@ -1,559 +1,156 @@
 [
   {
-    "logical_component_title": "RiskPilot Data Lifecycle: Backup, Restore, and Threat Data Oversight",
+    "logical_component_title": "Database Backup Workflow (Postgres to SQLite backup)",
     "vulnerabilities": [
       {
-        "title": "Sensitive data exposure in backups (backup/restore pipeline)",
-        "description": "Backups copy and persist sensitive domain data, including user passwords, verification codes, and JSON fields containing heat maps, compliance and OWASP data. The backup SQLite database is not encrypted, and backups may be stored with broad access, increasing the risk of exfiltration or leakage.",
+        "title": "Exposed Database URL in logs",
+        "description": "The backup script prints the full DATABASE_URL to stdout after loading environment variables (print(db_url)). This can reveal database credentials and connection details in logs or process listings.",
         "impact": "High",
-        "owasp_top_10": [
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management"
-          },
-          {
-            "ISO27001_A11_PHYSICAL_SECURITY": "ISO 27001 - A.11 Physical and Environmental Security"
-          },
-          {
-            "NIST80053_CM": "NIST 800-53 - Configuration Management"
-          }
-        ],
-        "suggested_fix": "Do not export or expose highly sensitive fields (e.g., user.password, raw_scan_data) in backups. Encrypt backups at rest (e.g., with AES-256-GCM or a cloud KMS-managed key) and store encryption keys separately with strict access controls. Redact or tokenize sensitive fields in the backup payload. Enforce access control and audit trails for backup/restore operations. Implement integrity verification (checksums/digital signatures) for backup archives.",
-        "location": "backup.py (create_backup, restore_backup) \u2013 fields copied include User.password, heat_map_data, compliance_tracker_data, OWASP_tracker_data, raw_scan_data",
-        "snippet": "downloaded_user = User(id=..., password=..., ...); downloaded_verification_code = VerificationCode(..., code=...); ...; all_llm_scans = session.exec(select(LLMScan)).all() ...",
-        "cves": []
+        "owasp_top_10": {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        "compliance_controls": {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        "suggested_fix": "Remove or redact prints of the DATABASE_URL. Use a secure logger with redaction. Do not expose credentials in logs or stdout.",
+        "location": "backup.py",
+        "snippet": "print(db_url)",
+        "cves": {}
       },
       {
-        "title": "Lack of encryption and hard-coded backup path (Windows path)",
-        "description": "Backups are written to and read from a hard-coded, Windows-style path and the database file is a plain SQLite file. There is no encryption or key management of the backup data.",
+        "title": "Plaintext passwords copied into backups",
+        "description": "The backup process copies the User.password field directly into the SQLite backup, resulting in plaintext passwords being stored on disk.",
         "impact": "High",
-        "owasp_top_10": [
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          },
-          {
-            "SOFTWARE_AND_DATA_INTEGRITY_FAILURES": "A08:2021 - Software and Data Integrity Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          },
-          {
-            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-          }
-        ],
-        "suggested_fix": "Make backup path configurable and cross-platform using Path(). Use a secure, encrypted storage format (encrypted SQLite DB or encrypted container/file) with strict access controls. Do not rely on hard-coded file names or user-writable locations. Rotate and protect encryption keys via a KMS or secure vault.",
-        "location": "backup.py: sqlite_file_name = \"backups\\\\26-11-2025-at-10_37_09-AM-Backup.db\"",
+        "owasp_top_10": {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        "compliance_controls": {
+          "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management",
+          "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+        },
+        "suggested_fix": "Do not copy password fields into backups or redact them. If backups must include authentication data, store it only as a salted hash or token, not in plaintext.",
+        "location": "backup.py",
+        "snippet": "downloaded_user = User(\n                    id=user.id,\n                    email=user.email,\n                    password=user.password,",
+        "cves": {}
+      },
+      {
+        "title": "Backups stored in plaintext and in a predictable location",
+        "description": "SQLite backup files are created under a backups directory with a timestamped name and stored in the project directory without encryption or strict access controls.",
+        "impact": "High",
+        "owasp_top_10": {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        "compliance_controls": {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+          "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+        },
+        "suggested_fix": "Encrypt backup files at rest and store them in a secure, access-controlled location. Use environment-based paths, rotate backups, and ensure backups are excluded from version control.",
+        "location": "backup.py",
+        "snippet": "sqlite_file_name = os.path.join(os.path.dirname(__file__),\"backups\",f\"{name}.db\")",
+        "cves": {}
+      },
+      {
+        "title": "Memory exhaustion risk from loading entire tables into memory",
+        "description": "The code uses .all() to fetch entire result sets (e.g., all_users = session.exec(select(User)).all()), which can exhaust memory for large datasets. This can lead to denial of service under heavy load.",
+        "impact": "High",
+        "owasp_top_10": {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        "compliance_controls": {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+          "NIST_CSF_PROTECT": "NIST CSF - Protect"
+        },
+        "suggested_fix": "Iterate results in a streaming fashion (e.g., using Result iteration or batching) instead of loading all rows at once. Consider per-batch commits to balance memory usage and transactional integrity.",
+        "location": "backup.py",
+        "snippet": "all_users = session.exec(select(User)).all()",
+        "cves": {}
+      },
+      {
+        "title": "Hard-coded backup restore path and potential path exposure",
+        "description": "The restore function uses a hard-coded path to a SQLite backup file (sqlite_file_name = 'backups\\\\26-11-2025-at-10_37_09-AM-Backup.db'), which can lead to accidental disclosure or reuse across environments and reduces flexibility.",
+        "impact": "Medium",
+        "owasp_top_10": {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        "compliance_controls": {
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+        },
+        "suggested_fix": "Parameterize the backup path or load from a secure configuration/environment variable. Avoid hard-coded paths; support environment-specific backups with proper access controls.",
+        "location": "backup.py",
         "snippet": "sqlite_file_name = \"backups\\\\26-11-2025-at-10_37_09-AM-Backup.db\"",
-        "cves": []
-      },
-      {
-        "title": "Path traversal risk in file write (unvalidated path)",
-        "description": "A path variable is used to write to a file with open(path, 'wb'), where path is derived from user input. This enables path traversal and arbitrary file writes outside the intended directory.",
-        "impact": "Critical",
-        "owasp_top_10": [
-          {
-            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
-          },
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
-          },
-          {
-            "CMMC_LEVEL_2": "CMMC - Level 2 (Intermediate Cyber Hygiene)"
-          }
-        ],
-        "suggested_fix": "Validate and sanitize all file paths. Use a fixed base directory and resolve/validate against it (pathlib.Path with strict checks). Reject any path containing .. or absolute paths. Prefer a safe file storage API that enforces allowed directories.",
-        "location": "backend/api_routes/routing_normal_sys.py",
-        "snippet": "with open(path, 'wb') as file:  # potential path traversal if path is untrusted\n",
-        "cves": []
-      },
-      {
-        "title": "Potential data duplication/overwrite on restore (PK conflicts)",
-        "description": "Restoration inserts records with explicit IDs into PostgreSQL without handling potential existing records. If records exist with the same IDs, this can raise IntegrityError or cause unintended overwrites.",
-        "impact": "Medium",
-        "owasp_top_10": [
-          {
-            "INJECTION": "A03:2021 - Injection"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security"
-          },
-          {
-            "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
-          }
-        ],
-        "suggested_fix": "Wrap restoration in a transaction and implement idempotent upserts (INSERT ... ON CONFLICT DO UPDATE or SQLModel.merge). Validate existence before insert. Consider a restore-mode flag to either skip existing records or perform updates.",
-        "location": "backup.py: Restoring the data loop (for user, verification_code, etc.)",
-        "snippet": "remote_session.add(new_user); remote_session.commit()  # potential duplicate key error; consider merge/upsert",
-        "cves": []
-      },
-      {
-        "title": "No auditing or authorization checks for backup/restore operations",
-        "description": "Backup/restore functions lack explicit access control and audit logging, increasing risk from misuse and complicating incident investigations.",
-        "impact": "Medium",
-        "owasp_top_10": [
-          {
-            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
-          },
-          {
-            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
-          },
-          {
-            "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
-          }
-        ],
-        "suggested_fix": "Require authenticated admin authorization for backup/restore. Add structured audit logs with operator identity, timestamp, action, and record counts. Consider using a dedicated backup service with access controls.",
-        "location": "backup.py (create_backup, restore_backup)",
-        "snippet": "def create_backup(...): ...    # ensure caller has admin rights and log action",
-        "cves": []
-      },
-      {
-        "title": "No data integrity verification for backups",
-        "description": "Backups are created and restored without integrity checks, making tampering or data corruption easier to miss.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-          }
-        ],
-        "suggested_fix": "Compute and store per-backup hashes or a signed manifest. Validate integrity on restore. Consider digital signatures and separate storage of the verification data.",
-        "location": "backup.py (create_backup, restore_backup)",
-        "snippet": "# after writing backup, compute hash; verify before restore",
-        "cves": []
+        "cves": {}
       }
     ]
   },
   {
-    "logical_component_title": "JWT-based Authentication, Password Handling, and Token Lifecycle",
+    "logical_component_title": "Database Restore Workflow (SQLite backup to Postgres)",
     "vulnerabilities": [
       {
-        "title": "Path Traversal in file upload/write logic",
-        "description": "The application writes uploaded or derived file paths directly to disk using a path assembled from potentially untrusted input (e.g., image_file/unique_path derived values) and opens it with open(path, 'wb'). Without strict validation or isolation to a designated uploads directory, an attacker can manipulate the path to access or overwrite arbitrary files outside the intended directory.",
+        "title": "Restore operation uses per-record commits leading to data integrity risk and potential partial restoration",
+        "description": "The restoration workflow commits after inserting each record, without wrapping the entire domain restoration in a transactional boundary. If a failure occurs mid-domain, the target Postgres database can end up with a partially restored/inconsistent state and potential duplicate or conflicting keys. There is no rollback strategy across the domain restoration steps.",
         "impact": "High",
-        "owasp_top_10": [
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
-          },
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          },
-          {
-            "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
-          }
-        ],
-        "suggested_fix": "Validate and sanitize all user-controlled file paths. Do not construct filesystem paths from client input. Use a fixed uploads directory and sanitize file names (e.g., strip path separators, enforce allowed extensions). Consider using a safe file storage approach (e.g., Starlette's UploadFile) and os.path.normpath with a whitelist check to ensure the final path resides within the designated uploads directory. Remove any path traversal patterns (../, ..\\) before writing. Consider using a library like werkzeug's secure_filename or equivalent.",
-        "location": "backend/api_routes/routing_normal_sys.py around the file write operation (e.g., line where: with open(path, 'wb') as file:).",
-        "snippet": "with open(path, \"wb\") as file:\n    ...",
-        "cves": []
+        "owasp_top_10": {
+          "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+        },
+        "compliance_controls": {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management",
+          "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+          "ISO27002_12_1": "ISO 27002 - 12.1 Operational procedures and responsibilities"
+        },
+        "suggested_fix": "Wrap domain restoration in a single transaction or in batch transactions per domain. Use a try/except with rollback on failure. Consider bulk upserts with proper conflict handling and migrate IDs in a controlled manner. Add integrity checks (row counts, foreign key consistency) before and after restoration.",
+        "location": "backup.py - def restore_backup(create_tables=True)",
+        "snippet": "for user in all_users:\n    with Session(engine) as remote_session:\n        new_user = User(\n            id=user.id,\n            email=user.email,\n            password=user.password,\n            first_name=user.first_name,\n            last_name=user.last_name,\n            session_active=user.session_active,\n            last_active=user.last_active,\n            profile_photo=user.profile_photo,\n            is_superuser=user.is_superuser,\n            plan=user.plan,\n            total_scans=user.total_scans,\n        )\n        remote_session.add(new_user)\n        remote_session.commit()\"",
+        "cves": {}
       },
       {
-        "title": "Missing audience/issuer validation and clock-skew handling in JWT usage",
-        "description": "JWTs are created with HS256 and separate secrets for access/refresh. The code paths shown rely on token verification without explicit validation of audience (aud) or issuer (iss), and without mitigating clock skew (exp). This can lead to tokens being accepted outside intended audience boundaries or failing under small clock drifts between systems.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          },
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          }
-        ],
-        "suggested_fix": "When decoding/validating tokens, require and verify claims such as iss and aud, and enforce exp with an acceptable leeway (clock skew). If using jose/jwt libraries, explicitly set issuer/audience checks and consider using RS256 with rotation instead of a symmetric HS256 key for stronger key management. Centralize token validation logic and reject tokens with invalid/absent claims.",
-        "location": "backend/auth_utils.py (token creation/validation) and backend.routing_auth (get_current_user_from_access_token / get_current_user_from_refresh_token).",
-        "snippet": "decoded = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM], audience=EXPECTED_AUDIENCE, issuer=EXPECTED_ISSUER)\n# or equivalent verification that enforces iss/aud and applies a clock skew leeway",
-        "cves": []
-      },
-      {
-        "title": "No refresh token rotation/revocation mechanism",
-        "description": "Refresh tokens are issued and used to obtain new access tokens, but there is no rotation or revocation of used refresh tokens. If a refresh token is compromised, an attacker can continue to obtain new access tokens until the refresh token expires.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          },
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          }
-        ],
-        "suggested_fix": "Implement refresh token rotation: store a hash of refresh tokens in the DB, invalidate the current token once used, and issue a new refresh token with each refresh request. Consider revoking tokens on logout and short-lived refresh tokens with aud/iss checks. Add server-side revocation lists or token blacklisting as needed.",
-        "location": "backend/routing_auth.py in refresh endpoint and get_current_user_from_refresh_token / token persistence layer.",
-        "snippet": "async def refresh(data: RefreshToken, ...):\n    user = await get_current_user_from_refresh_token(engine, data.refresh_token)\n    # on success, issue new access_token and a new refresh_token, invalidating the old refresh token",
-        "cves": []
-      },
-      {
-        "title": "Unvalidated Authorization header parsing and potential crash",
-        "description": "get_user endpoint parses the Authorization header via Authorization.split(\" \")[1] without validating the header structure. If the header is missing or not in the expected 'Bearer <token>' format, this can raise exceptions or lead to improper handling of authentication.",
+        "title": "Hardcoded backup file path and insecure file permissions risk",
+        "description": "The SQLite backup file path is hardcoded and read directly. If the backup file is stored in a world-readable or otherwise insecure location, sensitive domain data (including user information) could be exposed. The path is Windows-specific, reducing portability and increasing risk if moved to other environments.",
         "impact": "Medium",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          },
-          {
-            "NIST_CSF_IDENTIFY": "NIST CSF - Identify"
-          }
-        ],
-        "suggested_fix": "Parse and validate the Authorization header using a proper security dependency (e.g., FastAPI's OAuth2PasswordBearer or HTTPBearer) and return 401/400 for missing or malformed headers. Do not manually split without checks; handle exceptions gracefully and avoid leaking stack traces or sensitive data.",
-        "location": "backend/routing_auth.py in get_user()",
-        "snippet": "auth_header = Authorization or ''\nif not auth_header.startswith('Bearer '):\n    raise HTTPException(status_code=401, detail='Invalid authorization header')\ntoken = auth_header.split(' ')[1]",
-        "cves": []
+        "owasp_top_10": {
+          "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+        },
+        "compliance_controls": {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management",
+          "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+          "ISO27002_12_1": "ISO 27002 - 12.1 Operational procedures and responsibilities"
+        },
+        "suggested_fix": "Make the backup path configurable via environment variable or parameter. Enforce strict file permissions (e.g., permissions that restrict read/write to service account). Validate the path against a whitelist and ensure the file is stored in a secure location. Consider using a secure storage mechanism or encryption for backups.",
+        "location": "backup.py - sqlite_file_name = \"backups\\\\26-11-2025-at-10_37_09-AM-Backup.db\"",
+        "snippet": "sqlite_file_name = \"backups\\\\26-11-2025-at-10_37_09-AM-Backup.db\" \nsqlite_url = f\"sqlite:///{sqlite_file_name}\"",
+        "cves": {}
       },
       {
-        "title": "Weak password policy on signup",
-        "description": "Signup enforces a relatively weak password minimum (min_length=5, max_length=24). This may lead to weak credentials being created if clients do not enforce stronger local policies or if password entropy is insufficient.",
+        "title": "PII logging exposure in restoration progress",
+        "description": "The restore routine logs per-record restoration including user emails (Console().print(\"Restored user {email}\")). This can expose sensitive user data in logs and stdout, which may be retained or exposed unintentionally.",
         "impact": "Medium",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          },
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          }
-        ],
-        "suggested_fix": "Increase minimum password length (e.g., 12+), enforce complexity requirements (uppercase, lowercase, digits, special chars), and consider password strength estimation. Provide user feedback on password strength and server-side validation for all signup inputs.",
-        "location": "backend/auth_schema.py (UserSignup) and backend/routing_auth.py signup",
-        "snippet": "class UserSignup(BaseModel):\n    password: str = Field(..., min_length=12, description='user password')",
-        "cves": []
+        "owasp_top_10": {
+          "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+        },
+        "compliance_controls": {
+          "ISO27002_12_1": "ISO 27002 - 12.1 Operational procedures and responsibilities",
+          "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
+        },
+        "suggested_fix": "Redact or obfuscate PII in logs. Log only non-sensitive identifiers (e.g., user IDs). Implement RBAC for logging and rotate logs. Consider structured logging with redaction policies.",
+        "location": "backup.py - Restored user {user.email} logging",
+        "snippet": "Console().print(f\"Restored user {user.email}\",style=\"yellow\")",
+        "cves": {}
       },
       {
-        "title": "Verbose logging of PII and potentially sensitive data",
-        "description": "Code paths log user emails and other details (e.g., 'user.email', error traces). In production, this can lead to exposure of PII in logs, especially if logs are not properly protected or rotated.",
-        "impact": "Low",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management"
-          },
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          }
-        ],
-        "suggested_fix": "Use structured logging with redaction for PII, set appropriate log levels, and avoid printing full emails or tokens. Consider centralized logging with access controls and ensure logs do not contain sensitive tokens or secrets.",
-        "location": "Multiple spots in routing_auth.py and related modules (e.g., login(), send_verification_code, error handlers).",
-        "snippet": "print(f'user {user.email} logged in...')  # replace with redacted logging",
-        "cves": []
-      }
-    ]
-  },
-  {
-    "logical_component_title": "JWT-based Access/Refresh Token Authentication and Session Validation",
-    "vulnerabilities": [
-      {
-        "title": "Refresh token exception path uses potentially uninitialized token_data and revokes session on decode/validation errors",
-        "description": "In get_current_user_from_refresh_token, the code entrypoint decodes the refresh token inside a try block and then, in the exception handler, references token_data.sub to look up the user and revoke the session. If the decode/validation fails, token_data may not be defined, leading to a NameError. Additionally, the exception path revokes the user session even when the user cannot be identified, which can cause unintended session revocation and instability.",
+        "title": "Missing validation of environment variables and potential crash if DATABASE_URL missing",
+        "description": "The code directly accesses os.environ['DATABASE_URL'] without fallback or explicit error handling. If DATABASE_URL is not set, this will raise a KeyError and can crash the restore operation.",
         "impact": "High",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_IA": "NIST 800-53 - Identification and Authentication"
-          },
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          }
-        ],
-        "suggested_fix": "Do not reference token_data in the exception path unless it is guaranteed to exist. Decode the token inside a try/except and, on failure, attempt to extract the subject from the raw payload if possible, or simply return an HTTP 401/403 without mutating user state. If revocation is required, only revoke after confirming a valid subject and user exists. Example fix: separate the decoding/validation path from revocation logic, guard all accesses with None checks, and avoid touching database when the token cannot be decoded. Also ensure token_data is defined before use and handle the case where the user record does not exist.",
-        "location": "backend/auth_utils.py - function get_current_user_from_refresh_token",
-        "snippet": "except(jwt.JWTError, ValidationError):\n    with Session(engine) as session:\n        statement = select(User).where(User.email == token_data.sub)\n        user = session.exec(statement).first()\n        user.session_active = False\n        session.add(user)\n        session.commit()\n        print(f\"User {user.email} session deactivated {datetime.now(timezone.utc)} \ud83d\udd34\")\n    raise HTTPException(\n        status_code=status.HTTP_403_FORBIDDEN,\n        detail=\"Could not validate credentials\",\n        headers={\"WWW-Authenticate\": \"Bearer\"},\n    )",
-        "cves": []
-      },
-      {
-        "title": "Access token expiry checks use naive datetime comparisons, risking incorrect expiry validation",
-        "description": "The code compares token_data.exp using datetime.fromtimestamp(...) without timezone awareness, and compares against datetime.now() (naive). This can cause incorrect expiry validation on systems with different timezones or clock skew, potentially granting access with expired tokens or denying valid tokens.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_IA": "NIST 800-53 - Identification and Authentication"
-          },
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          }
-        ],
-        "suggested_fix": "Use UTC-aware datetimes for expiry checks. Convert exp to a timezone-aware datetime and compare against datetime.now(timezone.utc). Ensure TokenPayload.exp is a numeric epoch (seconds) and use: if datetime.fromtimestamp(token_data.exp, timezone.utc) < datetime.now(timezone.utc): ...",
-        "location": "backend/auth_utils.py - function get_current_user_from_access_token",
-        "snippet": "if datetime.fromtimestamp(token_data.exp) < datetime.now():\n    print(\"Token expired \ud83d\udd34\")\n    raise HTTPException(\n        status_code = status.HTTP_401_UNAUTHORIZED,\n        detail=\"Token expired\",\n        headers={\"WWW-Authenticate\": \"Bearer\"},\n    )",
-        "cves": []
-      },
-      {
-        "title": "Missing issuer (iss) and audience (aud) validation in JWT processing",
-        "description": "JWTs are decoded without validating issuer/audience claims. This opens the door for tokens from other sources or tampered tokens to be accepted if they are structurally valid and signed with the expected key. Lack of iss/aud reduces token integrity guarantees.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_IA": "NIST 800-53 - Identification and Authentication"
-          },
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          }
-        ],
-        "suggested_fix": "Validate issuer and audience during JWT decoding. Include iss and aud in the token payload and verify them in jwt.decode (e.g., jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM], issuer='your-issuer', audience='your-audience')). Store the expected issuer/audience in config and rotate as needed.",
-        "location": "backend/auth_utils.py - function get_current_user_from_access_token (decode step)",
-        "snippet": "payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM], issuer='your-issuer', audience='your-audience')\ntoken_data = TokenPayload(**payload)",
-        "cves": []
-      },
-      {
-        "title": "Potential None dereference and unsafe session deactivation in refresh path",
-        "description": "In exception handling branches of get_current_user_from_refresh_token, the code accesses user.email and deactivates the session without verifying that user is not None. If the user is not found, this dereference will raise an exception, potentially leaking information or causing server errors and undesired side effects.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
-          },
-          {
-            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_IA": "NIST 800-53 - Identification and Authentication"
-          },
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          }
-        ],
-        "suggested_fix": "After querying the user, always check for None before dereferencing properties. Only revoke/modify the user state if a valid user object is retrieved. Example fix: if user is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=\"Could not find user\") else: user.session_active = False; ...",
-        "location": "backend/auth_utils.py - function get_current_user_from_refresh_token (exception path)",
-        "snippet": "with Session(engine) as session:\n    statement = select(User).where(User.email == token_data.sub)\n    user = session.exec(statement).first()\n    if user is None:\n        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=\"Could not find user\")\n    user.session_active = False\n    session.add(user)\n    session.commit()\n    print(f\"User {user.email} session deactivated {datetime.now(timezone.utc)} \ud83d\udd34\")",
-        "cves": []
-      }
-    ]
-  },
-  {
-    "logical_component_title": "Verification Code Delivery, Password Reset, and Verification-Based Authentication Flows",
-    "vulnerabilities": [
-      {
-        "title": "Insecure storage of verification codes (plaintext)",
-        "description": "Verification codes are stored in the VerificationCode table as plain text (field 'code'). If the database is leaked or misconfigured, OTPs can be exfiltrated and reused by an attacker to compromise user accounts. This also impedes ability to rotate or invalidate codes safely.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
-          },
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
-          },
-          {
-            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-          },
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          }
-        ],
-        "suggested_fix": "Hash the stored verification codes instead of persisting them in plaintext. Store a salted hash (e.g., bcrypt, scrypt, or Argon2) and verify by hashing the provided code and comparing to the stored hash. Remove any plaintext code exposure in logs. Consider using a dedicated code verifier with a short TTL and rotation strategy.",
-        "location": "backend/models.py - class VerificationCode (field 'code')",
-        "snippet": "class VerificationCode(SQLModel,table=True):\n    id : int | None = Field(default=None,primary_key=True)\n    email : str\n    code : str  # currently plaintext; should be hashed\n    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)\n    expires_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10),sa_type=DateTime)",
-        "cves": []
-      },
-      {
-        "title": "Code expiry defaults misconfigured and expiry not enforced during verification",
-        "description": "The VerificationCode model uses defaults that are evaluated at import time (created_at and expires_at) and do not represent per-record creation times. More critically, verification paths do not enforce expiry (expires_at is not consulted when validating a code). This allows use of codes long after issuance or after the TTL has passed, weakening OTP security.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          },
-          {
-            "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
-          },
-          {
-            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-          },
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          }
-        ],
-        "suggested_fix": "Change created_at and expires_at to use default_factory to compute per-row values at insertion time. Enforce expiry in all verification checks by comparing now() with expires_at before accepting a code. On success, delete or invalidate the code.",
-        "location": "backend/models.py - class VerificationCode; verification flow in routing_auth.py",
-        "snippet": "class VerificationCode(SQLModel,table=True):\n    id : int | None = Field(default=None,primary_key=True)\n    email : str\n    code : str\n    created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)  # should be default_factory\n    expires_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10),sa_type=DateTime)  # should be default_factory",
-        "cves": []
-      },
-      {
-        "title": "Non-cryptographic randomness for verification codes",
-        "description": "Verification codes are generated using Python's random module (random.choices). This is not cryptographically secure and may be predicted, increasing the risk of OTP brute-forcing or guessing.",
-        "impact": "Medium",
-        "owasp_top_10": [
-          {
-            "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
-          },
-          {
-            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-          }
-        ],
-        "suggested_fix": "Use a cryptographically secure RNG (e.g., secrets.randbelow/choices with a cryptographic RNG) to generate the 6-digit code. Ensure the code is zero-padded to 6 digits.",
-        "location": "backend/auth_utils.py - function generate_verification_code",
-        "snippet": "def generate_verification_code():\n    import random\n    code = ''.join(random.choices('0123456789', k=6))\n    return code  # Use secrets.choice or secrets.randbelow for crypto-security",
-        "cves": []
-      },
-      {
-        "title": "Logging sensitive data and potential credential exposure",
-        "description": "Error handling and logging occasionally print exception details that may include sensitive data (e.g., error objects, tokens, or graph credentials). This can leak secrets through logs, dashboards, or error reports.",
-        "impact": "Medium",
-        "owasp_top_10": [
-          {
-            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
-          },
-          {
-            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
-          }
-        ],
-        "suggested_fix": "Avoid logging sensitive data. Implement structured logging with redaction for secrets and tokens. Use a centralized secret manager. Do not print or log exact exception contents that may reveal credentials.",
-        "location": "backend/routing_auth.py - exception handlers (e.g., print(f\"error in send_verification_code: {e} \ud83d\udd34\"))",
-        "snippet": "except Exception as e:\n    print(f\"error in send_verification_code: {e} \ud83d\udd34\")  # avoid logging sensitive data",
-        "cves": []
-      },
-      {
-        "title": "Potential exposure of Graph/SMTP credentials and insecure transport considerations",
-        "description": "Credential handling for external email delivery (Graph API credentials, SMTP) must avoid leakage in logs and ensure transport security. Hard-coding or logging credentials can lead to credential leakage and unauthorized access.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
-          },
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          },
-          {
-            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
-          },
-          {
-            "NIST80053_CM": "NIST 800-53 - Configuration Management"
-          },
-          {
-            "NIST_CSF_PROTECT": "NIST CSF - Protect"
-          }
-        ],
-        "suggested_fix": "Store Graph API credentials and SMTP secrets in a secret manager or environment with tight access controls. Rotate credentials regularly and ensure logs do not contain tokens or secret values. Prefer short-lived tokens and minimize logging of sensitive data.",
-        "location": "backend/auth_utils.py / send_outlook_email implementation (Graph/SMTP integration) - credential handling",
-        "snippet": "desired_secret_management_practice = os.environ.get('GRAPH_CLIENT_SECRET')  # should not be logged or printed",
-        "cves": []
-      },
-      {
-        "title": "Default timestamps using function calls at import time (static values)",
-        "description": "Using default values like Field(default=datetime.datetime.now(...)) leads to static values across records and can cause unexpected expiry behavior. This pattern is unsafe for time-sensitive data like OTPs.",
-        "impact": "High",
-        "owasp_top_10": [
-          {
-            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
-          }
-        ],
-        "compliance_controls": [
-          {
-            "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography"
-          },
-          {
-            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
-          }
-        ],
-        "suggested_fix": "Use default_factory for dynamic timestamps (created_at, expires_at) so each record gets a fresh timestamp. Example: created_at: Field(default_factory=lambda: datetime.now(timezone.utc)), expires_at: Field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(minutes=10)).",
-        "location": "backend/models.py - VerificationCode model (created_at and expires_at fields)",
-        "snippet": "created_at : datetime.datetime | None = Field(default=datetime.datetime.now(datetime.timezone.utc), sa_type=DateTime)\nexpires_at : datetime.datetime | None = Field(default=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10), sa_type=DateTime)",
-        "cves": []
+        "owasp_top_10": {
+          "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+        },
+        "compliance_controls": {
+          "NIST80053_CM": "NIST 800-53 - Configuration Management",
+          "ISO27001_A14_SYSTEM_ACQUISITION": "ISO 27001 - A.14 System Acquisition, Development, and Maintenance"
+        },
+        "suggested_fix": "Validate environment variables at startup. Use os.environ.get('DATABASE_URL') with a clear, user-friendly error if missing. Provide a structured initialization error and fail fast with logs indicating the missing configuration.",
+        "location": "restore_backup: postgres_url = os.environ['DATABASE_URL']",
+        "snippet": "postgres_url = os.environ['DATABASE_URL']\n# Recommended:\n# postgres_url = os.environ.get('DATABASE_URL')\n# if not postgres_url:\n#     raise RuntimeError('DATABASE_URL environment variable not set')",
+        "cves": {}
       }
     ]
   }
