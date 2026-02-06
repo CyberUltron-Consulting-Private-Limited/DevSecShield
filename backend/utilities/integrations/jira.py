@@ -33,10 +33,10 @@ def create_issue_in_project(
     jira_url: str,
     jira_token: str,
     project_id: str,
-    issue_type: str,
     summary: str,
     description: str,
-    jira_email: str = "support@zeroshield.ai"
+    jira_email: str = "support@zeroshield.ai",
+    issue_type: str = "Task",
 ):
     """
     Create an issue in the specified Jira project (by project ID).
@@ -79,6 +79,9 @@ def create_issue_in_project(
     )
 
     print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
+
+    if response.status_code not in [200, 201]:
+        raise Exception(f"Failed to create issue in Jira: {response.text}")
 
 
 if __name__ == "__main__":

@@ -23,10 +23,12 @@ console = Console()
 async def poll_for_estimated_credits ( 
     task_id: str,
     simple_app: Celery,
-) -> None :
+) -> float :
     try:
         for i in range(30):
             task_result = simple_app.AsyncResult(task_id)
+            if task_result.state == "FAILURE":
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in polling for result of task , please try again later")
             if task_result.state == "SUCCESS":
                 return task_result.result # here the result is a float number that represents the estimated credits consumed for the scan
             time.sleep(2)

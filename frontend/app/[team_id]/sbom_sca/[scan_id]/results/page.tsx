@@ -5,26 +5,27 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import SbomResults from "@/components/SbomResults";
-import { getSCASBOMConversationMessages } from "@/utils/backend_api";
+import { getSBOMSCAScanData } from "@/utils/backend_api";
 
 export default function SbomResultsPage() {
   const params = useParams();
+  const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
 
-  if (!scan_id) {
-    toast.error("Scan id not found");
+  if (!team_id || !scan_id) {
+    toast.error("Team or scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Scan id not found
+          Team or scan id not found
         </p>
       </div>
     );
   }
 
   const query = useQuery({
-    queryKey: ['sbom_sca-conversation-data', scan_id],
-    queryFn: getSCASBOMConversationMessages,
+    queryKey: ["sbom_sca-conversation-data", team_id, scan_id],
+    queryFn: getSBOMSCAScanData,
   });
 
   if (query.isError) {
@@ -45,24 +46,20 @@ export default function SbomResultsPage() {
     );
   }
 
-  // Extract SBOM results from the conversation data
-  // The SBOM results should be in query.data.data
-  const sbomData = query.data?.data;
-
-  if (!sbomData || !sbomData.matches) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          No SBOM results found for this scan.
-        </p>
-      </div>
-    );
-  }
+  const scanData = query.data?.data;
+  const dashboard = query.data?.dashboard ?? null;
+  const integrationSettings = query.data?.integration_settings ?? undefined;
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
-      <SbomResults data={sbomData} conversationId={scan_id} />
+      <SbomResults
+        data={scanData}
+        dashboard={dashboard}
+        conversationId={scan_id}
+        teamId={String(team_id)}
+        integrationSettings={integrationSettings}
+        onIntegrationSettingsUpdated={() => query.refetch()}
+      />
     </div>
   );
 }
-

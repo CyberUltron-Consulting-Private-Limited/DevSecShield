@@ -32,11 +32,11 @@ def list_projects(jira_url: str, jira_token: str, jira_email: str = "support@zer
 def create_issue_in_project(
     jira_url: str,
     jira_token: str,
-    project_id: str,
-    issue_type: str,
+    project_id: str,    
     summary: str,
     description: str,
-    jira_email: str = "support@zeroshield.ai"
+    jira_email: str = "support@zeroshield.ai",
+    issue_type: str = "Task",
 ):
     """
     Create an issue in the specified Jira project (by project ID).

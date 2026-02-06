@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertTriangle,
   ArrowLeft,
   MessageCircle,
   Download,
+  Ticket,
 } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -19,8 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams, usePathname, useParams } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
-import { getExportResults, type SastDashboardData } from "@/utils/backend_api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getExportResults, updateScan, createTicket, type SastDashboardData, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
 import {
@@ -45,6 +47,9 @@ import {
   YAxis,
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
+import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
+import FindingSelectionMenu from "@/components/finding-selection-menu";
 
 // Agent output format (from worker_sast_agent_results_testing.json)
 type OwaspOrComplianceItem = Record<string, string>;
@@ -67,17 +72,6 @@ interface SastAgentLogicalComponent {
   vulnerabilities?: SastAgentVulnerability[] | null;
 }
 type SastAgentResult = SastAgentLogicalComponent;
-
-function isSastAgentFormat(data: unknown): data is SastAgentLogicalComponent[] {
-  if (!Array.isArray(data) || data.length === 0) return false;
-  const first = data[0];
-  return (
-    first != null &&
-    typeof first === "object" &&
-    "vulnerabilities" in first &&
-    Array.isArray((first as SastAgentLogicalComponent).vulnerabilities)
-  );
-}
 
 /** Safe string from owasp/compliance item: { "KEY": "Label" } -> "Label" or key */
 function formatOwaspOrComplianceItem(item: OwaspOrComplianceItem): string {
@@ -115,6 +109,9 @@ interface SASTResultsProps {
   data: SastAgentLogicalComponent[] | null | undefined;
   conversationId?: number;
   dashboard?: SastDashboardData | null;
+  teamId?: string;
+  integrationSettings?: Record<string, unknown> | null;
+  onIntegrationSettingsUpdated?: () => void;
 }
 
 function getImpactBadgeClass(impact: string): string {
@@ -191,6 +188,11 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
     .slice(0, 20);
   const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "â€”", count: 0 }];
 
+  const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
+  const hasRiskData = riskRadarData.some((d) => d.count > 0);
+  const hasCvesData = cvesAreaData.length > 0;
+  const hasComplianceData = complianceBarData.length > 0;
+
   return (
     <div className="space-y-6">
       {/* Row: Radial (OWASP) + Radar + CVEs area chart */}
@@ -204,6 +206,10 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardDescription>Distribution by OWASP category</CardDescription>
           </CardHeader>
           <CardContent>
+            {!hasOwaspData ? (
+              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+            <>
             <ChartContainer config={owaspRadialChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
               <RadialBarChart
                 data={owaspRadialData}
@@ -242,6 +248,8 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                 </div>
               ))}
             </div>
+            </>
+            )}
           </CardContent>
         </Card>
 
@@ -254,6 +262,9 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardDescription>Findings by impact severity</CardDescription>
           </CardHeader>
           <CardContent>
+            {!hasRiskData ? (
+              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
             <ChartContainer config={riskRadarChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
               <RadarChart data={riskRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
                 <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
@@ -262,6 +273,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                 <Radar dataKey="count" fill="hsl(0 84% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
               </RadarChart>
             </ChartContainer>
+            )}
             <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
               Number of findings for each impact level (Critical, High, Medium, Low). Each axis shows the count for that severity.
             </p>
@@ -277,6 +289,9 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             <CardDescription>Vulnerability count by CVE (top 20)</CardDescription>
           </CardHeader>
           <CardContent className="">
+            {!hasCvesData ? (
+              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
             <ChartContainer config={cvesAreaChartConfig} className="aspect-auto h-[260px] w-full pb-8 cursor-pointer">
               <AreaChart data={cvesAreaDisplay} margin={{ bottom: 28 }}>
                 <defs>
@@ -301,6 +316,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                 <Area dataKey="count" type="monotone" fill="url(#fillSastCves)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
               </AreaChart>
             </ChartContainer>
+            )}
             <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
               Number of vulnerabilities linked to each CVE identifier. The chart shows the top 20 CVEs by count; hover for exact values.
             </p>
@@ -317,6 +333,9 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
           <CardDescription>Findings by compliance control (all). Scroll horizontally if needed.</CardDescription>
         </CardHeader>
         <CardContent>
+          {!hasComplianceData ? (
+            <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+          ) : (
           <ScrollArea className="w-full">
             <div className="min-w-max pb-2" style={{ minWidth: `${Math.max(400, complianceBarData.length * 56)}px` }}>
               <ChartContainer config={complianceBarChartConfig} className="aspect-auto h-[260px] w-full min-w-0 cursor-pointer">
@@ -339,6 +358,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             </div>
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -356,6 +376,8 @@ function SASTResultsAgentView({
   onDownloadReport,
   isExporting = false,
   dashboard,
+  integrationSettings,
+  onIntegrationSettingsUpdated,
 }: {
   components: SastAgentLogicalComponent[];
   conversationId?: number;
@@ -367,9 +389,48 @@ function SASTResultsAgentView({
   onDownloadReport?: () => void;
   isExporting?: boolean;
   dashboard?: SastDashboardData | null;
+  integrationSettings?: Record<string, unknown> | null;
+  onIntegrationSettingsUpdated?: () => void;
 }) {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedVuln, setSelectedVuln] = useState<{ vuln: SastAgentVulnerability; componentTitle: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [jiraProjectId, setJiraProjectId] = useState("");
+  const queryClient = useQueryClient();
+
+  const jiraFromSettings =
+    integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
+      ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
+      : undefined;
+  const initialJiraProjectId = jiraFromSettings?.jira_project_id ?? "";
+
+  useEffect(() => {
+    setJiraProjectId(initialJiraProjectId);
+  }, [initialJiraProjectId]);
+
+  const updateIntegrationMutation = useMutation({
+    mutationFn: (payload: { integration_settings: ScanTicketingIntegrationSettings }) =>
+      updateScan({
+        team_id: parseInt(teamId ?? "0", 10),
+        type: "sast",
+        scan_id: conversationId!,
+        data: payload,
+      }),
+    onSuccess: () => {
+      onIntegrationSettingsUpdated?.();
+      const tid = parseInt(teamId ?? "0", 10);
+      if (conversationId != null && tid > 0) {
+        queryClient.invalidateQueries({ queryKey: ["sast-conversation-data", tid, conversationId] });
+      }
+      toast.success("Ticketing settings saved");
+    },
+    onError: (err) => {
+      showErrorToast(err, "Failed to save ticketing settings");
+    },
+  });
+
+  const hasTicketingTab = !isCicdContext && teamId && conversationId != null && onIntegrationSettingsUpdated != null;
 
   const totalFindings = components.reduce((sum, c) => sum + (Array.isArray(c.vulnerabilities) ? c.vulnerabilities.length : 0), 0);
   const byImpact = components.reduce((acc, c) => {
@@ -388,6 +449,81 @@ function SASTResultsAgentView({
       tableRows.push({ componentTitle: title, vuln: v });
     });
   });
+
+  const toggleRowSelection = (idx: number) => {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedRows.size === tableRows.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(tableRows.map((_, i) => i)));
+    }
+  };
+
+  const createJiraTicketsMutation = useMutation({
+    mutationFn: async () => {
+      const tid = parseInt(teamId ?? "0", 10);
+      if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      const selectedFindings = Array.from(selectedRows).map((i) => tableRows[i]);
+
+      // Summary: count by impact (e.g. "2 Critical, 3 High, 1 Medium")
+      const impactCounts: Record<string, number> = {};
+      for (const { vuln } of selectedFindings) {
+        const impact = (vuln.impact ?? "Unknown").trim() || "Unknown";
+        impactCounts[impact] = (impactCounts[impact] ?? 0) + 1;
+      }
+      let summary = Object.entries(impactCounts)
+        .sort(([a], [b]) => RISK_ORDER.indexOf(a as typeof RISK_ORDER[number]) - RISK_ORDER.indexOf(b as typeof RISK_ORDER[number]))
+        .map(([impact, count]) => `${count} ${impact}`)
+        .join(", ") || `${selectedFindings.length} finding(s)`;
+      
+      summary = summary + " - Vulnerabilities found in SAST scan";
+
+      // Description: all vulnerability data combined
+      const descSections = selectedFindings.map(({ componentTitle, vuln }, idx) => {
+        const parts: string[] = [`--- Finding ${idx + 1} ---`];
+        parts.push(`Title: ${(vuln.title ?? "Untitled finding").trim() || "Untitled finding"}`);
+        if ((vuln.description ?? "").trim()) parts.push(`Description: ${vuln.description!.trim()}`);
+        if ((componentTitle ?? "").trim()) parts.push(`Logical component: ${componentTitle}`);
+        if ((vuln.impact ?? "").trim()) parts.push(`Impact: ${vuln.impact!.trim()}`);
+        if ((vuln.location ?? "").trim()) parts.push(`Location: ${vuln.location!.trim()}`);
+        if ((vuln.suggested_fix ?? "").trim()) parts.push(`Suggested fix: ${vuln.suggested_fix!.trim()}`);
+        return parts.join("\n");
+      });
+      const description = descSections.join("\n\n");
+
+      await createTicket(tid, "sast", conversationId, {
+        ticket_type: "jira",
+        summary,
+        description,
+      });
+    },
+    onMutate: () => {
+      const toastId = toast.loading("Creating Jira ticket(s)...");
+      return { toastId };
+    },
+    onSuccess: (_data, _variables, context) => {
+      if (context?.toastId != null) {
+        toast.success(`Jira ticket(s) created for ${selectedRows.size} finding(s)`, { id: context.toastId });
+      } else {
+        toast.success(`Jira ticket(s) created for ${selectedRows.size} finding(s)`);
+      }
+      setSelectedRows(new Set());
+    },
+    onError: (err, _variables, context) => {
+      if (context?.toastId != null) toast.dismiss(context.toastId);
+      showErrorToast(err, "Failed to create Jira ticket(s)");
+    },
+  });
+
+  const handleCreateJiraTicket = () => createJiraTicketsMutation.mutate();
 
   const openVulnDetail = (vuln: SastAgentVulnerability, componentTitle: string) => {
     setSelectedVuln({ vuln, componentTitle });
@@ -447,6 +583,55 @@ function SASTResultsAgentView({
         )}
       </div>
 
+      {hasTicketingTab && (
+        <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setActiveTab("results")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "results"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Results
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ticketing")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "ticketing"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Ticket className="w-4 h-4" />
+              Ticketing integrations
+            </div>
+          </button>
+        </div>
+      )}
+
+      {activeTab === "ticketing" && hasTicketingTab ? (
+        <TicketingIntegrationsSettings
+          jiraProjectId={jiraProjectId}
+          onJiraProjectIdChange={setJiraProjectId}
+          onSave={() => {
+            updateIntegrationMutation.mutate({
+              integration_settings: {
+                jira: { jira_project_id: jiraProjectId.trim() || null },
+              },
+            });
+          }}
+          isSaving={updateIntegrationMutation.isPending}
+          inputId="sast-jira-project-id"
+        />
+      ) : (
+        <>
       {dashboard && (
         <SASTDashboardCharts dashboard={dashboard} />
       )}
@@ -454,13 +639,28 @@ function SASTResultsAgentView({
       <Card>
         <CardHeader>
           <CardTitle>Findings</CardTitle>
-          <CardDescription>{totalFindings} vulnerability findings â€” click a title to view details</CardDescription>
+          <CardDescription>{totalFindings} vulnerability findings. Click a title to view details</CardDescription>
         </CardHeader>
         <CardContent>
+          <FindingSelectionMenu
+            selectedCount={selectedRows.size}
+            onClearSelection={() => setSelectedRows(new Set())}
+            jiraOnClickHandler={handleCreateJiraTicket}
+            ticketType="jira"
+            isJiraCreating={createJiraTicketsMutation.isPending}
+          />
           <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[48px]">
+                    <Checkbox
+                      checked={tableRows.length > 0 && selectedRows.size === tableRows.length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all rows"
+                      className="cursor-pointer"
+                    />
+                  </TableHead>
                   <TableHead className="w-[280px]">Vulnerability</TableHead>
                   <TableHead className="w-[200px]">Logical component</TableHead>
                   <TableHead className="w-[80px] text-center">OWASP Top 10</TableHead>
@@ -471,7 +671,7 @@ function SASTResultsAgentView({
               <TableBody>
                 {tableRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                    <TableCell colSpan={6} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
                       No findings to display.
                     </TableCell>
                   </TableRow>
@@ -482,7 +682,21 @@ function SASTResultsAgentView({
                     const owaspCount = getOwaspComplianceCount(vuln.owasp_top_10);
                     const complianceCount = getOwaspComplianceCount(vuln.compliance_controls);
                     return (
-                      <TableRow key={idx} className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                      <TableRow
+                        key={idx}
+                        className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRows.has(idx) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
+                      >
+                        <TableCell
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-[48px]"
+                        >
+                          <Checkbox
+                            checked={selectedRows.has(idx)}
+                            onCheckedChange={() => toggleRowSelection(idx)}
+                            aria-label={`Select row ${idx + 1}`}
+                            className="cursor-pointer"
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">
                           <button
                             type="button"
@@ -622,11 +836,13 @@ function SASTResultsAgentView({
           )}
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }
 
-export default function SASTResults({ data, conversationId, dashboard }: SASTResultsProps) {
+export default function SASTResults({ data, conversationId, dashboard, teamId: teamIdProp, integrationSettings, onIntegrationSettingsUpdated }: SASTResultsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -645,7 +861,7 @@ export default function SASTResults({ data, conversationId, dashboard }: SASTRes
   }
 
   const params = useParams();
-  const teamId = params?.team_id as string | undefined;
+  const teamId = teamIdProp ?? (params?.team_id as string | undefined);
 
   const exportMutation = useMutation({
     mutationFn: () => {
@@ -715,64 +931,20 @@ export default function SASTResults({ data, conversationId, dashboard }: SASTRes
     );
   }
 
-  // Agent format: array of { logical_component_title, vulnerabilities }
-  if (isSastAgentFormat(data)) {
-    return (
-      <SASTResultsAgentView
-        components={data}
-        conversationId={conversationId}
-        teamId={teamId}
-        isCicdContext={isCicdContext}
-        integrationId={integrationId}
-        origin={origin}
-        router={router}
-        onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
-        isExporting={isExporting}
-        dashboard={dashboard}
-      />
-    );
-  }
-
-  // Unexpected format (not agent structure)
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {(conversationId || isCicdContext) && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                const backRoute = isCicdContext && integrationId
-                  ? `/home/ci_cd/${integrationId}`
-                  : origin === "chat"
-                    ? (teamId ? `/${teamId}/sast/${conversationId}` : `/home/sast/${conversationId ?? ""}`)
-                    : (teamId ? `/${teamId}/sast` : "/home/sast");
-                router.push(backRoute);
-              }}
-              className="cursor-pointer"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          )}
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SAST Scan Results</h1>
-        </div>
-        {!isCicdContext && teamId && conversationId != null && (
-          <Button
-            variant="default"
-            className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
-            onClick={() => router.push(`/${teamId}/sast/${conversationId}`)}
-          >
-            <MessageCircle className="h-4 w-4 mr-2" />
-            Chat with the Results
-          </Button>
-        )}
-      </div>
-      <Card>
-        <CardContent className="py-12 text-center text-zinc-600 dark:text-zinc-400">
-          Results are in an unexpected format and cannot be displayed.
-        </CardContent>
-      </Card>
-    </div>
+    <SASTResultsAgentView
+      components={data}
+      conversationId={conversationId}
+      teamId={teamId}
+      isCicdContext={isCicdContext}
+      integrationId={integrationId}
+      origin={origin}
+      router={router}
+      onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
+      isExporting={isExporting}
+      dashboard={dashboard}
+      integrationSettings={integrationSettings}
+      onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
+    />
   );
 }

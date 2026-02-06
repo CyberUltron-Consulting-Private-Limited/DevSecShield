@@ -78,9 +78,8 @@ class CicdLogs(TypedDict, total=False):
     status: Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = "NOT_STARTED"
     created_at: datetime
 
-    # zip file details
-    zip_file_bucket: str | None = None
-    zip_file_key: str | None = None
+    credits_consumed: float | None = None
+    scan_settings_metadata: dict | None = None
 
     # results
     results: dict | None = None

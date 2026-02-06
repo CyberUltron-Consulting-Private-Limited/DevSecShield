@@ -1,6 +1,9 @@
 
 - Use this exact command when spinning up a celery worker 
-```uv run celery -A scan_worker worker -P threads --loglevel=info```
+```uv run celery -A scan_worker worker -P threads --loglevel=info -Q scan_worker_queue```
+
+- Use this exact command when spinning up a celery worker for cicd :
+```uv run celery -A cicd_worker worker -P threads --loglevel=info -Q cicd_worker_queue```
 
 - The Agent discovery service still uses openai , change that 
 

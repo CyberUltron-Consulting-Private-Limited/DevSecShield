@@ -147,7 +147,11 @@ export function SASTOptionsSidebar({
     onSuccess: (data) => {
       setEstimatedCredits(data.credits_required);
       setEstimationProcessDone(true);
-      toast.success(`This scan will use ${data.credits_required} credits`);
+      if (data.credits_required !== -1) {
+        toast.success(`This scan will use ${data.credits_required} credits`);
+      } else {
+        toast.error("Invalid Input from user");
+      }
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
@@ -197,7 +201,8 @@ export function SASTOptionsSidebar({
 
   /** Run scan allowed only after estimation process has been run this session (credits from estimate response only). */
   const displayCredits = estimatedCredits;
-  const canRunScan = estimationProcessDone;
+  const creditsInvalid = estimatedCredits === -1;
+  const canRunScan = estimationProcessDone && !creditsInvalid;
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
@@ -396,7 +401,11 @@ export function SASTOptionsSidebar({
             </Button>
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
-                Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span>
+                {creditsInvalid ? (
+                  <span className="font-semibold text-amber-400">Invalid Input from user</span>
+                ) : (
+                  <>Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span></>
+                )}
               </p>
             )}
           </div>
@@ -421,10 +430,12 @@ export function SASTOptionsSidebar({
                     <>Start scan</>
                   )}
                 </Button>
-                {displayCredits != null && (
+                {displayCredits != null && !creditsInvalid && (
                   <p className="text-xs text-zinc-500">Uses {displayCredits} credits.</p>
                 )}
               </div>
+            ) : creditsInvalid ? (
+              <p className="text-sm text-amber-400">Credit Estimation failed due to invalid inputs from user . Ensure there are documents that match the include/exclude patterns.</p>
             ) : (
               <p className="text-sm text-zinc-500">Run estimate above to enable starting the scan.</p>
             )}

@@ -52,7 +52,7 @@ async def format_input_for_scan(
                     scan_kwargs["repo_dict_context"] = start_scan_payload.iac.repo_context.model_dump()
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context provided")
-                scan_kwargs["iac_contexts"] = [iac_context.model_dump() for iac_context in start_scan_payload.iac.iac_contexts]
+                scan_kwargs["iac_dict_contexts"] = [iac_context.model_dump() for iac_context in start_scan_payload.iac.iac_contexts]
                 console.print(f"IAC kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
                 

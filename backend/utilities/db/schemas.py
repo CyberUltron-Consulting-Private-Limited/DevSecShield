@@ -9,17 +9,16 @@ class CreateScanData(BaseModel):
 class SendMessageToScanData(BaseModel):
     user_message: str
 
-class UpdateScanData(BaseModel):
-    title: str
+
 
 class CreateTeamData(BaseModel):
     name: str
     description: str | None = None
 
 class JiraTeamSettingsData(BaseModel):
-    email: str
-    api_token: str
-    url: str
+    email: str | None = None
+    api_token: str | None = None
+    url: str | None = None
 
 class TicketingIntegrationSettingsData(BaseModel):
     jira: JiraTeamSettingsData | None = None
@@ -31,11 +30,24 @@ class UpdateTeamData(BaseModel):
     description: str | None = None
     integration_settings: TicketingIntegrationSettingsData | None = None
 
+class JiraScanSettingsData(BaseModel):
+    jira_project_id: str | None = None
+
+class ScanTicketingIntegrationSettingsData(BaseModel):
+    jira: JiraScanSettingsData | None = None
+
+class UpdateScanData(BaseModel):
+    title: str | None = None
+    integration_settings: ScanTicketingIntegrationSettingsData | None = None
+
 class RemoveOrAddMembersToTeamData(BaseModel):
     intent : Literal["remove" , "add"]
     email_ids: list[str]
 
-
+class CreateTicketData(BaseModel):
+    ticket_type: Literal["jira"]
+    summary: str
+    description: str
 # ----------------------------------------------------- Start scan related schemas --------------------------------------------
 
 class GithubContextSchema(BaseModel):

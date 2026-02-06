@@ -1,8 +1,8 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -13,16 +13,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, Copy, Check, BarChart2, BookOpen } from "lucide-react";
+import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, Copy, Check, BarChart2, BookOpen, Settings, Ticket, Save, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
-import { getCicdIntegrationDashboard, CicdIntegrationDashboard } from "@/utils/backend_api";
+import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type SastAppLang } from "@/utils/backend_api";
 import Link from "next/link";
 import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
 import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
 import { BambooGuide } from "@/components/BambooIntegrationGuide";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { JiraIcon } from "@/components/icons/arcticons-jira";
+import { SastScanSettingsForm } from "@/components/sast-scan-settings-form";
+
+const LOGS_PAGE_SIZE = 10;
 
 export default function CicdIntegrationDashboardPage() {
   const pathname = usePathname();
@@ -32,18 +44,57 @@ export default function CicdIntegrationDashboardPage() {
   const integration_id = pathParts[2] ?? pathname.split('/').pop() ?? '';
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide" | "scan-settings" | "ticketing">("dashboard");
   const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo">("github-actions");
+  const [logsPage, setLogsPage] = useState(1);
+  const logsOffset = (logsPage - 1) * LOGS_PAGE_SIZE;
+
+  const [scanSettingsSast, setScanSettingsSast] = useState<{ app_lang: SastAppLang; exclude_path_arrays: string[][] }>({
+    app_lang: "python",
+    exclude_path_arrays: [],
+  });
+  const [jiraProjectId, setJiraProjectId] = useState("");
 
   const query = useQuery({
-    queryKey: ['cicd-integration-dashboard', team_id, integration_id],
+    queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset],
     queryFn: getCicdIntegrationDashboard,
     enabled: !!team_id && !!integration_id,
   });
 
+  useEffect(() => {
+    setLogsPage(1);
+  }, [team_id, integration_id]);
+
+  const ss = query.data?.scan_settings?.sast;
+  useEffect(() => {
+    if (ss?.app_lang) setScanSettingsSast((prev) => ({ ...prev, app_lang: ss.app_lang as SastAppLang }));
+    if (ss?.exclude_path_arrays) setScanSettingsSast((prev) => ({ ...prev, exclude_path_arrays: ss.exclude_path_arrays ?? [] }));
+  }, [ss?.app_lang, ss?.exclude_path_arrays]);
+
+  const isJira = query.data?.integration_settings?.jira;
+  useEffect(() => {
+    setJiraProjectId(isJira?.jira_project_id ?? "");
+  }, [isJira?.jira_project_id]);
+
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id] });
+    queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
   };
+
+  const updateCicdMutation = useMutation({
+    mutationFn: (data: UpdateCicdIntegrationData) =>
+      updateCicdIntegration({
+        team_id: Number(team_id),
+        integration_id: Number(integration_id),
+        data,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
+      toast.success("Integration updated successfully");
+    },
+    onError: (error) => {
+      showErrorToast(error);
+    },
+  });
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -144,10 +195,14 @@ export default function CicdIntegrationDashboardPage() {
     last_updated: "",
     scan_type: "sast",
     api_key: "",
+    integration_active: false,
     logs: [],
   };
 
-  // Calculate metrics from logs
+  const hasNextLogsPage = dashboardData.logs.length === LOGS_PAGE_SIZE;
+  const showLogsPagination = dashboardData.logs.length > 0 || logsPage > 1;
+
+  // Calculate metrics from current page logs
   const totalLogs = dashboardData.logs.length;
   const successfulLogs = dashboardData.logs.filter(log => log.status.toLowerCase() === "success").length;
   const failedLogs = dashboardData.logs.filter(log => log.status.toLowerCase() === "failure").length;
@@ -273,6 +328,32 @@ export default function CicdIntegrationDashboardPage() {
               </div>
             </button>
             <button
+              onClick={() => setActiveTab("scan-settings")}
+              className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                activeTab === "scan-settings"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                Scan settings
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("ticketing")}
+              className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                activeTab === "ticketing"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Ticket className="w-4 h-4" />
+                Ticketing settings
+              </div>
+            </button>
+            <button
               onClick={() => setActiveTab("integration-guide")}
               className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
                 activeTab === "integration-guide"
@@ -290,6 +371,14 @@ export default function CicdIntegrationDashboardPage() {
           {/* Dashboard Tab Content */}
           {activeTab === "dashboard" && (
             <>
+              {dashboardData.integration_active === false && (
+                <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 px-4 py-3 text-amber-800 dark:text-amber-200">
+                  <p className="font-medium">Dashboard not active, configure the scanner</p>
+                  <p className="text-sm mt-1 opacity-90">
+                    Go to the <button type="button" onClick={() => setActiveTab("scan-settings")} className="underline cursor-pointer font-medium">Scan settings</button> tab to configure scan settings and activate the dashboard.
+                  </p>
+                </div>
+              )}
               {/* Metrics Cards */}
               <div className="flex gap-4 mb-8 overflow-x-auto">
             {metricsCards.map((metric, index) => (
@@ -319,6 +408,37 @@ export default function CicdIntegrationDashboardPage() {
                 View all scan logs for this integration
               </CardDescription>
             </CardHeader>
+            {showLogsPagination && (
+              <div className="flex items-center justify-between gap-4 px-6 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                  {dashboardData.logs.length > 0
+                    ? `Showing logs ${logsOffset + 1} to ${logsOffset + dashboardData.logs.length}`
+                    : `Page ${logsPage}`}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 cursor-pointer"
+                    disabled={logsPage <= 1}
+                    onClick={() => setLogsPage((p) => Math.max(1, p - 1))}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 cursor-pointer"
+                    disabled={!hasNextLogsPage}
+                    onClick={() => setLogsPage((p) => p + 1)}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
             <CardContent>
               {dashboardData.logs.length === 0 ? (
                 <div className="text-center py-12">
@@ -371,6 +491,97 @@ export default function CicdIntegrationDashboardPage() {
             </CardContent>
           </Card>
             </>
+          )}
+
+          {/* Scan settings Tab */}
+          {activeTab === "scan-settings" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Scan settings</CardTitle>
+                <CardDescription>
+                  Configure scan options for this CI/CD integration. These settings are used when scans are triggered.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {dashboardData.scan_type?.toLowerCase() === "sast" ? (
+                  <SastScanSettingsForm
+                    appLang={scanSettingsSast.app_lang}
+                    onAppLangChange={(value) => setScanSettingsSast((prev) => ({ ...prev, app_lang: value }))}
+                    excludePathArrays={scanSettingsSast.exclude_path_arrays}
+                    onExcludePathArraysChange={(value) => setScanSettingsSast((prev) => ({ ...prev, exclude_path_arrays: value }))}
+                    onSaveClick={() => {
+                      updateCicdMutation.mutate({
+                        scan_settings: {
+                          sast: {
+                            app_lang: scanSettingsSast.app_lang,
+                            exclude_path_arrays: scanSettingsSast.exclude_path_arrays.length > 0 ? scanSettingsSast.exclude_path_arrays : null,
+                          },
+                        },
+                      });
+                    }}
+                    isSaving={updateCicdMutation.isPending}
+                  />
+                ) : (
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Scan settings are only available for SAST integrations. This integration uses scan type: {dashboardData.scan_type}.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Ticketing settings Tab */}
+          {activeTab === "ticketing" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Ticketing settings</CardTitle>
+                <CardDescription>
+                  Connect this CI/CD integration to ticketing systems. Configure Jira to send findings.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="jira">
+                    <AccordionTrigger className="cursor-pointer">
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center rounded-md bg-blue-600 p-1.5">
+                          <JiraIcon size={20} className="text-white" />
+                        </span>
+                        Jira
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+                        Send CI/CD scan findings to Jira as issues. Set the Jira project ID to link this integration to a project.
+                      </p>
+                      <div className="space-y-2 max-w-sm">
+                        <Label htmlFor="cicd-jira-project-id">Jira project ID</Label>
+                        <Input
+                          id="cicd-jira-project-id"
+                          value={jiraProjectId}
+                          onChange={(e) => setJiraProjectId(e.target.value)}
+                          placeholder="e.g. 10000"
+                        />
+                        <Button
+                          onClick={() => {
+                            updateCicdMutation.mutate({
+                              integration_settings: {
+                                jira: { jira_project_id: jiraProjectId.trim() || null },
+                              },
+                            });
+                          }}
+                          disabled={updateCicdMutation.isPending}
+                          className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer mt-2"
+                        >
+                          {updateCicdMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                          Save
+                        </Button>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </CardContent>
+            </Card>
           )}
 
           {/* Integration Guide Tab Content */}

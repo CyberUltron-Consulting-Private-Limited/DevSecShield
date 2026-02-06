@@ -43,7 +43,6 @@ def create_issue_in_for_results(
                 jira_token=api_token,
                 jira_url=url,
                 jira_email=email,
-                issue_type="Task",
                 summary="Guardrails Detected Risky Input",
                 description=findings_description,
             )

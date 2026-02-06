@@ -218,7 +218,6 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                 "high_or_critical_risks_daily_usage": high_or_critical_risks_daily_usage,
             }
 
-            console.print(data, style="bold bright_cyan")
 
             return data
 

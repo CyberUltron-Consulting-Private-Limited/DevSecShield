@@ -49,6 +49,7 @@ export default function SASTResultsPage() {
   // Extract SAST results and dashboard from the conversation data
   const sastData = query.data?.data;
   const dashboard = query.data?.dashboard;
+  const integrationSettings = query.data?.integration_settings ?? undefined;
 
   if (!sastData) {
     return (
@@ -62,7 +63,14 @@ export default function SASTResultsPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
-      <SASTResults data={sastData} conversationId={scan_id} dashboard={dashboard} />
+      <SASTResults
+        data={sastData}
+        conversationId={scan_id}
+        dashboard={dashboard}
+        teamId={String(team_id)}
+        integrationSettings={integrationSettings}
+        onIntegrationSettingsUpdated={() => query.refetch()}
+      />
     </div>
   );
 }

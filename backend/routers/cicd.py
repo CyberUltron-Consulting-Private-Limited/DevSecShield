@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Annotated
 
@@ -24,6 +24,10 @@ from backend.utilities.cicd.schemas import (
 )
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
+from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
+from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
+from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
+from backend.utilities.cicd.sast_output import create_output_string_for_results
 
 console = Console()
 
@@ -40,7 +44,6 @@ async def run_cicd_scan(
     type: scan_types, 
     zip_file: UploadFile , 
     user_and_integration: dict = Depends(get_user_and_integration_id) , 
-    app_lang: str = Form(...) , 
     dependencies=[Depends(limiter)]):
     """
     Submit a Zip file containing the code of the project to be scanned . 
@@ -58,77 +61,111 @@ async def run_cicd_scan(
     try:
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-
-        console.print(f"Data: {app_lang}", style="bold yellow")
-        if app_lang not in app_langs:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid app language")
-        # STEP [ 1 ] : ================= Get the user and integration id from the api key  =================================
-        user_id = user_and_integration["user_id"]
-        cicd_integration_id = user_and_integration["integration_id"]
-        console.print(f"User ID: {user_id}, Integration ID: {cicd_integration_id} has started the scan", style="bold yellow")
-        if not user_id or not cicd_integration_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
-        
-        # STEP [ 1 ] : ================= Upload zip file to s3 bucket ================================
-        bytes_io_zip_file_object = BytesIO(await zip_file.read())
-        response = upload_file(bytes_io_zip_file_object)
-        bucket_name = response["bucket"] if response and "bucket" in response else None
-        object_name = response["object_name"] if response and "object_name" in response else None
-        if not bucket_name or not object_name:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload zip file to s3 bucket")
-        console.print(f"Zip file uploaded to s3 bucket successfully", style="bold green")
-
-        # STEP [ 3 ] : ================== Send task to ci cd worker ==================================
-        celery_app = get_celery_app()
-        cicd_kwargs = {
-            "bucket_name": bucket_name,
-            "object_name": object_name,
-            "app_lang": app_lang
-        }
-        task = celery_app.send_task(name="cicd_worker.sast", kwargs=cicd_kwargs , queue="cicd_worker_queue")
-        task_id = task.id if task and task.id else None
-        task_status = AsyncResult(task_id, app=celery_app).status.lower() if task_id else None
-        if not task_id or not task_status:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send task to ci cd worker")
-        console.print(f"Task sent to ci cd worker successfully with id: {task_id} and status: {task_status}", style="bold green")
-
-        # STEP [ 2 ] : ================= Update scan log in mongo db =================================
         cicd_log_collection = mongo_db["cicd_logs"]
+
+        
+        # STEP [ 1 ] : ================= Get the integration and check if the user has enough credits =================================
+        scan_settings , credit_balance , team = None, None, None
+        with Session(engine) as session:
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == user_and_integration["integration_id"]).where(CicdIntegration.team_id == user_and_integration["team_id"])).first()
+            if not integration:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
+            scan_settings = integration.scan_settings
+            scan_type = integration.scan_type
+            credit_balance = integration.team.credit_balance
+            team = integration.team
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found for specified cicd integration")
+            
+
+        
+        
+        # STEP [ 2 ] : ================= Estimate the credits for the scan =================================
+        credits_required = await estimate_cicd_scan(
+            scan_type=type,
+            scan_settings=scan_settings,
+            uploaded_file=zip_file)
+        if credits_required > credit_balance:
+            cicd_log_insert_response = cicd_log_collection.insert_one(CicdLogs(
+                created_at=datetime.datetime.now(),
+                ci_cd_integration_id=user_and_integration["integration_id"],
+                task_id=None,
+                status="NOT_STARTED",
+                credits_consumed=None,
+                scan_settings_metadata=None,
+                results={"error": "Insufficient credits"},
+            ))
+            CICD_LOG_ID = str(cicd_log_insert_response.inserted_id) if cicd_log_insert_response and cicd_log_insert_response.inserted_id else None
+            console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient credits")
+
+        
+        
+        # STEP [ 3 ] : ================= Start the scan and update the main db =================================
+        task_id, task_status = await start_cicd_scan_and_update_db(
+            scan_type=type,
+            scan_settings=scan_settings,
+            uploaded_file=zip_file)
+
+        
+
+        # STEP [ 4 ] : ================= Update scan log in mongo db =================================
+        
         cicd_log_insert_response = cicd_log_collection.insert_one(CicdLogs(
             created_at=datetime.datetime.now(),
-            ci_cd_integration_id=cicd_integration_id,
-            user_id=user_id,
+            ci_cd_integration_id=user_and_integration["integration_id"],
             task_id=task_id,
             status=task_status,
-            zip_file_bucket=bucket_name,
-            zip_file_key=object_name,
+            credits_consumed=credits_required,
+            scan_settings_metadata=scan_settings,
             results=None,
         ))
         CICD_LOG_ID = str(cicd_log_insert_response.inserted_id) if cicd_log_insert_response and cicd_log_insert_response.inserted_id else None
         console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
 
-        # STEP [ 4 ] : ============= Poll the worker for the results with a timeout =============================
+        # STEP [ 5 ] : ============= Poll the worker for the results with a timeout =============================
+        celery_app = get_celery_app()
         results = await run_in_threadpool(poll_for_results, task_id, celery_app, cicd_log_collection, CICD_LOG_ID)
         console.print(f"Results obtained successfully", style="bold yellow")
 
-        # STEP [ 6 ] : =================== return the results to the user ===================================
-        vulnerabilities = get_vulns(results) if results else None
-
-        # STEP [ 7 ] : ================ delete the zip file from s3 bucket ===================================
-        delete_file("devsecshield-storage", object_name)
-
+        
+        
+        
+        # STEP [ 6 ] : ================= Integrate with Jira if enabled =================================
+        try:
+            if integration.integration_settings  and "jira" in integration.integration_settings :
+                jira_project_id = integration.integration_settings["jira"].get("jira_project_id")
+                jira_email = team.integration_settings["jira"].get("email")
+                jira_api_token = team.integration_settings["jira"].get("api_token")
+                jira_api_url = team.integration_settings["jira"].get("url")
+                if not jira_project_id or not jira_email or not jira_api_token or not jira_api_url:
+                    raise Exception("Jira project id, email, api token or url is missing, cannot create ticket")
+                
+                description = create_output_string_for_results(scan_type = scan_type, results = results)
+                
+                create_issue_in_jira(
+                    project_id=jira_project_id,
+                    jira_token=jira_api_token,
+                    jira_url=jira_api_url,
+                    jira_email=jira_email,
+                    summary=f"CICD Scan Results Scan that ran on {datetime.datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC",
+                    description=description,
+                )
+        except Exception as e:
+            console.print(f"Error Creating ticket in cicd scan: {str(e)}", style="bold red")
+            
+        
+        
         return {
-            "vulnerabilities": vulnerabilities,
+            "results": results,
             "status": task_status,
             "cicd_log_id": CICD_LOG_ID,
         }
 
-        
+    except HTTPException as e:
+        raise e
     except Exception as e:
         console.print(f"Error running cicd scan: {str(e)}", style="bold red")
-        if isinstance(e, HTTPException):
-            raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 
@@ -307,8 +344,36 @@ async def update_cicd_integration(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You are not the owner of this cicd integration")
             if data.title : 
                 integration.title = data.title
-            if data.integration_settings :
-                integration.integration_settings = data.integration_settings.model_dump()
+            if data.integration_settings is not None:
+                if data.integration_settings.jira is not None:
+                    """
+                    settings_dict = {
+                        "jira" : {
+                            "jira_project_id" : <jira_project_id>
+                        }
+                    }
+                    """
+                    specific_settings_dict = data.integration_settings.model_dump()
+                    if integration.integration_settings is not None:
+                        settings_dict = integration.integration_settings.copy() or {}
+                    else:
+                        settings_dict = {}
+                    settings_dict["jira"] = specific_settings_dict["jira"]
+                    console.print(settings_dict, style="bold yellow")
+                    integration.integration_settings= settings_dict
+
+            if data.scan_settings is not None:
+                if data.scan_settings.sast is not None:
+                    specific_scan_settings_dict = data.scan_settings.model_dump()
+                    if integration.scan_settings is not None:
+                        scan_settings_dict = integration.scan_settings.copy() or {}
+                    else:
+                        scan_settings_dict = {}
+                    scan_settings_dict["sast"] = specific_scan_settings_dict["sast"]
+                    console.print(scan_settings_dict, style="bold yellow")
+                    integration.scan_settings= scan_settings_dict
+            
+
             session.add(integration)
             session.commit()
             session.refresh(integration)
@@ -407,13 +472,21 @@ async def get_cicd_integration(
             })
         
         # STEP [ 7 ] : ================= Return the integration and logs ================================
+        if not integration.scan_settings  or integration.scan_settings == {} : 
+            integration_active = False
+        else:
+            integration_active = True
+        
         return {
             "cicd_integration_id": integration.id,
             "api_key": integration.api_key,
+            "integration_active": integration_active,
             "title": integration.title,
             "created_at": integration.created_at,
             "last_updated": integration.last_updated,
             "scan_type":  integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
+            "integration_settings": integration.integration_settings or {},
+            "scan_settings": integration.scan_settings or {},
             "logs": logs_data,
         }
     except Exception as e:

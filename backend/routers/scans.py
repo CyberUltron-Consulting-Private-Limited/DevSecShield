@@ -23,7 +23,8 @@ from backend.utilities.team import (
     check_if_user_is_admin_of_team,
     check_if_user_is_in_team,
 )
-from backend.utilities.dashboard.sast import generate_sast_dashboard
+from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
+from backend.utilities.dashboard.scan import generate_scan_dashboard
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed
@@ -31,7 +32,7 @@ from backend.utilities.db.schemas import *
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.new_models import scan_types
 from rich.console import Console
-from backend.utilities.dashboard.sast_list import generate_card_data_for_sast_list
+from backend.utilities.dashboard.scan_list import generate_card_data_for_scan_list
 
 
 
@@ -74,9 +75,11 @@ async def list_scans(
                 background_tasks.add_task(update_status_of_scan_in_main_db, scans = scans_list_to_update, engine = engine)
                 console.print(f"Background task added to update statuses of scans: {scans_list_to_update}" ,style="bold green")
             
+            
+            card_data = generate_card_data_for_scan_list(scans=scans)
             return {
                 "scans_list_data": scans_list_data,
-                "card_data": generate_card_data_for_sast_list(scans=scans)
+                "card_data": card_data
             }
 
     except HTTPException as e:
@@ -173,6 +176,7 @@ async def send_message_to_scan(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found ")
             
             scan.last_updated = datetime.datetime.now(datetime.timezone.utc) # updating last_updated field
+            session.add(scan)
             session.commit()
             session.refresh(scan)
             
@@ -321,7 +325,7 @@ async def get_scan(
         
         # STEP [ 4 ] : =================== Get the dashboard data ======================
         if SCAN_DATA : 
-            dashboard_data = generate_sast_dashboard(scan_results=SCAN_DATA)
+            dashboard_data = generate_scan_dashboard(scan_type=type, scan_results=SCAN_DATA)
         else:
             dashboard_data = None
         
@@ -333,6 +337,7 @@ async def get_scan(
                 "data": SCAN_DATA,
                 "dashboard": dashboard_data,
                 "messages": MESSAGES,
+                "integration_settings": scan.integration_settings or {},
             }
         
     
@@ -386,6 +391,8 @@ async def start_scan(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
             if scan.credit_consumed == None or scan.credit_consumed == 0 :
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not been estimated yet , please estimate the credits for the scan first")
+            if scan.credit_consumed == -1:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error in estimating credits for scan , please try again later")
             if scan.owner_user_id != user.id: # only the user who created the scan can start the scan ⭐
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to start this scan")
             if not check_if_team_has_enough_credits(team_id, scan.credit_consumed):
@@ -409,6 +416,8 @@ async def start_scan(
             scan.last_updated = datetime.datetime.now(datetime.timezone.utc) # updating last_updated field
             session.add(scan)
             session.commit()
+            # Capture credits while session is open; scan is detached after the block exits
+            credits_to_deduct = scan.credit_consumed
         
 
 
@@ -425,7 +434,7 @@ async def start_scan(
 
 
         # STEP [ 4 ] : =========== Deduct credits for scan for team  ====================== ⭐
-        deduct_credits_from_team(team_id=team_id, credits=scan.credit_consumed)
+        deduct_credits_from_team(team_id=team_id, credits=credits_to_deduct)
 
         return {
             "message": "Scan started successfully",
@@ -534,7 +543,28 @@ async def update_scan(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.owner_user_id != user.id: # only the user who created the scan can update the scan ⭐
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to update this scan")
-            scan.title = data.title
+            
+            
+            if data.title is not None:
+                scan.title = data.title
+
+            if data.integration_settings is not None:
+                if data.integration_settings.jira is not None:
+                    """
+                    settings_dict = {
+                        "jira" : {
+                            "jira_project_id" : <jira_project_id>
+                        }
+                    }
+                    """
+                    specific_settings_dict = data.integration_settings.model_dump()
+                    if scan.integration_settings is not None:
+                        settings_dict = scan.integration_settings.copy() or {}
+                    else:
+                        settings_dict = {}
+                    settings_dict["jira"] = specific_settings_dict["jira"]
+                    console.print(settings_dict, style="bold yellow")
+                    scan.integration_settings= settings_dict
             session.add(scan)
             session.commit()
             session.refresh(scan)
@@ -733,3 +763,75 @@ async def estimate_credits_for_scan(
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in estimating credits for scan , please try again later")
 
+
+# revamped ✅
+@router.post("/{team_id}/{type}/scan/{scan_id}/create_ticket",summary="Create a ticket for a scan")
+async def create_ticket(
+    type: scan_types, 
+    scan_id: int, 
+    team_id: int,
+    data: CreateTicketData,
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)] ,
+    ):
+    """
+    Create a ticket for a scan.
+    """
+    try:
+         # STEP [ 0 ] : =========== Get the engine and user ======================
+        engine = get_db(dev_environment=dev_environment)
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+
+
+        # STEP [ 1 ] : =========== Check if user is in team ======================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        # STEP [ 2 ] : ============= get Team and Scan from the main db ======================
+        scan , team = None, None
+        with Session(engine) as session:
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            if not scan:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
+            if scan.scan_status not in ["success"]:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot create ticket")
+            if scan.integration_settings is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan does not have any integration settings, cannot create ticket")
+            
+            team = scan.team
+            if not team:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found for specified scan")
+            if not team.integration_settings or team.integration_settings == {}:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Team does not have any integration settings, cannot create ticket")
+            
+        
+        # STEP [ 3 ] : ============= create the ticket ======================
+        if data.ticket_type == "jira":
+            if "jira" not in team.integration_settings or "jira" not in scan.integration_settings:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira integration settings are not found, cannot create ticket")
+            
+            jira_project_id = scan.integration_settings["jira"]["jira_project_id"]
+            jira_api_token = team.integration_settings["jira"]["api_token"]
+            jira_api_url = team.integration_settings["jira"]["url"]
+            jira_api_email = team.integration_settings["jira"]["email"]
+
+            if not jira_project_id or not jira_api_token or not jira_api_url or not jira_api_email:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project id, api token, url or email is missing, cannot create ticket")
+
+            create_issue_in_jira(
+                project_id=jira_project_id,
+                jira_token=jira_api_token,
+                jira_url=jira_api_url,
+                jira_email=jira_api_email,
+                summary=data.summary,
+                description=data.description,
+            )
+
+            return {
+                "message": "Ticket created successfully",
+            }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error in creating ticket for {type} scan: {e}",style="bold red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")

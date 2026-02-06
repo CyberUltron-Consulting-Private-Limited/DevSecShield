@@ -1,0 +1,34 @@
+[
+  {
+    "title": "Publicly accessible S3 bucket with unencrypted data and no versioning",
+    "description": "The Terraform configuration defines an S3 bucket (aws_s3_bucket.public_data) with acl set to public-read-write, which makes the bucket publicly accessible for both reading and writing. There is no encryption configured for objects in the bucket (no server-side encryption block), and versioning is disabled (versioning_configuration { status = \"Disabled\" }). This combination enables any internet user to read, modify, or delete bucket contents, and prevents recoverability of deleted or overwritten objects. The lack of encryption also means data at rest is not protected against unauthorized access if the bucket is compromised. The public access is not restricted by a bucket policy, increasing the risk surface and making data exfiltration or tampering trivial for attackers who discover the bucket.",
+    "impact": "Critical",
+    "owasp_top_10": {
+      "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+    },
+    "compliance_controls": {
+      "NIST80053_AC": "NIST 800-53 - Access Control",
+      "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+    },
+    "suggested_fix": "Mitigate by enforcing least privilege and protective controls for S3 data: 1) Change acl from public-read-write to private or use a restrictive policy that grants access only to specific IAM principals or roles. 2) Enable server-side encryption (SSE-S3 or SSE-KMS) for all objects to protect data at rest. 3) Enable bucket versioning to retain previous object versions and enable MFA Delete where appropriate for critical data. 4) Enforce a bucket policy to block public access and require HTTPS (e.g., StringEquals or IpAddress conditions) where feasible. 5) Consider enabling access logging and S3 Object Lock if compliance requires immutability. 6) Use IAM roles or presigned URLs for controlled access instead of exposing bucket publicly.",
+    "location": "terraform/main.tf -> resource aws_s3_bucket.public_data",
+    "snippet": "resource \"aws_s3_bucket\" \"public_data\" {\n  bucket = \"my-public-data-bucket-12345\"\n  \n  # VULNERABILITY: Public access enabled\n  acl = \"public-read-write\"\n}\n\n# VULNERABILITY: No versioning, no encryption\nresource \"aws_s3_bucket_versioning\" \"public_data\" {\n  bucket = aws_s3_bucket.public_data.id\n  versioning_configuration {\n    status = \"Disabled\"\n  }\n}",
+    "cves": {}
+  },
+  {
+    "title": "IAM role with overly permissive policy granting all actions on all resources",
+    "description": "The configuration defines an IAM role (aws_iam_role.lambda_role) and attaches an IAM policy (aws_iam_role_policy.lambda_policy) that grants Action: \"*\" and Resource: \"*\". This effectively provides full administrative privileges to the role, enabling any action across all AWS resources if the role credentials are compromised. Although the role is intended for Lambda, the attached policy does not constrain permissions, violating the principle of least privilege and increasing the blast radius of any potential credential exposure. This broad permission could allow attackers to create, modify, or delete resources, extract sensitive data, or disable security controls. The combination of a permissive policy and a trusted entity (lambda.amazonaws.com) elevates risk, especially in environments lacking strict permission boundaries or monitoring.",
+    "impact": "Critical",
+    "owasp_top_10": {
+      "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+    },
+    "compliance_controls": {
+      "NIST80053_AC": "NIST 800-53 - Access Control",
+      "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+    },
+    "suggested_fix": "Enforce least privilege by tightening IAM permissions: 1) Replace Action: \"*\" and Resource: \"*\" with explicit, scoped permissions that the Lambda function actually requires (e.g., specific services, actions, and resources). 2) Prefer using AWS managed or custom policies that grant minimal privileges; separate sensitive operations into distinct roles. 3) Attach policies only to the required role and restrict trust policy with conditions to minimize unintended use. 4) Enable CloudTrail and IAM Access Analyzer to monitor for privilege escalations and unusual role activity. 5) Consider using temporary credentials via sts:AssumeRole with proper session duration and MFA requirements.",
+    "location": "terraform/main.tf -> resource aws_iam_role_policy.lambda_policy",
+    "snippet": "resource \"aws_iam_role_policy\" \"lambda_policy\" {\n  name = \"lambda-policy\"\n  role = aws_iam_role.lambda_role.id\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [{\n      Effect = \"Allow\"\n      Action = \"*\"\n      Resource = \"*\"\n    }]\n  })\n}",
+    "cves": {}
+  }
+]

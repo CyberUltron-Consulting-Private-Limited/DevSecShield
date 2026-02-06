@@ -172,7 +172,7 @@ class OutputModelManager:
             # --------------------------------------- ⭐ Final Output Model ---------------------------------------
             response_model_fields = {}
             response_model_fields["vulnerabilities"] = (
-                list[FinalVulnerabilityModel], Field(description="List of vulnerabilities found ")
+                list[FinalVulnerabilityModel], Field(description="List of vulnerabilities found , return empty list if no vulnerabilities found")
             )
             ResponseModel = create_model(
                 "ResponseModel",
@@ -203,7 +203,7 @@ class OutputModelManager:
             
             # ⭐ Final Output Model
             class ResponseModel(BaseModel):
-                vulnerabilities : list[FinalVulnerabilityModel] = Field(description="List of vulnerabilities found ")
+                vulnerabilities : list[FinalVulnerabilityModel] = Field(description="List of vulnerabilities found , return empty list if no vulnerabilities found")
             
             console.print(f"Response Model created successfully",style="bold green")
             return ResponseModel

@@ -33,8 +33,31 @@ export interface StartSastScanData {
   app_lang: SastAppLang;
 }
 
+/** IAC context mode (matches backend IACContextSchema) */
+export type IACContextMode = "terraform" | "k8s" | "pulumi" | "ansible" | "helm" | "aws_cloudformation" | "aws_cdk";
+
+export interface IACContextSchema {
+  mode: IACContextMode;
+  include_path_arrays: string[][];
+}
+
+export interface StartIACScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  iac_contexts: IACContextSchema[];
+}
+
+/** SBOM/SCA scan input: exactly one of repo_context, zip_file_used, or sbom_file_used (matches backend StartSBOMScanData) */
+export interface StartSBOMScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  sbom_file_used: boolean;
+}
+
 export interface StartScanPayload {
   sast?: StartSastScanData | null;
+  iac?: StartIACScanData | null;
+  sbom_sca?: StartSBOMScanData | null;
 }
 
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
@@ -130,6 +153,7 @@ export interface SastConversationResponse {
     data: any
     messages: SastConversationMessage[]
     dashboard?: SastDashboardData | null
+    integration_settings?: Record<string, unknown> | null
 }
 
 const getSastConversationMessages = async ({ queryKey }: { queryKey: ['sast-conversation-data', number, number] }): Promise<SastConversationResponse> => {
@@ -254,18 +278,40 @@ const startScan = async (
   return response.data;
 }
 
-export { 
-    getSastConversations, 
-    deleteSastConversation, 
-    renameSastConversation, 
-    createSastConversation, 
-    getSastConversationMessages, 
-    startSastScan, 
+/** Create ticket payload (matches backend CreateTicketData) */
+export interface CreateTicketData {
+  ticket_type: "jira";
+  summary: string;
+  description: string;
+}
+
+/** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
+const createTicket = async (
+  team_id: number,
+  type: "sast" | "iac" | "sbom_sca",
+  scan_id: number,
+  data: CreateTicketData
+): Promise<{ message: string }> => {
+  const response = await api.post<{ message: string }>(
+    `/${team_id}/${type}/scan/${scan_id}/create_ticket`,
+    data
+  );
+  return response.data;
+};
+
+export {
+    getSastConversations,
+    deleteSastConversation,
+    renameSastConversation,
+    createSastConversation,
+    getSastConversationMessages,
+    startSastScan,
     getExportResults,
     reinitializeSastScan,
     estimateCreditsForScan,
     startScan,
-    sendMessageToScan }
+    sendMessageToScan,
+    createTicket }
 
 // -------------------------------------------------------------- LLM API Routes --------------------------------------------------------------
 
@@ -799,28 +845,38 @@ export {
 
 // -------------------------------------------------------------- IAC API Routes --------------------------------------------------------------
 
+/** List item from GET /{team_id}/iac/scans (same shape as SAST list) */
 export interface IACConversation {
     id: number
     title: string
     created_at: string
     last_updated: string
     scan_status: string
+    scan_metadata?: Record<string, unknown> | null
+    estimated_credits?: number | null
+    owner_user_email?: string | null
+    owner_user_full_name?: string | null
 }
 
-const getIACConversations = async (): Promise<IACConversation[]> => {
+export interface IACListResponse {
+    scans_list_data: IACConversation[]
+    card_data: SastListCardData
+}
+
+const getIACConversations = async (team_id: number): Promise<IACListResponse> => {
     try {
-        const response = await api.get("/iac/conversations")
+        const response = await api.get(`/${team_id}/iac/scans`)
         toast.success("IAC conversations fetched successfully")
-        return response.data as IACConversation[]
+        return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching iac conversations")
+        showErrorToast(error, "Error fetching iac conversations")
         throw error
     }
 }
 
-const deleteIACConversation = async (conversation_id: number) => {
+const deleteIACConversation = async (team_id: number, scan_id: number) => {
     try {
-        const response = await api.delete(`/iac/conversation/${conversation_id}`)
+        const response = await api.delete(`/${team_id}/iac/scan/${scan_id}`)
         toast.success("IAC conversation deleted successfully")
         return response.data
     } catch (error) {
@@ -828,9 +884,9 @@ const deleteIACConversation = async (conversation_id: number) => {
     }
 }
 
-const renameIACConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+const renameIACConversation = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
-        const response = await api.put(`/iac/conversation/${conversation_id}`, { title: title })
+        const response = await api.put(`/${team_id}/iac/scan/${scan_id}`, { title })
         toast.success("IAC conversation renamed successfully")
         return response.data
     } catch (error) {
@@ -838,11 +894,11 @@ const renameIACConversation = async ({conversation_id, title}: {conversation_id:
     }
 }
 
-const createIACConversation = async (title: string) => {
+const createIACConversation = async (team_id: number, title: string): Promise<number> => {
     try {
-        const response = await api.post("/iac/conversation", { title: title })
+        const response = await api.post(`/${team_id}/iac/scan`, { title })
         toast.success("IAC conversation created successfully")
-        return response.data.conversation_id as number  
+        return response.data.scan_id as number
     } catch (error) {
         throw error
     }
@@ -857,87 +913,110 @@ export interface IACConversationMessage {
 }
 
 export interface IACConversationResponse {
-    title: string
-    repo_url: string | null
-    scan_status: string
-    data: any
-    messages: IACConversationMessage[]
+  title: string
+  repo_url?: string | null
+  scan_status: string
+  scan_metadata?: Record<string, unknown> | null
+  data: any
+  messages: IACConversationMessage[]
+  dashboard?: unknown
+  integration_settings?: Record<string, unknown> | null
 }
 
-const getIACConversationMessages = async ({queryKey}: {queryKey: ['iac-conversation-data', number]}): Promise<IACConversationResponse> => {
-    const conversation_id = queryKey[1]
+/** Team-scoped: GET /{team_id}/iac/scan/{scan_id} */
+const getIACConversationMessages = async ({ queryKey }: { queryKey: ['iac-conversation-data', number, number] }): Promise<IACConversationResponse> => {
+    const [, team_id, scan_id] = queryKey;
     try {
-        const response = await api.get(`/iac/conversation/${conversation_id}`)
-        toast.success("IAC conversation messages fetched successfully")
-        return response.data as IACConversationResponse
+        const response = await api.get(`/${team_id}/iac/scan/${scan_id}`);
+        toast.success("IAC conversation messages fetched successfully");
+        return response.data as IACConversationResponse;
     } catch (error) {
-        showErrorToast(error,"Error fetching iac conversation messages")
-        throw error
+        showErrorToast(error, "Error fetching iac conversation messages");
+        throw error;
     }
-}
+};
 
 const startIACScan = async (
     {
         conversation_id,
-        repo_url, 
-        PAT, 
+        repo_url,
+        PAT,
         mode
-    }: {   
+    }: {
         conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
+        repo_url: string,
+        PAT: string,
         mode: "github" | "gitlab" | "bitbucket"
     }) => {
     try {
-        const response = await api.post(`/iac/conversation/${conversation_id}/scan`, { iac_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("IAC scan started successfully")
-        return response.data
+        const response = await api.post(`/iac/conversation/${conversation_id}/scan`, { iac_data: { repo_url: repo_url, PAT: PAT, mode: mode } });
+        toast.success("IAC scan started successfully");
+        return response.data;
     } catch (error) {
-        throw error
+        throw error;
     }
-}
+};
 
-const getIACExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/iac/conversation/${conversation_id}/export`)
-        toast.success("IAC export results fetched successfully")
-        return response.data
+/** Team-scoped: GET /{team_id}/iac/scan/{scan_id}/export */
+const getIACExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+    try {
+        const response = await api.get(`/${team_id}/iac/scan/${scan_id}/export`, { responseType: "blob" });
+        toast.success("IAC export results fetched successfully");
+        return response.data;
     } catch (error) {
-        showErrorToast(error,"Error fetching iac export results")
-        throw error
+        showErrorToast(error, "Error fetching iac export results");
+        throw error;
     }
-}
+};
 
 const reinitializeIACScan = async (
     {
         conversation_id,
-        repo_url, 
-        PAT, 
+        repo_url,
+        PAT,
         mode
-    }: {   
+    }: {
         conversation_id: number,
-        repo_url: string, 
-        PAT: string, 
+        repo_url: string,
+        PAT: string,
         mode: "github" | "gitlab" | "bitbucket"
     }) => {
     try {
-        const response = await api.post(`/iac/conversation/${conversation_id}/reinitialize`, { iac_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("IAC scan reinitialized successfully")
-        return response.data
+        const response = await api.post(`/iac/conversation/${conversation_id}/reinitialize`, { iac_data: { repo_url, PAT, mode } });
+        toast.success("IAC scan reinitialized successfully");
+        return response.data;
     } catch (error) {
-        throw error
+        throw error;
     }
-}
+};
 
-export { 
-    getIACConversations, 
-    deleteIACConversation, 
-    renameIACConversation, 
-    createIACConversation, 
+/** Team-scoped: POST /{team_id}/iac/scan/{scan_id}/reinitialize with FormData (start_scan_payload_string, optional uploaded_file) */
+const reinitializeIACScanWithPayload = async (
+    team_id: number,
+    scan_id: number,
+    start_scan_payload_string: string,
+    uploaded_file?: File | null
+) => {
+    const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+    const response = await api.post<{ message: string }>(
+        `/${team_id}/iac/scan/${scan_id}/reinitialize`,
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } }
+    );
+    toast.success("IAC scan reinitialized successfully");
+    return response.data;
+};
+
+export {
+    getIACConversations,
+    deleteIACConversation,
+    renameIACConversation,
+    createIACConversation,
     getIACConversationMessages,
     startIACScan,
     getIACExportResults,
-    reinitializeIACScan
+    reinitializeIACScan,
+    reinitializeIACScanWithPayload
 }
 
 // -------------------------------------------------------------- SCA + SBOM API Routes --------------------------------------------------------------
@@ -948,48 +1027,143 @@ export interface SCASBOMConversation {
     created_at: string
     last_updated: string
     scan_status: string
+    scan_metadata?: Record<string, unknown> | null
+    estimated_credits?: number | null
+    owner_user_email?: string
+    owner_user_full_name?: string
 }
 
+/** Card counts returned by list SBOM/SCA scans (same shape as SastListCardData) */
+export interface SBOMSCAListCardData {
+    pending_scans: number
+    started_scans: number
+    success_scans: number
+    failure_scans: number
+    scans_created_today: number
+    scans_updated_today: number
+}
+
+export interface SBOMSCAListResponse {
+    scans_list_data: SCASBOMConversation[]
+    card_data: SBOMSCAListCardData
+}
+
+/** Team-scoped: GET /{team_id}/sbom_sca/scans */
+const getSBOMSCAScans = async (team_id: number): Promise<SBOMSCAListResponse> => {
+    try {
+        const response = await api.get(`/${team_id}/sbom_sca/scans`);
+        toast.success("SCA + SBOM scans fetched successfully");
+        return response.data as SBOMSCAListResponse;
+    } catch (error) {
+        showErrorToast(error, "Error fetching sbom_sca scans");
+        throw error;
+    }
+};
+
+const deleteSBOMSCAScan = async (team_id: number, scan_id: number) => {
+    try {
+        const response = await api.delete(`/${team_id}/sbom_sca/scan/${scan_id}`);
+        toast.success("SCA + SBOM scan deleted successfully");
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+const renameSBOMSCAScan = async ({
+    team_id,
+    scan_id,
+    title,
+}: {
+    team_id: number;
+    scan_id: number;
+    title: string;
+}) => {
+    try {
+        const response = await api.put(`/${team_id}/sbom_sca/scan/${scan_id}`, { title });
+        toast.success("SCA + SBOM scan renamed successfully");
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/** Update scan (title and/or integration_settings). PUT /{team_id}/{type}/scan/{scan_id} */
+const updateScan = async ({
+    team_id,
+    type,
+    scan_id,
+    data,
+}: {
+    team_id: number;
+    type: "sast" | "iac" | "sbom_sca";
+    scan_id: number;
+    data: UpdateScanPayload;
+}) => {
+    const response = await api.put(`/${team_id}/${type}/scan/${scan_id}`, data);
+    return response.data;
+};
+
+const createSBOMSCAScan = async (team_id: number, title: string): Promise<number> => {
+    try {
+        const response = await api.post(`/${team_id}/sbom_sca/scan`, { title });
+        toast.success("SCA + SBOM scan created successfully");
+        return response.data.scan_id as number;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/** Legacy: non–team-scoped list. Prefer getSBOMSCAScans(team_id) for [team_id]/sbom_sca page. */
 const getSCASBOMConversations = async (): Promise<SCASBOMConversation[]> => {
     try {
-        const response = await api.get("/sbom_sca/conversations")
-        toast.success("SCA + SBOM conversations fetched successfully")
-        return response.data as SCASBOMConversation[]
+        const response = await api.get("/sbom_sca/conversations");
+        toast.success("SCA + SBOM conversations fetched successfully");
+        return response.data as SCASBOMConversation[];
     } catch (error) {
-        showErrorToast(error,"Error fetching sbom_sca conversations")
-        throw error
+        showErrorToast(error, "Error fetching sbom_sca conversations");
+        throw error;
     }
-}
+};
 
+/** Legacy: conversation-scoped delete. Prefer deleteSBOMSCAScan(team_id, scan_id). */
 const deleteSCASBOMConversation = async (conversation_id: number) => {
     try {
-        const response = await api.delete(`/sbom_sca/conversation/${conversation_id}`)
-        toast.success("SCA + SBOM conversation deleted successfully")
-        return response.data
+        const response = await api.delete(`/sbom_sca/conversation/${conversation_id}`);
+        toast.success("SCA + SBOM conversation deleted successfully");
+        return response.data;
     } catch (error) {
-        throw error
+        throw error;
     }
-}
+};
 
-const renameSCASBOMConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+/** Legacy: conversation-scoped rename. Prefer renameSBOMSCAScan({ team_id, scan_id, title }). */
+const renameSCASBOMConversation = async ({
+    conversation_id,
+    title,
+}: {
+    conversation_id: number;
+    title: string;
+}) => {
     try {
-        const response = await api.put(`/sbom_sca/conversation/${conversation_id}`, { title: title })
-        toast.success("SCA + SBOM conversation renamed successfully")
-        return response.data
+        const response = await api.put(`/sbom_sca/conversation/${conversation_id}`, { title });
+        toast.success("SCA + SBOM conversation renamed successfully");
+        return response.data;
     } catch (error) {
-        throw error
+        throw error;
     }
-}
+};
 
+/** Legacy: non–team-scoped create. Prefer createSBOMSCAScan(team_id, title). */
 const createSCASBOMConversation = async (title: string) => {
     try {
-        const response = await api.post("/sbom_sca/conversation", { title: title })
-        toast.success("SCA + SBOM conversation created successfully")
-        return response.data.conversation_id as number  
+        const response = await api.post("/sbom_sca/conversation", { title });
+        toast.success("SCA + SBOM conversation created successfully");
+        return response.data.conversation_id as number;
     } catch (error) {
-        throw error
+        throw error;
     }
-}
+};
 
 export interface SCASBOMConversationMessage {
     id: number
@@ -999,14 +1173,49 @@ export interface SCASBOMConversationMessage {
     is_streaming: boolean
 }
 
-export interface SCASBOMConversationResponse {
-    title: string
-    repo_url: string | null
-    scan_status: string
-    data: any
-    messages: SCASBOMConversationMessage[]
+/** Matches backend JiraTeamSettingsData for scans (db/schemas.py). Only jira_project_id is sent for scan integration_settings. */
+export interface ScanJiraSettings {
+    jira_project_id: string | null;
+}
+/** Matches backend ScanTicketingIntegrationSettingsData. */
+export interface ScanTicketingIntegrationSettings {
+    jira: ScanJiraSettings | null;
+}
+/** Payload for PUT /{team_id}/{type}/scan/{scan_id}. Matches backend UpdateScanData. */
+export interface UpdateScanPayload {
+    title?: string | null;
+    integration_settings?: ScanTicketingIntegrationSettings | null;
 }
 
+export interface SCASBOMConversationResponse {
+    title: string
+    repo_url?: string | null
+    scan_status: string
+    scan_metadata?: Record<string, unknown> | null
+    data: any
+    dashboard?: SastDashboardData | null
+    messages: SCASBOMConversationMessage[]
+    integration_settings?: Record<string, unknown> | null
+}
+
+/** Team-scoped: GET /{team_id}/sbom_sca/scan/{scan_id} — use with queryKey ['sbom_sca-conversation-data', team_id, scan_id] */
+const getSBOMSCAScanData = async ({
+    queryKey,
+}: {
+    queryKey: ["sbom_sca-conversation-data", number, number];
+}): Promise<SCASBOMConversationResponse> => {
+    const [, team_id, scan_id] = queryKey;
+    try {
+        const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}`);
+        toast.success("SCA + SBOM scan data fetched successfully");
+        return response.data as SCASBOMConversationResponse;
+    } catch (error) {
+        showErrorToast(error, "Error fetching sbom_sca scan data");
+        throw error;
+    }
+};
+
+/** Legacy: conversation-scoped get (no team_id). Prefer getSBOMSCAScanData for [team_id]/sbom_sca/[scan_id] pages. */
 const getSCASBOMConversationMessages = async ({queryKey}: {queryKey: ['sbom_sca-conversation-data', number]}): Promise<SCASBOMConversationResponse> => {
     const conversation_id = queryKey[1]
     try {
@@ -1051,6 +1260,35 @@ const getSCASBOMExportResults = async (conversation_id: number): Promise<any> =>
     }
 }
 
+/** Team-scoped: GET /{team_id}/sbom_sca/scan/{scan_id}/export */
+const getSBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+    try {
+        const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}/export`, { responseType: "blob" });
+        toast.success("SCA + SBOM export results fetched successfully");
+        return response.data;
+    } catch (error) {
+        showErrorToast(error, "Error fetching sbom_sca export results");
+        throw error;
+    }
+};
+
+/** Team-scoped: POST /{team_id}/sbom_sca/scan/{scan_id}/reinitialize with FormData (start_scan_payload_string, optional uploaded_file) */
+const reinitializeSBOMScanWithPayload = async (
+    team_id: number,
+    scan_id: number,
+    start_scan_payload_string: string,
+    uploaded_file?: File | null
+) => {
+    const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+    const response = await api.post<{ message: string }>(
+        `/${team_id}/sbom_sca/scan/${scan_id}/reinitialize`,
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } }
+    );
+    toast.success("SCA + SBOM scan reinitialized successfully");
+    return response.data;
+};
+
 const reinitializeSCASBOMScan = async (
     {
         conversation_id,
@@ -1072,15 +1310,23 @@ const reinitializeSCASBOMScan = async (
     }
 }
 
-export { 
-    getSCASBOMConversations, 
-    deleteSCASBOMConversation, 
-    renameSCASBOMConversation, 
+export {
+    getSCASBOMConversations,
+    getSBOMSCAScans,
+    deleteSCASBOMConversation,
+    deleteSBOMSCAScan,
+    renameSCASBOMConversation,
+    renameSBOMSCAScan,
     createSCASBOMConversation,
+    createSBOMSCAScan,
     getSCASBOMConversationMessages,
+    getSBOMSCAScanData,
     startSCASBOMScan,
     getSCASBOMExportResults,
-    reinitializeSCASBOMScan
+    getSBOMExportResults,
+    reinitializeSCASBOMScan,
+    reinitializeSBOMScanWithPayload,
+    updateScan,
 }
 
 // -------------------------------------------------------------- Discovery API Routes --------------------------------------------------------------
@@ -1851,13 +2097,18 @@ export interface CicdIntegrationDashboard {
     last_updated: string
     scan_type: "sast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
     api_key: string
+    integration_active?: boolean
+    integration_settings?: Record<string, { jira_project_id?: string | null } | null> | null
+    scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null } | null> | null
     logs: CicdLog[]
 }
 
-const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string, string]}): Promise<CicdIntegrationDashboard> => {
-    const [, team_id, integration_id] = queryKey
+const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string, string, number, number]}): Promise<CicdIntegrationDashboard> => {
+    const [, team_id, integration_id, limit, offset] = queryKey
     try {
-        const response = await api.get(`/${team_id}/cicd/integration/${integration_id}`)
+        const response = await api.get(`/${team_id}/cicd/integration/${integration_id}`, {
+            params: { limit, offset },
+        })
         toast.success("CI/CD integration dashboard fetched successfully")
         return response.data as CicdIntegrationDashboard
     } catch (error) {
@@ -1877,9 +2128,21 @@ const deleteCicdIntegration = async (team_id: number, integration_id: number) =>
     }
 }
 
+export interface CicdIntegrationSettingsData {
+    jira?: { jira_project_id?: string | null } | null
+}
+
+export interface CicdScanSettingsData {
+    sast?: {
+        app_lang: SastAppLang
+        exclude_path_arrays?: string[][] | null
+    } | null
+}
+
 export interface UpdateCicdIntegrationData {
     title?: string
-    integration_settings?: { jira_enabled?: boolean }
+    integration_settings?: CicdIntegrationSettingsData | null
+    scan_settings?: CicdScanSettingsData | null
 }
 
 const updateCicdIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateCicdIntegrationData }) => {

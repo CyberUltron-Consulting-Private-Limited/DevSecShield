@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime , timezone
 from bson import ObjectId
 from celery.result import AsyncResult
 from backend.utilities.celery.celery_connection import get_celery_app
@@ -89,7 +89,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
             task_id=task.id,
             status=status,
             input_prompt=data.input_prompt,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
             settings=integration.settings,
             results=None,
         ))

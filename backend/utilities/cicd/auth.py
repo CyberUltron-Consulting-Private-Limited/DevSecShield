@@ -9,14 +9,14 @@ console = Console()
 
 dev_environment = True # for local development
 
-def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
+def get_user_integration_team_from_api_key(api_key: str) -> tuple[int, int, int]:
     try:
         engine = get_db(dev_environment=dev_environment)
         with Session(engine) as session:
             integration = session.exec(select(CicdIntegration).where(CicdIntegration.api_key == api_key)).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
-            return (integration.user_id, integration.id)
+            return (integration.owner_user_id, integration.id, integration.team_id)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
@@ -40,14 +40,15 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
     """
     try:
         api_key = api_key_header.strip()
-        user_id, integration_id = get_user_and_integration_from_api_key(api_key)
-        if not user_id or not integration_id:
+        user_id, integration_id, team_id = get_user_integration_team_from_api_key(api_key)
+        if not user_id or not integration_id or not team_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
         
         console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
         return {
             "user_id": user_id,
-            "integration_id": integration_id
+            "integration_id": integration_id,
+            "team_id": team_id
         }
     except Exception as e:
         if isinstance(e, HTTPException):

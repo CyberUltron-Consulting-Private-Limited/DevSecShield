@@ -20,30 +20,63 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.pdfgen import canvas
 
 
+def _normalize_results(scan_results: Any) -> List[Dict[str, Any]]:
+    """Accept either a list of findings (agent format) or a dict with 'results' key."""
+    if isinstance(scan_results, list):
+        return scan_results
+    if isinstance(scan_results, dict):
+        return scan_results.get("results", [])
+    return []
+
+
+def _is_agent_format(finding: Dict[str, Any]) -> bool:
+    """True if finding has title/impact/owasp_top_10 (IAC agent format)."""
+    return (
+        isinstance(finding, dict)
+        and ("title" in finding or "impact" in finding)
+        and ("owasp_top_10" in finding or "compliance_controls" in finding)
+    )
+
+
+def get_severity_color(impact_or_severity: str) -> colors.Color:
+    """Get color based on impact/severity level."""
+    val = (impact_or_severity or "").strip().upper()
+    if val == "CRITICAL":
+        return colors.HexColor("#DC2626")  # Red
+    elif val == "HIGH":
+        return colors.HexColor("#F97316")  # Orange
+    elif val == "MEDIUM":
+        return colors.HexColor("#FBBF24")  # Yellow
+    elif val == "LOW":
+        return colors.HexColor("#10B981")  # Green
+    else:
+        return colors.HexColor("#6B7280")  # Gray
+
+
+def _format_owasp_compliance_dict(d: Any) -> str:
+    """Format owasp_top_10 or compliance_controls dict as comma-separated labels."""
+    if not d or not isinstance(d, dict):
+        return ""
+    parts = [str(v).strip() for v in d.values() if v]
+    return ", ".join(parts) if parts else ""
+
+
+def _escape_html(s: str) -> str:
+    """Escape &, <, > for ReportLab Paragraph (HTML-like) content."""
+    if not s:
+        return ""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def get_relative_path(file_path: str) -> str:
-    """Extract path from repo_xxxxxxx onwards."""
+    """Extract path from repo_xxxxxxx onwards for legacy location.filename."""
     try:
         repo_index = file_path.find("repo_")
         if repo_index != -1:
             return file_path[repo_index:]
-        return file_path
-    except:
-        return file_path
-
-
-def get_severity_color(severity: str) -> colors.Color:
-    """Get color based on severity level."""
-    severity_upper = severity.upper()
-    if severity_upper == "CRITICAL":
-        return colors.HexColor("#DC2626")  # Red
-    elif severity_upper == "HIGH":
-        return colors.HexColor("#F97316")  # Orange
-    elif severity_upper == "MEDIUM":
-        return colors.HexColor("#FBBF24")  # Yellow
-    elif severity_upper == "LOW":
-        return colors.HexColor("#10B981")  # Green
-    else:
-        return colors.HexColor("#6B7280")  # Gray
+        return file_path or ""
+    except Exception:
+        return file_path or ""
 
 
 def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
@@ -120,45 +153,52 @@ def create_header_footer(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
     canvas_obj.restoreState()
 
 
-def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
+def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
     """
     Generate a PDF report from IAC scan results.
-    
+
+    Supports IAC agent format: list of findings with title, description, impact,
+    owasp_top_10, compliance_controls, suggested_fix, location, snippet, cves.
+    Also accepts legacy dict with "results" key.
+
     Args:
-        scan_results: Dictionary containing IAC scan results
+        scan_results: List of findings (agent format) or dict with "results" key
         output_path: Optional path to save the PDF. If None, generates a timestamped filename.
-    
+
     Returns:
         Path to the generated PDF file
     """
-    # Generate output filename if not provided
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"iac_scan_report_{timestamp}.pdf"
-    
-    # Extract data from scan results
-    results = scan_results.get("results", [])
-    
-    # Calculate statistics
+
+    results = _normalize_results(scan_results)
+    use_agent_format = len(results) > 0 and _is_agent_format(results[0])
+
     total_findings = len(results)
-    by_severity = {}
-    by_provider = {}
-    by_service = {}
-    unique_files = set()
-    
+    by_impact = {}
+    unique_locations = set()
+    by_provider: dict = {}
+    by_service: dict = {}
+
     for result in results:
-        severity = result.get("severity", "UNKNOWN")
-        by_severity[severity] = by_severity.get(severity, 0) + 1
-        
-        provider = result.get("rule_provider", "Unknown")
-        by_provider[provider] = by_provider.get(provider, 0) + 1
-        
-        service = result.get("rule_service", "Unknown")
-        by_service[service] = by_service.get(service, 0) + 1
-        
-        file_path = result.get("location", {}).get("filename", "")
-        if file_path:
-            unique_files.add(get_relative_path(file_path))
+        if use_agent_format:
+            impact = (result.get("impact") or "Unknown").strip() or "Unknown"
+            by_impact[impact] = by_impact.get(impact, 0) + 1
+            loc = result.get("location")
+            if isinstance(loc, str) and loc.strip():
+                unique_locations.add(loc.strip())
+        else:
+            severity = result.get("severity", "UNKNOWN")
+            by_impact[severity] = by_impact.get(severity, 0) + 1
+            loc = result.get("location") or {}
+            file_path = loc.get("filename", "") if isinstance(loc, dict) else ""
+            if file_path:
+                unique_locations.add(file_path)
+            provider = result.get("rule_provider", "Unknown")
+            by_provider[provider] = by_provider.get(provider, 0) + 1
+            service = result.get("rule_service", "Unknown")
+            by_service[service] = by_service.get(service, 0) + 1
     
     # Create PDF document
     doc = SimpleDocTemplate(
@@ -237,11 +277,10 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     story.append(Paragraph("Executive Summary", title_style))
     story.append(Spacer(1, 0.3 * inch))
     
-    # Summary statistics table
     summary_data = [
         ["Metric", "Value"],
         ["Total Findings", str(total_findings)],
-        ["Unique Files with Issues", str(len(unique_files))],
+        ["Unique Locations", str(len(unique_locations))],
     ]
     
     summary_table = Table(summary_data, colWidths=[3.5 * inch, 2.5 * inch], repeatRows=1)
@@ -264,14 +303,15 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     story.append(KeepTogether([summary_table]))
     story.append(Spacer(1, 0.4 * inch))
     
-    # Findings by Severity
-    story.append(Paragraph("Findings by Severity", heading_style))
+    # Findings by Severity / Impact
+    impact_label = "Impact" if use_agent_format else "Severity"
+    story.append(Paragraph(f"Findings by {impact_label}", heading_style))
     story.append(Spacer(1, 0.15 * inch))
-    severity_data = [["Severity", "Count"]]
-    for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-        count = by_severity.get(severity, 0)
+    severity_data = [[impact_label, "Count"]]
+    for level in ["Critical", "High", "Medium", "Low", "CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]:
+        count = by_impact.get(level, 0)
         if count > 0:
-            severity_data.append([severity, str(count)])
+            severity_data.append([level, str(count)])
     
     if len(severity_data) > 1:
         severity_table = Table(severity_data, colWidths=[2.5 * inch, 1.5 * inch], repeatRows=1)
@@ -293,8 +333,8 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         story.append(KeepTogether([severity_table]))
         story.append(Spacer(1, 0.3 * inch))
     
-    # Breakdown by Provider
-    if by_provider:
+    # Breakdown by Provider (legacy format only)
+    if not use_agent_format and by_provider:
         story.append(Paragraph("Findings by Provider", heading_style))
         story.append(Spacer(1, 0.15 * inch))
         provider_data = [["Provider", "Count"]]
@@ -320,8 +360,8 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         story.append(KeepTogether([provider_table]))
         story.append(Spacer(1, 0.3 * inch))
     
-    # Breakdown by Service
-    if by_service:
+    # Breakdown by Service (legacy format only)
+    if not use_agent_format and by_service:
         story.append(Paragraph("Findings by Service", heading_style))
         story.append(Spacer(1, 0.15 * inch))
         service_data = [["Service", "Count"]]
@@ -349,132 +389,168 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     # Page break after executive summary
     story.append(PageBreak())
     
+    desc_heading_style = ParagraphStyle(
+        'DescHeading',
+        parent=normal_style,
+        fontSize=10,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor("#1E293B"),
+        spaceAfter=6,
+        spaceBefore=0
+    )
+
     # Detailed Findings
     if total_findings == 0:
         story.append(Paragraph("No security findings detected.", normal_style))
     else:
-        # Process each finding - each gets 2 pages
         for idx, result in enumerate(results, 1):
-            # Page break before each finding (except the first one)
             if idx > 1:
                 story.append(PageBreak())
-            
-            rule_id = result.get("rule_id", "Unknown")
-            long_id = result.get("long_id", "Unknown")
-            rule_description = result.get("rule_description", "No description")
-            provider = result.get("rule_provider", "Unknown")
-            service = result.get("rule_service", "Unknown")
-            severity = result.get("severity", "UNKNOWN")
-            resource = result.get("resource", "Unknown")
-            location = result.get("location", {})
-            file_path = get_relative_path(location.get("filename", "Unknown"))
-            start_line = location.get("start_line", "?")
-            end_line = location.get("end_line", "?")
-            description = result.get("description", "No description available")
-            impact = result.get("impact", "No impact information")
-            resolution = result.get("resolution", "No resolution steps provided")
-            links = result.get("links", [])
-            
-            # Finding header
-            finding_title = f"Finding #{idx}: {rule_description}"
-            story.append(Paragraph(finding_title, heading_style))
-            story.append(Spacer(1, 0.2 * inch))
-            
-            # Finding details table - wrap long text
-            finding_data = []
-            finding_data.append(["Property", "Value"])
-            
-            # Rule ID
-            rule_id_para = Paragraph(rule_id, normal_style)
-            finding_data.append(["Rule ID", rule_id_para])
-            
-            # Long ID - wrap if too long
-            long_id_para = Paragraph(long_id[:80] + ("..." if len(long_id) > 80 else ""), normal_style)
-            finding_data.append(["Long ID", long_id_para])
-            
-            finding_data.append(["Severity", severity])
-            finding_data.append(["Provider", provider.upper()])
-            finding_data.append(["Service", service.upper()])
-            finding_data.append(["Resource", resource])
-            
-            # File path - wrap if too long
-            file_path_para = Paragraph(file_path[:80] + ("..." if len(file_path) > 80 else ""), normal_style)
-            finding_data.append(["File", file_path_para])
-            
-            finding_data.append(["Location", f"Lines {start_line}-{end_line}"])
-            
-            finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
-            finding_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), get_severity_color(severity)),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('TOPPADDING', (0, 0), (-1, 0), 8),
-                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-                ('TOPPADDING', (0, 1), (-1, -1), 6),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),  # Subtle grid
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-            ]))
-            story.append(KeepTogether([finding_table]))
-            
-            # Page break after table - description and details go on next page
-            story.append(PageBreak())
-            
-            # Description section (starts on page 2 of this finding)
-            desc_heading_style = ParagraphStyle(
-                'DescHeading',
-                parent=normal_style,
-                fontSize=10,
-                fontName='Helvetica-Bold',
-                textColor=colors.HexColor("#1E293B"),
-                spaceAfter=6,
-                spaceBefore=0
-            )
-            story.append(Paragraph("Description", desc_heading_style))
-            story.append(Spacer(1, 0.12 * inch))
-            desc_para = Paragraph(description, normal_style)
-            story.append(desc_para)
-            story.append(Spacer(1, 0.25 * inch))
-            
-            # Impact section
-            story.append(Paragraph("Impact", desc_heading_style))
-            story.append(Spacer(1, 0.12 * inch))
-            impact_para = Paragraph(impact, normal_style)
-            story.append(impact_para)
-            story.append(Spacer(1, 0.25 * inch))
-            
-            # Resolution section
-            story.append(Paragraph("Resolution", desc_heading_style))
-            story.append(Spacer(1, 0.12 * inch))
-            resolution_para = Paragraph(resolution, normal_style)
-            story.append(resolution_para)
-            story.append(Spacer(1, 0.25 * inch))
-            
-            # References if available
-            if links:
-                ref_heading_style = ParagraphStyle(
-                    'RefHeading',
-                    parent=normal_style,
-                    fontSize=10,
-                    fontName='Helvetica-Bold',
-                    textColor=colors.HexColor("#1E293B"),
-                    spaceAfter=6,
-                    spaceBefore=0
-                )
-                story.append(Paragraph("References", ref_heading_style))
+
+            if use_agent_format:
+                # Agent format: title, impact, location (string), description, snippet, suggested_fix, OWASP, compliance, cves
+                title = (result.get("title") or "Finding").strip() or "Finding"
+                impact = (result.get("impact") or "Unknown").strip() or "Unknown"
+                location_str = (result.get("location") or "").strip() or "—"
+                description = (result.get("description") or "No description available").strip() or "No description available"
+                snippet = (result.get("snippet") or "").strip()
+                suggested_fix = (result.get("suggested_fix") or "").strip()
+                owasp = result.get("owasp_top_10") or {}
+                compliance = result.get("compliance_controls") or {}
+                cves = result.get("cves") or {}
+
+                finding_title = f"Finding #{idx}: {title}"
+                story.append(Paragraph(finding_title, heading_style))
+                story.append(Spacer(1, 0.2 * inch))
+
+                finding_data = [["Property", "Value"]]
+                finding_data.append(["Impact", impact])
+                finding_data.append(["Location", Paragraph(_escape_html(location_str[:200] + ("..." if len(location_str) > 200 else "")), normal_style)])
+                owasp_str = _format_owasp_compliance_dict(owasp)
+                if owasp_str:
+                    finding_data.append(["OWASP Top 10", Paragraph(owasp_str[:300] + ("..." if len(owasp_str) > 300 else ""), normal_style)])
+                comp_str = _format_owasp_compliance_dict(compliance)
+                if comp_str:
+                    finding_data.append(["Compliance", Paragraph(comp_str[:300] + ("..." if len(comp_str) > 300 else ""), normal_style)])
+
+                finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
+                finding_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), get_severity_color(impact)),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                    ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                    ('TOPPADDING', (0, 1), (-1, -1), 6),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ]))
+                story.append(KeepTogether([finding_table]))
+                story.append(Spacer(1, 0.2 * inch))
+
+                story.append(Paragraph("Description", desc_heading_style))
                 story.append(Spacer(1, 0.12 * inch))
-                for ref in links[:5]:  # Limit to 5 references
-                    # Wrap long URLs
-                    ref_text = ref[:100] + ("..." if len(ref) > 100 else "")
-                    ref_para = Paragraph(f"• {ref_text}", normal_style)
-                    story.append(ref_para)
-                    story.append(Spacer(1, 0.05 * inch))
+                story.append(Paragraph(description[:2000] + ("..." if len(description) > 2000 else ""), normal_style))
+                story.append(Spacer(1, 0.2 * inch))
+
+                if snippet:
+                    story.append(Paragraph("Code Snippet", desc_heading_style))
+                    story.append(Spacer(1, 0.12 * inch))
+                    story.append(Paragraph(f'<font face="Courier" size="8">{_escape_html(snippet[:1500])}{"..." if len(snippet) > 1500 else ""}</font>', normal_style))
+                    story.append(Spacer(1, 0.2 * inch))
+
+                if suggested_fix:
+                    story.append(Paragraph("Suggested Fix", desc_heading_style))
+                    story.append(Spacer(1, 0.12 * inch))
+                    story.append(Paragraph(suggested_fix[:1500] + ("..." if len(suggested_fix) > 1500 else ""), normal_style))
+                    story.append(Spacer(1, 0.2 * inch))
+
+                if cves and isinstance(cves, dict):
+                    cve_parts = []
+                    for k, v in list(cves.items())[:10]:
+                        cve_parts.append(f"{k}: {v}" if v else k)
+                    if cve_parts:
+                        story.append(Paragraph("CVEs", desc_heading_style))
+                        story.append(Spacer(1, 0.12 * inch))
+                        story.append(Paragraph(", ".join(cve_parts)[:500], normal_style))
+            else:
+                # Legacy format
+                rule_id = result.get("rule_id", "Unknown")
+                long_id = result.get("long_id", "Unknown")
+                rule_description = result.get("rule_description", "No description")
+                provider = result.get("rule_provider", "Unknown")
+                service = result.get("rule_service", "Unknown")
+                severity = result.get("severity", "UNKNOWN")
+                resource = result.get("resource", "Unknown")
+                location = result.get("location", {})
+                file_path = get_relative_path(location.get("filename", "Unknown"))
+                start_line = location.get("start_line", "?")
+                end_line = location.get("end_line", "?")
+                description = result.get("description", "No description available")
+                impact = result.get("impact", "No impact information")
+                resolution = result.get("resolution", "No resolution steps provided")
+                links = result.get("links", [])
+
+                finding_title = f"Finding #{idx}: {rule_description}"
+                story.append(Paragraph(finding_title, heading_style))
+                story.append(Spacer(1, 0.2 * inch))
+
+                finding_data = [["Property", "Value"]]
+                finding_data.append(["Rule ID", Paragraph(rule_id, normal_style)])
+                finding_data.append(["Long ID", Paragraph(long_id[:80] + ("..." if len(long_id) > 80 else ""), normal_style)])
+                finding_data.append(["Severity", severity])
+                finding_data.append(["Provider", provider.upper()])
+                finding_data.append(["Service", service.upper()])
+                finding_data.append(["Resource", resource])
+                finding_data.append(["File", Paragraph(file_path[:80] + ("..." if len(file_path) > 80 else ""), normal_style)])
+                finding_data.append(["Location", f"Lines {start_line}-{end_line}"])
+
+                finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
+                finding_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), get_severity_color(severity)),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                    ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                    ('TOPPADDING', (0, 1), (-1, -1), 6),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ]))
+                story.append(KeepTogether([finding_table]))
+                story.append(PageBreak())
+
+                story.append(Paragraph("Description", desc_heading_style))
+                story.append(Spacer(1, 0.12 * inch))
+                story.append(Paragraph(description, normal_style))
+                story.append(Spacer(1, 0.25 * inch))
+                story.append(Paragraph("Impact", desc_heading_style))
+                story.append(Spacer(1, 0.12 * inch))
+                story.append(Paragraph(impact, normal_style))
+                story.append(Spacer(1, 0.25 * inch))
+                story.append(Paragraph("Resolution", desc_heading_style))
+                story.append(Spacer(1, 0.12 * inch))
+                story.append(Paragraph(resolution, normal_style))
+                story.append(Spacer(1, 0.25 * inch))
+                if links:
+                    story.append(Paragraph("References", desc_heading_style))
+                    story.append(Spacer(1, 0.12 * inch))
+                    for ref in links[:5]:
+                        ref_text = ref[:100] + ("..." if len(ref) > 100 else "")
+                        story.append(Paragraph(f"• {ref_text}", normal_style))
+                        story.append(Spacer(1, 0.05 * inch))
     
     # Build PDF with proper page handlers
     doc.build(story, onFirstPage=create_title_page, onLaterPages=create_header_footer)

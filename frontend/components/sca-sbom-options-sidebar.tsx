@@ -4,29 +4,39 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  ScanIcon,
+  Download,
+  Loader2,
+  Eye,
+  ScanLine,
+  FileJson,
+  FolderGit2,
+} from "lucide-react";
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Github,
-  GitBranch,
-  GitCommit,
-  ScanIcon,
-  Download,
-  Loader2,
-  Eye,
-} from "lucide-react";
-import { Mode } from "@/app/home/sast/[conversation_id]/page";
+import { RepositoryCard } from "@/components/repository-card";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { SCASBOMConversationResponse, startSCASBOMScan, getSCASBOMExportResults, reinitializeSCASBOMScan } from "@/utils/backend_api";
+import {
+  SCASBOMConversationResponse,
+  getSBOMExportResults,
+  reinitializeSBOMScanWithPayload,
+  estimateCreditsForScan,
+  startScan,
+  type StartScanPayload,
+  type RepoMode,
+} from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
-// import { generateAndDownloadPDF } from "@/components/PDF_Report";
+import { handleApiError } from "@/utils/error-handler";
+
+export type Mode = RepoMode | "unknown";
 
 export function SCASBOMOptionsSidebar({
   query,
@@ -36,7 +46,7 @@ export function SCASBOMOptionsSidebar({
   setRepoUrl,
   PAT,
   setPAT,
-}:{
+}: {
   query: UseQueryResult<SCASBOMConversationResponse>;
   mode: Mode;
   setMode: Dispatch<SetStateAction<Mode>>;
@@ -51,123 +61,219 @@ export function SCASBOMOptionsSidebar({
     setPAT(PAT);
   }, [mode, repo_url, PAT]);
 
-  const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" >("ready");
+  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
+  const [error_message, setErrorMessage] = useState<string | null>(null);
+  const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
+  /** Reset on mount so user must run estimate every time they come to this page (like SAST). */
+  const [estimationProcessDone, setEstimationProcessDone] = useState(false);
+  const [uploaded_file, setUploadedFile] = useState<File | null>(null);
+  const [uploaded_sbom_file, setUploadedSbomFile] = useState<File | null>(null);
 
-  const handleStartScan = ({
-    conversation_id,
-    repo_url,
-    PAT,
-    mode
-  }: {
-    conversation_id: number;
-    repo_url: string;
-    PAT: string;
-    mode: Mode;
-  }) => {
-    setOptionsSidebarState("scanning");
-    if (mode === "unknown") {
-      toast.error("Please select a repository platform");
-      setOptionsSidebarState("error");
-      throw new Error("Please select a repository platform");
-    }
-    return startSCASBOMScan({
-      conversation_id,
-      repo_url,
-      PAT,
-      mode
-    });
-  };
+  const zip_file_used = uploaded_file !== null;
+  const sbom_file_used = uploaded_sbom_file !== null;
 
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { conversation_id } = useParams();
-  const startScanMutation = useMutation({
-    mutationFn: handleStartScan,
-    onSuccess: () => {
-      setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversation-data', parseInt(conversation_id as string)] });
-    },
-    onError: () => {
-      setOptionsSidebarState("error");
+  const params = useParams();
+  const team_id = parseInt(params?.team_id as string, 10);
+  const scan_id = parseInt(params?.scan_id as string, 10);
+
+  const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
+    if (uploaded_file) return { valid: true };
+    if (uploaded_sbom_file) return { valid: true };
+    if (mode === "unknown") {
+      return { valid: false, message: "Please select a repository platform (GitHub, GitLab, or Bitbucket)." };
     }
+    if (!repo_url?.trim()) {
+      return { valid: false, message: "Please enter the repository URL." };
+    }
+    if (!PAT?.trim()) {
+      return { valid: false, message: "Please enter a Personal Access Token." };
+    }
+    return { valid: true };
+  };
+
+  const buildStartScanPayloadString = (): string => {
+    const validation = validateScanInputs();
+    if (!validation.valid) throw new Error(validation.message);
+    const payload: StartScanPayload = {
+      sbom_sca: {
+        repo_context:
+          zip_file_used || sbom_file_used
+            ? null
+            : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT },
+        zip_file_used,
+        sbom_file_used,
+      },
+    };
+    return JSON.stringify(payload);
+  };
+
+  /** File to send with estimate/start: either zip or SBOM file, not both. */
+  const getUploadedFileForApi = (): File | undefined => {
+    if (zip_file_used && uploaded_file) return uploaded_file;
+    if (sbom_file_used && uploaded_sbom_file) return uploaded_sbom_file;
+    return undefined;
+  };
+
+  const estimateCreditsMutation = useMutation({
+    mutationFn: () =>
+      estimateCreditsForScan(team_id, "sbom_sca", scan_id, buildStartScanPayloadString(), getUploadedFileForApi()),
+    onSuccess: (data) => {
+      setEstimatedCredits(data.credits_required);
+      setEstimationProcessDone(true);
+      if (data.credits_required !== -1) {
+        toast.success(`This scan will use ${data.credits_required} credits`);
+      } else {
+        toast.error("Invalid Input from user");
+      }
+    },
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
+      setOptionsSidebarState("error");
+    },
   });
+
+  const startScanMutation = useMutation({
+    mutationFn: () =>
+      startScan(team_id, "sbom_sca", scan_id, buildStartScanPayloadString(), getUploadedFileForApi()),
+    onSuccess: () => {
+      setEstimatedCredits(null);
+      setEstimationProcessDone(false);
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversation-data", team_id, scan_id] });
+    },
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
+      setOptionsSidebarState("error");
+    },
+  });
+
+  const handleRunScan = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
+    }
+    estimateCreditsMutation.mutate();
+  };
+
+  const handleStartScanAfterEstimate = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
+    }
+    startScanMutation.mutate();
+  };
+
+  const scanInputsValid = validateScanInputs().valid;
+
+  /** Reset estimation when inputs change; also run on mount so estimation must be run every time user comes to page. */
+  useEffect(() => {
+    setEstimationProcessDone(false);
+    setEstimatedCredits(null);
+  }, [mode, repo_url, PAT, uploaded_file, uploaded_sbom_file]);
+
+  const displayCredits = estimatedCredits;
+  const creditsInvalid = estimatedCredits === -1;
+  const canRunScan = estimationProcessDone && !creditsInvalid;
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
+      const msg =
+        (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ??
+        "The scan failed.";
+      setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
-    if (query.data?.scan_status === "not_started" || !query.data?.scan_status) {
+    if (query.data?.scan_status === "not_started" || query.data?.scan_status === "unknown") {
       setOptionsSidebarState("ready");
+      setErrorMessage(null);
     }
-  }, [query.data?.scan_status]);
+  }, [query.data?.scan_status, query.data?.scan_metadata]);
 
   const exportMutation = useMutation({
-    mutationFn: getSCASBOMExportResults,
-    onSuccess: (data, variables , context) => {
+    mutationFn: () => getSBOMExportResults(team_id, scan_id),
+    onSuccess: (data) => {
       const blob = new Blob([data], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
-
-      // download the pdf file
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${query.data?.title}_scan_report.pdf`;
+      a.download = `${query.data?.title ?? "sbom_sca"}_scan_report.pdf`;
       a.click();
-
+      URL.revokeObjectURL(url);
       setOptionsSidebarState("done");
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-    }
+    },
   });
 
-  const handleReinitializeScan = ({
-    conversation_id,
-    repo_url,
-    PAT,
-    mode
-  }: {
-    conversation_id: number;
-    repo_url: string;
-    PAT: string;
-    mode: Mode;
-  }) => {
-    setOptionsSidebarState("ready");
-    if (mode === "unknown") {
-      toast.error("Please select a repository platform");
+  const reinitializeScanMutation = useMutation({
+    mutationFn: () =>
+      reinitializeSBOMScanWithPayload(
+        team_id,
+        scan_id,
+        buildStartScanPayloadString(),
+        getUploadedFileForApi() ?? undefined
+      ),
+    onSuccess: () => {
+      setOptionsSidebarState("scanning");
+      queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversation-data", team_id, scan_id] });
+    },
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-      throw new Error("Please select a repository platform");
-    }
-    return reinitializeSCASBOMScan({
-      conversation_id,
-      repo_url,
-      PAT,
-      mode
+    },
+  });
+
+  const onZipChange: Dispatch<SetStateAction<File | null>> = (value) => {
+    setUploadedFile((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      if (next) setUploadedSbomFile(null);
+      return next;
     });
   };
 
-  const reinitializeScanMutation = useMutation({
-    mutationFn: handleReinitializeScan,
-    onSuccess: () => {
-      setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversation-data', parseInt(conversation_id as string)] });
-    },
-    onError: () => {
-      setOptionsSidebarState("error");
+  const onSbomFileChange = (file: File | null) => {
+    setUploadedSbomFile(file);
+    if (file) {
+      setUploadedFile(null);
+      setRepoUrl("");
+      setPAT("");
+      setMode("unknown");
     }
-  });
+  };
+
+  /** When user enters repo URL or PAT, clear SBOM file so only one source is used. */
+  const setRepoUrlAndClearSbom: Dispatch<SetStateAction<string>> = (value) => {
+    setRepoUrl(value);
+    setUploadedSbomFile(null);
+  };
+  const setPATAndClearSbom: Dispatch<SetStateAction<string>> = (value) => {
+    setPAT(value);
+    setUploadedSbomFile(null);
+  };
 
   return (
-    <ScrollArea className="w-80 h-screen bg-zinc-900 dark:bg-zinc-950 border-l border-zinc-800">
+    <ScrollArea className="w-96 h-screen bg-neutral-900/70 border-l border-zinc-800">
       <div className="p-6">
-        <h2 className="text-xl font-bold text-white mb-2">SCA + SBOM Options</h2>
+        <div className="flex items-center gap-2 flex-row mb-2">
+          <h2 className="text-xl font-bold text-white">SCA + SBOM Configuration</h2>
+          <ScanLine className="h-5 w-5 text-blue-400 shrink-0" />
+        </div>
         <p className="text-sm text-zinc-400">
-          Configure your SCA + SBOM scanning options.
+          Choose one: connect a repository (or upload zip) or upload an SBOM file.
         </p>
       </div>
 
@@ -175,159 +281,119 @@ export function SCASBOMOptionsSidebar({
 
       {optionsSidebarState === "ready" && (
         <>
-          <div className="p-6">
-            {/* Integration Inputs */}
-            <div className="mb-8">
-              <h3 className="text-sm font-semibold text-zinc-300 mb-4 flex flex-row items-center gap-2">
-                Repository Selection <p className="text-red-500">*</p>
-              </h3>
-              <Accordion type="single" collapsible className="w-full">
-                {/* GitHub Integration */}
-                <AccordionItem value="github" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <Github className="h-4 w-4" />
-                      <span>GitHub</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="github-repo-url" className="text-zinc-300">
-                        Repository URL
-                      </Label>
-                      <Input
-                        id="github-repo-url"
-                        placeholder="https://github.com/username/repo"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        value={repo_url}
-                        onChange={(e) => {
-                          setRepoUrl(e.target.value);
-                          setMode("github");
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="github-token" className="text-zinc-300">
-                        Personal Access Token
-                      </Label>
-                      <Input
-                        id="github-token"
-                        type="password"
-                        placeholder="Enter your GitHub token"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        value={PAT}
-                        onChange={(e) => {
-                          setPAT(e.target.value);
-                        }}
-                      />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                {/* GitLab Integration */}
-                <AccordionItem value="gitlab" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <GitBranch className="h-4 w-4" />
-                      <span>GitLab</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="gitlab-repo-url" className="text-zinc-300">
-                        Repository URL
-                      </Label>
-                      <Input
-                        id="gitlab-repo-url"
-                        placeholder="https://gitlab.com/username/repo"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        value={repo_url}
-                        onChange={(e) => {
-                          setRepoUrl(e.target.value);
-                          setMode("gitlab");
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="gitlab-token" className="text-zinc-300">
-                        Personal Access Token
-                      </Label>
-                      <Input
-                        id="gitlab-token"
-                        type="password"
-                        placeholder="Enter your GitLab token"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        value={PAT}
-                        onChange={(e) => {
-                          setPAT(e.target.value);
-                        }}
-                      />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                {/* Bitbucket Integration */}
-                <AccordionItem value="bitbucket" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <GitCommit className="h-4 w-4" />
-                      <span>Bitbucket</span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="bitbucket-repo-url" className="text-zinc-300">
-                        Repository URL
-                      </Label>
-                      <Input
-                        id="bitbucket-repo-url"
-                        placeholder="https://bitbucket.org/username/repo"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        value={repo_url}
-                        onChange={(e) => {
-                          setRepoUrl(e.target.value);
-                          setMode("bitbucket");
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bitbucket-token" className="text-zinc-300">
-                        Personal Access Token
-                      </Label>
-                      <Input
-                        id="bitbucket-token"
-                        type="password"
-                        placeholder="Enter your Bitbucket token"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        value={PAT}
-                        onChange={(e) => {
-                          setPAT(e.target.value);
-                        }}
-                      />
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
+          <div className="p-6 pb-8">
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="repository" className="border-zinc-700 border rounded-lg px-3 data-[state=open]:border-blue-500/50">
+                <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer py-4 hover:no-underline [&[data-state=open]>svg]:rotate-180">
+                  <div className="flex items-center gap-2">
+                    <FolderGit2 className="h-4 w-4 text-zinc-400 shrink-0" />
+                    <span>Analyze Repository</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-5 pt-0">
+                  <RepositoryCard
+                    uploadedFile={uploaded_file}
+                    setUploadedFile={onZipChange}
+                    repoUrl={repo_url}
+                    setRepoUrl={setRepoUrlAndClearSbom}
+                    pat={PAT}
+                    setPat={setPATAndClearSbom}
+                    mode={mode}
+                    setMode={setMode}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="sbom" className="border-zinc-700 border rounded-lg px-3 mt-2 data-[state=open]:border-blue-500/50">
+                <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer py-4 hover:no-underline [&[data-state=open]>svg]:rotate-180">
+                  <div className="flex items-center gap-2">
+                    <FileJson className="h-4 w-4 text-zinc-400 shrink-0" />
+                    <span>Analyze SBOM file</span>
+                    {uploaded_sbom_file && (
+                      <span className="text-xs text-zinc-500 font-normal">({uploaded_sbom_file.name})</span>
+                    )}
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-6 pt-0">
+                  <p className="text-xs text-zinc-500 mb-3">
+                    Upload an existing SBOM file (e.g. JSON). This will clear any repository or zip selection.
+                  </p>
+                  <Label className="text-zinc-300 text-sm">SBOM file</Label>
+                  <Input
+                    type="file"
+                    accept=".json,application/json"
+                    className="bg-zinc-800 h-fit p-2 border-zinc-700 text-white file:mr-2 file:rounded file:border-0 file:bg-blue-600 file:cursor-pointer file:px-3 file:py-1 file:text-sm file:text-white mt-1"
+                    onChange={(e) => onSbomFileChange(e.target.files?.[0] ?? null)}
+                  />
+                  {uploaded_sbom_file && (
+                    <p className="text-xs text-zinc-500 mt-2 mb-2">{uploaded_sbom_file.name}</p>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
+
+          <Separator className="bg-zinc-800" />
+
           <div className="p-6">
-            <Button 
-              variant="ghost" 
-              size="icon-lg"
-              onClick={() =>{ 
-                startScanMutation.mutate({
-                conversation_id: parseInt(conversation_id as string),
-                repo_url,
-                PAT,
-                mode
-              });
-              setOptionsSidebarState("scanning");
-              }}
-              className="w-fit h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRunScan}
+              disabled={!scanInputsValid || estimateCreditsMutation.isPending}
+              className="w-full h-9 px-4 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer disabled:opacity-50"
             >
-              <ScanIcon className="size-4" />
-              <span className="ml-1">Run Scan</span>
+              {estimateCreditsMutation.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                  Estimating...
+                </>
+              ) : (
+                <>Estimate credits required</>
+              )}
             </Button>
+            {displayCredits != null && (
+              <p className="text-sm text-zinc-300 mt-3">
+                {creditsInvalid ? (
+                  <span className="font-semibold text-amber-400">Invalid Input from user</span>
+                ) : (
+                  <>Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span></>
+                )}
+              </p>
+            )}
+          </div>
+
+          <Separator className="bg-zinc-800" />
+
+          <div className="p-6">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            {canRunScan ? (
+              <div className="space-y-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleStartScanAfterEstimate}
+                  disabled={!scanInputsValid || startScanMutation.isPending}
+                  className="w-full h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer disabled:opacity-50"
+                >
+                  {startScanMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin mr-2" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>Start scan</>
+                  )}
+                </Button>
+                {displayCredits != null && !creditsInvalid && (
+                  <p className="text-xs text-zinc-500">Uses {displayCredits} credits.</p>
+                )}
+              </div>
+            ) : creditsInvalid ? (
+              <p className="text-sm text-amber-400">Credit Estimation failed due to invalid inputs from user . Ensure there are documents that match the include/exclude patterns.</p>
+            ) : (
+              <p className="text-sm text-zinc-500">Run estimate above to enable starting the scan.</p>
+            )}
           </div>
         </>
       )}
@@ -335,9 +401,7 @@ export function SCASBOMOptionsSidebar({
       {optionsSidebarState === "scanning" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
-          <p className="text-zinc-300 text-center">
-            Scan has started, this might take a while
-          </p>
+          <p className="text-zinc-300 text-center">Scan has started, this might take a while</p>
         </div>
       )}
 
@@ -345,26 +409,21 @@ export function SCASBOMOptionsSidebar({
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully on the repository <span className="text-blue-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.repo_url}</span>
-              You can now chat with your scan results
+              Scan has run successfully. You can now chat with your scan results.
             </p>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
-              onClick={() => {
-                router.push(`/home/sbom_sca/${conversation_id}/results?origin=chat`);
-              }}
+              onClick={() => router.push(`/${team_id}/sbom_sca/${scan_id}/results?origin=chat`)}
               className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <Eye className="size-4" />
               <span className="ml-1">View Results</span>
             </Button>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
-              onClick={async () => {
-                exportMutation.mutate(parseInt(conversation_id as string));
-              }}
+              onClick={() => exportMutation.mutate()}
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
               <Download className="size-4" />
@@ -377,15 +436,12 @@ export function SCASBOMOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            An error occurred during the scan. Please try again.
+            {error_message ?? "An error occurred during the scan. Please try again."}
           </p>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
-            onClick={() => {
-              // refresh the entire page to reset the state
-              window.location.reload();
-            }}
+            onClick={() => window.location.reload()}
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
@@ -395,16 +451,16 @@ export function SCASBOMOptionsSidebar({
 
       {query.data?.scan_status === "pending" && (
         <div className="p-6 border-t border-zinc-800">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
             onClick={() => {
-              reinitializeScanMutation.mutate({
-                conversation_id: parseInt(conversation_id as string),
-                repo_url,
-                PAT,
-                mode
-              });
+              const validation = validateScanInputs();
+              if (!validation.valid) {
+                toast.error(validation.message);
+                return;
+              }
+              reinitializeScanMutation.mutate();
             }}
             disabled={reinitializeScanMutation.isPending}
             className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"

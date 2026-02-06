@@ -27,17 +27,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck } from "lucide-react";
 import { useEffect, useState } from "react";
-import { SCASBOMConversation, deleteSCASBOMConversation, getSCASBOMConversations, renameSCASBOMConversation, createSCASBOMConversation } from "@/utils/backend_api";
+import {
+  SCASBOMConversation,
+  deleteSBOMSCAScan,
+  getSBOMSCAScans,
+  renameSBOMSCAScan,
+  createSBOMSCAScan,
+} from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
-
-export default function SCASBOMPage() {
+export default function SBOMSCAPage() {
   const router = useRouter();
   const params = useParams();
   const team_id = params?.team_id as string;
@@ -46,55 +53,63 @@ export default function SCASBOMPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<SCASBOMConversation | null>(null);
+  const [metadataDialogOpen, setMetadataDialogOpen] = useState(false);
+  const [metadataScan, setMetadataScan] = useState<SCASBOMConversation | null>(null);
   const [newName, setNewName] = useState("");
   const [newScanTitle, setNewScanTitle] = useState("");
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
-  const query = useQuery({ queryKey: ['sbom_sca-conversations'], queryFn: getSCASBOMConversations })
+  const query = useQuery({
+    queryKey: ["sbom_sca-conversations", team_id],
+    queryFn: () => getSBOMSCAScans(parseInt(team_id)),
+    enabled: !!team_id,
+  });
 
   useEffect(() => {
     if (query.data) {
-      setConversations(query.data);
+      setConversations(query.data.scans_list_data ?? []);
     }
     if (query.error) {
-      showErrorToast(query.error, 'Error fetching sca_sbom conversations');
+      showErrorToast(query.error, "Error fetching SCA + SBOM scans");
     }
-  }, [query.data , query.error]);
+  }, [query.data, query.error]);
 
-  const deleteSCASBOMConversationMutation = useMutation({
-    mutationFn: deleteSCASBOMConversation,
-    onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversations'] });
-      toast.success('SCA + SBOM conversation deleted successfully');
+  const deleteSBOMSCAScanMutation = useMutation({
+    mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) =>
+      deleteSBOMSCAScan(team_id, scan_id),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", variables.team_id.toString()] });
+      toast.success("SCA + SBOM scan deleted successfully");
     },
     onError: (error) => {
       showErrorToast(error);
-    }
-  })
+    },
+  });
 
-  const renameSCASBOMConversationMutation = useMutation({
-    mutationFn: renameSCASBOMConversation,
-    onSuccess: (data, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversations'] });
-      toast.success('SCA + SBOM conversation renamed successfully');
+  const renameSBOMSCAScanMutation = useMutation({
+    mutationFn: renameSBOMSCAScan,
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", variables.team_id.toString()] });
+      toast.success("SCA + SBOM scan renamed successfully");
     },
     onError: (error) => {
       showErrorToast(error);
-    }
-  })
+    },
+  });
 
-  const createSCASBOMConversationMutation = useMutation({
-    mutationFn: createSCASBOMConversation,
-    onSuccess: (conversationId, variables, context) => {
-      queryClient.invalidateQueries({ queryKey: ['sbom_sca-conversations'] });
+  const createSBOMSCAScanMutation = useMutation({
+    mutationFn: ({ team_id, title }: { team_id: number; title: string }) =>
+      createSBOMSCAScan(team_id, title),
+    onSuccess: (scan_id, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", variables.team_id.toString()] });
       setCreateDialogOpen(false);
       setNewScanTitle("");
-      router.push(`/${team_id}/sbom_sca/${conversationId}`);
+      router.push(`/${variables.team_id}/sbom_sca/${scan_id}`);
     },
     onError: (error) => {
       showErrorToast(error);
-    }
-  })
+    },
+  });
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -116,7 +131,6 @@ export default function SCASBOMPage() {
       failure: { variant: "destructive" as const, className: "" },
       success: { variant: "default" as const, className: "bg-green-500 hover:bg-green-600 text-white" },
     };
-
     const config = variants[status];
     const labels = {
       not_started: "Not Started",
@@ -126,7 +140,6 @@ export default function SCASBOMPage() {
       failure: "Failure",
       success: "Success",
     };
-
     return (
       <Badge variant={config.variant} className={config.className}>
         {labels[status]}
@@ -146,8 +159,12 @@ export default function SCASBOMPage() {
   };
 
   const confirmRename = () => {
-    if (selectedConversation && newName.trim()) {
-      renameSCASBOMConversationMutation.mutate({ conversation_id: selectedConversation.id, title: newName.trim() });
+    if (selectedConversation && newName.trim() && team_id) {
+      renameSBOMSCAScanMutation.mutate({
+        team_id: parseInt(team_id),
+        scan_id: selectedConversation.id,
+        title: newName.trim(),
+      });
       setRenameDialogOpen(false);
       setSelectedConversation(null);
       setNewName("");
@@ -155,16 +172,16 @@ export default function SCASBOMPage() {
   };
 
   const confirmDelete = () => {
-    if (selectedConversation) {
-      deleteSCASBOMConversationMutation.mutate(selectedConversation.id);
+    if (selectedConversation && team_id) {
+      deleteSBOMSCAScanMutation.mutate({ team_id: parseInt(team_id), scan_id: selectedConversation.id });
       setDeleteDialogOpen(false);
       setSelectedConversation(null);
     }
   };
 
   const confirmCreate = () => {
-    if (newScanTitle.trim()) {
-      createSCASBOMConversationMutation.mutate(newScanTitle.trim());
+    if (newScanTitle.trim() && team_id) {
+      createSBOMSCAScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
     }
   };
 
@@ -182,36 +199,104 @@ export default function SCASBOMPage() {
               </p>
             </div>
             <div className="flex flex-row items-center gap-2">
-              <Button 
+              <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Scan
               </Button>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ['sca_sbom-conversations'] })}>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                onClick={() => queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", team_id] })}
+              >
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
             </div>
           </div>
 
-          { query.isError ? (
+          {query.data?.card_data && !query.isLoading && !query.isError && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</CardTitle>
+                  <Clock className="h-4 w-4 text-zinc-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.pending_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</CardTitle>
+                  <Play className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.started_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</CardTitle>
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.success_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</CardTitle>
+                  <XCircle className="h-4 w-4 text-red-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.failure_scans}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</CardTitle>
+                  <CalendarPlus className="h-4 w-4 text-zinc-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.scans_created_today}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
+                </CardContent>
+              </Card>
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</CardTitle>
+                  <CalendarCheck className="h-4 w-4 text-zinc-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-zinc-900 dark:text-white">{query.data.card_data.scans_updated_today}</div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {query.isError ? (
             <div className="text-center py-12">
               <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-                Error in fetching conversations , please try again later
+                Error in fetching scans, please try again later
               </p>
             </div>
           ) : query.isLoading ? (
             <div className="flex h-full items-center justify-center">
-                <Loader2 className="size-10 animate-spin text-blue-600" />
+              <Loader2 className="size-10 animate-spin text-blue-600" />
             </div>
           ) : conversations.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-zinc-600 dark:text-zinc-400 mb-4">
                 No scans yet. Create your first SCA + SBOM scan to get started.
               </p>
-              <Button 
+              <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => setCreateDialogOpen(true)}
               >
@@ -224,11 +309,13 @@ export default function SCASBOMPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[300px]">Conversation Name</TableHead>
-                    <TableHead>Created At</TableHead>
-                    <TableHead>Last Updated</TableHead>
-                    <TableHead>Scan Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="w-[220px]">Title</TableHead>
+                    <TableHead>Owner</TableHead>
+                    <TableHead>Created at</TableHead>
+                    <TableHead>Last updated</TableHead>
+                    <TableHead>Scan status</TableHead>
+                    <TableHead className="w-[180px]">View scan metadata</TableHead>
+                    <TableHead className="text-right w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -236,27 +323,83 @@ export default function SCASBOMPage() {
                     <TableRow key={conversation.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <TableCell className="font-medium">
                         <Link
-                          href={`/${team_id}/sbom_sca/${conversation.id}`}
+                          href={
+                            conversation.scan_status === "success"
+                              ? `/${team_id}/sbom_sca/${conversation.id}/results`
+                              : `/${team_id}/sbom_sca/${conversation.id}`
+                          }
                           className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
                         </Link>
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        {(conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "") ||
+                        conversation.owner_user_email ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-8 w-8 shrink-0">
+                              <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
+                                {conversation.owner_user_full_name
+                                  ? conversation.owner_user_full_name
+                                      .trim()
+                                      .split(/\s+/)
+                                      .map((p) => p.charAt(0))
+                                      .slice(0, 2)
+                                      .join("")
+                                      .toUpperCase() ||
+                                    (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
+                                  : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              {conversation.owner_user_full_name != null &&
+                                conversation.owner_user_full_name !== "" && (
+                                  <span
+                                    className="block truncate max-w-[160px]"
+                                    title={conversation.owner_user_email ?? ""}
+                                  >
+                                    {conversation.owner_user_full_name}
+                                  </span>
+                                )}
+                              {conversation.owner_user_email != null &&
+                                conversation.owner_user_email !== "" && (
+                                  <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">
+                                    {conversation.owner_user_email}
+                                  </span>
+                                )}
+                            </div>
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
                         {formatDate(conversation.created_at)}
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                      <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
                         {formatDate(conversation.last_updated)}
                       </TableCell>
-                      <TableCell>{getStatusBadge(conversation.scan_status as ScanStatus)}</TableCell>
+                      <TableCell className="text-sm">
+                        {getStatusBadge(conversation.scan_status as ScanStatus)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="cursor-pointer"
+                          onClick={() => {
+                            setMetadataScan(conversation);
+                            setMetadataDialogOpen(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1.5" />
+                          View
+                        </Button>
+                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 cursor-pointer"
-                            >
+                            <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer">
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -264,7 +407,9 @@ export default function SCASBOMPage() {
                             {conversation.scan_status === "success" && (
                               <DropdownMenuItem
                                 className="cursor-pointer"
-                                onClick={() => router.push(`/${team_id}/sbom_sca/${conversation.id}/results?origin=list`)}
+                                onClick={() =>
+                                  router.push(`/${team_id}/sbom_sca/${conversation.id}/results?origin=list`)
+                                }
                               >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Results
@@ -301,9 +446,7 @@ export default function SCASBOMPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Rename Conversation</DialogTitle>
-            <DialogDescription>
-              Enter a new name for this conversation.
-            </DialogDescription>
+            <DialogDescription>Enter a new name for this conversation.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input
@@ -311,9 +454,7 @@ export default function SCASBOMPage() {
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Conversation name"
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  confirmRename();
-                }
+                if (e.key === "Enter") confirmRename();
               }}
             />
           </div>
@@ -344,7 +485,8 @@ export default function SCASBOMPage() {
           <DialogHeader>
             <DialogTitle>Delete Conversation</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{selectedConversation?.title}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{selectedConversation?.title}&quot;? This action cannot be
+              undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -369,6 +511,39 @@ export default function SCASBOMPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={metadataDialogOpen} onOpenChange={setMetadataDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>Scan metadata</DialogTitle>
+            <DialogDescription>
+              {metadataScan ? `Metadata for "${metadataScan.title}"` : "Scan metadata"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {metadataScan?.scan_metadata &&
+            typeof metadataScan.scan_metadata === "object" &&
+            Object.keys(metadataScan.scan_metadata).length > 0 ? (
+              <dl className="space-y-2 text-sm">
+                {Object.entries(metadataScan.scan_metadata).map(([key, value]) => (
+                  <div key={key} className="flex gap-2 border-b border-zinc-200 dark:border-zinc-700 pb-2">
+                    <dt className="font-medium text-zinc-700 dark:text-zinc-300 shrink-0 min-w-[120px]">
+                      {key}
+                    </dt>
+                    <dd className="text-zinc-600 dark:text-zinc-400 break-all">
+                      {value !== null && typeof value === "object"
+                        ? JSON.stringify(value)
+                        : String(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="text-zinc-500 dark:text-zinc-400 text-sm">No metadata for this scan.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -383,9 +558,7 @@ export default function SCASBOMPage() {
               onChange={(e) => setNewScanTitle(e.target.value)}
               placeholder="Scan title"
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  confirmCreate();
-                }
+                if (e.key === "Enter") confirmCreate();
               }}
             />
           </div>
@@ -402,10 +575,10 @@ export default function SCASBOMPage() {
             </Button>
             <Button
               onClick={confirmCreate}
-              disabled={!newScanTitle.trim() || createSCASBOMConversationMutation.isPending}
+              disabled={!newScanTitle.trim() || createSBOMSCAScanMutation.isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >
-              {createSCASBOMConversationMutation.isPending ? "Creating..." : "Create"}
+              {createSBOMSCAScanMutation.isPending ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

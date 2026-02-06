@@ -1,0 +1,200 @@
+[
+    {
+        "title": "Azure Core deserialization vulnerability",
+        "description": "Deserialization of untrusted data in azure-core",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to azure-core 1.38.0 or later",
+        "dependencies": [
+            "azure-core@1.36.0 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "Minerva timing attack on ECDSA (P-256)",
+        "description": "Minerva timing attack on P-256 in python-ecdsa",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "No fix available yet (not-fixed)",
+        "dependencies": [
+            "ecdsa@0.19.1 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "Starlette Range header DoS",
+        "description": "Starlette vulnerable to O(n^2) DoS via Range header merging in FileResponse",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to starlette>=0.49.1",
+        "dependencies": [
+            "starlette@0.48.0 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "FastChat Denial of Service (DoS)",
+        "description": "FastChat Denial of Service vulnerability",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Not fixed (upgrade not available)",
+        "dependencies": [
+            "fschat@0.2.36 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "FastChat SSRF vulnerability",
+        "description": "FastChat Server-Side Request Forgery vulnerability",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Not fixed (upgrade not available)",
+        "dependencies": [
+            "fschat@0.2.36 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "FastChat SSRF vulnerability (2nd entry)",
+        "description": "FastChat Server-Side Request Forgery vulnerability",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Not fixed (upgrade not available)",
+        "dependencies": [
+            "fschat@0.2.36 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "FastChat DoS via Resource Consumption",
+        "description": "FastChat Uncontrolled Resource Consumption vulnerability",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Not fixed (upgrade not available)",
+        "dependencies": [
+            "fschat@0.2.36 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "AIOHTTP zip bomb DoS vulnerability",
+        "description": "AIOHTTP HTTP Parser auto_decompress feature vulnerable to zip bomb",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to aiohttp 3.13.3 or later",
+        "dependencies": [
+            "aiohttp@3.13.0 (python)",
+            "aiohttp@3.13.2 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "pyasn1 DoS vulnerability (decoder)",
+        "description": "pyasn1 DoS vulnerability in decoder",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade pyasn1 to 0.6.2 or later",
+        "dependencies": [
+            "pyasn1@0.6.1 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "urllib3 unbounded decompression chain",
+        "description": "urllib3 allows an unbounded number of links in the decompression chain",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to urllib3 2.6.0 or later",
+        "dependencies": [
+            "urllib3@2.5.0 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "urllib3 DoS via streaming data",
+        "description": "urllib3 streaming API improperly handles highly compressed data",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to urllib3 2.6.0 or later",
+        "dependencies": [
+            "urllib3@2.5.0 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "Python-Multipart Arbitrary File Write",
+        "description": "Python-Multipart has Arbitrary File Write via Non-Default Configuration",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to python-multipart 0.0.22 or later",
+        "dependencies": [
+            "python-multipart@0.0.20 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "protobuf JSON recursion depth bypass",
+        "description": "protobuf vulnerability with JSON recursion depth bypass",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to protobuf 6.33.5 or later",
+        "dependencies": [
+            "protobuf@6.32.1 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    },
+    {
+        "title": "AIOHTTP header parsing and DoS variants",
+        "description": "AIOHTTP vulnerability related to header parsing and potential DoS (various CVEs)",
+        "impact": "High",
+        "owasp_top_10": {},
+        "compliance_controls": {},
+        "suggested_fix": "Upgrade to patched aiohttp versions (e.g., 3.13.3)",
+        "dependencies": [
+            "aiohttp@3.13.0 (python)",
+            "aiohttp@3.13.2 (python)"
+        ],
+        "cves": {
+            "CVE-2025-21622": "ClipBucket V5 provides open source video hosting with PHP. During the user avatar upload workflow, a user can choose to upload and change their avatar at any time. During deletion, ClipBucket checks for the avatar_url as a filepath within the avatars subdirectory. If the URL path exists within the avatars directory, ClipBucket will delete it. There is no check for path traversal sequences in the provided user input (stored in the DB as avatar_url) therefore the final $file variable could be tainted with path traversal sequences. This leads to file deletion outside of the intended scope of the avatars folder. This vulnerability is fixed in 5.5.1 - 237."
+        }
+    }
+]

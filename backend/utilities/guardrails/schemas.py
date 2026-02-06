@@ -45,11 +45,11 @@ class SettingsData(BaseModel):
 
 
 
-class JiraTeamSettingsData(BaseModel):
+class JiraIntegrationSettingsData(BaseModel):
     jira_project_id: str | None = None
 
 class IntegrationSettingsData(BaseModel):
-    jira: JiraTeamSettingsData | None = None
+    jira: JiraIntegrationSettingsData | None = None
 
 class CreateGuardrailsIntegrationData(BaseModel):
     title: str

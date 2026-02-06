@@ -20,25 +20,29 @@ export default function IACPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const params = useParams();
+  const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
-  if (!scan_id) {
-    toast.error("Scan id not found");
-    return <div className="flex h-screen w-full items-center justify-center">
-      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-        Scan id not found
-      </p>
-    </div>
+  if (!team_id || !scan_id) {
+    toast.error("Team or scan id not found");
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4">Team or scan id not found</p>
+      </div>
+    );
   }
   const queryClient = useQueryClient();
-  const query = useQuery({queryKey: ['iac-conversation-data', scan_id] , queryFn : getIACConversationMessages});
+  const query = useQuery({
+    queryKey: ["iac-conversation-data", team_id, scan_id],
+    queryFn: getIACConversationMessages,
+  });
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
-      setTimeout(()=>{
-        queryClient.invalidateQueries({ queryKey: ['iac-conversation-data', scan_id] });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["iac-conversation-data", team_id, scan_id] });
       }, 6 * 1000);
     }
-  }, [query.dataUpdatedAt, scan_id]);
+  }, [query.dataUpdatedAt, scan_id, team_id, queryClient]);
 
   useEffect(() => {
     setScanStatus(query.data?.scan_status || "unknown");

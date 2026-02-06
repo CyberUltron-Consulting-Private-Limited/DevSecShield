@@ -4,7 +4,7 @@ from rich.console import Console
 from fastapi import HTTPException , status
 
 console = Console()
-def generate_card_data_for_sast_list(scans: list[Scan]) -> dict:
+def generate_card_data_for_scan_list(scans: list[Scan]) -> dict:
     """
     Generate card data for a list of SAST scans.
     Arguments :

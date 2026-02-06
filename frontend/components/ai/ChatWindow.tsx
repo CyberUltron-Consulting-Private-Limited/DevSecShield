@@ -35,7 +35,7 @@ import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DASTConversationResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
+import { DASTConversationResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
@@ -53,9 +53,10 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
-const ChatWindow = ({ 
-  query }: { 
-    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> }) => {
+const ChatWindow = ({
+  query }: {
+    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<SCASBOMConversationResponse>;
+  }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const router = useRouter();
   const [inputValue, setInputValue] = useState('');

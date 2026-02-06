@@ -9,21 +9,22 @@ import { getIACConversationMessages } from "@/utils/backend_api";
 
 export default function IACResultsPage() {
   const params = useParams();
+  const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
 
-  if (!scan_id) {
-    toast.error("Scan id not found");
+  if (!team_id || !scan_id) {
+    toast.error("Team or scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Scan id not found
+          Team or scan id not found
         </p>
       </div>
     );
   }
 
   const query = useQuery({
-    queryKey: ['iac-conversation-data', scan_id],
+    queryKey: ["iac-conversation-data", team_id, scan_id],
     queryFn: getIACConversationMessages,
   });
 
@@ -45,23 +46,28 @@ export default function IACResultsPage() {
     );
   }
 
-  // Extract IAC results from the conversation data
-  // The IAC results should be in query.data.data
+  // IAC scan data: backend returns query.data.data as array of vulnerabilities (worker_iac_agent format)
   const iacData = query.data?.data;
+  const dashboard = query.data?.dashboard;
+  const integrationSettings = query.data?.integration_settings ?? undefined;
 
-  if (!iacData || !iacData.results) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          No IAC results found for this scan.
-        </p>
-      </div>
-    );
-  }
+  // Normalize: accept either direct array or legacy { results: [] }
+  const dataArray = Array.isArray(iacData)
+    ? iacData
+    : iacData && Array.isArray((iacData as { results?: unknown[] }).results)
+      ? (iacData as { results: unknown[] }).results
+      : null;
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
-      <IACResults data={iacData} conversationId={scan_id} />
+      <IACResults
+        data={dataArray ?? undefined}
+        conversationId={scan_id}
+        dashboard={dashboard}
+        teamId={String(team_id)}
+        integrationSettings={integrationSettings}
+        onIntegrationSettingsUpdated={() => query.refetch()}
+      />
     </div>
   );
 }

@@ -89,6 +89,8 @@ class Scan(SQLModel,table=True):
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
 
+    integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
+
     # owner user relationship
     owner_user : "User" = Relationship(back_populates="scans")
 
@@ -148,7 +150,9 @@ class CicdIntegration(SQLModel,table=True):
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_type : scan_types | None= Field(default=None,sa_type=String)
     results : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
-    integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
+    integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings
+    
+    scan_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # scan settings
     
     # owner user relationship
     owner_user : "User" = Relationship(back_populates="cicd_integrations")

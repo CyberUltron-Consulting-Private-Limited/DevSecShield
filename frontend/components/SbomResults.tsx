@@ -1,251 +1,487 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  AlertTriangle, 
-  Shield, 
-  Package, 
-  Search, 
-  ExternalLink,
-  CheckCircle2,
-  XCircle,
-  Info,
-  TrendingUp,
-  ArrowLeft
+import {
+  AlertTriangle,
+  ArrowLeft,
+  MessageCircle,
+  Download,
+  Ticket,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, useParams } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getSBOMExportResults, updateScan, createTicket, type SastDashboardData, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { showErrorToast } from "@/utils/error-handler";
+import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { PieChart, BarChart3, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
+import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
+import FindingSelectionMenu from "@/components/finding-selection-menu";
 
-interface SbomMatch {
-  vulnerability: {
-    id: string;
-    severity: string;
-    description: string;
-    cvss?: Array<{
-      version: string;
-      vector: string;
-      metrics: {
-        baseScore: number;
-        exploitabilityScore: number;
-        impactScore: number;
-      };
-    }>;
-    epss?: Array<{
-      cve: string;
-      epss: number;
-      percentile: number;
-    }>;
-    cwes?: Array<{
-      cve: string;
-      cwe: string;
-    }>;
-    fix: {
-      state: string;
-      versions?: string[];
-    };
-    risk: number;
-  };
-  relatedVulnerabilities?: Array<{
-    id: string;
-    severity: string;
-    description: string;
-    urls?: string[];
-    cvss?: Array<{
-      version: string;
-      vector: string;
-      metrics: {
-        baseScore: number;
-      };
-    }>;
-  }>;
-  artifact: {
-    name: string;
-    version: string;
-    type: string;
-    language?: string;
-    locations?: Array<{
-      path: string;
-    }>;
-    purl?: string;
-  };
-  matchDetails?: Array<{
-    fix?: {
-      suggestedVersion?: string;
-    };
-  }>;
+// SBOM agent output format (from worker_sbom_agent_results_testing.json): array of flat vulnerability objects
+type OwaspOrCompliance = Record<string, string> | null | undefined;
+
+export interface SbomAgentVulnerability {
+  title?: string | null;
+  description?: string | null;
+  impact?: string | null;
+  owasp_top_10?: OwaspOrCompliance;
+  compliance_controls?: OwaspOrCompliance;
+  suggested_fix?: string | null;
+  dependencies?: string[] | null;
+  cves?: Record<string, string> | null;
 }
 
-interface SbomResultsData {
-  matches: SbomMatch[];
-  source?: {
-    type: string;
-    target: string;
-  };
-  descriptor?: {
-    name: string;
-    version: string;
-    timestamp?: string;
-  };
+function getOwaspComplianceCount(val: OwaspOrCompliance): number {
+  if (val == null || typeof val !== "object") return 0;
+  return Object.keys(val).length;
+}
+
+function getOwaspComplianceEntries(val: OwaspOrCompliance): [string, string][] {
+  if (val == null || typeof val !== "object") return [];
+  return Object.entries(val).filter(([, v]) => v != null && String(v).trim() !== "") as [string, string][];
 }
 
 interface SbomResultsProps {
-  data: SbomResultsData;
+  data: unknown;
   conversationId?: number;
+  teamId?: string;
+  dashboard?: SastDashboardData | null;
+  integrationSettings?: Record<string, unknown> | null;
+  onIntegrationSettingsUpdated?: () => void;
 }
 
-export default function SbomResults({ data, conversationId }: SbomResultsProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const origin = searchParams.get("origin") || "chat";
-  const [searchQuery, setSearchQuery] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [fixFilter, setFixFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("risk");
+function getImpactBadgeClass(impact: string): string {
+  const i = (impact || "").toLowerCase();
+  if (i === "critical") return "bg-red-600 hover:bg-red-700 text-white";
+  if (i === "high") return "bg-orange-500 hover:bg-orange-600 text-white";
+  if (i === "medium") return "bg-amber-500 hover:bg-amber-600 text-white";
+  if (i === "low") return "bg-blue-500 hover:bg-blue-600 text-white";
+  return "bg-zinc-500 hover:bg-zinc-600 text-white";
+}
 
-  const matches = data.matches || [];
+const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
+const riskRadarChartConfig = {
+  subject: { label: "Severity" },
+  count: { label: "Count", color: "hsl(0 84% 60%)" },
+} satisfies ChartConfig;
 
-  // Calculate statistics
-  const stats = useMemo(() => {
-    const total = matches.length;
-    const bySeverity = matches.reduce((acc, match) => {
-      const severity = match.vulnerability.severity || "Unknown";
-      acc[severity] = (acc[severity] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+const owaspRadialChartConfig = {
+  count: { label: "Count" },
+  ...Object.fromEntries(OWASP_COLORS.map((color, i) => [`fill_${i}`, { label: `Category ${i + 1}`, color }])),
+} satisfies ChartConfig;
 
-    const fixable = matches.filter(
-      (m) => m.vulnerability.fix.state === "fixed" && m.vulnerability.fix.versions?.length
-    ).length;
+const complianceBarChartConfig = {
+  name: { label: "Control" },
+  count: { label: "Count", color: "hsl(217 91% 60%)" },
+} satisfies ChartConfig;
 
-    const avgRisk = matches.reduce((sum, m) => sum + (m.vulnerability.risk || 0), 0) / total || 0;
+const cvesAreaChartConfig = {
+  cve: { label: "CVE" },
+  count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" },
+} satisfies ChartConfig;
 
-    const uniquePackages = new Set(matches.map((m) => `${m.artifact.name}@${m.artifact.version}`)).size;
+function SbomDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
+  const riskMetrics = dashboard.risk_metrics ?? {};
+  const owaspMetrics = dashboard.owasp_top_10_metrics ?? {};
+  const complianceMetrics = dashboard.compliance_controls_metrics ?? {};
+  const cvesMetrics = dashboard.cves_per_vulnerability ?? {};
 
+  const riskRadarData = RISK_ORDER.map((subject) => ({
+    subject,
+    count: riskMetrics[subject] ?? 0,
+  }));
+
+  const owaspEntries = Object.entries(owaspMetrics).map(([key, actualCount], index) => {
+    const displayValue = OWASP_KEY_TO_LABEL[key] ?? key;
     return {
-      total,
-      bySeverity,
-      fixable,
-      notFixable: total - fixable,
-      avgRisk,
-      uniquePackages,
+      name: displayValue.length > 20 ? `${displayValue.slice(0, 20)}...` : displayValue,
+      key,
+      displayValue,
+      actualCount,
+      fill: OWASP_COLORS[index % OWASP_COLORS.length],
     };
-  }, [matches]);
+  });
+  const maxOwasp = Math.max(1, ...owaspEntries.map((d) => d.actualCount));
+  const owaspRadialData = owaspEntries.map((d) => ({
+    ...d,
+    count: maxOwasp > 0 ? (d.actualCount / maxOwasp) * 100 : 0,
+  }));
 
-  // Filter and sort matches
-  const filteredMatches = useMemo(() => {
-    let filtered = matches.filter((match) => {
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch =
-        match.vulnerability.id.toLowerCase().includes(searchLower) ||
-        match.vulnerability.description.toLowerCase().includes(searchLower) ||
-        match.artifact.name.toLowerCase().includes(searchLower) ||
-        match.artifact.version.toLowerCase().includes(searchLower) ||
-        match.relatedVulnerabilities?.some((rv) =>
-          rv.id.toLowerCase().includes(searchLower)
-        );
+  const complianceBarData = Object.entries(complianceMetrics)
+    .map(([key, count]) => ({ name: COMPLIANCE_KEY_TO_LABEL[key] ?? key, count }))
+    .sort((a, b) => b.count - a.count);
 
-      const matchesSeverity =
-        severityFilter === "all" || match.vulnerability.severity === severityFilter;
+  const cvesAreaData = Object.entries(cvesMetrics)
+    .map(([cve, count]) => ({ cve, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20);
+  const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "—", count: 0 }];
 
-      const matchesFix =
-        fixFilter === "all" ||
-        (fixFilter === "fixed" &&
-          match.vulnerability.fix.state === "fixed" &&
-          match.vulnerability.fix.versions?.length) ||
-        (fixFilter === "not-fixed" && match.vulnerability.fix.state !== "fixed");
+  const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
+  const hasRiskData = riskRadarData.some((d) => d.count > 0);
+  const hasCvesData = cvesAreaData.length > 0;
+  const hasComplianceData = complianceBarData.length > 0;
 
-      return matchesSearch && matchesSeverity && matchesFix;
-    });
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <PieChart className="w-4 h-4" />
+              OWASP Top 10 metrics
+            </CardTitle>
+            <CardDescription>Distribution by OWASP category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasOwaspData ? (
+              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+            <>
+            <ChartContainer config={owaspRadialChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+              <RadialBarChart
+                data={owaspRadialData}
+                innerRadius={40}
+                outerRadius={100}
+                startAngle={90}
+                endAngle={-270}
+              >
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      nameKey="displayValue"
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "—"}
+                      formatter={(_, __, ___, ____, payload) => {
+                        const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
+                        return <>Count: <span className="font-mono font-semibold tabular-nums">{count}</span></>;
+                      }}
+                    />
+                  }
+                />
+                <RadialBar dataKey="count" background className="cursor-pointer" />
+              </RadialBarChart>
+            </ChartContainer>
+            <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+              {owaspEntries.map(({ key, displayValue, fill }) => (
+                <div key={key} className="flex items-center gap-1.5 text-xs">
+                  <span className="shrink-0 w-3 h-3 rounded-full" style={{ backgroundColor: fill }} aria-hidden />
+                  <span className="text-zinc-600 dark:text-zinc-400">{displayValue}</span>
+                </div>
+              ))}
+            </div>
+            </>
+            )}
+          </CardContent>
+        </Card>
 
-    // Sort
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case "risk":
-          return (b.vulnerability.risk || 0) - (a.vulnerability.risk || 0);
-        case "severity":
-          const severityOrder: Record<string, number> = {
-            Critical: 4,
-            High: 3,
-            Medium: 2,
-            Low: 1,
-            Unknown: 0,
-          };
-          return (
-            (severityOrder[b.vulnerability.severity] || 0) -
-            (severityOrder[a.vulnerability.severity] || 0)
-          );
-        case "package":
-          return a.artifact.name.localeCompare(b.artifact.name);
-        case "cvss":
-          const aScore =
-            a.vulnerability.cvss?.[0]?.metrics.baseScore ||
-            a.relatedVulnerabilities?.[0]?.cvss?.[0]?.metrics.baseScore ||
-            0;
-          const bScore =
-            b.vulnerability.cvss?.[0]?.metrics.baseScore ||
-            b.relatedVulnerabilities?.[0]?.cvss?.[0]?.metrics.baseScore ||
-            0;
-          return bScore - aScore;
-        default:
-          return 0;
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Risk metrics
+            </CardTitle>
+            <CardDescription>Findings by impact severity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasRiskData ? (
+              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+            <ChartContainer config={riskRadarChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+              <RadarChart data={riskRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+                <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
+                <PolarAngleAxis dataKey="subject" />
+                <PolarGrid />
+                <Radar dataKey="count" fill="hsl(0 84% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+              </RadarChart>
+            </ChartContainer>
+            )}
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Number of findings for each impact level (Critical, High, Medium, Low).
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800 justify-between">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              CVEs per vulnerability
+            </CardTitle>
+            <CardDescription>Vulnerability count by CVE (top 20)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasCvesData ? (
+              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+            <ChartContainer config={cvesAreaChartConfig} className="aspect-auto h-[260px] w-full pb-8 cursor-pointer">
+              <AreaChart data={cvesAreaDisplay} margin={{ bottom: 28 }}>
+                <defs>
+                  <linearGradient id="fillSbomCves" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                <XAxis
+                  dataKey="cve"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  minTickGap={20}
+                  height={56}
+                  interval={0}
+                  tickFormatter={(v) => (String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v)}
+                />
+                <YAxis hide domain={[0, "auto"]} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(value) => [value, "Vulnerabilities"]} />} />
+                <Area dataKey="count" type="monotone" fill="url(#fillSbomCves)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+              </AreaChart>
+            </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="w-4 h-4" />
+            Compliance Controls Failed count
+          </CardTitle>
+          <CardDescription>Findings by compliance control. Scroll horizontally if needed.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!hasComplianceData ? (
+            <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+          ) : (
+          <ScrollArea className="w-full">
+            <div className="min-w-max pb-2" style={{ minWidth: `${Math.max(400, complianceBarData.length * 56)}px` }}>
+              <ChartContainer config={complianceBarChartConfig} className="aspect-auto h-[260px] w-full min-w-0 cursor-pointer">
+                <BarChart data={complianceBarData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis
+                    dataKey="name"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    height={56}
+                    interval={0}
+                    tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v)}
+                  />
+                  <YAxis type="number" tickLine={false} axisLine={false} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[8, 8, 0, 0]} style={{ cursor: "pointer" }} />
+                </BarChart>
+              </ChartContainer>
+            </div>
+            <ScrollBar orientation="horizontal" />
+          </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SbomResultsView({
+  vulnerabilities,
+  conversationId,
+  teamId,
+  origin,
+  router,
+  onDownloadReport,
+  isExporting = false,
+  dashboard,
+  integrationSettings,
+  onIntegrationSettingsUpdated,
+}: {
+  vulnerabilities: SbomAgentVulnerability[];
+  conversationId?: number;
+  teamId?: string;
+  origin: string | null;
+  router: ReturnType<typeof useRouter>;
+  onDownloadReport?: () => void;
+  isExporting?: boolean;
+  dashboard?: SastDashboardData | null;
+  integrationSettings?: Record<string, unknown> | null;
+  onIntegrationSettingsUpdated?: () => void;
+}) {
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedVuln, setSelectedVuln] = useState<SbomAgentVulnerability | null>(null);
+  const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
+  const [jiraProjectId, setJiraProjectId] = useState("");
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const queryClient = useQueryClient();
+
+  const jiraFromSettings =
+    integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
+      ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
+      : undefined;
+  const initialJiraProjectId = jiraFromSettings?.jira_project_id ?? "";
+
+  useEffect(() => {
+    setJiraProjectId(initialJiraProjectId);
+  }, [initialJiraProjectId]);
+
+  const updateIntegrationMutation = useMutation({
+    mutationFn: (payload: { integration_settings: ScanTicketingIntegrationSettings }) =>
+      updateScan({
+        team_id: parseInt(teamId ?? "0", 10),
+        type: "sbom_sca",
+        scan_id: conversationId!,
+        data: payload,
+      }),
+    onSuccess: () => {
+      onIntegrationSettingsUpdated?.();
+      const tid = parseInt(teamId ?? "0", 10);
+      if (conversationId != null && tid > 0) {
+        queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversation-data", tid, conversationId] });
       }
+      toast.success("Ticketing settings saved");
+    },
+    onError: (err) => {
+      showErrorToast(err, "Failed to save ticketing settings");
+    },
+  });
+
+  const showTabs = teamId && conversationId != null;
+  const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
+
+  const totalFindings = vulnerabilities.length;
+  const byImpact = vulnerabilities.reduce((acc, v) => {
+    const impact = (v.impact ?? "Unknown").trim() || "Unknown";
+    acc[impact] = (acc[impact] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const toggleRowSelection = (idx: number) => {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
     });
-
-    return filtered;
-  }, [matches, searchQuery, severityFilter, fixFilter, sortBy]);
-
-  const getSeverityBadge = (severity: string) => {
-    const variants: Record<string, { className: string }> = {
-      Critical: { className: "bg-red-500 hover:bg-red-600 text-white" },
-      High: { className: "bg-orange-500 hover:bg-orange-600 text-white" },
-      Medium: { className: "bg-yellow-500 hover:bg-yellow-600 text-white" },
-      Low: { className: "bg-blue-500 hover:bg-blue-600 text-white" },
-    };
-    const variant = variants[severity] || { className: "bg-gray-500 hover:bg-gray-600 text-white" };
-    return (
-      <Badge variant="outline" className={variant.className}>
-        {severity}
-      </Badge>
-    );
   };
 
-  const getFixBadge = (fix: SbomMatch["vulnerability"]["fix"]) => {
-    if (fix.state === "fixed" && fix.versions?.length) {
-      return (
-        <Badge variant="outline" className="bg-green-500 hover:bg-green-600 text-white">
-          <CheckCircle2 className="w-3 h-3 mr-1" />
-          Fixed ({fix.versions[0]})
-        </Badge>
-      );
+  const toggleSelectAll = () => {
+    if (selectedRows.size === vulnerabilities.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(vulnerabilities.map((_, i) => i)));
     }
-    return (
-      <Badge variant="outline" className="bg-gray-500 hover:bg-gray-600 text-white">
-        <XCircle className="w-3 h-3 mr-1" />
-        Not Fixed
-      </Badge>
-    );
+  };
+
+  const createJiraTicketsMutation = useMutation({
+    mutationFn: async () => {
+      const tid = parseInt(teamId ?? "0", 10);
+      if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      const selectedFindings = Array.from(selectedRows).map((i) => vulnerabilities[i]);
+
+      const impactCounts: Record<string, number> = {};
+      for (const vuln of selectedFindings) {
+        const impact = (vuln.impact ?? "Unknown").trim() || "Unknown";
+        impactCounts[impact] = (impactCounts[impact] ?? 0) + 1;
+      }
+      let summary = Object.entries(impactCounts)
+        .sort(([a], [b]) => RISK_ORDER.indexOf(a as (typeof RISK_ORDER)[number]) - RISK_ORDER.indexOf(b as (typeof RISK_ORDER)[number]))
+        .map(([impact, count]) => `${count} ${impact}`)
+        .join(", ") || `${selectedFindings.length} finding(s)`;
+
+      summary = summary + " - Vulnerabilities found in SBOM scan";
+
+      const descSections = selectedFindings.map((vuln, idx) => {
+        const parts: string[] = [`--- Finding ${idx + 1} ---`];
+        parts.push(`Title: ${(vuln.title ?? "Untitled finding").trim() || "Untitled finding"}`);
+        if ((vuln.description ?? "").trim()) parts.push(`Description: ${vuln.description!.trim()}`);
+        if ((vuln.impact ?? "").trim()) parts.push(`Impact: ${vuln.impact!.trim()}`);
+        if (vuln.dependencies && vuln.dependencies.length > 0) parts.push(`Dependencies: ${vuln.dependencies.join(", ")}`);
+        if ((vuln.suggested_fix ?? "").trim()) parts.push(`Suggested fix: ${vuln.suggested_fix!.trim()}`);
+        if (vuln.cves && Object.keys(vuln.cves).length > 0) parts.push(`CVEs: ${Object.keys(vuln.cves).join(", ")}`);
+        return parts.join("\n");
+      });
+      const description = descSections.join("\n\n");
+
+      await createTicket(tid, "sbom_sca", conversationId, {
+        ticket_type: "jira",
+        summary,
+        description,
+      });
+    },
+    onMutate: () => {
+      const toastId = toast.loading("Creating Jira ticket(s)...");
+      return { toastId };
+    },
+    onSuccess: (_data, _variables, context) => {
+      if (context?.toastId != null) {
+        toast.success(`Jira ticket(s) created for ${selectedRows.size} finding(s)`, { id: context.toastId });
+      } else {
+        toast.success(`Jira ticket(s) created for ${selectedRows.size} finding(s)`);
+      }
+      setSelectedRows(new Set());
+    },
+    onError: (err, _variables, context) => {
+      if (context?.toastId != null) toast.dismiss(context.toastId);
+      showErrorToast(err, "Failed to create Jira ticket(s)");
+    },
+  });
+
+  const handleCreateJiraTicket = () => createJiraTicketsMutation.mutate();
+
+  const openVulnDetail = (vuln: SbomAgentVulnerability) => {
+    setSelectedVuln(vuln);
+    setDetailDialogOpen(true);
   };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {conversationId && (
+          {(conversationId != null || teamId) && (
             <Button
               variant="outline"
               size="icon"
               onClick={() => {
-                const backRoute = origin === "list" 
-                  ? `/home/sbom_sca` 
-                  : `/home/sbom_sca/${conversationId}`;
+                const backRoute =
+                  origin === "chat" && teamId && conversationId != null
+                    ? `/${teamId}/sbom_sca/${conversationId}`
+                    : teamId
+                      ? `/${teamId}/sbom_sca`
+                      : "/sbom_sca";
                 router.push(backRoute);
               }}
               className="cursor-pointer"
@@ -254,288 +490,170 @@ export default function SbomResults({ data, conversationId }: SbomResultsProps) 
             </Button>
           )}
           <div>
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SBOM/SCA Scan Results</h1>
-            {/* <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-              {data.source?.target && `Scanned: ${data.source.target}`}
-              {data.descriptor?.timestamp && ` • ${new Date(data.descriptor.timestamp).toLocaleString()}`}
-            </p> */}
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SCA + SBOM Scan Results</h1>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+              Agent analysis of dependency vulnerabilities
+            </p>
           </div>
         </div>
-      </div>
-
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Vulnerabilities</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">{stats.uniquePackages} unique packages</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Fixable</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.fixable}</div>
-            <p className="text-xs text-muted-foreground">{stats.notFixable} not fixable</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Risk Score</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{(stats.avgRisk * 100).toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground">Risk assessment</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">By Severity</CardTitle>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {Object.entries(stats.bySeverity).map(([severity, count]) => (
-                <div key={severity} className="flex items-center justify-between text-xs">
-                  <span>{severity}:</span>
-                  <span className="font-semibold">{count}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters and Search */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search vulnerabilities..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={severityFilter} onValueChange={setSeverityFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Severity" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Severities</SelectItem>
-                <SelectItem value="Critical">Critical</SelectItem>
-                <SelectItem value="High">High</SelectItem>
-                <SelectItem value="Medium">Medium</SelectItem>
-                <SelectItem value="Low">Low</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={fixFilter} onValueChange={setFixFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Fix Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="fixed">Fixable</SelectItem>
-                <SelectItem value="not-fixed">Not Fixable</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sort By" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="risk">Risk Score</SelectItem>
-                <SelectItem value="severity">Severity</SelectItem>
-                <SelectItem value="cvss">CVSS Score</SelectItem>
-                <SelectItem value="package">Package Name</SelectItem>
-              </SelectContent>
-            </Select>
+        {teamId && conversationId != null && (
+          <div className="flex items-center gap-2">
+            {onDownloadReport && (
+              <Button
+                variant="outline"
+                className="cursor-pointer bg-zinc-700 hover:bg-zinc-600 text-white border-zinc-600"
+                onClick={onDownloadReport}
+                disabled={isExporting}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {isExporting ? "Downloading..." : "Download Scan Report"}
+              </Button>
+            )}
+            <Button
+              variant="default"
+              className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => router.push(`/${teamId}/sbom_sca/${conversationId}`)}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Chat with the Results
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
-      {/* Results Table */}
+      {hasTicketingTab && (
+        <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setActiveTab("results")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "results"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Results
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ticketing")}
+            className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+              activeTab === "ticketing"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Ticket className="w-4 h-4" />
+              Ticketing integrations
+            </div>
+          </button>
+        </div>
+      )}
+
+      {activeTab === "ticketing" && hasTicketingTab ? (
+        <TicketingIntegrationsSettings
+          jiraProjectId={jiraProjectId}
+          onJiraProjectIdChange={setJiraProjectId}
+          onSave={() => {
+            updateIntegrationMutation.mutate({
+              integration_settings: {
+                jira: { jira_project_id: jiraProjectId.trim() || null },
+              },
+            });
+          }}
+          isSaving={updateIntegrationMutation.isPending}
+          inputId="sbom-jira-project-id"
+        />
+      ) : (
+        <>
+      {dashboard && <SbomDashboardCharts dashboard={dashboard} />}
+
       <Card>
         <CardHeader>
-          <CardTitle>Vulnerabilities ({filteredMatches.length})</CardTitle>
-          <CardDescription>
-            Showing {filteredMatches.length} of {matches.length} vulnerabilities
-          </CardDescription>
+          <CardTitle>Findings</CardTitle>
+          <CardDescription>{totalFindings} vulnerability findings — click a title to view details</CardDescription>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[600px]">
+          <FindingSelectionMenu
+            selectedCount={selectedRows.size}
+            onClearSelection={() => setSelectedRows(new Set())}
+            jiraOnClickHandler={handleCreateJiraTicket}
+            ticketType="jira"
+            isJiraCreating={createJiraTicketsMutation.isPending}
+          />
+          <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Vulnerability</TableHead>
-                  <TableHead>Package</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>CVSS</TableHead>
-                  <TableHead>EPSS</TableHead>
-                  <TableHead>Fix Status</TableHead>
-                  <TableHead>Risk</TableHead>
+                  <TableHead className="w-[48px]">
+                    <Checkbox
+                      checked={vulnerabilities.length > 0 && selectedRows.size === vulnerabilities.length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Select all rows"
+                      className="cursor-pointer"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[280px]">Vulnerability</TableHead>
+                  <TableHead className="w-[200px]">Dependencies</TableHead>
+                  <TableHead className="w-[80px] text-center">OWASP Top 10</TableHead>
+                  <TableHead className="w-[80px] text-center">Compliance Controls</TableHead>
+                  <TableHead className="w-[100px]">Impact</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredMatches.length === 0 ? (
+                {vulnerabilities.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No vulnerabilities found matching your filters.
+                    <TableCell colSpan={6} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                      No findings to display.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredMatches.map((match, index) => {
-                    const primaryCVE = match.relatedVulnerabilities?.[0];
-                    const cvssScore =
-                      match.vulnerability.cvss?.[0]?.metrics.baseScore ||
-                      primaryCVE?.cvss?.[0]?.metrics.baseScore ||
-                      0;
-                    const epssScore = match.vulnerability.epss?.[0]?.epss || 0;
-
+                  vulnerabilities.map((vuln, idx) => {
+                    const vTitle = vuln.title ?? "Untitled finding";
+                    const impact = (vuln.impact ?? "").trim() || "—";
+                    const owaspCount = getOwaspComplianceCount(vuln.owasp_top_10);
+                    const complianceCount = getOwaspComplianceCount(vuln.compliance_controls);
+                    const deps = vuln.dependencies ?? [];
+                    const depSummary = deps.length === 0 ? "—" : deps.length === 1 ? deps[0] : `${deps.length} dependencies`;
                     return (
-                      <TableRow key={`${match.vulnerability.id}-${match.artifact.name}-${index}`}>
-                        <TableCell className="max-w-md">
-                          <Accordion type="single" collapsible className="w-full">
-                            <AccordionItem value={`item-${index}`} className="border-none">
-                              <AccordionTrigger className="py-0 hover:no-underline">
-                                <div className="text-left">
-                                  <div className="font-semibold text-sm">
-                                    {match.vulnerability.id}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                    {match.vulnerability.description}
-                                  </div>
-                                </div>
-                              </AccordionTrigger>
-                              <AccordionContent className="pt-2 pb-0">
-                                <div className="space-y-3 text-sm">
-                                  <div>
-                                    <div className="font-medium mb-1">Description:</div>
-                                    <div className="text-muted-foreground">
-                                      {match.vulnerability.description}
-                                    </div>
-                                  </div>
-                                  {primaryCVE && (
-                                    <div>
-                                      <div className="font-medium mb-1">CVE:</div>
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="outline">{primaryCVE.id}</Badge>
-                                        {primaryCVE.urls && primaryCVE.urls.length > 0 && (
-                                          <a
-                                            href={primaryCVE.urls[0]}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-500 hover:underline flex items-center gap-1"
-                                          >
-                                            <ExternalLink className="w-3 h-3" />
-                                            View
-                                          </a>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {match.vulnerability.cwes && match.vulnerability.cwes.length > 0 && (
-                                    <div>
-                                      <div className="font-medium mb-1">CWEs:</div>
-                                      <div className="flex flex-wrap gap-1">
-                                        {match.vulnerability.cwes.map((cwe, idx) => (
-                                          <Badge key={idx} variant="outline" className="text-xs">
-                                            {cwe.cwe}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {match.artifact.locations && match.artifact.locations.length > 0 && (
-                                    <div>
-                                      <div className="font-medium mb-1">Location:</div>
-                                      <div className="text-muted-foreground font-mono text-xs">
-                                        {match.artifact.locations[0].path}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {match.matchDetails?.[0]?.fix?.suggestedVersion && (
-                                    <div>
-                                      <div className="font-medium mb-1">Suggested Fix:</div>
-                                      <div className="text-green-600 font-mono text-xs">
-                                        Upgrade to {match.matchDetails[0].fix.suggestedVersion}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
+                      <TableRow
+                        key={idx}
+                        className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRows.has(idx) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                          <Checkbox
+                            checked={selectedRows.has(idx)}
+                            onCheckedChange={() => toggleRowSelection(idx)}
+                            aria-label={`Select row ${idx + 1}`}
+                            className="cursor-pointer"
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          <button
+                            type="button"
+                            onClick={() => openVulnDetail(vuln)}
+                            className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium"
+                          >
+                            {vTitle}
+                          </button>
+                        </TableCell>
+                        <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[200px] truncate" title={deps.join(", ")}>
+                          {depSummary}
+                        </TableCell>
+                        <TableCell className="text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
+                          {owaspCount}
+                        </TableCell>
+                        <TableCell className="text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
+                          {complianceCount}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Package className="w-4 h-4 text-muted-foreground" />
-                            <div>
-                              <div className="font-medium text-sm">{match.artifact.name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                v{match.artifact.version}
-                              </div>
-                              {match.artifact.language && (
-                                <Badge variant="outline" className="text-xs mt-1">
-                                  {match.artifact.language}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{getSeverityBadge(match.vulnerability.severity)}</TableCell>
-                        <TableCell>
-                          {cvssScore > 0 ? (
-                            <div>
-                              <div className="font-semibold">{cvssScore.toFixed(1)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {cvssScore >= 9.0
-                                  ? "Critical"
-                                  : cvssScore >= 7.0
-                                  ? "High"
-                                  : cvssScore >= 4.0
-                                  ? "Medium"
-                                  : "Low"}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">N/A</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {epssScore > 0 ? (
-                            <div>
-                              <div className="font-semibold">{(epssScore * 100).toFixed(2)}%</div>
-                              <div className="text-xs text-muted-foreground">
-                                {match.vulnerability.epss?.[0]?.percentile
-                                  ? `P${(match.vulnerability.epss[0].percentile * 100).toFixed(0)}`
-                                  : ""}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">N/A</span>
-                          )}
-                        </TableCell>
-                        <TableCell>{getFixBadge(match.vulnerability.fix)}</TableCell>
-                        <TableCell>
-                          <div className="font-semibold">
-                            {(match.vulnerability.risk * 100).toFixed(1)}%
-                          </div>
+                          <Badge variant="outline" className={getImpactBadgeClass(impact)}>
+                            {impact}
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     );
@@ -546,7 +664,179 @@ export default function SbomResults({ data, conversationId }: SbomResultsProps) 
           </ScrollArea>
         </CardContent>
       </Card>
+
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+            <DialogTitle className="pr-8">{selectedVuln?.title ?? "Vulnerability details"}</DialogTitle>
+          </DialogHeader>
+          {selectedVuln && (
+            <div className="h-[70vh] min-h-0 shrink px-6 pb-6">
+              <ScrollArea className="h-full w-full rounded-md">
+                <div className="space-y-4 pt-2 pr-4">
+                  {(selectedVuln.impact ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>
+                      <Badge variant="outline" className={getImpactBadgeClass(selectedVuln.impact!.trim())}>
+                        {selectedVuln.impact!.trim()}
+                      </Badge>
+                    </div>
+                  )}
+                  {(selectedVuln.description ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Description</div>
+                      <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.description!.trim()}</p>
+                    </div>
+                  )}
+                  {(selectedVuln.suggested_fix ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Suggested fix</div>
+                      <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.suggested_fix!.trim()}</p>
+                    </div>
+                  )}
+                  {selectedVuln.dependencies && selectedVuln.dependencies.length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Dependencies</div>
+                      <ul className="list-disc list-inside text-sm text-zinc-700 dark:text-zinc-300 space-y-1">
+                        {selectedVuln.dependencies.map((dep, i) => (
+                          <li key={i} className="font-mono text-xs">{dep}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {getOwaspComplianceEntries(selectedVuln.owasp_top_10).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
+                      <div className="flex flex-wrap gap-1">
+                        {getOwaspComplianceEntries(selectedVuln.owasp_top_10).map(([, description], i) => (
+                          <Badge key={i} variant="secondary" className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
+                            {description}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {getOwaspComplianceEntries(selectedVuln.compliance_controls).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
+                      <div className="flex flex-wrap gap-1">
+                        {getOwaspComplianceEntries(selectedVuln.compliance_controls).map(([, description], i) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {description}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {selectedVuln.cves && Object.keys(selectedVuln.cves).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Related CVEs</div>
+                      <ul className="space-y-2 text-sm">
+                        {Object.entries(selectedVuln.cves).map(([id, desc], i) => (
+                          <li key={i} className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-2">
+                            <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{id}</span>
+                            {desc && <p className="text-zinc-600 dark:text-zinc-400 mt-0.5 text-xs">{desc}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+        </>
+      )}
     </div>
   );
 }
 
+export default function SbomResults({ data, conversationId, teamId, dashboard, integrationSettings, onIntegrationSettingsUpdated }: SbomResultsProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const origin = searchParams.get("origin");
+
+  const exportMutation = useMutation({
+    mutationFn: () => {
+      const tid = teamId ? parseInt(teamId, 10) : NaN;
+      if (conversationId == null || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      return getSBOMExportResults(tid, conversationId);
+    },
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sbom_sca_scan_${conversationId}_report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err) => {
+      showErrorToast(err, "Failed to download scan report");
+    },
+  });
+
+  const handleDownloadReport = () => exportMutation.mutate();
+  const isExporting = exportMutation.isPending;
+
+  if (data == null || (Array.isArray(data) && data.length === 0)) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {(conversationId != null || teamId) && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  const backRoute =
+                    origin === "chat" && teamId && conversationId != null
+                      ? `/${teamId}/sbom_sca/${conversationId}`
+                      : teamId
+                        ? `/${teamId}/sbom_sca`
+                        : "/sbom_sca";
+                  router.push(backRoute);
+                }}
+                className="cursor-pointer"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">SCA + SBOM Scan Results</h1>
+          </div>
+          {teamId && conversationId != null && (
+            <Button
+              variant="default"
+              className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => router.push(`/${teamId}/sbom_sca/${conversationId}`)}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Chat with the Results
+            </Button>
+          )}
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center text-zinc-600 dark:text-zinc-400">
+            No results available for this scan. The scan may not have completed yet or returned no findings.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <SbomResultsView
+      vulnerabilities={data as SbomAgentVulnerability[]}
+      conversationId={conversationId}
+      teamId={teamId}
+      origin={origin}
+      router={router}
+      onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
+      isExporting={isExporting}
+      dashboard={dashboard}
+      integrationSettings={integrationSettings}
+      onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
+    />
+  );
+}

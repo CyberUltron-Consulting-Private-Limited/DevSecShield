@@ -135,10 +135,13 @@ class SBOMSCASummaryManager(BaseSummaryManager,OutputModelManager):
 
 
 
-class SBOMSCASummaryManagerForSBOMFile(BaseSummaryManager):
+class SBOMSCASummaryManagerForSBOMFile(BaseSummaryManager,OutputModelManager):
     def __init__(self):
+
+        output_model = self.get_dependency_output_model()
+
         super().__init__(
-            summary_output_model=FinalDependencyVulnerabilities,
+            summary_output_model=output_model,
             refine_prompt_string = RefinePrompt,
             map_prompt_string = MapPrompt,
             combine_prompt_string = CombinePrompt,

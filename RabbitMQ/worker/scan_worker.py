@@ -284,14 +284,14 @@ try:
 
 
         try :
-            
+
+
             # STEP [ 1 ] : =========== Validate the context ======================
             repo_context , zip_context = None, None
             if repo_dict_context:
                 repo_context = validate_dict_with_context(repo_dict_context)
             if zip_dict_context:
                 zip_context = validate_dict_with_zip_context(zip_dict_context)
-
             
             # STEP [ 2 ] : =========== Initialize the agent , and estimate the credits required ======================
             agent = None
@@ -315,7 +315,7 @@ try:
 
         except Exception as e:
             console.print(f"Error in sast_estimation task: {str(e)}",style="bold red")
-            raise e
+            return -1 # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
                 if delete_file(zip_context.bucket_name, zip_context.object_name):
@@ -371,7 +371,7 @@ try:
 
         except Exception as e:
             console.print(f"Error in sbom_sca_estimation task: {str(e)}",style="bold red")
-            raise e
+            return -1 # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
                 if delete_file(zip_context.bucket_name, zip_context.object_name):
@@ -435,7 +435,7 @@ try:
         
         except Exception as e:
             console.print(f"Error in iac_estimation task: {str(e)}",style="bold red")
-            raise e
+            return -1 # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
                 if delete_file(zip_context.bucket_name, zip_context.object_name):
