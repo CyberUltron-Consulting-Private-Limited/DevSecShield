@@ -179,5 +179,6 @@ class OpenSourceContext(BaseContextManager):
             
             return OpenSourceResult(context_id=context_id, summary=summary , results=self.results)
         except Exception as e:
-            return OpenSourceResult(error_message=f"Error in running open source tool and returning context: {e}")
+            # return OpenSourceResult(error_message=f"Error in running open source tool and returning context: {e}")
+            raise e
 

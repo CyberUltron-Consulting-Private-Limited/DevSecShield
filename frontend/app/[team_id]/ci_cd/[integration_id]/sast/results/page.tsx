@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import SASTResults from "@/components/SASTResults";
+import CicdSastResults from "@/components/cicd-sast-results";
 import { getCicdIntegrationDashboard } from "@/utils/backend_api";
 
 export default function CicdSastResultsPage() {
@@ -40,7 +40,7 @@ export default function CicdSastResultsPage() {
   }
 
   const query = useQuery({
-    queryKey: ['cicd-integration-dashboard', team_id, integration_id],
+    queryKey: ['cicd-integration-dashboard', team_id, integration_id, 100, 0],
     queryFn: getCicdIntegrationDashboard,
     enabled: !!team_id && !!integration_id,
   });
@@ -103,12 +103,13 @@ export default function CicdSastResultsPage() {
     );
   }
 
-  // Convert integration_id to number for conversationId prop (optional)
-  const integrationIdNumber = parseInt(integration_id) || undefined;
-
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
-      <SASTResults data={sastData} conversationId={integrationIdNumber} />
+      <CicdSastResults
+        data={sastData}
+        dashboard={log.dashboard ?? undefined}
+        integrationId={integration_id}
+      />
     </div>
   );
 }

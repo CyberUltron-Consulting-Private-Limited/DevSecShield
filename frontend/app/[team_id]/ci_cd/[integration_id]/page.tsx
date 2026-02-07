@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, Copy, Check, BarChart2, BookOpen, Settings, Ticket, Save, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, Copy, Check, BarChart2, BookOpen, Settings, Ticket, Save, ChevronLeft, ChevronRight, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -33,8 +33,29 @@ import {
 } from "@/components/ui/accordion";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { SastScanSettingsForm } from "@/components/sast-scan-settings-form";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const LOGS_PAGE_SIZE = 10;
+
+const vulnsOverTimeChartConfig = {
+  date: { label: "Date" },
+  Critical: { label: "Critical", color: "hsl(0 84% 60%)" },
+  High: { label: "High", color: "hsl(25 95% 53%)" },
+  Medium: { label: "Medium", color: "hsl(48 96% 53%)" },
+  Low: { label: "Low", color: "hsl(142 71% 45%)" },
+} satisfies ChartConfig;
 
 export default function CicdIntegrationDashboardPage() {
   const pathname = usePathname();
@@ -151,6 +172,36 @@ export default function CicdIntegrationDashboardPage() {
     router.push(`/${team_id}/ci_cd/${integration_id}/sast/results?log_id=${logId}`);
   };
 
+  const dashboardData: CicdIntegrationDashboard = query.data ?? {
+    cicd_integration_id: 0,
+    title: "",
+    created_at: "",
+    last_updated: "",
+    scan_type: "sast",
+    api_key: "",
+    integration_active: false,
+    logs: [],
+    vulns_over_time_chart_data: undefined,
+  };
+
+  const vulnsOverTimeChartArray = useMemo(() => {
+    const raw = dashboardData.vulns_over_time_chart_data;
+    if (!raw || typeof raw !== "object") return [];
+    return Object.entries(raw)
+      .map(([date, counts]) => ({
+        date,
+        Critical: counts?.Critical ?? 0,
+        High: counts?.High ?? 0,
+        Medium: counts?.Medium ?? 0,
+        Low: counts?.Low ?? 0,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [dashboardData.vulns_over_time_chart_data]);
+
+  const hasVulnsOverTimeData = vulnsOverTimeChartArray.length > 0 && vulnsOverTimeChartArray.some(
+    (d) => d.Critical > 0 || d.High > 0 || d.Medium > 0 || d.Low > 0
+  );
+
   if (query.isError) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-white dark:bg-zinc-900">
@@ -187,17 +238,6 @@ export default function CicdIntegrationDashboardPage() {
       </div>
     );
   }
-
-  const dashboardData: CicdIntegrationDashboard = query.data || {
-    cicd_integration_id: 0,
-    title: "",
-    created_at: "",
-    last_updated: "",
-    scan_type: "sast",
-    api_key: "",
-    integration_active: false,
-    logs: [],
-  };
 
   const hasNextLogsPage = dashboardData.logs.length === LOGS_PAGE_SIZE;
   const showLogsPagination = dashboardData.logs.length > 0 || logsPage > 1;
@@ -399,6 +439,75 @@ export default function CicdIntegrationDashboardPage() {
               </Card>
             ))}
           </div>
+
+          {/* Vulnerabilities over time chart */}
+          <Card className="mb-8 border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="w-4 h-4" />
+                Vulnerabilities over time by severity
+              </CardTitle>
+              <CardDescription>
+                Count of findings per scan date by impact (Critical, High, Medium, Low)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!hasVulnsOverTimeData ? (
+                <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">
+                  No vulnerability data to display. Run scans to see trends over time.
+                </div>
+              ) : (
+                <ChartContainer config={vulnsOverTimeChartConfig} className="aspect-auto h-[280px] w-full pb-8">
+                  <AreaChart data={vulnsOverTimeChartArray} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+                    <defs>
+                      <linearGradient id="fillCicdCritical" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
+                      </linearGradient>
+                      <linearGradient id="fillCicdHigh" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(25 95% 53%)" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="hsl(25 95% 53%)" stopOpacity={0.1} />
+                      </linearGradient>
+                      <linearGradient id="fillCicdMedium" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(48 96% 53%)" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="hsl(48 96% 53%)" stopOpacity={0.1} />
+                      </linearGradient>
+                      <linearGradient id="fillCicdLow" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(142 71% 45%)" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="hsl(142 71% 45%)" stopOpacity={0.1} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      minTickGap={24}
+                      height={40}
+                      tickFormatter={(v) => {
+                        const d = new Date(v);
+                        return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+                      }}
+                    />
+                    <YAxis hide domain={[0, "auto"]} />
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(v) => new Date(v).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                        />
+                      }
+                    />
+                    <Area type="monotone" dataKey="Critical" fill="url(#fillCicdCritical)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="High" fill="url(#fillCicdHigh)" stroke="hsl(25 95% 53%)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="Medium" fill="url(#fillCicdMedium)" stroke="hsl(48 96% 53%)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="Low" fill="url(#fillCicdLow)" stroke="hsl(142 71% 45%)" strokeWidth={2} />
+                  </AreaChart>
+                </ChartContainer>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Logs Table */}
           <Card>

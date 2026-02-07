@@ -3,8 +3,6 @@
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,7 +12,6 @@ interface BambooIntegrationGuideProps {
 }
 
 export function BambooGuide({ apiKey }: BambooIntegrationGuideProps) {
-  const [appLang, setAppLang] = useState<"python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin">("python");
   const [copied, setCopied] = useState(false);
 
   // Generate script content based on selections (full content for copying)
@@ -29,7 +26,6 @@ zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
 RESPONSE=$(curl -X POST \\
   -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
   -F "zip_file=@project.zip" \\
-  -F "app_lang=${appLang}" \\
   https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)
 
 # Parse JSON response
@@ -45,7 +41,7 @@ if echo "$RESPONSE" | grep -q '"error"'; then
 fi
 
 echo "$RESPONSE"`;
-  }, [appLang]);
+  }, []);
 
   // Generate masked script content for display
   const displayedScriptContent = useMemo(() => {
@@ -68,7 +64,6 @@ zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
 RESPONSE=$(curl -X POST \\
   -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
   -F "zip_file=@project.zip" \\
-  -F "app_lang=${appLang}" \\
   https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)
 
 # Parse JSON response
@@ -84,7 +79,7 @@ if echo "$RESPONSE" | grep -q '"error"'; then
 fi
 
 echo "$RESPONSE"`;
-  }, [appLang, apiKey]);
+  }, [apiKey]);
 
   const copyToClipboard = async () => {
     try {
@@ -110,43 +105,6 @@ echo "$RESPONSE"`;
           Follow these steps to integrate DevSecShield SAST scanning into your Atlassian Bamboo plan.
         </p>
       </div>
-
-      {/* Configuration Options */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Configuration</CardTitle>
-          <CardDescription>
-            Select your application language to generate the scan script.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="bamboo_app_lang">Application Language *</Label>
-              <Select
-                value={appLang}
-                onValueChange={(value) => setAppLang(value as typeof appLang)}
-              >
-                <SelectTrigger id="bamboo_app_lang">
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="python">Python</SelectItem>
-                  <SelectItem value="javascript">JavaScript</SelectItem>
-                  <SelectItem value="java">Java</SelectItem>
-                  <SelectItem value="php">PHP</SelectItem>
-                  <SelectItem value="c">C</SelectItem>
-                  <SelectItem value="ruby">Ruby</SelectItem>
-                  <SelectItem value="rust">Rust</SelectItem>
-                  <SelectItem value="swift">Swift</SelectItem>
-                  <SelectItem value="csharp">C#</SelectItem>
-                  <SelectItem value="kotlin">Kotlin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Instructions */}
       <Card>

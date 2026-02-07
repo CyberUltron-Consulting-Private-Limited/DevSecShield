@@ -4,7 +4,6 @@ import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -15,7 +14,6 @@ interface GitHubActionsIntegrationGuideProps {
 }
 
 export function GitHubActionsGuide({ apiKey }: GitHubActionsIntegrationGuideProps) {
-  const [appLang, setAppLang] = useState<"python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin">("python");
   const [branch, setBranch] = useState<string>("main");
   const [copied, setCopied] = useState(false);
 
@@ -45,7 +43,6 @@ jobs:
           RESPONSE=$(curl -X POST \\
             -H "cicd-api-key: ${githubActionsSecret}" \\
             -F "zip_file=@project.zip" \\
-            -F "app_lang=${appLang}" \\
             https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)          
           
           
@@ -59,7 +56,7 @@ jobs:
             echo "Vulnerabilities:"
             echo "$VULNS"
           fi`;
-  }, [appLang, branch]);
+  }, [branch]);
 
   const copyToClipboard = async () => {
     try {
@@ -90,35 +87,11 @@ jobs:
         <CardHeader>
           <CardTitle className="text-base">Configuration</CardTitle>
           <CardDescription>
-            Select your application language and branch to generate the workflow file.
+            Set the branch name to generate the workflow file.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="app_lang">Application Language *</Label>
-              <Select
-                value={appLang}
-                onValueChange={(value) => setAppLang(value as typeof appLang)}
-              >
-                <SelectTrigger id="app_lang">
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="python">Python</SelectItem>
-                  <SelectItem value="javascript">JavaScript</SelectItem>
-                  <SelectItem value="java">Java</SelectItem>
-                  <SelectItem value="php">PHP</SelectItem>
-                  <SelectItem value="c">C</SelectItem>
-                  <SelectItem value="ruby">Ruby</SelectItem>
-                  <SelectItem value="rust">Rust</SelectItem>
-                  <SelectItem value="swift">Swift</SelectItem>
-                  <SelectItem value="csharp">C#</SelectItem>
-                  <SelectItem value="kotlin">Kotlin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="branch">Branch Name *</Label>
               <Input

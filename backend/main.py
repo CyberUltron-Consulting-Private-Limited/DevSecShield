@@ -11,6 +11,10 @@ from backend.routers.cicd import router as cicd_router
 from backend.routers.guardrails_public import router as guardrails_public_router
 from backend.routers.admin import router as admin_router
 from backend.routers.team import router as team_router
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
+import json
+from starlette.responses import JSONResponse
 
 
 # Origins for CORS ( not enabled yet because there are public routes )
@@ -37,14 +41,22 @@ os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠
 
 BASE_MEDIA_PATH = "uploads\\"
 
-
+app.include_router(cicd_router)
 app.include_router(auth_router)
 app.include_router(scans_router)
 app.include_router(guardrails_router)
-app.include_router(cicd_router)
 app.include_router(guardrails_public_router)
 app.include_router(admin_router)
 app.include_router(team_router)
+
+# Use this only for debugging purposes ⚠️⚠️⚠️⚠️
+# @app.exception_handler(RequestValidationError)
+# @app.exception_handler(ValidationError)
+# async def validation_exception_handler(request, exc):
+#     # write error to a txt file 
+#     with open("validation_error.txt", "w+") as f:
+#         f.write(str(exc))
+#     return JSONResponse({"message": "Validation error", "data": None}, status_code=422)
 
 if __name__=="__main__":
 

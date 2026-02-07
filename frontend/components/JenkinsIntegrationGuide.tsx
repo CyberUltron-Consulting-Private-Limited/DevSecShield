@@ -3,8 +3,6 @@
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,7 +12,6 @@ interface JenkinsIntegrationGuideProps {
 }
 
 export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
-  const [appLang, setAppLang] = useState<"python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin">("python");
   const [copied, setCopied] = useState(false);
 
   // Helper function to mask API key (show first 4 and last 4 characters)
@@ -37,7 +34,6 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
     environment {
         CICD_API_KEY = '${apiKey}'
         SAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/sast/scan'
-        APP_LANG = '${appLang}'
     }
 
     stages {
@@ -76,7 +72,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
                 script {
                     def response = sh(script: """
                         #!/bin/bash
-                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         -F "app_lang=${dollar}{APP_LANG}"                         "${dollar}{SAST_API_URL}"
+                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         "${dollar}{SAST_API_URL}"
                     """, returnStdout: true).trim()
 
                     def jsonResponse = readJSON(text: response)
@@ -93,7 +89,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
         // Additional stages (e.g., deploy) can be added here
     }
 }`;
-  }, [appLang, apiKey]);
+  }, [apiKey]);
 
   // Generate masked Jenkinsfile content for display
   const displayedJenkinsfileContent = useMemo(() => {
@@ -106,7 +102,6 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
     environment {
         CICD_API_KEY = '${maskedKey}'
         SAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/sast/scan'
-        APP_LANG = '${appLang}'
     }
 
     stages {
@@ -145,7 +140,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
                 script {
                     def response = sh(script: """
                         #!/bin/bash
-                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         -F "app_lang=${dollar}{APP_LANG}"                         "${dollar}{SAST_API_URL}"
+                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         "${dollar}{SAST_API_URL}"
                     """, returnStdout: true).trim()
 
                     def jsonResponse = readJSON(text: response)
@@ -162,7 +157,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
         // Additional stages (e.g., deploy) can be added here
     }
 }`;
-  }, [appLang, apiKey]);
+  }, [apiKey]);
 
   const copyToClipboard = async () => {
     try {
@@ -188,43 +183,6 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
           Follow these steps to integrate DevSecShield SAST scanning into your Jenkins pipeline.
         </p>
       </div>
-
-      {/* Configuration Options */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Configuration</CardTitle>
-          <CardDescription>
-            Select your application language to generate the Jenkinsfile.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="jenkins_app_lang">Application Language *</Label>
-              <Select
-                value={appLang}
-                onValueChange={(value) => setAppLang(value as typeof appLang)}
-              >
-                <SelectTrigger id="jenkins_app_lang">
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="python">Python</SelectItem>
-                  <SelectItem value="javascript">JavaScript</SelectItem>
-                  <SelectItem value="java">Java</SelectItem>
-                  <SelectItem value="php">PHP</SelectItem>
-                  <SelectItem value="c">C</SelectItem>
-                  <SelectItem value="ruby">Ruby</SelectItem>
-                  <SelectItem value="rust">Rust</SelectItem>
-                  <SelectItem value="swift">Swift</SelectItem>
-                  <SelectItem value="csharp">C#</SelectItem>
-                  <SelectItem value="kotlin">Kotlin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Instructions */}
       <Card>

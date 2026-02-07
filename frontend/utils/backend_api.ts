@@ -2085,10 +2085,15 @@ const createCicdIntegration = async (team_id: number, data: CreateCicdIntegratio
 export interface CicdLog {
     id: string
     created_at: string
-    last_updated: string
+    last_updated?: string
     status: "pending" | "started" | "NOT_STARTED" | "success" | "failure" | "retry"
     results: any | null
+    /** SAST (and similar) dashboard metrics; generated per log from results */
+    dashboard?: SastDashboardData | null
 }
+
+/** Per-date counts by impact (Critical, High, Medium, Low). Keys are date strings YYYY-MM-DD. */
+export type VulnsOverTimeChartData = Record<string, { Critical?: number; High?: number; Medium?: number; Low?: number }>
 
 export interface CicdIntegrationDashboard {
     cicd_integration_id: number
@@ -2101,6 +2106,7 @@ export interface CicdIntegrationDashboard {
     integration_settings?: Record<string, { jira_project_id?: string | null } | null> | null
     scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null } | null> | null
     logs: CicdLog[]
+    vulns_over_time_chart_data?: VulnsOverTimeChartData | null
 }
 
 const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string, string, number, number]}): Promise<CicdIntegrationDashboard> => {

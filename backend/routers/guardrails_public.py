@@ -57,20 +57,26 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
             team = integration.team
             if not team:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-            if "jira" in team.integration_settings and "jira" in integration.integration_settings and integration.integration_settings["jira"]["jira_project_id"] and team.integration_settings["jira"]["api_token"] and team.integration_settings["jira"]["url"] and team.integration_settings["jira"]["email"]:
-                integration_kwargs = { "jira" : {
-                    "jira_project_id": integration.integration_settings["jira"]["jira_project_id"],
-                    "jira_api_token": team.integration_settings["jira"]["api_token"],
-                    "jira_url": team.integration_settings["jira"]["url"],
-                    "jira_email": team.integration_settings["jira"]["email"],
-                }}
-            else:
+            try:
+                if "jira" in team.integration_settings and "jira" in integration.integration_settings and integration.integration_settings["jira"]["jira_project_id"] and team.integration_settings["jira"]["api_token"] and team.integration_settings["jira"]["url"] and team.integration_settings["jira"]["email"]:
+                    integration_kwargs = { "jira" : {
+                        "jira_project_id": integration.integration_settings["jira"]["jira_project_id"],
+                        "jira_api_token": team.integration_settings["jira"]["api_token"],
+                        "jira_url": team.integration_settings["jira"]["url"],
+                        "jira_email": team.integration_settings["jira"]["email"],
+                    }}
+                else:
+                    integration_kwargs = None
+            except Exception as e:
+                console.print(f"Error in getting integration kwargs: {str(e)}", style="bold red")
                 integration_kwargs = None
             
         
         # STEP [ 2 ] : ======================================== Start the guardrails scan and get status  ====================================
         task_id , status = None , None 
         celery_app = get_celery_app()
+        if not integration_kwargs:
+            console.print(f"Integration kwargs not found", style="bold orange1")
         input_guardrail_kwargs = {
             "input_prompt": data.input_prompt,
             "context": integration.settings,

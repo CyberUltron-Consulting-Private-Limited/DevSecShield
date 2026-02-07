@@ -30,6 +30,7 @@ class SASTAgent(BaseAgent):
             if context:
                 directory = clone_repo_from_context(context)
             elif zip_context:
+                console.print(f"Zip context: {zip_context}",style="dim bold yellow")
                 directory = get_directory_from_zip_context(zip_context)
             
             if not directory:

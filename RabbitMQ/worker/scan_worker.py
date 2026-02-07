@@ -1,3 +1,4 @@
+import json
 from typing import Literal, Optional
 from celery import Celery
 from rich.console import Console
@@ -106,7 +107,6 @@ try:
             if zip_dict_context:
                 zip_context = validate_dict_with_zip_context(zip_dict_context)
 
-            
             
             # STEP [ 2 ] : =========== Initialize the agent , and run the agent ======================
             if repo_context:

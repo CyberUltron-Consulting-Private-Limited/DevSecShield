@@ -4,7 +4,7 @@ from typing import Annotated
 
 from bson import ObjectId
 from celery.result import AsyncResult
-from fastapi import APIRouter, Depends, Form, HTTPException, Header, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, UploadFile, status
 from fastapi_throttle import RateLimiter
 from rich.console import Console
 from sqlmodel import Session, select
@@ -22,12 +22,14 @@ from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
     UpdateCicdIntegrationData,
 )
+from backend.utilities.dashboard.cicd import get_cicd_vuln_chart_data
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
 from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
 from backend.utilities.cicd.sast_output import create_output_string_for_results
+from backend.utilities.dashboard.scan import generate_scan_dashboard
 
 console = Console()
 
@@ -42,7 +44,7 @@ app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift"
 @router.post("/cicd/{type}/scan",summary="Run a new cicd scan")
 async def run_cicd_scan(
     type: scan_types, 
-    zip_file: UploadFile , 
+    zip_file: UploadFile  , 
     user_and_integration: dict = Depends(get_user_and_integration_id) , 
     dependencies=[Depends(limiter)]):
     """
@@ -87,7 +89,7 @@ async def run_cicd_scan(
             uploaded_file=zip_file)
         if credits_required > credit_balance:
             cicd_log_insert_response = cicd_log_collection.insert_one(CicdLogs(
-                created_at=datetime.datetime.now(),
+                created_at=datetime.now(timezone.utc),
                 ci_cd_integration_id=user_and_integration["integration_id"],
                 task_id=None,
                 status="NOT_STARTED",
@@ -102,6 +104,7 @@ async def run_cicd_scan(
         
         
         # STEP [ 3 ] : ================= Start the scan and update the main db =================================
+        await zip_file.seek(0) # to resent the file pointer to the beginning of the file ( because the esitmation function reads the file and then the file pointer is at the end of the file )
         task_id, task_status = await start_cicd_scan_and_update_db(
             scan_type=type,
             scan_settings=scan_settings,
@@ -112,7 +115,7 @@ async def run_cicd_scan(
         # STEP [ 4 ] : ================= Update scan log in mongo db =================================
         
         cicd_log_insert_response = cicd_log_collection.insert_one(CicdLogs(
-            created_at=datetime.datetime.now(),
+            created_at=datetime.now(timezone.utc),
             ci_cd_integration_id=user_and_integration["integration_id"],
             task_id=task_id,
             status=task_status,
@@ -148,7 +151,7 @@ async def run_cicd_scan(
                     jira_token=jira_api_token,
                     jira_url=jira_api_url,
                     jira_email=jira_email,
-                    summary=f"CICD Scan Results Scan that ran on {datetime.datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC",
+                    summary=f"CICD Scan Results Scan that ran on {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC",
                     description=description,
                 )
         except Exception as e:
@@ -163,6 +166,7 @@ async def run_cicd_scan(
         }
 
     except HTTPException as e:
+        console.print(f"HTTPException in running cicd scan: {str(e)}", style="bold red")
         raise e
     except Exception as e:
         console.print(f"Error running cicd scan: {str(e)}", style="bold red")
@@ -416,7 +420,7 @@ async def get_cicd_integration(
             integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
-            
+            scan_type = integration.scan_type
 
         # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
@@ -463,19 +467,32 @@ async def get_cicd_integration(
         # STEP [ 6 ] : =============== Get ci cd mongo logs for integration ================================
         logs = mongo_db["cicd_logs"].find({"ci_cd_integration_id": integration_id}).sort("created_at", -1).limit(limit).skip(offset)
         logs_data = []
+        results_list = []
         for log in logs:
+            dashboard_data = None
+            if log.get("results") and isinstance(log.get("results"), list):
+                try:
+                    dashboard_data = generate_scan_dashboard(scan_type=scan_type, scan_results=log["results"])
+                except Exception:
+                    dashboard_data = None
             logs_data.append({
                 "id": str(log["_id"]),
                 "created_at": log["created_at"],
                 "status": log["status"],
                 "results": log["results"],
+                "dashboard": dashboard_data,
             })
+            if log["results"]:
+                results_list.append((log["results"],log["created_at"].date()))
         
         # STEP [ 7 ] : ================= Return the integration and logs ================================
         if not integration.scan_settings  or integration.scan_settings == {} : 
             integration_active = False
         else:
             integration_active = True
+        
+
+        vulns_over_time_chart_data = get_cicd_vuln_chart_data(results_list=results_list)
         
         return {
             "cicd_integration_id": integration.id,
@@ -488,6 +505,7 @@ async def get_cicd_integration(
             "integration_settings": integration.integration_settings or {},
             "scan_settings": integration.scan_settings or {},
             "logs": logs_data,
+            "vulns_over_time_chart_data": vulns_over_time_chart_data,
         }
     except Exception as e:
         console.print(f"Error getting cicd integration: {str(e)}", style="bold red")

@@ -23,7 +23,7 @@ async def format_cicd_input(
             "bucket_name": s3_upload_response["bucket"],
             "object_name": s3_upload_response["object_name"],
         }
-        cicd_kwargs["zip_context"] = zip_context
+        cicd_kwargs["zip_dict_context"] = zip_context
 
         match scan_type:
             case "sast":
@@ -32,6 +32,9 @@ async def format_cicd_input(
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sast scan settings not found")
                 cicd_kwargs["app_lang"] = sast_scan_settings.get("app_lang")
                 cicd_kwargs["exclude_path_arrays"] = sast_scan_settings.get("exclude_path_arrays")
+                
+                console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
+                return cicd_kwargs
 
                 
     except Exception as e:
