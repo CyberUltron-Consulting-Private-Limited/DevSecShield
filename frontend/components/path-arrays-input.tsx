@@ -18,6 +18,15 @@ export interface PathArraysInputProps {
   className?: string;
 }
 
+function sanitizeSegmentsInPaths(arr: string[][]): string[][] {
+  return arr.map((path) => path.map((s) => s.trim()).filter(Boolean));
+}
+
+/** Remove empty/whitespace-only strings and empty paths. Use when producing final output (e.g. before API call). */
+export function sanitizePathArrays(arr: string[][]): string[][] {
+  return sanitizeSegmentsInPaths(arr).filter((path) => path.length > 0);
+}
+
 export function PathArraysInput({
   value,
   onChange,
@@ -25,13 +34,14 @@ export function PathArraysInput({
   segmentPlaceholder = "segment",
   className = "",
 }: PathArraysInputProps) {
-  const updatePath = (pathIndex: number, newPath: string[]) => {
+  const updatePath = (pathIndex: number, newPath: string[], skipSanitize = false) => {
     if (value.length === 0) {
-      onChange(pathIndex === 0 ? [newPath] : []);
+      const v = pathIndex === 0 ? [newPath] : [];
+      onChange(skipSanitize ? v : sanitizeSegmentsInPaths(v));
       return;
     }
     const next = value.map((p, i) => (i === pathIndex ? newPath : p));
-    onChange(next);
+    onChange(skipSanitize ? next : sanitizeSegmentsInPaths(next));
   };
 
   const updateSegment = (pathIndex: number, segmentIndex: number, segmentValue: string) => {
@@ -45,7 +55,7 @@ export function PathArraysInput({
 
   const addSegment = (pathIndex: number) => {
     const path = value[pathIndex] ?? [];
-    updatePath(pathIndex, [...path, ""]);
+    updatePath(pathIndex, [...path, ""], true);
   };
 
   const removeSegment = (pathIndex: number, segmentIndex: number) => {
@@ -56,14 +66,14 @@ export function PathArraysInput({
   };
 
   const addPath = () => {
-    const base = value.length === 0 ? [] : value;
+    const base = value.length === 0 ? [] : sanitizeSegmentsInPaths(value);
     onChange([...base, [""]]);
   };
 
   const removePath = (pathIndex: number) => {
     const base = value.length === 0 ? [[]] : value;
     const next = base.filter((_, i) => i !== pathIndex);
-    onChange(next.length === 0 ? [] : next);
+    onChange(next.length === 0 ? [] : sanitizeSegmentsInPaths(next));
   };
 
   const paths = value.length === 0 ? [[]] : value;

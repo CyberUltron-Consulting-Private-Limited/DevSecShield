@@ -4,7 +4,7 @@ from fastapi import UploadFile, HTTPException, status
 from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
-
+from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
 console = Console()
 
 async def format_input_for_scan(
@@ -33,7 +33,8 @@ async def format_input_for_scan(
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context provided")
                 scan_kwargs["app_lang"] = start_scan_payload.sast.app_lang
-                scan_kwargs["exclude_path_arrays"] = start_scan_payload.sast.exclude_path_arrays
+
+                scan_kwargs["exclude_path_arrays"] = sanitize_path_patterns(start_scan_payload.sast.exclude_path_arrays) if start_scan_payload.sast.exclude_path_arrays else None
                 console.print(f"SAST kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 

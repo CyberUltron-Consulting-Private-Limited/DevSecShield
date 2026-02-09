@@ -317,10 +317,21 @@ export default function SASTPage() {
                 </TableHeader>
                 <TableBody>
                   {conversations.map((conversation) => (
-                    <TableRow key={conversation.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                    <TableRow
+                      key={conversation.id}
+                      className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest("button") || target.closest("[role='menuitem']")) return;
+                        const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
+                          ? `/${team_id}/sast/${conversation.id}/results`
+                          : `/${team_id}/sast/${conversation.id}`;
+                        router.push(dest);
+                      }}
+                    >
                       <TableCell className="font-medium">
                         <Link
-                          href={conversation.scan_status === "success" ? `/${team_id}/sast/${conversation.id}/results` : `/${team_id}/sast/${conversation.id}`}
+                          href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/sast/${conversation.id}/results` : `/${team_id}/sast/${conversation.id}`}
                           className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
                         >
                           {conversation.title}
@@ -394,7 +405,7 @@ export default function SASTPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {conversation.scan_status === "success" && (
+                            {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
                               <DropdownMenuItem
                                 className="cursor-pointer"
                                 onClick={() => router.push(`/${team_id}/sast/${conversation.id}/results?origin=list`)}

@@ -14,9 +14,10 @@ from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData
 from backend.utilities.auth.auth_utils import *
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
+from backend.utilities.team.credits import deduct_credits_from_team
 from backend.utilities.team.validation import check_if_user_is_in_team
+from backend.get_db import dev_environment
 console = Console()
-dev_environment = True # for local development
 
 router = APIRouter(prefix="/guardrails",tags=["Guardrails"])
 
@@ -82,6 +83,7 @@ async def create_guardrails_integration(
     dependencies=[Depends(limiter)]):
     """
     Create a new guardrails integration.
+    credits required : 0.5 
     """
     try:
         # STEP [ 1 ] : ======================================== Get the database ====================================
@@ -106,10 +108,13 @@ async def create_guardrails_integration(
             session.add(new_integration)
             session.commit()
             session.refresh(new_integration)
-            return {
-                "message": "Guardrails integration created successfully",
-                "integration_id": new_integration.id
-            }
+
+
+        deduct_credits_from_team(team_id=team_id, credits=0.5)
+        return {
+            "message": "Guardrails integration created successfully",
+            "integration_id": new_integration.id
+        }
     except HTTPException as e:
         raise e
     except Exception as e:

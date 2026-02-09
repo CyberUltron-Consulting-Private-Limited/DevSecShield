@@ -30,12 +30,13 @@ from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
 from backend.utilities.cicd.sast_output import create_output_string_for_results
 from backend.utilities.dashboard.scan import generate_scan_dashboard
+from backend.utilities.team.credits import deduct_credits_from_team
+from backend.get_db import dev_environment
 
 console = Console()
 
 router = APIRouter(tags=["CICD"])
 
-dev_environment = True # for local development
 limiter = RateLimiter(times=20, seconds=30)
 app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] 
 
@@ -76,6 +77,7 @@ async def run_cicd_scan(
             scan_type = integration.scan_type
             credit_balance = integration.team.credit_balance
             team = integration.team
+            team_id = team.id
             if not team:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found for specified cicd integration")
             
@@ -95,7 +97,8 @@ async def run_cicd_scan(
                 status="NOT_STARTED",
                 credits_consumed=None,
                 scan_settings_metadata=None,
-                results={"error": "Insufficient credits"},
+                results=None,
+                error="Insufficient credits",
             ))
             CICD_LOG_ID = str(cicd_log_insert_response.inserted_id) if cicd_log_insert_response and cicd_log_insert_response.inserted_id else None
             console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
@@ -123,12 +126,13 @@ async def run_cicd_scan(
             scan_settings_metadata=scan_settings,
             results=None,
         ))
+        deduct_credits_from_team(team_id=team_id, credits=credits_required) # deduct credits from team 
         CICD_LOG_ID = str(cicd_log_insert_response.inserted_id) if cicd_log_insert_response and cicd_log_insert_response.inserted_id else None
         console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
 
         # STEP [ 5 ] : ============= Poll the worker for the results with a timeout =============================
         celery_app = get_celery_app()
-        results = await run_in_threadpool(poll_for_results, task_id, celery_app, cicd_log_collection, CICD_LOG_ID)
+        results : list[dict] | None = await run_in_threadpool(poll_for_results, task_id, celery_app, cicd_log_collection, CICD_LOG_ID)
         console.print(f"Results obtained successfully", style="bold yellow")
 
         
@@ -136,7 +140,7 @@ async def run_cicd_scan(
         
         # STEP [ 6 ] : ================= Integrate with Jira if enabled =================================
         try:
-            if integration.integration_settings  and "jira" in integration.integration_settings :
+            if integration.integration_settings  and "jira" in integration.integration_settings and results is not None :
                 jira_project_id = integration.integration_settings["jira"].get("jira_project_id")
                 jira_email = team.integration_settings["jira"].get("email")
                 jira_api_token = team.integration_settings["jira"].get("api_token")
@@ -145,7 +149,7 @@ async def run_cicd_scan(
                     raise Exception("Jira project id, email, api token or url is missing, cannot create ticket")
                 
                 description = create_output_string_for_results(scan_type = scan_type, results = results)
-                
+                console.print("Creating ticket in jira 🎫", style="bold yellow")
                 create_issue_in_jira(
                     project_id=jira_project_id,
                     jira_token=jira_api_token,
@@ -425,7 +429,7 @@ async def get_cicd_integration(
         # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
         cicd_logs = cicd_logs_collection.find(
-            {"$and": [{"ci_cd_integration_id": integration_id}, {"status": {"$in": ["pending", "started", "NOT_STARTED" , "success"]}}]}
+            {"$and": [{"ci_cd_integration_id": integration_id}, {"status": {"$in": ["pending", "started" , "success"]}}]}
         ) # including success because sometimes the scan  might have comepleted quickly and we might need to get results after status is success            
     
         
@@ -470,7 +474,7 @@ async def get_cicd_integration(
         results_list = []
         for log in logs:
             dashboard_data = None
-            if log.get("results") and isinstance(log.get("results"), list):
+            if log.get("results") and isinstance(log["results"], list) :
                 try:
                     dashboard_data = generate_scan_dashboard(scan_type=scan_type, scan_results=log["results"])
                 except Exception:
@@ -481,6 +485,8 @@ async def get_cicd_integration(
                 "status": log["status"],
                 "results": log["results"],
                 "dashboard": dashboard_data,
+                "credits_consumed": round(float(log["credits_consumed"]), 2) if log["credits_consumed"] else None,
+                "error": log.get("error"),
             })
             if log["results"]:
                 results_list.append((log["results"],log["created_at"].date()))

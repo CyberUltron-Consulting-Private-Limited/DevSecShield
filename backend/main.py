@@ -17,13 +17,7 @@ import json
 from starlette.responses import JSONResponse
 
 
-# Origins for CORS ( not enabled yet because there are public routes )
-# origins = [
-#     "http://localhost:3000",
-#     "https://threatshield.zeroshield.ai",
-#     "http://13.203.233.15:3000",
-#     "13.203.233.15:3000",
-# ]
+
 
 app = FastAPI(middleware=[
     Middleware(
@@ -36,7 +30,7 @@ app = FastAPI(middleware=[
 ])
 
 # setting the environment variable to False for local development
-os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 
 BASE_MEDIA_PATH = "uploads\\"

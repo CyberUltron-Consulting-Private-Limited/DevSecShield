@@ -320,11 +320,22 @@ export default function SBOMSCAPage() {
                 </TableHeader>
                 <TableBody>
                   {conversations.map((conversation) => (
-                    <TableRow key={conversation.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                    <TableRow
+                      key={conversation.id}
+                      className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                      onClick={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest("button") || target.closest("[role='menuitem']")) return;
+                        const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
+                          ? `/${team_id}/sbom_sca/${conversation.id}/results`
+                          : `/${team_id}/sbom_sca/${conversation.id}`;
+                        router.push(dest);
+                      }}
+                    >
                       <TableCell className="font-medium">
                         <Link
                           href={
-                            conversation.scan_status === "success"
+                            (conversation.scan_status?.toLowerCase() ?? "") === "success"
                               ? `/${team_id}/sbom_sca/${conversation.id}/results`
                               : `/${team_id}/sbom_sca/${conversation.id}`
                           }
@@ -404,7 +415,7 @@ export default function SBOMSCAPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {conversation.scan_status === "success" && (
+                            {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
                               <DropdownMenuItem
                                 className="cursor-pointer"
                                 onClick={() =>

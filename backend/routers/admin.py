@@ -4,11 +4,15 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email
-from backend.new_models import User
+from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.plans import plans
 from backend.utilities.auth.html_email import create_user_password_email_html
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
+from backend.get_db import dev_environment
+from backend.utilities.db.admin import delete_team_associated_data
+from rich.console import Console
+console = Console()
 
 class CreateUserData(BaseModel):
     email: str
@@ -17,10 +21,9 @@ class CreateUserData(BaseModel):
     first_name: str
     last_name: str
 
-class CreateAdminData(BaseModel):
+class CreateAdminUserData(BaseModel):
     email: str
     password: str
-    plan: str
     first_name: str
     last_name: str
 
@@ -28,16 +31,19 @@ class UpdateUserPlanData(BaseModel):
     user_id: int
     plan: str
 
-class UpdateUserTotalScansData(BaseModel):
-    user_id: int
-    total_scans: int
+class UpdateTeamCreditBalanceData(BaseModel):
+    team_id: int
+    credit_balance: int
 
 class ToggleAdminAccessData(BaseModel):
     user_id: int
 
+class DeleteUserData(BaseModel):
+    user_id: int
+
 router = APIRouter(tags=["Admin"])
 
-dev_environment = True # for local development
+
 
 
 
@@ -75,10 +81,10 @@ async def check_superuser(Authorization: Annotated[str | None, Header()] = None)
             detail="Internal server error"
         )
 
-@router.get('/admin/users', summary="Get all users (admin only)")
-async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
+@router.get('/admin/teams', summary="Get all teams (admin only)")
+async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
     """
-    Get a list of all users in the system.
+    Get a list of all teams in the system.
     Only accessible by superusers.
     """
     try:
@@ -95,20 +101,71 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
                 detail="Access denied. Superuser privileges required."
             )
         
-        # Fetch all users
+        # Fetch all teams
+        with Session(engine) as session:
+            teams = session.exec(select(Team)).all()
+            
+            teams_data = []
+            for team in teams:
+                teams_data.append({
+                    "team_id": team.id,
+                    "team_name": team.name,
+                    "team_description": team.description,
+                    "team_members": [member.user.email for member in team.team_memberships],
+                    "team_created_at": team.created_at,
+                    "team_credit_balance": team.credit_balance,
+                    "scans_count": len(team.scans),
+                    "guardrails_integrations_count": len(team.guardrails_integrations),
+                    "cicd_integrations_count": len(team.cicd_integrations),
+                    "sast_scans_count": len([scan for scan in team.scans if scan.scan_type == "sast"]),
+                    "iac_scans_count": len([scan for scan in team.scans if scan.scan_type == "iac"]),
+                    "sbom_sca_scans_count": len([scan for scan in team.scans if scan.scan_type == "sbom_sca"]),
+                })
+            
+            return teams_data
+            
+    except Exception as e:
+        if isinstance(e,psycopg2.Error):
+            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
+        if isinstance(e,HTTPException):
+            raise e
+        print(f"Error fetching teams: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+@router.get('/admin/users', summary="Get all users (admin only)")
+async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
+    """
+    Get a list of all users in the system.
+    Only accessible by superusers.
+    """
+    try:
+        engine = get_db(dev_environment=dev_environment)
+        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        
+        if not user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Superuser privileges required."
+            )
+
         with Session(engine) as session:
             users = session.exec(select(User)).all()
             
             users_data = []
             for user in users:
                 users_data.append({
-                    "id": user.id,
-                    "email": user.email,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "plan": user.plan,
-                    "is_superuser": user.is_superuser,
-                    "total_scans": user.total_scans
+                    "user_id": user.id,
+                    "user_email": user.email,
+                    "user_first_name": user.first_name,
+                    "user_last_name": user.last_name,
+                    "user_team_memberships": [(membership.team.id, membership.team.name) for membership in user.team_memberships],
+                    "user_is_superuser": user.is_superuser,
+                    "user_default_team_id": user.default_team_id
                 })
             
             return users_data
@@ -124,19 +181,10 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
             detail="Internal server error"
         )
 
-@router.post('/admin/create_user', summary="Create a new user (admin only)")
-async def create_user(data: CreateUserData, Authorization: Annotated[str | None, Header()] = None):
-    """
-    Create a new user account.
-    Only accessible by superusers.
-    
-    Request Fields:
-    - email: str
-    - password: str
-    - plan: str (free, basic, standard, pro, enterprise)
-    - first_name: str
-    - last_name: str
-    """
+
+@router.post('/admin/create_admin_user', summary="Create a new admin user (admin only)")
+async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[str | None, Header()] = None):
+
     try:
         engine = get_db(dev_environment=dev_environment)
         mongo_db = get_mongo_client_db(dev_environment=dev_environment)
@@ -150,12 +198,7 @@ async def create_user(data: CreateUserData, Authorization: Annotated[str | None,
                 detail="Access denied. Superuser privileges required."
             )
         
-        # Validate plan
-        if data.plan not in plans:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid plan. Available plans: {list(plans.keys())}"
-            )
+        
         
         # Check if user already exists
         with Session(engine) as session:
@@ -168,6 +211,14 @@ async def create_user(data: CreateUserData, Authorization: Annotated[str | None,
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="User with this email already exists"
                 )
+            
+            new_team = Team(
+                name=f"{data.first_name}'s Default Team",
+                description=f"Default team for {data.first_name}",
+            )
+            session.add(new_team)
+            session.commit()
+            session.refresh(new_team)
             
             # Create new user
             new_user = User(
@@ -175,12 +226,14 @@ async def create_user(data: CreateUserData, Authorization: Annotated[str | None,
                 password=get_hashed_password(data.password),
                 first_name=data.first_name,
                 last_name=data.last_name,
-                plan=data.plan,
-                is_superuser=False,  # New users are not superusers by default
-                total_scans=0
+                is_superuser=True,  # New users are not superusers by default
+                default_team_id=new_team.id,
+                teams =  [ new_team ],
             )
+
+            team_membership = TeamMembership( team=new_team, user=new_user, role="admin" )
             
-            session.add(new_user)
+            session.add(team_membership)
             session.commit()
             session.refresh(new_user)
 
@@ -188,102 +241,14 @@ async def create_user(data: CreateUserData, Authorization: Annotated[str | None,
             await send_email(new_user.email, "User Created", html_body=create_user_password_email_html(data.password, new_user.email))
             
             return {
-                "message": "User created successfully",
+                "message": "Admin user created successfully",
                 "user": {
                     "id": new_user.id,
                     "email": new_user.email,
                     "first_name": new_user.first_name,
                     "last_name": new_user.last_name,
-                    "plan": new_user.plan,
                     "is_superuser": new_user.is_superuser,
-                    "total_scans": new_user.total_scans
-                }
-            }
-            
-    except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        print(f"Error creating user: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
-
-@router.post('/admin/create_admin', summary="Create a new admin user (admin only)")
-async def create_admin(data: CreateAdminData, Authorization: Annotated[str | None, Header()] = None):
-    """
-    Create a new admin/superuser account.
-    Only accessible by superusers.
-    
-    Request Fields:
-    - email: str
-    - password: str
-    - plan: str (free, basic, standard, pro, enterprise)
-    - first_name: str
-    - last_name: str
-    """
-    try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-        # Check if user is superuser
-        admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        
-        if not admin_user.is_superuser:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Superuser privileges required."
-            )
-        
-        # Validate plan
-        if data.plan not in plans:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid plan. Available plans: {list(plans.keys())}"
-            )
-        
-        # Check if user already exists
-        with Session(engine) as session:
-            existing_user = session.exec(
-                select(User).where(User.email == data.email)
-            ).first()
-            
-            if existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="User with this email already exists"
-                )
-            
-            # Create new admin user
-            new_admin = User(
-                email=data.email,
-                password=get_hashed_password(data.password),
-                first_name=data.first_name,
-                last_name=data.last_name,
-                plan=data.plan,
-                is_superuser=True,  # This user will be an admin
-                total_scans=0
-            )
-            
-            session.add(new_admin)
-            session.commit()
-            session.refresh(new_admin)
-
-            # send email to admin user
-            await send_email(new_admin.email, "Admin Account Created", html_body=create_user_password_email_html(data.password, new_admin.email))
-            
-            return {
-                "message": "Admin user created successfully",
-                "user": {
-                    "id": new_admin.id,
-                    "email": new_admin.email,
-                    "first_name": new_admin.first_name,
-                    "last_name": new_admin.last_name,
-                    "plan": new_admin.plan,
-                    "is_superuser": new_admin.is_superuser,
-                    "total_scans": new_admin.total_scans
+                    "default_team_id": new_user.default_team_id
                 }
             }
             
@@ -299,13 +264,13 @@ async def create_admin(data: CreateAdminData, Authorization: Annotated[str | Non
         )
 
 
-@router.post("/admin/update_user_total_scans", summary="Update user total scans (admin only)")
-async def update_user_total_scans(
-    data: UpdateUserTotalScansData,
+@router.post("/admin/update", summary="Update team credit balance (admin only)")
+async def update_team_credit_balance(
+    data: UpdateTeamCreditBalanceData,
     Authorization: Annotated[str | None, Header()] = None
 ):
     """
-    Update a user's total scans.
+    Update a team's credit balance.
     Only accessible by superusers.
     """
     try:
@@ -323,25 +288,25 @@ async def update_user_total_scans(
         
         # Update user total scans
         with Session(engine) as session:
-            user = session.exec(select(User).where(User.id == data.user_id)).first()
+            team = session.exec(select(Team).where(Team.id == data.team_id)).first()
             
-            if not user:
+            if not team:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
             
-            user.total_scans = data.total_scans
-            session.add(user)
+            team.credit_balance = data.credit_balance
+            session.add(team)
             session.commit()
-            session.refresh(user)
+            session.refresh(team)
             
             return {
-                "message": "User total scans updated successfully",
+                "message": "Team credit balance updated successfully",
                 "user": {
-                "id": user.id,
-                "email": user.email,
-                "total_scans": user.total_scans
+                "id": team.id,
+                "name": team.name,
+                "credit_balance": team.credit_balance
             }
         }
     except Exception as e:
@@ -356,75 +321,6 @@ async def update_user_total_scans(
         )
 
 
-
-
-@router.post('/admin/update_user_plan', summary="Update user plan (admin only)")
-async def update_user_plan(
-    data: UpdateUserPlanData, 
-    Authorization: Annotated[str | None, Header()] = None
-):
-    """
-    Update a user's plan.
-    Only accessible by superusers.
-    
-    Request Body:
-    - user_id: int
-    - plan: str (free, basic, standard, pro, enterprise)
-    """
-    try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-        # Check if user is superuser
-        admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        
-        if not admin_user.is_superuser:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Superuser privileges required."
-            )
-        
-        # Validate plan
-        if data.plan not in plans:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid plan. Available plans: {list(plans.keys())}"
-            )
-        
-        # Update user plan
-        with Session(engine) as session:
-            user = session.exec(select(User).where(User.id == data.user_id)).first()
-            
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
-                )
-            
-            user.plan = data.plan
-            session.add(user)
-            session.commit()
-            session.refresh(user)
-            
-            return {
-                "message": "User plan updated successfully",
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "plan": user.plan
-                }
-            }
-            
-    except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        print(f"Error updating user plan: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
 
 @router.post('/admin/toggle_admin_access', summary="Toggle admin access for a user (admin only)")
 async def toggle_admin_access(
@@ -495,10 +391,14 @@ async def toggle_admin_access(
             detail="Internal server error"
         )
 
-@router.delete('/admin/users/{user_id}', summary="Delete a user (admin only)")
-async def delete_user(user_id: int, Authorization: Annotated[str | None, Header()] = None):
+
+@router.delete('/admin/delete_user', summary="Delete a user (admin only)")
+async def delete_user(
+    data: DeleteUserData,
+    Authorization: Annotated[str | None, Header()] = None
+):
     """
-    Delete a user account.
+    Delete a user from the system.
     Only accessible by superusers.
     """
     try:
@@ -514,91 +414,45 @@ async def delete_user(user_id: int, Authorization: Annotated[str | None, Header(
                 detail="Access denied. Superuser privileges required."
             )
         
-        # Prevent admin from deleting themselves
-        if admin_user.id == user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete your own account"
-            )
-        
-        # Delete user
+        # Delete team that user is a part of :
         with Session(engine) as session:
-            user = session.exec(select(User).where(User.id == user_id)).first()
-            
+            user = session.exec(select(User).where(User.id == data.user_id)).first()
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
+            for membership in user.team_memberships:
+                console.print(f"Membership: {membership}", style="bold green")
+                if membership.team_id != user.default_team_id:
+                    session.delete(membership) # removing as a member of all other teams except the default team
+                else:
+                    default_team_id = user.default_team_id
+                    delete_team_associated_data(membership.team_id)
+                    session.delete(membership)
+                    default_team = session.exec(select(Team).where(Team.id == default_team_id)).first()
+
+                    session.delete(default_team)
             
-            session.delete(user)
             session.commit()
-            
-            return {
-                "message": f"User {user.email} deleted successfully"
-            }
-            
-    except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        print(f"Error deleting user: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
 
-@router.get('/admin/stats', summary="Get system statistics (admin only)")
-async def get_system_stats(Authorization: Annotated[str | None, Header()] = None):
-    """
-    Get system statistics including user counts, plan distribution, etc.
-    Only accessible by superusers.
-    """
-    try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
-
-        # Check if user is superuser
-        admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
+            # delete user
+            session.delete(user) # deleting the user
+            session.commit()
         
-        if not admin_user.is_superuser:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Superuser privileges required."
-            )
-        
-        # Get statistics
-        with Session(engine) as session:
-            # Total users
-            total_users = len(session.exec(select(User)).all())
-            
-            # Superusers count
-            superusers = len(session.exec(select(User).where(User.is_superuser == True)).all())
-            
-            # Plan distribution
-            plan_distribution = {}
-            for plan_name in plans.keys():
-                count = len(session.exec(select(User).where(User.plan == plan_name)).all())
-                plan_distribution[plan_name] = count
-            
-            # Total scans across all users
-            total_scans = sum(user.total_scans for user in session.exec(select(User)).all())
-            
-            return {
-                "total_users": total_users,
-                "superusers": superusers,
-                "regular_users": total_users - superusers,
-                "plan_distribution": plan_distribution,
-                "total_scans": total_scans
+        return {
+            "message": "User deleted successfully",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
             }
-            
+        }
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        print(f"Error fetching system stats: {str(e)}")
+        console.print(f"Error deleting user: {str(e)}", style="bold red")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

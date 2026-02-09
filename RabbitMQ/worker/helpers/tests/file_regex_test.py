@@ -71,22 +71,22 @@ def testing(
     exclude_path_arrays:list[list[str]],
 ):
     filepaths = [
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\src\components\Dashboard\Table.tsx",
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\src\components\Something\Table.tsx",
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\AAAAA\Table.tsx",
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\package.json",
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\package-lock.json",
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\BBB\Table.tsx",
-        r"C:\Users\HP\Desktop\RiskPilot\frontend\haha\components\BBB\Table.tsx",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\.venv\Scripts\python.exe",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\.venv\Scripts\pip.exe",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__\__init__.py",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\__pycache__\__init__.py",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\__init__.py",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\api_routes\routing_scan.py",
-        r"C:\Users\HP\Desktop\RiskPilot\backend\api_routes_and_stuff\routing_scan.py",
-        r"C:\Users\HP\Desktop\RiskPilot\testing\api_routes_and_stuff\routing_scan.py",
-        r"C:\Users\HP\Desktop\RiskPilot - Copy\backend\llm_scan_utils\llm_scan_utils.py",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/src/components/Dashboard/Table.tsx",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/src/components/Something/Table.tsx",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/haha/components/AAAAA/Table.tsx",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/package.json",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/package-lock.json",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/haha/components/BBB/Table.tsx",
+        r"C:/Users/HP/Desktop/RiskPilot/frontend/haha/components/BBB/Table.tsx",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/.venv/Scripts/python.exe",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/.venv/Scripts/pip.exe",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/__pycache__/__init__.py",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/__pycache__/__init__.py",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/__init__.py",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/api_routes/routing_scan.py",
+        r"C:/Users/HP/Desktop/RiskPilot/backend/api_routes_and_stuff/routing_scan.py",
+        r"C:/Users/HP/Desktop/RiskPilot/testing/api_routes_and_stuff/routing_scan.py",
+        r"C:/Users/HP/Desktop/RiskPilot - Copy/backend/llm_scan_utils/llm_scan_utils.py",
     ]
 
     for filepath in filepaths:
@@ -158,30 +158,34 @@ if __name__ == "__main__":
         [ "package.json" ],
         [ "package-lock.json" ]
          ]
-    testing_include_path_arrays = [
-        [ "llm_scan_utils" ],
-        [ "package-lock.json" ]
-         ]
-    
-    repo_path = Path("C:/Users/HP/Desktop/RiskPilot - Copy/backend/")
-    codebase_context = CodebaseContext(
-        directory=repo_path,
-        # exclude_path_arrays=testing_exclude_path_arrays,
-        include_path_arrays=testing_include_path_arrays,
-        include_files_extensions=[".py"],
-    )
-    documents = codebase_context.load_documents_of_extension(".py")
+    # testing_include_path_arrays = [
+    #     [ "llm_scan_utils" ],
+    #     [ "package-lock.json" ]
+    #      ]
 
-    sources = set([document.metadata['source'] for document in documents])
-    for source in sources:
-        console.print(f"- {source}",style="dim green")
+    patterns = [
+        []
+    ]
+    
+    # repo_path = Path("C:/Users/HP/Desktop/RiskPilot - Copy/backend/")
+    # codebase_context = CodebaseContext(
+    #     directory=repo_path,
+    #     # exclude_path_arrays=testing_exclude_path_arrays,
+    #     include_path_arrays=testing_include_path_arrays,
+    #     include_files_extensions=[".py"],
+    # )
+    # documents = codebase_context.load_documents_of_extension(".py")
+
+    # sources = set([document.metadata['source'] for document in documents])
+    # for source in sources:
+    #     console.print(f"- {source}",style="dim green")
     # metadata = codebase_context.metadata
     # for excluded_document in metadata["excluded_documents"]:
     #     console.print(f"- {excluded_document}",style="dim red")
     # for included_document in metadata["included_documents"]:
     #     console.print(f"- {included_document}",style="dim green")
     
-    # testing(testing_exclude_path_arrays)
+    testing(testing_exclude_path_arrays)
     # documents = test_loader(repo_path, testing_exclude_path_arrays, default_exclude_paths)
     # testing_chain_aws_bedrock(documents)
 

@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from rich.console import Console
 
+dev_environment = False # for local development
+
 def get_db(dev_environment : bool = False):
 
     console = Console()
@@ -16,7 +18,7 @@ def get_db(dev_environment : bool = False):
             postgres_username = os.environ['PG_USER']
             postgres_password = os.environ['PG_USER_PASS']
             postgres_host = "13.203.233.15"
-            postgres_port = "5433"
+            postgres_port = "4433"
             postgres_db = os.environ['PG_DB']
             postgres_url = f"postgresql://{postgres_username}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
             db_url = postgres_url
@@ -30,10 +32,13 @@ def get_db(dev_environment : bool = False):
             postgres_username = os.environ['PG_USER']
             postgres_password = os.environ['PG_USER_PASS']
             postgres_host = "13.203.233.15"
-            postgres_port = "5433"
+            postgres_port = "4433"
             postgres_db = os.environ['PG_DB']
             postgres_url = f"postgresql://{postgres_username}:{postgres_password}@{postgres_host}:{postgres_port}/{postgres_db}"
             db_url = postgres_url
+        
+
+        console.print(f"Database URL: {db_url}", style="bold green")
 
         engine = create_engine(db_url)
         return engine

@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 from backend.new_models import GuardrailsIntegration
 from sqlmodel import select , Session
+from backend.get_db import dev_environment
 
-dev_environment = True
 console = Console()
 
 class CardData(TypedDict):

@@ -3,6 +3,7 @@ import time
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from rich.console import Console
+from dotenv import load_dotenv
 console = Console()
 
 def create_collection(collection_name: str , url: str, api_key: str)->None:
@@ -67,6 +68,9 @@ def clear_all_collections_and_recreate(url: str, api_key: str)->None:
 
 if __name__ == "__main__":
     try:
+        load_dotenv()
+        os.environ["IS_DOCKER_CONTAINER"] = "True"
+
         console.print("Running initialization checks",style="dim yellow")
 
         # getting api key from environment variable
@@ -79,17 +83,17 @@ if __name__ == "__main__":
         # getting url based on IS_DOCKER_CONTAINER environment variable
         IS_DOCKER_CONTAINER = os.getenv("IS_DOCKER_CONTAINER")
         if IS_DOCKER_CONTAINER == "True":
-            url = "http://13.203.233.15:6333"
+            url = "http://13.203.233.15:7333"
         else:
-            url = "http://localhost:6333"
+            url = "http://localhost:7333"
         console.print(f"Using url: {url}",style="dim yellow")
 
         # running initialization checks
-        # run_initialization_checks(url=url, api_key=QDRANT_API_KEY)
-        # console.print("Initialization checks completed successfully",style="dim green")
+        run_initialization_checks(url=url, api_key=QDRANT_API_KEY)
+        console.print("Initialization checks completed successfully",style="dim green")
 
         # clearing all collections and recreating
-        clear_all_collections_and_recreate(url=url, api_key=QDRANT_API_KEY)
+        # clear_all_collections_and_recreate(url=url, api_key=QDRANT_API_KEY)
         console.print("All collections cleared and recreated successfully",style="dim green")
     
     except Exception as e:

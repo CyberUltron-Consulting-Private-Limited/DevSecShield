@@ -34,3 +34,6 @@ def poll_for_results(
 
         cicd_log_collection.update_one({"_id": ObjectId(CICD_LOG_ID)}, {"$set": {"status": task_status}})
         console.print(f"Cicd log updated successfully with id: {CICD_LOG_ID} and status: {task_status}", style="bold green")
+    
+
+    console.print(f"CICD Polling timed out", style="bold orange1")

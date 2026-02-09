@@ -90,7 +90,6 @@ export default function SASTPage() {
     setMessages(query.data?.messages || []);
   }, [query.data]);
 
-
   if (team_id <= 0 || scan_id <= 0) {
     return (
       <div className="flex h-screen w-full items-center justify-center">

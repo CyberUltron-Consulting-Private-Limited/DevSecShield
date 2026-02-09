@@ -27,7 +27,7 @@ def get_celery_app():
             password = os.getenv("RABBIT_ADMIN_PASSWORD")
             if not username or not password:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
-            broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+            broker_url = f"amqp://{username}:{password}@13.203.233.15:4672"
 
             # mongo 
             mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
@@ -46,7 +46,7 @@ def get_celery_app():
             password = os.getenv("RABBIT_ADMIN_PASSWORD")
             if not username or not password:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
-            broker_url = f"amqp://{username}:{password}@localhost:5672"
+            broker_url = f"amqp://{username}:{password}@localhost:4672"
 
             # mongo 
             mongo_url = f"mongodb://localhost:27017/"

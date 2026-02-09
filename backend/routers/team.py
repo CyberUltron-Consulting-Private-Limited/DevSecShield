@@ -10,9 +10,9 @@ from sqlmodel import Session, select
 from backend.new_models import Team, TeamMembership , User , Scan , CicdIntegration , GuardrailsIntegration
 from backend.utilities.team.membership import add_emails_to_team , remove_emails_from_team
 from sqlalchemy import or_
-from backend.utilities.dashboard.team import generate_team_dashboard_data
+from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
+from backend.get_db import dev_environment
 
-dev_environment = True # for local development ⚠️⚠️⚠️⚠️
 router = APIRouter( tags=["team"] )   
 console = Console()
 limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
@@ -62,7 +62,7 @@ async def get_team(
                 "is_team_admin": is_team_admin,
                 "team_members": [{"email": member.user.email, "role": member.role} for member in team.team_memberships],
                 "team_created_at": team.created_at,
-                "team_credit_balance": team.credit_balance,
+                "team_credit_balance":  round(float(team.credit_balance), 2) if team.credit_balance else None,
                 "team_integration_settings": team.integration_settings,
                 "team_settings": team.settings,
             }
@@ -107,7 +107,7 @@ async def list_teams(
                     "team_description": team_object.description,
                     "team_members": [member.user.email for member in team_object.team_memberships],
                     "team_created_at": team_object.created_at,
-                    "team_credit_balance": team_object.credit_balance,
+                    "team_credit_balance": round(float(team_object.credit_balance), 2) if team_object.credit_balance else None,
                 })
         
 
@@ -325,7 +325,7 @@ async def delete_team(
         for guardrails_id in guardrails_ids_list:
             # -------------------> Delete guardrails logs with guardrails_id -----------------------------
             guardrails_logs_collection = mongo_db["guardrails_logs"]
-            guardrails_logs_collection.delete_many({"guardrails_integration_id": guardrails_id})
+            guardrails_logs_collection.delete_many({"integration_id": guardrails_id})
             console.print(f"Guardrails logs deleted successfully for integration {guardrails_id}", style="bold green")
         
 
@@ -338,8 +338,7 @@ async def delete_team(
             for team_membership in team_memberships:
                 session.delete(team_membership)
             session.commit()
-
-            # ⚠️⚠️⚠️ Check and see if the link table record also goes away with these operations above ⚠️⚠️⚠️            
+    
 
             #---------------------> deleting team object
             team = session.exec(select(Team).where(Team.id == team_id)).first()
@@ -387,3 +386,28 @@ async def get_team_dashboard(
     except Exception as e:
         console.print(f"Error in getting team dashboard: {e}", style="red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in getting team dashboard: {e}")
+
+
+@router.get("/teams/dashboard",summary="Get the dashboard data for all teams that the current user is a member of")
+async def get_teams_dashboard(
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)]):
+    """
+    Get the dashboard data for all teams that the current user is a member of
+    """
+    try:
+        # STEP [ 1 ] : =========== Get the engine and user ======================
+        engine = get_db(dev_environment=dev_environment)
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+
+        # STEP [ 2 ] : =========== get the dashboard data for all teams that the current user is a member of ======================
+        dashboard_data = generate_team_list_dashboard_data(user.id, engine)
+
+        # STEP [ 3 ] : =========== return the dashboard data ======================
+        return dashboard_data
+    
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error in getting teams dashboard: {e}", style="red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in getting teams dashboard: {e}")

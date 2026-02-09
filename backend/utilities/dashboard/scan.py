@@ -4,9 +4,7 @@ from sqlmodel import Session, select
 from fastapi import HTTPException
 from backend.get_db import get_db
 from collections import defaultdict
-
-
-dev_environment = True
+from backend.get_db import dev_environment
 
 console = Console()
 def generate_scan_dashboard(

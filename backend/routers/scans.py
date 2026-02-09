@@ -33,10 +33,9 @@ from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.new_models import scan_types
 from rich.console import Console
 from backend.utilities.dashboard.scan_list import generate_card_data_for_scan_list
+from backend.get_db import dev_environment
 
 
-
-dev_environment = True # for local development ⚠️⚠️⚠️⚠️
 router = APIRouter( tags=["scans"])   
 console = Console()
 limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds

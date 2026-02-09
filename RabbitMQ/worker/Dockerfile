@@ -16,13 +16,13 @@ RUN curl -sSfL https://get.anchore.io/grype | sh -s -- -b /usr/local/bin
 
 
 # for iac scan ( tfsec and trivy )
-RUN curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+# RUN curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
 
 # alternate method for installing tfsec ( using homebrew )
 # RUN curl -s https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
 # RUN brew install tfsec
 
-RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.67.2
+# RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.67.2
 
 # for SAST 
 ENV PYTHONUNBUFFERED=1
@@ -30,7 +30,7 @@ ENV SEMGREP_APP_TOKEN="896b59e81d3e4d0484f91a6b648804dd9f372389b32c42f2756e901b0
 
 # for MCP scanning ( purposefully left out the command that installs cs certificates ) 
 #installing npm
-RUN  apt install -y npm 
+# RUN  apt install -y npm 
 
 
 

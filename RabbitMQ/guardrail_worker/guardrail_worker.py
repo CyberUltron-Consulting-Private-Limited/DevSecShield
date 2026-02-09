@@ -24,7 +24,7 @@ try:
         #broker url
         username = os.getenv("RABBIT_ADMIN_USERNAME")
         password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+        broker_url = f"amqp://{username}:{password}@13.203.233.15:4672"
 
         #mongo url
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
@@ -45,7 +45,7 @@ try:
         #broker url
         username = os.getenv("RABBIT_ADMIN_USERNAME")
         password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@localhost:5672"
+        broker_url = f"amqp://{username}:{password}@localhost:4672"
 
         #mongo url
         mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")

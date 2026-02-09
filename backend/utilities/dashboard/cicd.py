@@ -40,50 +40,50 @@ def get_cicd_vuln_chart_data(results_list : list[tuple[list[dict],datetime.date]
                     vulns_over_time_chart_data[date_key]["Medium"] += 1
                 elif impact == "Low":
                     vulns_over_time_chart_data[date_key]["Low"] += 1
-    # return vulns_over_time_chart_data
+    return vulns_over_time_chart_data
 
-    mock_data = {
-        "2026-02-07": {
-            "Critical": 10,
-            "High": 60,
-            "Medium": 0,
-            "Low": 0,
-        } , 
-        "2026-02-08": {
-            "Critical": 10,
-            "High": 20,
-            "Medium": 20,
-            "Low": 0,
-        } , 
-        "2026-02-09": {
-            "Critical": 10,
-            "High": 20,
-            "Medium": 0,
-            "Low": 40,
-        } , 
-        "2026-02-10": {
-            "Critical": 0,
-            "High": 20,
-            "Medium": 30,
-            "Low": 40,
-        } , 
-        "2026-02-11": {
-            "Critical": 10,
-            "High": 20,
-            "Medium": 30,
-            "Low": 40,
-        } , 
-        "2026-02-12": {
-            "Critical": 100,
-            "High": 20,
-            "Medium": 30,
-            "Low": 40,
-        } , 
-        "2026-02-13": {
-            "Critical": 10,
-            "High": 20,
-            "Medium": 30,
-            "Low": 40,
-        } , 
-    }
-    return mock_data
+    # mock_data = {
+    #     "2026-02-07": {
+    #         "Critical": 10,
+    #         "High": 60,
+    #         "Medium": 0,
+    #         "Low": 0,
+    #     } , 
+    #     "2026-02-08": {
+    #         "Critical": 10,
+    #         "High": 20,
+    #         "Medium": 20,
+    #         "Low": 0,
+    #     } , 
+    #     "2026-02-09": {
+    #         "Critical": 10,
+    #         "High": 20,
+    #         "Medium": 0,
+    #         "Low": 40,
+    #     } , 
+    #     "2026-02-10": {
+    #         "Critical": 0,
+    #         "High": 20,
+    #         "Medium": 30,
+    #         "Low": 40,
+    #     } , 
+    #     "2026-02-11": {
+    #         "Critical": 10,
+    #         "High": 20,
+    #         "Medium": 30,
+    #         "Low": 40,
+    #     } , 
+    #     "2026-02-12": {
+    #         "Critical": 100,
+    #         "High": 20,
+    #         "Medium": 30,
+    #         "Low": 40,
+    #     } , 
+    #     "2026-02-13": {
+    #         "Critical": 10,
+    #         "High": 20,
+    #         "Medium": 30,
+    #         "Low": 40,
+    #     } , 
+    # }
+    # return mock_data

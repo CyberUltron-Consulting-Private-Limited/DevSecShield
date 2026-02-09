@@ -7,8 +7,8 @@ services:
     container_name: devsecshield-rabbitmq
     restart: always
     ports:
-      - 5672:5672
-      - 15672:15672
+      - 4672:5672 # changed from 5672 to 4672 to avoid conflict with other services
+      - 10672:15672 # changed from 15672 to 10672 to avoid conflict with other services
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBIT_ADMIN_USERNAME}
       RABBITMQ_DEFAULT_PASS: ${RABBIT_ADMIN_PASSWORD}
@@ -41,10 +41,10 @@ services:
     container_name: devsecshield-postgres
     volumes:
       - devsecshield_postgres_data:/var/lib/postgresql/data/
-    expose:
-      - 5432
+    # expose:
+    #   - 5432
     ports:
-      - 5433:5432
+      - 4433:5432 # changed from 5433 to 4433 to avoid conflict with other services
     environment:
       - POSTGRES_USER=${PG_USER}
       - POSTGRES_PASSWORD=${PG_USER_PASS}

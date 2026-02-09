@@ -83,3 +83,6 @@ class CicdLogs(TypedDict, total=False):
 
     # results
     results: dict | None = None
+
+    # error
+    error: str | None = None

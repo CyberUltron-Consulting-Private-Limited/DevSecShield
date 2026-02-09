@@ -77,17 +77,25 @@ function TeamSwitcher() {
       <DropdownMenuTrigger asChild >
         <Button
           variant="ghost"
-          className="w-full has-[>svg]:px-1 justify-between gap-2  h-auto rounded-md hover:bg-zinc-800 text-white hover:text-white cursor-pointer font-medium"
+          className="w-full has-[>svg]:px-1 justify-between gap-2 h-auto rounded-md hover:bg-zinc-800 text-white hover:text-white cursor-pointer font-medium"
         >
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-600">
-              <Users className="size-4 text-white" />
+          <div className="flex flex-col items-start gap-0.5 min-w-0 flex-1">
+            <div className="flex items-center gap-2 w-full">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-600">
+                <Users className="size-4 text-white" />
+              </div>
+              <span className="truncate text-left flex flex-col gap-0.5">
+                {isLoading
+                  ? "Loading…"
+                  : currentTeam?.team_name ?? "Select team"}
+                {currentTeam != null && (
+                  <span className="text-xs text-zinc-400 font-mono tabular-nums">
+                    {currentTeam.team_credit_balance ?? 0} credits
+                  </span>
+                )}
+              </span>
             </div>
-            <span className="truncate text-left">
-              {isLoading
-                ? "Loading…"
-                : currentTeam?.team_name ?? "Select team"}
-            </span>
+            
           </div>
           <ChevronDown className="size-4 shrink-0 text-zinc-400" />
         </Button>
@@ -109,14 +117,19 @@ function TeamSwitcher() {
               >
                 <Link
                   href={`/${team.team_id}`}
-                  className="flex items-center gap-2 px-2 py-1.5"
+                  className="flex items-center justify-between gap-2 px-2 py-1.5 w-full"
                 >
-                  {isActive ? (
-                    <Check className="size-4 shrink-0 text-blue-400" />
-                  ) : (
-                    <span className="size-4 shrink-0" />
-                  )}
-                  <span className="truncate">{team.team_name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isActive ? (
+                      <Check className="size-4 shrink-0 text-blue-400" />
+                    ) : (
+                      <span className="size-4 shrink-0" />
+                    )}
+                    <span className="truncate">{team.team_name}</span>
+                  </div>
+                  <span className="text-xs text-zinc-500 font-mono tabular-nums shrink-0">
+                    {team.team_credit_balance ?? 0}
+                  </span>
                 </Link>
               </DropdownMenuItem>
             );

@@ -758,12 +758,42 @@ export interface TeamDashboardData {
     high_and_critical_vuln_in_past_month: Record<string, number>
 }
 
+/** Utilization item per team (key is string representation of team) */
+export interface TeamsDashboardUtilizationItem {
+    sast_scans: number
+    iac_scans: number
+    sbom_sca_scans: number
+    guardrails_integrations: number
+    cicd_integrations: number
+}
+
+/** Credit balance item per team */
+export interface TeamsDashboardCreditItem {
+    credit_balance: number
+}
+
+/** GET /teams/dashboard - matches backend generate_team_list_dashboard_data */
+export interface TeamsDashboardData {
+    team_utilization_data: Record<string, TeamsDashboardUtilizationItem>
+    credit_balance_data: Record<string, TeamsDashboardCreditItem>
+}
+
 const getTeamDashboard = async (team_id: number): Promise<TeamDashboardData> => {
     try {
         const response = await api.get(`/team/${team_id}/dashboard`)
         return response.data as TeamDashboardData
     } catch (error) {
         showErrorToast(error, "Error fetching team dashboard")
+        throw error
+    }
+}
+
+const getTeamsDashboard = async (): Promise<TeamsDashboardData> => {
+    try {
+        const response = await api.get("/teams/dashboard")
+        return response.data as TeamsDashboardData
+    } catch (error) {
+        showErrorToast(error, "Error fetching teams dashboard")
         throw error
     }
 }
@@ -838,9 +868,99 @@ export {
     createTeam,
     getTeam,
     getTeamDashboard,
+    getTeamsDashboard,
     updateTeam,
     removeOrAddTeamMembers,
     deleteTeam
+}
+
+// -------------------------------------------------------------- Admin API Routes --------------------------------------------------------------
+
+export interface AdminCheckSuperuserResponse {
+    message: string
+    user_id: number
+    email: string
+}
+
+export interface AdminUser {
+    user_id: number
+    user_email: string
+    user_first_name: string
+    user_last_name: string
+    user_team_memberships: [number, string][]
+    user_is_superuser: boolean
+    user_default_team_id: number | null
+}
+
+export interface AdminTeam {
+    team_id: number
+    team_name: string
+    team_description: string | null
+    team_members: string[]
+    team_created_at: string
+    team_credit_balance: number
+    scans_count: number
+    guardrails_integrations_count: number
+    cicd_integrations_count: number
+    sast_scans_count: number
+    iac_scans_count: number
+    sbom_sca_scans_count: number
+}
+
+const checkSuperuser = async (): Promise<AdminCheckSuperuserResponse> => {
+    const response = await api.get<AdminCheckSuperuserResponse>("/admin/check_superuser")
+    return response.data
+}
+
+const getAdminUsers = async (): Promise<AdminUser[]> => {
+    const response = await api.get<AdminUser[]>("/admin/users")
+    return response.data
+}
+
+const getAdminTeams = async (): Promise<AdminTeam[]> => {
+    const response = await api.get<AdminTeam[]>("/admin/teams")
+    return response.data
+}
+
+const toggleAdminAccess = async (user_id: number) => {
+    const response = await api.post("/admin/toggle_admin_access", { user_id })
+    toast.success(response.data?.message || "Admin access updated successfully")
+    return response.data
+}
+
+const updateTeamCreditBalance = async (team_id: number, credit_balance: number) => {
+    const response = await api.post("/admin/update", { team_id, credit_balance })
+    toast.success(response.data?.message || "Team credit balance updated successfully")
+    return response.data
+}
+
+export interface CreateAdminUserData {
+    email: string
+    password: string
+    first_name: string
+    last_name: string
+}
+
+const createAdminUser = async (data: CreateAdminUserData) => {
+    const response = await api.post("/admin/create_admin_user", data)
+    toast.success(response.data?.message || "Admin user created successfully")
+    return response.data
+}
+
+const deleteUser = async (user_id: number) => {
+    const response = await api.delete("/admin/delete_user", { data: { user_id } })
+    toast.success(response.data?.message || "User deleted successfully")
+    return response.data
+}
+
+export {
+    checkSuperuser,
+    getAdminUsers,
+    getAdminTeams,
+    toggleAdminAccess,
+    updateTeamCreditBalance,
+    createAdminUser,
+    deleteUser,
 }
 
 // -------------------------------------------------------------- IAC API Routes --------------------------------------------------------------
@@ -2090,6 +2210,10 @@ export interface CicdLog {
     results: any | null
     /** SAST (and similar) dashboard metrics; generated per log from results */
     dashboard?: SastDashboardData | null
+    /** Credits consumed by this scan; may be null for older logs */
+    credits_consumed?: number | null
+    /** Error message when scan failed; may be null */
+    error?: string | null
 }
 
 /** Per-date counts by impact (Critical, High, Medium, Low). Keys are date strings YYYY-MM-DD. */

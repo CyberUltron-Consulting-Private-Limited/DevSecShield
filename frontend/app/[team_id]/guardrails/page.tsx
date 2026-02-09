@@ -86,6 +86,8 @@ export default function GuardrailsPage() {
     mutationFn: (integration_id: number) => deleteGuardrailsIntegration(Number(team_id), integration_id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guardrails-integrations', team_id] });
+      setDeleteDialogOpen(false);
+      setSelectedIntegration(null);
       toast.success('Guardrails integration deleted successfully');
     },
     onError: (error) => {

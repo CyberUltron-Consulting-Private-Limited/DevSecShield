@@ -3,9 +3,8 @@ from fastapi import HTTPException, status
 from backend.new_models import Team, Scan
 from sqlmodel import Session, select 
 from backend.get_db import get_db
+from backend.get_db import dev_environment
 console = Console()
-
-dev_environment = True # for local development ⚠️⚠️
 
 def check_if_team_has_enough_credits(
     team_id: int,
@@ -65,14 +64,16 @@ def deduct_credits_from_team(
             if not team:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
             
+            original_credit_balance = team.credit_balance
             new_credit_balance = team.credit_balance - credits
             team.credit_balance = new_credit_balance
             session.add(team)
             session.commit()
             session.refresh(team)
 
-            if team.credit_balance != new_credit_balance:
+            if team.credit_balance == original_credit_balance:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team, please try again later")
+            console.print(f"{credits} credits 🪙 deducted from team {team_id} : {original_credit_balance} -> {new_credit_balance}",style="bold yellow2")
             return team
 
         
@@ -100,32 +101,14 @@ def deduct_credits_from_team_for_message(
     """
     try:
         credit_deduction = 0.006
-
-        engine = get_db(dev_environment=dev_environment)
-        
-        if team_object:
-            team_object.credit_balance -= credit_deduction
-            return team_object
- 
-        with Session(engine) as session:
-            team = session.exec(select(Team).where(Team.id == team_id)).first()
-            if not team:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-            
-            new_credit_balance = team.credit_balance - credit_deduction
-            team.credit_balance = new_credit_balance
-            session.add(team)
-            session.commit()
-            session.refresh(team)
-            if team.credit_balance != new_credit_balance:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team for message, please try again later")
-            return team
+        return deduct_credits_from_team(team_id, credit_deduction)
     except HTTPException as e:
         raise e
     except Exception as e:
         console.print(f"Error in deduct_credits_from_team_for_message: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team for message, please try again later")
 
+        
 
 def check_if_team_has_enough_credits(
     team_id: int, 

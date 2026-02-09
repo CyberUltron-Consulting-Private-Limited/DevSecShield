@@ -1,6 +1,7 @@
 from sqlmodel import Session, select
 from sqlalchemy.engine import Engine
-from backend.new_models import Scan, GuardrailsIntegration, CicdIntegration
+from backend.new_models import Scan, GuardrailsIntegration, CicdIntegration , User , Team
+from sqlalchemy import or_
 from datetime import datetime, timedelta
 
 def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
@@ -78,6 +79,81 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         "high_and_critical_vuln_in_past_month": high_and_critical_vuln_in_past_month
     }
 
+
+def generate_team_list_dashboard_data(user_id: int, engine: Engine) -> dict:
+    """
+    Calculate the data for the team list dashboard.
+    Arguments :
+    - user_id : int
+    - engine : Engine
+    Returns :
+    - dict
+
+    Data : 
+    
+    1. Team utilization data 
+        for every team : 
+            - number of sast scans run 
+            - number of iac scans run 
+            - number of sbom sca scans run 
+            - number of guardrails integrations 
+            - number of cicd integrations 
+    2. Credit balance data 
+        for every team : 
+            - credit balance 
+    
+    Data will look like this : 
+    {
+        "team_utilization_data": {
+            f"{team_id}-{team_name}": {
+                "sast_scans": int,
+                "iac_scans": int,
+                "sbom_sca_scans": int,
+                "guardrails_integrations": int,
+                "cicd_integrations": int
+            } , ..........
+        },
+        "credit_balance_data": {
+            f"{team_id}-{team_name}": {
+                "credit_balance": int
+            } , ..........
+        }
+    }
+    """
+    team_utilization_data = {}
+    credit_balance_data = {}
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.id == user_id)).first()
+            
+        or_statements = []
+        for membership in user.team_memberships:
+            or_statements.append(Team.id == membership.team_id)
+        team_objects = session.exec(select(Team).where(or_(*or_statements))).all()
+        for team_object in team_objects:
+            team_utilization_item = {"sast_scans": 0, "iac_scans": 0, "sbom_sca_scans": 0, "guardrails_integrations": 0, "cicd_integrations": 0}
+            credit_balance_item = {"credit_balance": team_object.credit_balance}
+            scans_in_team = team_object.scans
+            for scan in scans_in_team:
+                if scan.scan_type == "sast":
+                    team_utilization_item["sast_scans"] += 1
+                elif scan.scan_type == "iac":
+                    team_utilization_item["iac_scans"] += 1
+                elif scan.scan_type == "sbom_sca":
+                    team_utilization_item["sbom_sca_scans"] += 1
+            team_utilization_item["guardrails_integrations"] = len(team_object.guardrails_integrations)
+            team_utilization_item["cicd_integrations"] = len(team_object.cicd_integrations)
+    
+
+            team_utilization_data[f"{team_object.id}-{team_object.name}"] = team_utilization_item
+            credit_balance_data[f"{team_object.id}-{team_object.name}"] = credit_balance_item
+    
+    return {
+        "team_utilization_data": team_utilization_data,
+        "credit_balance_data": credit_balance_data
+    }
+    
+
+            
     
     
     

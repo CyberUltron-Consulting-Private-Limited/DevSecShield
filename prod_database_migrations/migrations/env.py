@@ -4,7 +4,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlmodel import SQLModel
 from alembic import context
-from backend.models import *
+from backend.new_models import *
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -16,7 +16,7 @@ from helpers.context.scan_context import validate_dict_with_context, validate_di
 
 console = Console()
 
-# os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+# os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 #====================================== Setting credentials to connect to broker ================================================================
 try:
@@ -28,7 +28,7 @@ try:
         #broker url
         username = os.getenv("RABBIT_ADMIN_USERNAME")
         password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+        broker_url = f"amqp://{username}:{password}@13.203.233.15:4672"
 
         #mongo url
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
@@ -49,7 +49,7 @@ try:
         #broker url
         username = os.getenv("RABBIT_ADMIN_USERNAME")
         password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@localhost:5672"
+        broker_url = f"amqp://{username}:{password}@localhost:4672"
 
         #mongo url
         mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
@@ -107,6 +107,11 @@ try:
             if zip_dict_context:
                 zip_context = validate_dict_with_zip_context(zip_dict_context)
 
+            # for testing purposes , using a mock result
+            # time.sleep(10)
+            # with open("C:\\Users\\HP\\Desktop\\DevSecShield\\RabbitMQ\\worker\\archive\\worker_sast_agent_results_testing.json", "r") as f:
+            #     results = json.load(f)
+            # return results
             
             # STEP [ 2 ] : =========== Initialize the agent , and run the agent ======================
             if repo_context:

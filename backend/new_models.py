@@ -33,7 +33,7 @@ class Team(SQLModel,table=True):
     name : str = Field(default="New Team")
     description : str | None = Field(default=None)
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
-    credit_balance : int = Field(default=0)
+    credit_balance : float = Field(default=0)
     integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON)) 
     settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
 

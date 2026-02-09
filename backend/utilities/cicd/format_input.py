@@ -3,7 +3,7 @@ from fastapi import UploadFile, HTTPException, status
 from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
-
+from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
 console = Console()
 
 async def format_cicd_input(
@@ -31,7 +31,7 @@ async def format_cicd_input(
                 if sast_scan_settings is None:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Sast scan settings not found")
                 cicd_kwargs["app_lang"] = sast_scan_settings.get("app_lang")
-                cicd_kwargs["exclude_path_arrays"] = sast_scan_settings.get("exclude_path_arrays")
+                cicd_kwargs["exclude_path_arrays"] = sanitize_path_patterns(sast_scan_settings.get("exclude_path_arrays")) if sast_scan_settings.get("exclude_path_arrays") else None
                 
                 console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
                 return cicd_kwargs

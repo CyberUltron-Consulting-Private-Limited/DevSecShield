@@ -20,14 +20,13 @@ from fastapi_throttle import RateLimiter
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
 from rich.console import Console
+from backend.get_db import dev_environment
 console = Console()
 
 
 router = APIRouter(
     tags=["auth"]
 )
-
-dev_environment = True # for local development
 
 
 limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
@@ -72,7 +71,7 @@ async def create_user(data: UserSignup):
             )
         with Session(engine) as session:
             new_team = Team(
-                name=f"{data.first_name}'s Team",
+                name=f"{data.first_name}'s Default Team",
                 description=f"Default team for {data.first_name}",
             )
             session.add(new_team)
@@ -209,7 +208,7 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
 async def get_user(Authorization: Annotated[str | None, Header()] = None):
     try:
         engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=True)
+        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
         
         if Authorization is None:
             raise HTTPException(
@@ -241,7 +240,7 @@ async def send_verification_code(data: CodeSend):
     - email: str
     """
     try:
-        engine = get_db(dev_environment=True)
+        engine = get_db(dev_environment=dev_environment)
         mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
 
 

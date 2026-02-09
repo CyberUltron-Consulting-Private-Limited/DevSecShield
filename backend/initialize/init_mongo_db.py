@@ -2,7 +2,6 @@ import os
 from sqlmodel import SQLModel, create_engine
 from pymongo import MongoClient
 from rich.console import Console
-from backend.models import *
 import argparse
 from dotenv import load_dotenv
 

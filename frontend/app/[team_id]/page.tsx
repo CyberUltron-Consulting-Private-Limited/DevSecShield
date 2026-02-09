@@ -153,16 +153,8 @@ export default function TeamPage() {
 
   return (
     <div className="flex flex-col h-full min-h-[calc(100vh-2rem)] bg-neutral-900">
-      <header className="px-6 py-4 border-b border-border">
-        <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2 flex items-center gap-2">
-          Team Dashboard
-        </h1>
-        <p className="text-zinc-600 dark:text-zinc-400">
-          Overview of scans, integrations, and vulnerabilities for this team.
-        </p>
-      </header>
 
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-6 overflow-auto mt-5">
         {/* Your Team's Recent Activity — bar, radial, area charts */}
         <section className="pb-6">
           <h2 className="text-base font-medium flex items-center gap-2 mb-1">

@@ -13,13 +13,13 @@ from sqlmodel import Session, select
 from rich.console import Console
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
+from backend.get_db import dev_environment
 
 class StartScanData(BaseModel):
     input_prompt: str
 
 console = Console()
 
-dev_environment = True # for local development
 router = APIRouter(tags=["Guardrails Public API"])
 
 

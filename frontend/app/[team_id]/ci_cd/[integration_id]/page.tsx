@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/accordion";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { SastScanSettingsForm } from "@/components/sast-scan-settings-form";
+import { sanitizePathArrays } from "@/components/path-arrays-input";
 import {
   ChartContainer,
   ChartTooltip,
@@ -562,6 +563,8 @@ export default function CicdIntegrationDashboardPage() {
                       <TableRow>
                         <TableHead>Scan ID</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Credits</TableHead>
+                        <TableHead>Error</TableHead>
                         <TableHead>Created At</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -574,6 +577,14 @@ export default function CicdIntegrationDashboardPage() {
                           </TableCell>
                           <TableCell>
                             {getStatusBadge(log.status)}
+                          </TableCell>
+                          <TableCell className="text-zinc-600 dark:text-zinc-400 font-mono tabular-nums">
+                            {log.credits_consumed != null ? log.credits_consumed : "—"}
+                          </TableCell>
+                          <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[200px]" title={log.error != null ? String(log.error) : undefined}>
+                            <span className="block truncate">
+                              {log.error != null ? String(log.error) : "—"}
+                            </span>
                           </TableCell>
                           <TableCell className="text-zinc-600 dark:text-zinc-400">
                             {formatDate(log.created_at)}
@@ -619,11 +630,12 @@ export default function CicdIntegrationDashboardPage() {
                     excludePathArrays={scanSettingsSast.exclude_path_arrays}
                     onExcludePathArraysChange={(value) => setScanSettingsSast((prev) => ({ ...prev, exclude_path_arrays: value }))}
                     onSaveClick={() => {
+                      const sanitized = sanitizePathArrays(scanSettingsSast.exclude_path_arrays);
                       updateCicdMutation.mutate({
                         scan_settings: {
                           sast: {
                             app_lang: scanSettingsSast.app_lang,
-                            exclude_path_arrays: scanSettingsSast.exclude_path_arrays.length > 0 ? scanSettingsSast.exclude_path_arrays : null,
+                            exclude_path_arrays: sanitized.length > 0 ? sanitized : null,
                           },
                         },
                       });

@@ -333,8 +333,10 @@ class CodebaseContext(BaseContextManager):
             
             
             # for testing
+            console.print(f"📂 Excluded documents ------------------------------------------------------------------- ",style="bold yellow1")
             for included in self.metadata["excluded_documents"]:
                 console.print(f" -{included}",style = "dim red")
+            console.print(f"📂 Included documents ------------------------------------------------------------------- ",style="bold yellow1")
             for included in self.metadata["included_documents"]:
                 console.print(f" -{included}",style = "dim green")
             

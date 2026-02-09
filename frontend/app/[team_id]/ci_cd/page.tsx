@@ -352,11 +352,11 @@ export default function CicdPage() {
                 value={formScanType}
                 onValueChange={(value) => setFormScanType(value as "sast")}
               >
-                <SelectTrigger id="scan_type">
+                <SelectTrigger id="scan_type" className="cursor-pointer">
                   <SelectValue placeholder="Select scan type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sast">SAST</SelectItem>
+                  <SelectItem value="sast" className="cursor-pointer">SAST</SelectItem>
                 </SelectContent>
               </Select>
             </div>
