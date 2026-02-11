@@ -1,5 +1,5 @@
 from rich.console import Console
-from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability
+from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability
 from pydantic import BaseModel, Field , create_model
 from typing import Annotated, Literal
 import urllib.parse
@@ -33,6 +33,16 @@ class OutputModelManager:
             return dependency_output_model
         except Exception as e:
             console.print(f"Error in getting dependency output model: {e}",style="dim red")
+            raise e
+    
+    def get_llm_benchmarking_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting LLM Benchmarking Output Model ....",style="dim yellow")
+            llm_benchmarking_output_model = self.get_output_model(LLMBenchmarkingVulnerability)
+            console.print(f"LLM Benchmarking Output Model generated successfully",style="bold green")
+            return llm_benchmarking_output_model
+        except Exception as e:
+            console.print(f"Error in getting llm benchmarking output model: {e}",style="dim red")
             raise e
     
     def get_base_output_model(self) -> type[BaseModel]:
@@ -149,7 +159,7 @@ class OutputModelManager:
             console.print(f"Error in fetching recent CVEs: {e}",style="dim red")
             raise e
     
-    def create_output_model(self,cves_enum: Enum, VulnerabilityModel : type[BaseVulnerability] | type[CodebaseVulnerability]) -> type[BaseModel]:
+    def create_output_model(self,cves_enum: Enum, VulnerabilityModel : type[BaseVulnerability] | type[CodebaseVulnerability] | type[LLMBenchmarkingVulnerability]) -> type[BaseModel]:
         try:
             console.print(f"Creating Output Model ....",style="dim yellow")
             

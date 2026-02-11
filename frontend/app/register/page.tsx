@@ -1,13 +1,12 @@
-// app/login/page.tsx
 "use client"
 
-import { useRouter } from "next/navigation"
+import { Suspense } from "react"
 import LoginForm from "@/components/auth/LoginForm"
 
-
-export default function LoginPage() {
-
+export default function RegisterPage() {
   return (
-    <LoginForm method="signup" />
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background" />}>
+      <LoginForm method="signup" />
+    </Suspense>
   )
 }

@@ -21,7 +21,7 @@ import {
   Loader2,
   Eye,
 } from "lucide-react";
-import { Mode } from "@/app/home/sast/[conversation_id]/page";
+import { Mode } from "@/utils/backend_api";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { LeakageConversationResponse, startLeakageScan, getLeakageExportResults, reinitializeLeakageScan } from "@/utils/backend_api";
 import { toast } from "sonner";

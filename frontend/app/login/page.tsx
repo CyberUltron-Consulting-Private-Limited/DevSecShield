@@ -1,13 +1,12 @@
 "use client"
 
+import { Suspense } from "react"
 import LoginForm from "@/components/auth/LoginForm"
 
-
 export default function LoginPage() {
-
- 
-
   return (
-    <LoginForm method="login"  />
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-background" />}>
+      <LoginForm method="login" />
+    </Suspense>
   )
 }

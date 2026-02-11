@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getLeakageConversationMessages } from "@/utils/backend_api";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
-import { Mode } from "@/app/home/sast/[conversation_id]/page";
+import { Mode } from "@/utils/backend_api";
 
 export default function LeakagePage() {
   const [mode, setMode] = useState<Mode>("unknown");

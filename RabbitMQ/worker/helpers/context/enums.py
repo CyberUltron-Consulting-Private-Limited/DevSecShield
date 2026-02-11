@@ -12,6 +12,19 @@ class OWASPTop10(Enum):
     SECURITY_LOGGING_AND_MONITORING_FAILURES = "A09:2021 - Security Logging and Monitoring Failures"
     SERVER_SIDE_REQUEST_FORGERY = "A10:2021 - Server-Side Request Forgery (SSRF)"
 
+
+class OWASPTop10LLM(Enum):
+    PROMPT_INJECTION = "LLM01:2025 - Prompt Injection"
+    INSECURE_OUTPUT_HANDLING = "LLM02:2025 - Insecure Output Handling"
+    TRAINING_DATA_POISONING = "LLM03:2025 - Training Data Poisoning"
+    MODEL_DENIAL_OF_SERVICE = "LLM04:2025 - Model Denial of Service"
+    SUPPLY_CHAIN_VULNERABILITIES = "LLM05:2025 - Supply Chain Vulnerabilities"
+    SENSITIVE_INFORMATION_DISCLOSURE = "LLM06:2025 - Sensitive Information Disclosure"
+    INSECURE_PLUGIN_DESIGN = "LLM07:2025 - Insecure Plugin Design"
+    EXCESSIVE_AGENCY = "LLM08:2025 - Excessive Agency"
+    OVERRELIANCE = "LLM09:2025 - Overreliance"
+    MODEL_THEFT = "LLM10:2025 - Model Theft"
+
 class ComplianceControls(Enum):
     # === ISO 27001 ===
     ISO27001_A5_INFORMATION_SECURITY_POLICIES = "ISO 27001 - A.5 Information Security Policies"

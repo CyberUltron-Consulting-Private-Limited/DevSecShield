@@ -6,6 +6,7 @@ import { toast } from "sonner"
 // -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------
 
 export type RepoMode = "github" | "gitlab" | "bitbucket";
+export type Mode = RepoMode | "unknown";
 export type SastAppLang = "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin";
 
 export interface GithubContextSchema {
@@ -1039,7 +1040,7 @@ export interface IACConversationResponse {
   scan_metadata?: Record<string, unknown> | null
   data: any
   messages: IACConversationMessage[]
-  dashboard?: unknown
+  dashboard?: SastDashboardData | null
   integration_settings?: Record<string, unknown> | null
 }
 

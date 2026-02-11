@@ -52,3 +52,23 @@ class FallbackCVEEnum(Enum):
     cve_2025_49706 = "Critical SharePoint spoofing vulnerability enabling unauthenticated access."  # SharePoint critical. :contentReference[oaicite:21]{index=21}
 
 
+
+
+class LLMBenchmarkingVulnerability(BaseModel):
+    title : str = Field(description="The title of the vulnerability")
+    description : str = Field(description="The description of the vulnerability")
+    impact : Impact = Field(description="The impact of the vulnerability")
+    owasp_top_10_llm : list[OWASPTop10LLM] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
+    suggested_fix : str = Field(description="The suggested fix for the vulnerability")
+
+
+class MCPVulnerability(BaseModel):
+    title : str = Field(description="The title of the vulnerability for the tool")
+    description : str = Field(description="The description of the vulnerability for the tool")
+    impact : Impact = Field(description="The impact of the vulnerability")
+    owasp_top_10 : list[OWASPTop10] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
+    owasp_top_10_llm : list[OWASPTop10LLM] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
+    compliance_controls : list[ComplianceControls] = Field(description="A list of compliance controls that this vulnerability is related to")
+    suggested_fix : str = Field(description="The suggested fix for the vulnerability")
+
+

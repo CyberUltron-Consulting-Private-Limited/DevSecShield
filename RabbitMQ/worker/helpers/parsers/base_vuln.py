@@ -1,10 +1,22 @@
 import json
-from helpers.context.schema import BaseVulnerability , CodebaseVulnerability , DependencyVulnerability , OWASPTop10 , ComplianceControls , FallbackCVEEnum , Impact
 from typing import Any, Dict
+
 from rich.console import Console
+
+from helpers.context.schema import (
+    BaseVulnerability,
+    CodebaseVulnerability,
+    ComplianceControls,
+    DependencyVulnerability,
+    FallbackCVEEnum,
+    Impact,
+    MCPVulnerability,
+    OWASPTop10,
+    OWASPTop10LLM,
+)
 console = Console()
 
-def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | type[DependencyVulnerability]) -> dict:
+def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | type[DependencyVulnerability] | type[MCPVulnerability]) -> dict:
     try:
         # initial dictionary dump 
         dumped = data.model_dump()
@@ -45,6 +57,15 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
             impact : type[Impact] = dumped["impact"]
             dumped["impact"] = impact.value
             console.print(f"✅ Impact parsed successfully",style="bold green")
+        
+        if "owasp_top_10_llm" in dumped:
+            console.print(f"⚠️ Owasp top 10 LLM found in dumped,parsing it...",style="bold yellow")
+            owasp_top_10_llm_list : list[type[OWASPTop10LLM]] = dumped["owasp_top_10_llm"]
+            temp_owasp_top_10_llm = {}
+            for owasp_llm in owasp_top_10_llm_list:
+                temp_owasp_top_10_llm[owasp_llm.name] = owasp_llm.value
+            dumped["owasp_top_10_llm"] = temp_owasp_top_10_llm
+            console.print(f"✅ Owasp top 10 LLM parsed successfully",style="bold green")
         
         console.print(f"✅ Vulnerability parsed successfully",style="bold green")
         return dumped

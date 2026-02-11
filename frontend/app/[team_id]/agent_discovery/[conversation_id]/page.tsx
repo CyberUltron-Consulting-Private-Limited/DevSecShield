@@ -10,9 +10,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDiscoveryConversationMessages } from "@/utils/backend_api";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
-import { Mode } from "@/app/home/sast/[conversation_id]/page";
+import { Mode } from "@/utils/backend_api";
 
-export default function DiscoveryPage() {
+export default function DiscoveryPage() { 
   const [mode, setMode] = useState<Mode>("unknown");
   const [repo_url, setRepoUrl] = useState<string>("");
   const [PAT, setPAT] = useState<string>("");

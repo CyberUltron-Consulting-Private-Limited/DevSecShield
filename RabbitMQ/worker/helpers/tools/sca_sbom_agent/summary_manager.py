@@ -72,7 +72,7 @@ class SBOMSCASummaryManager(BaseSummaryManager,OutputModelManager):
         super().__init__(
             summary_output_model=output_model,
             refine_prompt_string = RefinePrompt,
-            map_prompt_string = MapPromptForSBOMFile,
+            map_prompt_string = MapPrompt,
             combine_prompt_string = CombinePrompt,
             summary_starting_string="Dependency Vulnerabilities Identified in the codebase are as follows : \n\n",
         )
@@ -143,7 +143,7 @@ class SBOMSCASummaryManagerForSBOMFile(BaseSummaryManager,OutputModelManager):
         super().__init__(
             summary_output_model=output_model,
             refine_prompt_string = RefinePrompt,
-            map_prompt_string = MapPrompt,
+            map_prompt_string = MapPromptForSBOMFile,
             combine_prompt_string = CombinePrompt,
             summary_starting_string="Dependency Vulnerabilities Identified in the codebase are as follows : \n\n",
         )
