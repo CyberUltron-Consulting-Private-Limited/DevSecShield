@@ -1,16 +1,21 @@
 import json
 from typing import Literal, Optional
-from celery import Celery
+from celery import Celery, Task
 from rich.console import Console
 from celery.result import AsyncResult
 import time 
 from dotenv import load_dotenv
 import os
 import sys
+from helpers.context.progress_writer import StateUpdateWriter
+from helpers.tools.mcp_agent.context import MCPContext
+from helpers.tools.mcp_agent.main import MCPAgent
 from helpers.tools.sast_agent.main import SASTAgent
 from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
 from helpers.tools.iac_agent.main import IACAgent
 from helpers.tools.iac_agent.context import IACTypeContext, validate_dict_with_iac_context
+from helpers.tools.llm_agent.context import LLMBenchmarkingContext
+from helpers.tools.llm_agent.main import LLMBenchmarkingAgent
 from helpers.context.s3_utils import delete_file
 from helpers.context.scan_context import validate_dict_with_context, validate_dict_with_zip_context, validate_dict_with_file_context
 
@@ -89,8 +94,9 @@ try:
     If you are enabling this , then make sure the frontend polls even status is "started" , becase as of now it only polls when status is "pending".
     """
     
-    @app.task(track_started=True)
+    @app.task(track_started=True , bind=True)
     def sast(
+        self,
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],
         repo_dict_context: dict | None = None , 
         zip_dict_context: dict | None = None , 
@@ -107,11 +113,7 @@ try:
             if zip_dict_context:
                 zip_context = validate_dict_with_zip_context(zip_dict_context)
 
-            # for testing purposes , using a mock result
-            # time.sleep(10)
-            # with open("C:\\Users\\HP\\Desktop\\DevSecShield\\RabbitMQ\\worker\\archive\\worker_sast_agent_results_testing.json", "r") as f:
-            #     results = json.load(f)
-            # return results
+            state_update_writer = StateUpdateWriter(self)
             
             # STEP [ 2 ] : =========== Initialize the agent , and run the agent ======================
             if repo_context:
@@ -119,6 +121,7 @@ try:
                     context=repo_context,
                     app_lang=app_lang,
                     exclude_path_arrays=exclude_path_arrays,
+                    state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
@@ -128,6 +131,7 @@ try:
                     zip_context=zip_context,
                     app_lang=app_lang,
                     exclude_path_arrays=exclude_path_arrays,
+                    state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
@@ -138,20 +142,21 @@ try:
         except Exception as e:
             console.print(f"Error in sast task: {str(e)}",style="bold red")
             raise e
-        finally:
-            if zip_context:
-                # delete the files from bucket 
-                if delete_file(zip_context.bucket_name, zip_context.object_name):
-                    console.print(f"Deleted zip file from bucket",style="bold green")
-                else:
-                    console.print(f"Error in deleting zip file from bucket",style="bold red")
+        # finally:
+        #     if zip_context:
+        #         # delete the files from bucket 
+        #         if delete_file(zip_context.bucket_name, zip_context.object_name):
+        #             console.print(f"Deleted zip file from bucket",style="bold green")
+        #         else:
+        #             console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered SAST task",style="bold green")
 
 
      # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
-    @app.task(track_started=True)
+    @app.task(track_started=True , bind=True)
     def sbom_sca(
+        self,
         repo_dict_context: dict | None = None , 
         zip_dict_context: dict | None = None , 
         file_dict_context: dict | None = None , 
@@ -169,12 +174,17 @@ try:
                 file_context = validate_dict_with_file_context(file_dict_context)
             else:
                 raise Exception("No context provided")
+
+            
+            state_update_writer = StateUpdateWriter(self)
+
             
 
             # STEP [ 3 ] : =========== Initialize the agent , and run the agent ======================
             if repo_context:
                 agent = SCASBOMAgent(
                     context=repo_context,
+                    state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
@@ -182,6 +192,7 @@ try:
             elif zip_context:
                 agent = SCASBOMAgent(
                     zip_context=zip_context,
+                    state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
@@ -189,6 +200,7 @@ try:
             elif file_context:
                 agent = SCASBOMAgent(
                     sbom_json_file_context=file_context,
+                    state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
@@ -199,25 +211,26 @@ try:
         except Exception as e:
             console.print(f"Error in sbom_sca task: {str(e)}",style="bold red")
             raise e
-        finally:
-            if zip_context:
-                if delete_file(zip_context.bucket_name, zip_context.object_name):
-                    console.print(f"Deleted zip file from bucket",style="bold green")
-                else:
-                    console.print(f"Error in deleting zip file from bucket",style="bold red")
-            if file_context:
-                if delete_file(file_context.bucket_name, file_context.object_name):
-                    console.print(f"Deleted file from bucket",style="bold green")
-                else:
-                    console.print(f"Error in deleting file from bucket",style="bold red")
+        # finally:
+        #     if zip_context:
+        #         if delete_file(zip_context.bucket_name, zip_context.object_name):
+        #             console.print(f"Deleted zip file from bucket",style="bold green")
+        #         else:
+        #             console.print(f"Error in deleting zip file from bucket",style="bold red")
+        #     if file_context:
+        #         if delete_file(file_context.bucket_name, file_context.object_name):
+        #             console.print(f"Deleted file from bucket",style="bold green")
+        #         else:
+        #             console.print(f"Error in deleting file from bucket",style="bold red")
 
        
     console.print(f"Registered SBOM SCA task",style="bold green")
 
 
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
-    @app.task(track_started=True)
+    @app.task(track_started=True , bind=True)
     def iac(
+        self,
         iac_dict_contexts: list[dict],
         repo_dict_context: dict | None = None , 
         zip_dict_context: dict | None = None , 
@@ -240,21 +253,25 @@ try:
                 raise Exception("IAC contexts not provided")
             else: 
                 iac_contexts = [validate_dict_with_iac_context(iac_dict_context) for iac_dict_context in iac_dict_contexts]
+
             
+            state_update_writer = StateUpdateWriter(self)
             
             # STEP [ 3 ] : =========== Initialize the agent , and run the agent ======================
             if repo_context:
                 agent = IACAgent(
                     context=repo_context,
                     iac_contexts=iac_contexts,
+                    state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()
+                result = agent.run_agent()  
                 parsed_output = agent.to_dict_list(result)
                 return parsed_output
             elif zip_context:
                 agent = IACAgent(
                     zip_context=zip_context,
                     iac_contexts=iac_contexts,
+                    state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
@@ -265,20 +282,89 @@ try:
         except Exception as e:
             console.print(f"Error in iac task: {str(e)}",style="bold red")
             raise e
-        finally:
-            if zip_context:
-                if delete_file(zip_context.bucket_name, zip_context.object_name):
-                    console.print(f"Deleted zip file from bucket",style="bold green")
-                else:
-                    console.print(f"Error in deleting zip file from bucket",style="bold red")
+        # finally:
+        #     if zip_context:
+        #         if delete_file(zip_context.bucket_name, zip_context.object_name):
+        #             console.print(f"Deleted zip file from bucket",style="bold green")
+        #         else:
+        #             console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered IAC task with context pattern",style="bold green")
 
 
 
+    @app.task(track_started=True, bind=True)
+    def mcp_scan(
+        self:Task,
+        mcp_dict_context: dict,
+        ):
+        
+        try:
+            state_update_writer = StateUpdateWriter(self)
+            mcp_context = MCPContext.model_validate_json(json.dumps(mcp_dict_context))
+            mcp_agent = MCPAgent(
+                mcp_context=mcp_context,
+                state_update_writer=state_update_writer,
+            )
+            result = mcp_agent.run_agent()
+            return result
+        except Exception as e:
+            console.print(f"Error in mcp_scan task: {str(e)}",style="bold red")
+            raise e
+    
+    @app.task(track_started=True, bind=True)
+    def llm_benchmark_scan(
+        self:Task,
+        llm_benchmark_dict_context: dict,
+        ):
+        try:
+            state_update_writer = StateUpdateWriter(self)
+            llm_benchmark_context = LLMBenchmarkingContext.model_validate_json(json.dumps(llm_benchmark_dict_context))
+            llm_benchmark_agent = LLMBenchmarkingAgent(
+                llm_benchmarking_context=llm_benchmark_context,
+                state_update_writer=state_update_writer,
+            )
+            result = llm_benchmark_agent.run_agent()
+            return result
+        except Exception as e:
+            console.print(f"Error in llm_benchmark_scan task: {str(e)}",style="bold red")
+            raise e
+
 
     # -------------------------------------------------- Estimation tasks -----------------------------------------------------------------------
 
+    
+    @app.task(track_started=True)
+    def mcp_estimation(
+        mcp_dict_context: dict,
+        ):
+        try:
+            mcp_context = MCPContext.model_validate_json(json.dumps(mcp_dict_context))
+            mcp_agent = MCPAgent(
+                mcp_context=mcp_context,
+            )
+            result = mcp_agent.estimate_credits_required()
+            return result
+        except Exception as e:
+            console.print(f"Error in mcp_estimation task: {str(e)}",style="bold red")
+            raise e
+    
+    @app.task(track_started=True)
+    def llm_benchmark_estimation(
+        llm_benchmark_dict_context: dict,
+        ):
+        try:
+            llm_benchmark_context = LLMBenchmarkingContext.model_validate_json(json.dumps(llm_benchmark_dict_context))
+            llm_benchmark_agent = LLMBenchmarkingAgent(
+                llm_benchmarking_context=llm_benchmark_context,
+            )
+            result = llm_benchmark_agent.estimate_credits_required()
+            return result
+        except Exception as e:
+            console.print(f"Error in llm_benchmark_estimation task: {str(e)}",style="bold red")
+            raise e
+    
+    
     @app.task(track_started=True)
     def sast_estimation(
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],

@@ -11,7 +11,7 @@ from helpers.tools.sast_agent.semgrep_util import run_sast_scan_on_directory
 from helpers.context.schema import * 
 from helpers.tools.iac_agent.summary_manager import IACSummaryManager , FinalIACVulnerabilities
 from helpers.tools.iac_agent.context import IACTypeContext
-
+from helpers.context.progress_writer import StateUpdateWriter
 
 
 console = Console()
@@ -25,12 +25,15 @@ class IACAgent(BaseAgent):
         context: GithubContext | GitlabContext | BitbucketContext | None = None,
         zip_context: ZipContext | None = None,
         iac_contexts: list[IACTypeContext] = None,
+        state_update_writer: StateUpdateWriter | None = None,  
         ):
         try:
             if context:
                 directory = clone_repo_from_context(context)
             elif zip_context:
                 directory = get_directory_from_zip_context(zip_context)
+
+            self.state_update_writer : StateUpdateWriter | None = state_update_writer
             
             if not directory:
                 raise ValueError(f"Directory not found")
@@ -156,14 +159,22 @@ class IACAgent(BaseAgent):
         - list[type[CodebaseVulnerability]] : list of vulnerabilities
         """
         try:
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(20)
 
             # STEP [  ] ============================ Populate codebase context ==========================================================
             self.populate_codebase_context()
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(80)
             
 
             # STEP [ 5 ] ================================ Final checks and cleanup =====================================================================
             console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
             self.clean_up()
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(100)
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
             return self.vulnerabilities

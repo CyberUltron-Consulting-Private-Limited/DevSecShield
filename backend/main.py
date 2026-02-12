@@ -30,7 +30,7 @@ app = FastAPI(middleware=[
 ])
 
 # setting the environment variable to False for local development
-# os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 
 BASE_MEDIA_PATH = "uploads\\"

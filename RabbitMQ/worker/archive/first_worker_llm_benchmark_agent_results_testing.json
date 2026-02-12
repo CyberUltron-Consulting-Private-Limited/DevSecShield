@@ -1,0 +1,12 @@
+[
+  {
+    "title": "Malware Evasion vulnerability detected in gpt-4o model (malwaregen.Evasion probe)",
+    "description": "Scan results indicate a high-risk evasion vulnerability in the gpt-4o model. The malwaregen.Evasion probe (detected by malwaregen.AnyCode) recorded 10 hits out of 48 tests (10/48 = 20.83%). This suggests the model can be steered or manipulated to evade malware detection/safety controls during content generation in adversarial contexts.",
+    "impact": "High",
+    "owasp_top_10_llm": {
+      "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+    },
+    "suggested_fix": "Implement multi-layer defense against evasion: (1) strengthen jailbreak/prompt-injection detection in the generation pipeline; (2) enforce strict policies and sandboxed runtime for code/malware-related content; (3) add adversarial testing with malware-evasion patterns and block unsafe outputs; (4) implement real-time monitoring and automated anomaly detection for evasion signatures; (5) update and retrain safety classifiers to cover malware-evasion scenarios.",
+    "cves": {}
+  }
+]

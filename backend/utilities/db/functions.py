@@ -87,7 +87,7 @@ def get_messages_from_scan(
 # ======================================= functions for assembling output data for different types of conversations ======================
 def return_scan_list_for_type(
     sequence : Sequence[Scan]
-    )->tuple[list[dict],list[tuple[int,str]]]:
+    )->tuple[list[dict],list[tuple[int,str]], list[dict], int]:
     """
     Returns a tuple of two lists.
     - The first list contains the data for each scan.
@@ -98,10 +98,44 @@ def return_scan_list_for_type(
     try:
         scans_list_data = []
         scans_to_update = []
+
         
         for scan in sequence:
             if (scan.scan_status == "pending" or scan.scan_status == "started") and scan.task_id:
                 scans_to_update.append((scan.id,scan.task_id))
+
+            total_critical , total_high , total_medium , total_low  = 0,0,0,0
+            if scan.scan_type == "sast" and scan.scan_data and scan.scan_data != {} and isinstance(scan.scan_data,list) and scan.scan_status == "success":
+                for item in scan.scan_data:
+                    for vulnerability in item["vulnerabilities"]:
+                        if vulnerability["impact"].lower() == "critical":
+                            total_critical += 1
+                        elif vulnerability["impact"].lower() == "high":
+                            total_high += 1
+                        elif vulnerability["impact"].lower() == "medium":
+                            total_medium += 1
+                        elif vulnerability["impact"].lower() == "low":
+                            total_low += 1
+            
+            if (scan.scan_type == "sbom_sca" or scan.scan_type == "iac") and scan.scan_data and scan.scan_data != {} and isinstance(scan.scan_data,list):
+                for vulnerability in scan.scan_data:
+                    if vulnerability["impact"].lower() == "critical":
+                        total_critical += 1
+                    elif vulnerability["impact"].lower() == "high":
+                        total_high += 1
+                    elif vulnerability["impact"].lower() == "medium":
+                        total_medium += 1
+                    elif vulnerability["impact"].lower() == "low":
+                        total_low += 1
+            
+            risk_data = {
+                "total_critical": total_critical,
+                "total_high": total_high,
+                "total_medium": total_medium,
+                "total_low": total_low,
+            }
+                
+
             scans_list_data.append({
                 "id": scan.id,
                 "scan_metadata": scan.scan_metadata,
@@ -112,6 +146,9 @@ def return_scan_list_for_type(
                 "estimated_credits": scan.credit_consumed,
                 "owner_user_email": scan.owner_user.email,
                 "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+                "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
+                'risk_data': risk_data,
+
             })
 
         return (scans_list_data,scans_to_update)

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException, status
 from rich.console import Console
 
-dev_environment = False # for local development
+dev_environment = True # for local development
 
 def get_db(dev_environment : bool = False):
 

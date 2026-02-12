@@ -1,0 +1,567 @@
+{
+  "tools": [
+    {
+      "tool_name": "search_engine",
+      "tool_description": "Scrape search results from Google, Bing or Yandex. Returns SERP results in JSON or Markdown (URL, title, description), Ideal for gathering current information, news, and detailed search results.",
+      "tool_input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "google",
+              "bing",
+              "yandex"
+            ],
+            "default": "google"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor for next page"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "tool_output_schema": null,
+      "vulnerabilities": [
+        {
+          "title": "Server-Side Request Forgery (SSRF) risk when downstream URL access is allowed",
+          "description": "If the search_engine tool or any integrated workflow subsequently fetches or requests the URLs returned in SERP results, an attacker could supply crafted or unintended URLs to cause the server to initiate requests to internal or restricted endpoints. Without proper URL validation, allow-listing, DNS resolution controls, or network egress restrictions, this can lead to SSRF, enabling access to internal services, metadata endpoints, or cloud resources. This risk is exacerbated if the tool operates with privileges that permit it to reach internal networks from the hosting environment.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SERVER_SIDE_REQUEST_FORGERY": "A10:2021 - Server-Side Request Forgery (SSRF)"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity",
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "NIST_CSF_PROTECT": "NIST CSF - Protect",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency"
+          },
+          "suggested_fix": "Validate and restrict all downstream URL access. Implement an allow-list of safe domains, reject private IPs and internal endpoints, enforce egress controls and timeouts, and route URL requests through a constrained proxy. If possible, never fetch content from URLs provided by users outside a trusted, isolated network segment. Add rate limiting and monitor for anomalous URL patterns."
+        },
+        {
+          "title": "Privacy and data handling risks due to query logging and retention",
+          "description": "Query terms and related metadata may be logged by the tool for analytics or debugging. If logs contain user-provided search terms (potentially sensitive), or if logs are retained longer than necessary or are inadequately protected, this can lead to privacy violations and regulatory non-compliance (e.g., GDPR). Insecure or excessive logging may also expose endpoint behavior and user interests to unauthorized personnel or external attackers.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency",
+            "GDPR_DATA_MINIMIZATION": "GDPR - Data minimization",
+            "GDPR_STORAGE_LIMITATION": "GDPR - Storage limitation",
+            "GDPR_ACCOUNTABILITY": "GDPR - Accountability",
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
+          },
+          "suggested_fix": "Adopt privacy-by-design: minimize data collection, avoid logging query terms unless essential, and anonymize or hash PII in logs. Encrypt logs at rest and in transit, apply strict access controls, and implement a clear data retention policy with automated purging. Provide users with transparency about logging practices and options to opt out where feasible."
+        },
+        {
+          "title": "Insecure default configuration and exposure (no authentication, rate limiting, or verbose errors)",
+          "description": "If the search_engine API is publicly accessible without proper authentication, input validation, or rate limiting, it becomes vulnerable to abuse, enumeration, abuse campaigns, or denial-of-service. Additionally, verbose or stack-trace error messages can reveal internal architecture details that aid attackers. This misconfiguration increases risk of data exposure, service disruption, and broader supply-chain abuse.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "MODEL_DENIAL_OF_SERVICE": "LLM04:2025 - Model Denial of Service",
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST_CSF_PROTECT": "NIST CSF - Protect",
+            "NIST_CSF_DETECT": "NIST CSF - Detect",
+            "NIST80053_IR": "NIST 800-53 - Incident Response",
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency"
+          },
+          "suggested_fix": "Enforce strong authentication (API keys, OAuth), implement rate limiting and quotas, disable verbose error reporting, and sanitize all error messages. Conduct secure configuration hardening, remove unnecessary endpoints, enable TLS, and monitor for abuse with alerts and automated blocking of suspicious patterns."
+        }
+      ]
+    },
+    {
+      "tool_name": "scrape_as_markdown",
+      "tool_description": "Scrape a single webpage URL with advanced options for content extraction and get back the results in MarkDown language. This tool can unlock any webpage even if it uses bot detection or CAPTCHA.",
+      "tool_input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "tool_output_schema": null,
+      "vulnerabilities": [
+        {
+          "title": "Server-Side Request Forgery (SSRF) via arbitrary URL fetch",
+          "description": "The tool fetches the user-provided URL from the server side with no network access controls or URL allowlisting. This can be abused to reach internal or protected resources (behind firewalls, private IP ranges, or cloud metadata endpoints), enabling data exfiltration, lateral movement, or access to sensitive systems.",
+          "impact": "Critical",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration",
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+            "ISO27001_A14_SYSTEM_ACQUISITION": "ISO 27001 - A.14 System Acquisition, Development, and Maintenance"
+          },
+          "suggested_fix": "Introduce strict outbound network controls (egress allowlist), disable access to internal/private endpoints, and enforce a network proxy with egress filtering. Validate and restrict the target URLs to safe, whitelisted domains; implement authentication/authorization for API access; add monitoring and alerting for anomalous target URLs and egress traffic."
+        },
+        {
+          "title": "CAPTCHA/bot-detection bypass enabling access to protected content",
+          "description": "The tool claims to unlock any webpage, including pages protected by CAPTCHA or anti-bot mechanisms. This enables automated access to content that may require human verification and could violate terms of service and applicable laws.",
+          "impact": "Critical",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control",
+            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection",
+            "MODEL_DENIAL_OF_SERVICE": "LLM04:2025 - Model Denial of Service"
+          },
+          "compliance_controls": {
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency",
+            "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security"
+          },
+          "suggested_fix": "Remove or disable CAPTCHA-bypass functionality. Enforce proper authentication and authorization for all URL fetches. Implement terms-of-service checks, rate limiting, and abuse detection to prevent automated scraping of protected content. Log and review abuse attempts and enforce usage policies."
+        },
+        {
+          "title": "Markdown/HTML content injection risk in Markdown-rendered output",
+          "description": "The tool returns results in Markdown. If downstream renderers do not sanitize content properly, scraped pages may introduce HTML/Markdown injection or script-like content, creating XSS or phishing risks when the Markdown is rendered in a browser.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "INJECTION": "A03:2021 - Injection"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+          },
+          "suggested_fix": "Sanitize and escape all scraped content before converting to Markdown. Optionally offer a safe rendering mode (plain text or sanitized Markdown) and explicitly avoid injecting raw HTML/JS. Validate and strip potentially dangerous content, and clearly document rendering assumptions for downstream consumers."
+        },
+        {
+          "title": "Unauthenticated access to the tool\u2019s URL fetch capability",
+          "description": "The input interface accepts a URL with no authentication or access controls. This allows anyone to instruct the service to fetch arbitrary resources, including potentially sensitive internal endpoints, increasing the risk of abuse, data exposure, or unintended traffic to internal networks.",
+          "impact": "Critical",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control",
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency"
+          },
+          "suggested_fix": "Require strong authentication (API keys, OAuth) for the URL fetch API, implement IP/domain allowlists, enforce rate limiting and auditing, and consider restricting the service to authenticated/authorized users only. Implement explicit usage policies and monitoring to detect and block abusive patterns."
+        }
+      ]
+    },
+    {
+      "tool_name": "search_engine_batch",
+      "tool_description": "Run multiple search queries simultaneously. Returns JSON for Google, Markdown for Bing/Yandex.",
+      "tool_input_schema": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "engine": {
+                  "type": "string",
+                  "enum": [
+                    "google",
+                    "bing",
+                    "yandex"
+                  ],
+                  "default": "google"
+                },
+                "cursor": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "queries"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "tool_output_schema": null,
+      "vulnerabilities": [
+        {
+          "title": "Exposed query logs and telemetry may reveal user search terms",
+          "description": "The tool processes user-supplied search queries and may log or telemetry these inputs. If logs are not properly protected or redacted, sensitive terms can be exposed to administrators, analytics services, or external observers. Retention policies or encryption may be missing, increasing privacy and data protection risks.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+          },
+          "owasp_top_10_llm": {
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+          },
+          "suggested_fix": "Redact or hash sensitive fields in logs; minimize logging of query strings; encrypt logs at rest and in transit; enforce strict access controls and retention policies; provide an opt-out telemetry option and audit log access."
+        },
+        {
+          "title": "Batch query processing may allow resource exhaustion and Denial of Service",
+          "description": "The tool accepts up to 10 queries per call and may spawn multiple outbound requests concurrently. Without per-client rate limiting, timeouts, or resource caps, an attacker could exhaust CPU/memory, degrade service quality for others, or trigger upstream rate limits.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "MODEL_DENIAL_OF_SERVICE": "LLM04:2025 - Model Denial of Service"
+          },
+          "compliance_controls": {
+            "NIST80053_CP": "NIST 800-53 - Contingency Planning",
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+          },
+          "suggested_fix": "Impose per-client and per-session rate limits; enforce maximum total resource usage per batch; implement request timeouts and backpressure; add monitoring and alerting for abnormal throughput and latency."
+        },
+        {
+          "title": "Untrusted Markdown results from Bing/Yandex may lead to XSS when rendered",
+          "description": "Results for non-Google engines are returned as Markdown. If the consumer renders this Markdown as HTML without proper sanitization, user-controlled content could execute scripts or inject malicious markup in the UI.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
+          },
+          "suggested_fix": "Sanitize and escape all Markdown output before rendering; use a safe Markdown renderer that strips or neutralizes HTML; implement content security policy and disable potentially dangerous HTML in Markdown."
+        },
+        {
+          "title": "HTTP header injection / URL manipulation via user query input",
+          "description": "If the tool constructs HTTP requests to search engines using user-provided queries, the input could inject CRLF characters or alter request structure, enabling header injection, open redirects, or request smuggling. This arises from unsanitized input used to shape outbound requests.",
+          "impact": "High",
+          "owasp_top_10": {
+            "INJECTION": "A03:2021 - Injection"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+          },
+          "suggested_fix": "Validate and sanitize all inputs; URL-encode query parameters; reject control characters and CRLF; use safe HTTP clients with explicit parameter binding; implement input allowlists and strict URL construction rules."
+        },
+        {
+          "title": "Privacy risk: search terms may be exposed in Referer headers or intermediate logs",
+          "description": "Queries sent to external search engines can traverse network paths and proxies where Referer headers or logs may capture the full search terms. This can lead to privacy leakage to third parties or unauthorized access to query content in transit or at rest.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+          },
+          "owasp_top_10_llm": {
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+          },
+          "suggested_fix": "Use TLS for all requests; redact or minimize query content in logs; avoid logging full query strings in telemetry; minimize Referer headers; consider privacy-preserving proxies or batch anonymization where feasible."
+        }
+      ]
+    },
+    {
+      "tool_name": "scrape_batch",
+      "tool_description": "Scrape multiple webpages URLs with advanced options for content extraction and get back the results in MarkDown language. This tool can unlock any webpage even if it uses bot detection or CAPTCHA.",
+      "tool_input_schema": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "Array of URLs to scrape (max 10)"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "tool_output_schema": null,
+      "vulnerabilities": [
+        {
+          "title": "Bypass of bot detection and CAPTCHA enabling unauthorized scraping",
+          "description": "The tool claims to unlock any webpage even if bot detection or CAPTCHA is used. This effectively bypasses access controls and content protections, enabling automated extraction of data that may be restricted, paywalled, or protected by terms of service.",
+          "impact": "Critical",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection",
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency",
+            "GDPR_DATA_MINIMIZATION": "GDPR - Data minimization"
+          },
+          "suggested_fix": "Remove or disable CAPTCHA-bypass capability. Enforce strict access controls and authentication for scraping operations, implement usage auditing, and ensure compliance with terms of service and laws before accessing protected content."
+        },
+        {
+          "title": "Privacy and legal compliance risks when scraping personal data",
+          "description": "Automated scraping could collect personal data without user consent, violating privacy laws (e.g., GDPR). Lack of explicit data minimization, purpose limitation, or data retention controls increases risk of legal exposure and user privacy violations.",
+          "impact": "High",
+          "owasp_top_10": {
+            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency",
+            "GDPR_DATA_MINIMIZATION": "GDPR - Data minimization"
+          },
+          "suggested_fix": "Limit data collection to publicly available information with clear consent where required. Implement privacy-by-design controls, purpose limitation, data minimization, and retention policies. Provide transparent notices and mechanisms for data subject rights."
+        },
+        {
+          "title": "Lack of rate limiting and abuse protection enabling DoS/resource exhaustion",
+          "description": "Absence of built-in rate limits or abuse controls can allow high-volume scraping, leading to service degradation, IP blocking, and potential legal concerns for excessive automated requests.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "MODEL_DENIAL_OF_SERVICE": "LLM04:2025 - Model Denial of Service"
+          },
+          "compliance_controls": {
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+          },
+          "suggested_fix": "Introduce per-user or per-IP rate limits, authentication with quotas, and monitoring for unusual activity. Implement automated abuse prevention (CAPTCHA for automated usage, IP reputation checks) and robust logging for incident response."
+        },
+        {
+          "title": "Unauthenticated access to tool features (lack of proper access control)",
+          "description": "The tool description implies usage without enforced authentication or authorization, increasing risk of misuse, data exfiltration, or operational abuse.",
+          "impact": "Critical",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security",
+            "NIST80053_AC": "NIST 800-53 - Access Control"
+          },
+          "suggested_fix": "Require strong authentication and authorization for all tool interactions. Implement API keys or OAuth, enforce role-based access control, and maintain comprehensive audit logs and usage policies."
+        },
+        {
+          "title": "No guaranteed output schema leading to data integrity and rendering risks",
+          "description": "The Markdown output is produced without a strict schema or validation, which can cause inconsistencies, misinterpretation, or unsafe rendering (e.g., embedding HTML/JS in Markdown viewer).",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "ISO27001_A14_SYSTEM_ACQUISITION": "ISO 27001 - A.14 System Acquisition, Development, and Maintenance",
+            "ISO27002_12_1": "ISO 27002 - 12.1 Operational procedures and responsibilities"
+          },
+          "suggested_fix": "Define and enforce a formal output schema; validate and sanitize Markdown before rendering; provide a safe rendering path (e.g., stripped HTML, sanitized content) and clearly separate raw content from rendered results."
+        }
+      ]
+    },
+    {
+      "tool_name": "scrape_as_html",
+      "tool_description": "Scrape a single webpage URL with advanced options for content extraction and get back the results in HTML. This tool can unlock any webpage even if it uses bot detection or CAPTCHA.",
+      "tool_input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "tool_output_schema": null,
+      "vulnerabilities": [
+        {
+          "title": "Server-Side Request Forgery (SSRF) via arbitrary URL fetching",
+          "description": "The tool accepts a URL and fetches it from the server side. If there is insufficient validation or network restrictions, an attacker could induce the server to perform requests to internal or restricted resources (including internal IT services, metadata endpoints, or private IPs). This can be abused for network discovery, port scanning, or accessing services that are not intended to be publicly reachable.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SERVER_SIDE_REQUEST_FORGERY": "A10:2021 - Server-Side Request Forgery (SSRF)"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling",
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+            "NIST_CSF_PROTECT": "NIST CSF - Protect"
+          },
+          "suggested_fix": "Implement strict URL allowlisting and network egress controls on the server performing the fetches. Block private IP ranges and metadata endpoints unless explicitly required. Introduce a dedicated sandbox with restricted outbound access, plus input validation (scheme, host, port) and rate limiting. Log SSRF-relevant events and alert on anomalous patterns."
+        },
+        {
+          "title": "Circumvention of bot detection and CAPTCHA / access restrictions",
+          "description": "The tool claims to unlock pages that use bot detection or CAPTCHA protections. This implies bypassing access controls intended to restrict automated access, which can enable scraping of paywalled or protected content and violate terms of service. Such bypass mechanisms can be abused to harvest data without proper authorization or consent.",
+          "impact": "High",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control",
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection",
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "NIST_CSF_PROTECT": "NIST CSF - Protect",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency",
+            "DPDP_DATA_MINIMIZATION": "DPDP Act India - Data Minimization"
+          },
+          "suggested_fix": "Remove or disable any CAPTCHA/anti-bot circumvention features. Require explicit authorization and authenticated access to protected resources. If scraping is allowed, provide a legitimate API or partner access with documented terms, rate limits, and auditing. Enforce robots.txt and terms compliance, and implement user consent checks and audit trails."
+        },
+        {
+          "title": "Potential exposure of sensitive data from scraped content",
+          "description": "Scraping pages may inadvertently capture sensitive information (PII, credentials, API keys, session tokens) that could be logged, stored, or transmitted insecurely. If scraped data is retained or exposed through logs, caches, or responses, it increases the risk of data exposure and privacy violations.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling",
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "GDPR_DATA_MINIMIZATION": "GDPR - Data minimization",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency",
+            "DPDP_DATA_MINIMIZATION": "DPDP Act India - Data Minimization",
+            "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management"
+          },
+          "suggested_fix": "Avoid storing or logging full page content unless necessary. Implement data minimization, encryption at rest and in transit for any stored scraped data, and strict access controls. Use secure channels for data transfer, redact or exclude sensitive fields where possible, and implement retention policies with automated deletion."
+        }
+      ]
+    },
+    {
+      "tool_name": "session_stats",
+      "tool_description": "Tell the user about the tool usage during this session",
+      "tool_input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "tool_output_schema": null,
+      "vulnerabilities": [
+        {
+          "title": "Exposure of session usage data via session_stats",
+          "description": "The tool session_stats is described as informing the user about tool usage during the session. If this endpoint returns usage data to end users, it may reveal sensitive details such as session IDs, timestamps, user identifiers, IP addresses, and internal commands. This can lead to information leakage and enable targeted reconnaissance.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control",
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {},
+          "compliance_controls": {
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+            "ISO27002_9_2": "ISO 27002 - 9.2 User access management"
+          },
+          "suggested_fix": "Limit the data returned by session_stats to non-sensitive, aggregated usage data. Enforce authentication and authorization for access to session stats; implement RBAC to restrict who can view usage details. Redact or mask sensitive fields (IP addresses, user identifiers). Ensure data minimization and encrypt data in transit and at rest."
+        },
+        {
+          "title": "Unauthorized access to session statistics due to missing RBAC",
+          "description": "Currently there is no explicit RBAC enforcement for the session_stats endpoint. Any authenticated user might be able to call the endpoint and view usage data for other sessions, violating the principle of least privilege.",
+          "impact": "High",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+          },
+          "owasp_top_10_llm": {},
+          "compliance_controls": {
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+            "ISO27002_9_2": "ISO 27002 - 9.2 User access management",
+            "ISO27002_12_1": "ISO 27002 - 12.1 Operational procedures and responsibilities"
+          },
+          "suggested_fix": "Add explicit RBAC/ABAC checks on the server side for session_stats; restrict access to administrators or service accounts; implement suite of authorization tests; ensure responses are scoped to the caller's own data if appropriate; log access events for auditing."
+        },
+        {
+          "title": "Sensitive data logged or stored in logs from session_stats",
+          "description": "Session usage data may be logged in plaintext by the system (logs, telemetry, or audit trails). Logs could contain PII like IPs, usernames, and session IDs, increasing risk of leakage if logs are accessed by unauthorized individuals or systems.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {},
+          "compliance_controls": {
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "NIST80053_MP": "NIST 800-53 - Media Protection",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "ISO27002_12_1": "ISO 27002 - 12.1 Operational procedures and responsibilities"
+          },
+          "suggested_fix": "Review logging configuration; redact PII from logs; implement log masking; store logs securely with proper access controls and encryption; rotate logs; monitor log access; ensure logging complies with privacy requirements."
+        }
+      ]
+    }
+  ],
+  "prompts": [],
+  "resources": []
+}

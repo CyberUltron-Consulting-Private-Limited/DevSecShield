@@ -33,6 +33,7 @@ class BaseAgent(OutputModelManager,BaseUtilities):
         Parse the list of vulnerabilities output of the agent into a list of dictionaries
         """
         try:
+            # console.print(f"output to parse : {output}",style="bold yellow")
             parsed_output = []
             for item in output:
                 parsed_output.append(parse_vuln(item))

@@ -63,6 +63,17 @@ export interface StartScanPayload {
 
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
 
+export interface ScanInfoField {
+    current?: number
+}
+
+export interface ScanRiskData {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+}
+
 export interface SastConversation {
     id: number
     title: string
@@ -73,6 +84,8 @@ export interface SastConversation {
     estimated_credits?: number | null
     owner_user_email?: string
     owner_user_full_name?: string
+    info?: ScanInfoField | null
+    risk_data?: ScanRiskData | null
 }
 
 /** Card counts returned by list SAST scans (card_data) */
@@ -81,13 +94,22 @@ export interface SastListCardData {
     started_scans: number
     success_scans: number
     failure_scans: number
+    not_started_scans: number
     scans_created_today: number
     scans_updated_today: number
 }
 
+export interface ScanListDashboardData {
+    card_data: SastListCardData
+    repos_scanned: { repo_url: string }[]
+    zip_files_scanned: number
+    scans_per_day: Record<string, number>
+    risks_per_day: Record<string, { critical: number; high: number; medium: number; low: number }>
+}
+
 export interface SastListResponse {
     scans_list_data: SastConversation[]
-    card_data: SastListCardData
+    dashboard_data: ScanListDashboardData
 }
 
 const getSastConversations = async (team_id: number): Promise<SastListResponse> => {
@@ -155,6 +177,7 @@ export interface SastConversationResponse {
     messages: SastConversationMessage[]
     dashboard?: SastDashboardData | null
     integration_settings?: Record<string, unknown> | null
+    info?: ScanInfoField | null
 }
 
 const getSastConversationMessages = async ({ queryKey }: { queryKey: ['sast-conversation-data', number, number] }): Promise<SastConversationResponse> => {
@@ -977,11 +1000,13 @@ export interface IACConversation {
     estimated_credits?: number | null
     owner_user_email?: string | null
     owner_user_full_name?: string | null
+    info?: ScanInfoField | null
+    risk_data?: ScanRiskData | null
 }
 
 export interface IACListResponse {
     scans_list_data: IACConversation[]
-    card_data: SastListCardData
+    dashboard_data: ScanListDashboardData
 }
 
 const getIACConversations = async (team_id: number): Promise<IACListResponse> => {
@@ -1042,6 +1067,7 @@ export interface IACConversationResponse {
   messages: IACConversationMessage[]
   dashboard?: SastDashboardData | null
   integration_settings?: Record<string, unknown> | null
+  info?: ScanInfoField | null
 }
 
 /** Team-scoped: GET /{team_id}/iac/scan/{scan_id} */
@@ -1152,6 +1178,8 @@ export interface SCASBOMConversation {
     estimated_credits?: number | null
     owner_user_email?: string
     owner_user_full_name?: string
+    info?: ScanInfoField | null
+    risk_data?: ScanRiskData | null
 }
 
 /** Card counts returned by list SBOM/SCA scans (same shape as SastListCardData) */
@@ -1160,13 +1188,14 @@ export interface SBOMSCAListCardData {
     started_scans: number
     success_scans: number
     failure_scans: number
+    not_started_scans: number
     scans_created_today: number
     scans_updated_today: number
 }
 
 export interface SBOMSCAListResponse {
     scans_list_data: SCASBOMConversation[]
-    card_data: SBOMSCAListCardData
+    dashboard_data: ScanListDashboardData
 }
 
 /** Team-scoped: GET /{team_id}/sbom_sca/scans */
@@ -1317,6 +1346,7 @@ export interface SCASBOMConversationResponse {
     dashboard?: SastDashboardData | null
     messages: SCASBOMConversationMessage[]
     integration_settings?: Record<string, unknown> | null
+    info?: ScanInfoField | null
 }
 
 /** Team-scoped: GET /{team_id}/sbom_sca/scan/{scan_id} — use with queryKey ['sbom_sca-conversation-data', team_id, scan_id] */

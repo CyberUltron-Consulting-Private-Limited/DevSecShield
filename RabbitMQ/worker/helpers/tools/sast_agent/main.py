@@ -10,6 +10,7 @@ from rich.console import Console
 from helpers.tools.sast_agent.semgrep_util import run_sast_scan_on_directory
 from helpers.context.schema import * 
 from helpers.tools.sast_agent.summary_manager import SASTSummaryManager
+from helpers.context.progress_writer import StateUpdateWriter
 
 
 
@@ -25,6 +26,7 @@ class SASTAgent(BaseAgent):
         zip_context: ZipContext | None = None,
         app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] = None,
         exclude_path_arrays: list[list[str]] = None,
+        state_update_writer: StateUpdateWriter | None = None,  
         ):
         try:
             if context:
@@ -40,6 +42,9 @@ class SASTAgent(BaseAgent):
             
             self.directory = directory # SET directory ⭐
             self.app_lang = app_lang # SET app_lang ⭐
+
+
+            self.state_update_writer : StateUpdateWriter | None = state_update_writer
 
 
             include_files_extensions = None
@@ -345,14 +350,25 @@ class SASTAgent(BaseAgent):
 
         """
         try:
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(20)
             # STEP [ 1 ] ============================ Populate open source context ==========================================================
             self.populate_opensource_context() 
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(40)
 
             # STEP [ 2 ] ============================ Populate codebase context ==========================================================
             self.populate_codebase_context()
 
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(70)
+
             # STEP [ 3 ] ============================ Set output model ==========================================================
             self.output_model = self.get_codebase_output_model()
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(80)
 
             # STEP [ 4 ] ============================ Cycle through logical components ==========================================================
             if not self.logical_components or not isinstance(self.logical_components,LogicalComponents):
@@ -403,6 +419,9 @@ class SASTAgent(BaseAgent):
             # STEP [ 5 ] ================================ Final checks and cleanup =====================================================================
             console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
             self.clean_up()
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(100)
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
             return self.vulnerabilities

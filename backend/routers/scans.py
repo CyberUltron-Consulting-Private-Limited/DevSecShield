@@ -32,7 +32,7 @@ from backend.utilities.db.schemas import *
 from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.new_models import scan_types
 from rich.console import Console
-from backend.utilities.dashboard.scan_list import generate_card_data_for_scan_list
+from backend.utilities.dashboard.scan_list import generate_dashboard_data_for_scan_list
 from backend.get_db import dev_environment
 
 
@@ -75,10 +75,10 @@ async def list_scans(
                 console.print(f"Background task added to update statuses of scans: {scans_list_to_update}" ,style="bold green")
             
             
-            card_data = generate_card_data_for_scan_list(scans=scans)
+            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans)
             return {
                 "scans_list_data": scans_list_data,
-                "card_data": card_data
+                "dashboard_data": dashboard_data,
             }
 
     except HTTPException as e:
@@ -296,6 +296,7 @@ async def get_scan(
             TASK_ID = scan.task_id
             SCAN_STATUS = scan.scan_status
             SCAN_DATA = scan.scan_data
+            SCAN_INFO = scan.info
 
 
         # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
@@ -337,6 +338,7 @@ async def get_scan(
                 "dashboard": dashboard_data,
                 "messages": MESSAGES,
                 "integration_settings": scan.integration_settings or {},
+                "info": SCAN_INFO,
             }
         
     

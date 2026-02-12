@@ -6,6 +6,7 @@ from helpers.tools.mcp_agent.summary_manager import FinalMCPVulnerabilities, MCP
 from helpers.context.schema import MCPVulnerability
 import asyncio
 from rich.console import Console
+from helpers.context.progress_writer import StateUpdateWriter
 console = Console()
 
 
@@ -17,14 +18,16 @@ class MCPAgent(BaseAgent):
     """
     def __init__(
         self,
-        mcp_context: MCPContext
+        mcp_context: MCPContext,
+        state_update_writer: StateUpdateWriter | None = None,
         ):
-        self.mcp_context = mcp_context
+        self.mcp_context : MCPContext = mcp_context
+        self.state_update_writer : StateUpdateWriter | None = state_update_writer
 
         self.recon_context : MCPReconContext = None
         self.vulnerabilities : list[MCPVulnerability] = None
 
-        self.output : list[dict] | None = None
+        self.output : dict = {}
     
 
     def analyze_tool(self, tool: MCPTool):
@@ -173,27 +176,80 @@ class MCPAgent(BaseAgent):
             raise e
 
 
-    def assemble_mcp_recon_context(self):
+    def run_recon(self):
         """
         Assemble the MCP recon context and return the recon context
+        set the recon context in self.recon_context ⭐
         """
         try:
-            #TODO : Implement the assemble MCP recon context logic
-            pass
+            mcp_client = MCPClient(
+                server_url=self.mcp_context.server_url,
+                server_mode=self.mcp_context.server_mode,
+                headers=self.mcp_context.headers,
+            )
+            recon_context = asyncio.run(mcp_client.connect_and_get_recon_context())
+            self.recon_context = recon_context # SET recon context in self.recon_context ⭐
+            return self.recon_context
         except Exception as e:
-            console.print(f"Error in assembling MCP recon context: {e}",style="bold red")
+            console.print(f"Error in running recon: {e}",style="bold red")
             raise e
 
     
     def run_agent(self):
         """
         Run the agent
+
+        Note : each tool / prompt / resource is approximately 0.004 $ ( ~ 0.005 Credits )
         """
         
         try:
-            pass 
-            #TODO : Implement the agent logic
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(10)
+            self.run_recon()
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(50)
+            self.analyze_recon_context()
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(100)
+            return self.output
         except Exception as e:
             console.print(f"Error in running agent: {e}",style="bold red")
+            raise e
+    
+
+    def estimate_credits_required(self)->int:
+        """
+        Estimate the credits required for the MCP scan
+        """
+        try:
+            # run recon
+            self.run_recon() # sets the recon context in self.recon_context ⭐
+
+            if not self.recon_context:
+                raise Exception("Recon context not found")
+
+
+            credits_from_tools = 0
+            if self.recon_context.tools:
+                number_of_tools = len(self.recon_context.tools)
+                credits_from_tools = number_of_tools * 0.005
+
+            
+            credits_from_prompts = 0
+            if self.recon_context.prompts:
+                number_of_prompts = len(self.recon_context.prompts)
+                credits_from_prompts = number_of_prompts * 0.005
+            
+
+            credits_from_resources = 0
+            if self.recon_context.resources:
+                number_of_resources = len(self.recon_context.resources)
+                credits_from_resources = number_of_resources * 0.005
+            
+            total_credits = credits_from_tools + credits_from_prompts + credits_from_resources
+            return total_credits
+
+        except Exception as e:
+            console.print(f"Error in estimating credits required: {e}",style="bold red")
             raise e
     

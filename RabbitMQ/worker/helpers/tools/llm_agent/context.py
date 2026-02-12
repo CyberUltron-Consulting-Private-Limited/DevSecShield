@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Literal, Optional
-
-ProbesLiteral = Literal["all", "ansiescape", "atkgen", "audio", "av_spam_scanning", "continuation", "dan", "divergence", "doctor", "donotanswer", "encoding", "exploitation", "fileformats", "glitch", "goodside", "grandma", "latentinjection", "leakreplay", "lmrc", "malwaregen", "misleading", "packagehallucination", "phrasing", "promptinject", "realtoxicityprompts", "sata", "snowball", "suffix", "tap", "test", "topic", "visual_jailbreak", "xss"]
+from helpers.tools.llm_agent.probes_type import ProbesLiteral
 
 class LLMBenchmarkingContext(BaseModel):
     """
@@ -9,7 +8,7 @@ class LLMBenchmarkingContext(BaseModel):
     """
     model_type: Literal["openai", "anthropic", "gemini","custom"]
     model_name: str 
-    probes: ProbesLiteral = "all"
+    probes: list[ProbesLiteral] = ["malwaregen.TopLevel","malwaregen.Evasion"]
     api_key: Optional[str] = None
     headers: Optional[dict] = None
     request_template: Optional[dict] = None

@@ -88,6 +88,7 @@ class Scan(SQLModel,table=True):
     created_at : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default=datetime.datetime.now(datetime.timezone.utc),sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
+    info : Dict | None = Field(default=None,sa_column=Column(JSON))
 
     integration_settings : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))  # integration settings 
 

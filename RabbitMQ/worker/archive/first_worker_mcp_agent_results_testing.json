@@ -1,0 +1,354 @@
+{
+  "tools": [
+    {
+      "tool_name": "read_wiki_structure",
+      "tool_description": "Get a list of documentation topics for a GitHub repository.\n\nArgs:\n    repoName: GitHub repository in owner/repo format (e.g. \"facebook/react\")",
+      "tool_input_schema": {
+        "properties": {
+          "repoName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repoName"
+        ],
+        "type": "object"
+      },
+      "tool_output_schema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "vulnerabilities": [
+        {
+          "title": "Unauthorized Access to Private Wiki Contents via read_wiki_structure",
+          "description": "The tool read_wiki_structure may fetch documentation topics across any GitHub repository using only the repoName input. If used against private repositories or with insufficient authorization checks, this could expose private wiki pages and docs to unauthorized callers.",
+          "impact": "High",
+          "owasp_top_10": {
+            "BROKEN_ACCESS_CONTROL": "A01:2021 - Broken Access Control"
+          },
+          "owasp_top_10_llm": {
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
+            "GDPR_DATA_MINIMIZATION": "GDPR - Data minimization",
+            "GDPR_LAWFULNESS": "GDPR - Lawfulness, fairness, and transparency"
+          },
+          "suggested_fix": "Enforce per-repo access controls by tying authorization to the caller's credentials and repository permissions. Validate that the requesting user is allowed to view private repository wiki topics before returning results. Avoid leaking private content in error messages or logs; implement least privilege for API calls; consider scoping GitHub API requests to the caller's authenticated session."
+        },
+        {
+          "title": "SSRF/External URL Fetch via Unvalidated repoName",
+          "description": "If the tool constructs HTTP requests to GitHub or external wiki sources using the repository name without proper URL validation, an attacker could craft a repoName that directs the server to fetch unintended internal or external endpoints, enabling SSRF or information disclosure.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST_CSF_PROTECT": "NIST CSF - Protect",
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+          },
+          "suggested_fix": "Validate and normalize the repoName string strictly (format owner/repo). Do not construct raw URLs from user input; use a controlled API client. Implement URL allowlists and safe API endpoints. Apply network egress controls and input validation to prevent SSRF. Consider using GitHub's official API client with proper authentication and timeouts."
+        },
+        {
+          "title": "Input Validation / Command Injection via repoName",
+          "description": "If repoName is interpolated into system commands or API call strings without proper sanitization, an attacker could inject shell metacharacters or special characters to execute arbitrary commands on the tool host.",
+          "impact": "High",
+          "owasp_top_10": {
+            "INJECTION": "A03:2021 - Injection"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST80053_CM": "NIST 800-53 - Configuration Management",
+            "ISO27001_A14_SYSTEM_ACQUISITION": "ISO 27001 - A.14 System Acquisition, Development, and Maintenance",
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+          },
+          "suggested_fix": "Validate inputs against a strict allowlist (regex ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$). Use parameterized API calls or client libraries instead of string concatenation. Avoid shell execution and escape all special characters. Implement input sanitization and error handling."
+        },
+        {
+          "title": "Sensitive Data Leakage through Logging",
+          "description": "Detailed error messages or logs may inadvertently include repository names, wiki topics, or other sensitive metadata. This can lead to exposure of internal information through logs or UI.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "GDPR_DATA_MINIMIZATION": "GDPR - Data minimization"
+          },
+          "suggested_fix": "Redact or pseudonymize sensitive fields in logs and error messages. Avoid echoing full repo names or wiki paths in responses. Implement centralized logging with access controls and ensure logs do not retain sensitive data longer than necessary."
+        },
+        {
+          "title": "Rate limiting / Denial of Service due to unbounded usage",
+          "description": "The tool could be abused to trigger excessive GitHub API calls by requesting documentation topics for many repositories in a short period, leading to throttling or denial of service.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "MODEL_DENIAL_OF_SERVICE": "LLM04:2025 - Model Denial of Service"
+          },
+          "compliance_controls": {
+            "NIST_CSF_PROTECT": "NIST CSF - Protect",
+            "NIST80053_CM": "NIST 800-53 - Configuration Management",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+          },
+          "suggested_fix": "Implement per-user or per-client rate limits and quotas. Use caching for common requests and bulk retrieval features with server-side throttling. Monitor for abuse and add after-action reporting."
+        }
+      ]
+    },
+    {
+      "tool_name": "read_wiki_contents",
+      "tool_description": "View documentation about a GitHub repository.\n\nArgs:\n    repoName: GitHub repository in owner/repo format (e.g. \"facebook/react\")",
+      "tool_input_schema": {
+        "properties": {
+          "repoName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repoName"
+        ],
+        "type": "object"
+      },
+      "tool_output_schema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "vulnerabilities": [
+        {
+          "title": "Information Disclosure via Wiki Content without Redaction",
+          "description": "The read_wiki_contents tool returns raw GitHub wiki pages for the specified repository. If a wiki contains secrets (API keys, tokens, passwords, internal endpoints, or credentials), these may be exposed to any caller. This risk is amplified for public repositories and when no content filtering, secret scanning, or redaction is applied before displaying the wiki content.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration",
+            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+          },
+          "owasp_top_10_llm": {
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure",
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management",
+            "NIST_CSF_PROTECT": "NIST CSF - Protect",
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity"
+          },
+          "suggested_fix": "Implement secret detection and redaction for wiki content before returning results. Enforce access controls so private wikis are not exposed to unauthorized users. Prefer returning metadata or search results with links rather than whole wiki pages. Add monitoring and alerting for exfiltration-like patterns and perform regular secret scanning of wiki content."
+        },
+        {
+          "title": "Input Validation Flaw: Unvalidated repoName Could Lead to Injection or SSRF",
+          "description": "The repoName argument must be validated. If it is interpolated into API calls or shell commands without proper validation/encoding, an attacker could inject commands or trigger SSRF to internal or attacker-controlled resources.",
+          "impact": "High",
+          "owasp_top_10": {
+            "INJECTION": "A03:2021 - Injection"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection",
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "NIST80053_CM": "NIST 800-53 - Configuration Management",
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
+          },
+          "suggested_fix": "Validate and restrict repoName format using a strict allowlist (e.g., owner/repo with allowed characters). Avoid shell execution by using API calls with proper parameterization and URL encoding. Sanitize inputs and implement input validation at server side. Consider parsing the repoName rather than interpolating it into commands."
+        },
+        {
+          "title": "Lack of Rate Limiting Leading to DoS and Enumeration",
+          "description": "There appears to be no rate limiting on read_wiki_contents, enabling attackers to enumerate many repositories or wiki pages, potentially exhausting resources and degrading service quality for legitimate users.",
+          "impact": "High",
+          "owasp_top_10": {
+            "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+          },
+          "owasp_top_10_llm": {
+            "MODEL_DENIAL_OF_SERVICE": "LLM04:2025 - Model Denial of Service"
+          },
+          "compliance_controls": {
+            "NIST_CSF_DETECT": "NIST CSF - Detect",
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability"
+          },
+          "suggested_fix": "Implement per-user or per-IP rate limiting with backoff and quotas. Add caching for popular wiki requests and monitor for abnormal access patterns. Introduce surge protection and automated alerts for potential DoS activity."
+        },
+        {
+          "title": "XSS or Malicious Content Rendering via Wiki Output",
+          "description": "If wiki content is rendered in a UI without proper escaping/sanitization, malicious scripts embedded in wiki pages could execute in the viewer\u2019s browser (stored or reflected XSS).",
+          "impact": "High",
+          "owasp_top_10": {
+            "INJECTION": "A03:2021 - Injection"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling",
+            "SENSITIVE_INFORMATION_DISCLOSURE": "LLM06:2025 - Sensitive Information Disclosure"
+          },
+          "compliance_controls": {
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity",
+            "NIST_CSF_PROTECT": "NIST CSF - Protect"
+          },
+          "suggested_fix": "Sanitize and escape all wiki content before rendering. Use a safe rendering library and apply Content Security Policy (CSP). Avoid allowing scripts to execute from wiki content and render content in a sandboxed environment or with strict white-list sanitization."
+        }
+      ]
+    },
+    {
+      "tool_name": "ask_question",
+      "tool_description": "Ask any question about a GitHub repository and get an AI-powered, context-grounded response.\n\nArgs:\n    repoName: GitHub repository or list of repositories (max 10) in owner/repo format\n    question: The question to ask about the repository",
+      "tool_input_schema": {
+        "properties": {
+          "repoName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repoName",
+          "question"
+        ],
+        "type": "object"
+      },
+      "tool_output_schema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "vulnerabilities": [
+        {
+          "title": "Prompt Injection via user-supplied input",
+          "description": "The tool passes user-provided repoName and question directly into the AI model's prompt/context. Malicious input could override system prompts, cause the model to reveal secrets, or perform unsafe actions. This could lead to leakage of credentials, misconfiguration, or unsafe operations.",
+          "impact": "High",
+          "owasp_top_10": {
+            "INJECTION": "A03:2021 - Injection",
+            "INSECURE_DESIGN": "A04:2021 - Insecure Design"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+            "NIST80053_AT": "NIST 800-53 - Awareness and Training",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+            "ISO27002_9_2": "ISO 27002 - 9.2 User access management"
+          },
+          "suggested_fix": "Implement strict input validation and context-hardening; sanitize and constrain user inputs; use a separate, hardened prompt template and avoid injecting raw user data into the model's operational prompts; redact sensitive terms; implement content filters; sandbox the LLM interaction; enforce strict rate limiting and monitoring."
+        },
+        {
+          "title": "Data leakage of private repository content and secrets via AI responses",
+          "description": "The tool may expose sensitive repository contents, including environment variables or secrets, by incorporating repository data into the AI prompt and returning content in the result. If private repos are queried or secrets are present in code, the AI could reveal them in its output.",
+          "impact": "Critical",
+          "owasp_top_10": {
+            "SOFTWARE_AND_DATA_INTEGRITY_FAILURES": "A08:2021 - Software and Data Integrity Failures"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity",
+            "ISO27001_A8_ASSET_MANAGEMENT": "ISO 27001 - A.8 Asset Management",
+            "ISO27002_6_1": "ISO 27002 - 6.1 Internal organization"
+          },
+          "suggested_fix": "Do not feed raw repository contents into the AI context. Implement secret-scanning and redaction prior to processing; mask or remove API keys, credentials, and secrets; restrict the data surfaced to the user; employ data minimization and controlled data leakage mitigations; require explicit user consent for data exposure."
+        },
+        {
+          "title": "Unchecked access to repositories leading to data exposure",
+          "description": "If the tool lacks robust access control, unauthorized users could query and retrieve data from GitHub repos, potentially exposing private data or tokens if misconfigured. This undermines confidentiality and could violate access policies.",
+          "impact": "High",
+          "owasp_top_10": {
+            "IDENTIFICATION_AND_AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
+          },
+          "owasp_top_10_llm": {
+            "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection"
+          },
+          "compliance_controls": {
+            "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security",
+            "NIST80053_AC": "NIST 800-53 - Access Control",
+            "NIST80053_IA": "NIST 800-53 - Identification and Authentication"
+          },
+          "suggested_fix": "Enforce authentication and authorization for all requests; implement scoped access tokens (minimum privileges) for GitHub data; validate and rotate credentials; enforce per-user access controls and audit trails for repository queries."
+        },
+        {
+          "title": "Logging/telemetry leakage and privacy concerns",
+          "description": "User questions and repository identifiers may be logged, stored, or transmitted to third-party services, risking exposure of sensitive data. Inadequate data governance and logging controls can lead to privacy violations.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "SECURITY_LOGGING_AND_MONITORING_FAILURES": "A09:2021 - Security Logging and Monitoring Failures"
+          },
+          "owasp_top_10_llm": {
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling",
+            "OVERRELIANCE": "LLM09:2025 - Overreliance"
+          },
+          "compliance_controls": {
+            "NIST80053_AU": "NIST 800-53 - Audit and Accountability",
+            "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security"
+          },
+          "suggested_fix": "Redact PII and sensitive data from logs; implement data minimization, encryption in transit and at rest, and access controls for logs; establish a data retention policy and ensure telemetry respects user privacy."
+        },
+        {
+          "title": "Model hallucinations and inaccurate results",
+          "description": "Even with context grounding, the AI may hallucinate or misreport repository contents, misidentify file data, or provide incorrect conclusions. This can mislead users and erode trust.",
+          "impact": "Medium",
+          "owasp_top_10": {
+            "INSECURE_DESIGN": "A04:2021 - Insecure Design",
+            "INJECTION": "A03:2021 - Injection"
+          },
+          "owasp_top_10_llm": {
+            "OVERRELIANCE": "LLM09:2025 - Overreliance",
+            "INSECURE_OUTPUT_HANDLING": "LLM02:2025 - Insecure Output Handling"
+          },
+          "compliance_controls": {
+            "NIST80053_SI": "NIST 800-53 - System and Information Integrity",
+            "NIST80053_RA": "NIST 800-53 - Risk Assessment"
+          },
+          "suggested_fix": "Incorporate cross-checks with source data and static analyses; provide sources and verifiable links in outputs; add a governance layer that validates critical findings with human review; include clear caveats about potential inaccuracies."
+        }
+      ]
+    }
+  ],
+  "prompts": [],
+  "resources": []
+}

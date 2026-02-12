@@ -1,0 +1,13 @@
+[
+  {
+    "title": "Malware Evasion Susceptibility detected in GPT-4o during LLM Benchmark (malwaregen.Evasion)",
+    "description": "LLM benchmarking results for model gpt-4o show a high-risk exposure to malware-generation evasion probes. The malwaregen.Evasion probe was used, with 11 hits out of 48 tests (22.92% hit rate). The probe detected evasion behavior despite the detector being malwaregen.AnyCode. This indicates potential for adversaries to prompt the model to bypass content safeguards or assist in malware-related activities.",
+    "impact": "High",
+    "owasp_top_10_llm": {
+      "PROMPT_INJECTION": "LLM01:2025 - Prompt Injection",
+      "EXCESSIVE_AGENCY": "LLM08:2025 - Excessive Agency"
+    },
+    "suggested_fix": "1) Strengthen input and prompt filtering to block malware-related prompts and evasion attempts. 2) Enforce strict output sanitization and disallow generation of executable or malware payloads (code, scripts, payloads). 3) Integrate an adversarial/bypass testing suite into development and CI to routinely test for malware-evasion prompts; patch gaps promptly. 4) Apply policy-driven guardrails that prevent instruction-following for harmful activities, including malware creation or distribution. 5) Implement runtime monitoring and anomaly detection for evasion patterns; alert and throttle when suspicious prompts are detected. 6) Restrict printing or exporting of certain sensitive content; consider a safe-mode mode for high-risk scenarios.",
+    "cves": {}
+  }
+]

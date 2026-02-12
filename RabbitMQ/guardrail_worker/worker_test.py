@@ -1,9 +1,12 @@
 from dis import disco
 import json
 from celery import Celery
+from celery.result import AsyncResult
 import time 
 from rich.console import Console
 from dotenv import load_dotenv
+from rich.console import Console
+console = Console()
 load_dotenv()
 import os
 
@@ -17,7 +20,7 @@ except Exception as e :
 
 
 simple_app = Celery('guardrail_worker_test',
-                    broker=f"amqp://{username}:{password}@localhost:5672",
+                    broker=f"amqp://{username}:{password}@localhost:4672",
                     backend=mongo_url)
 
 
@@ -37,9 +40,12 @@ def test(
         stop = False 
 
         while not stop:
-            status = simple_app.AsyncResult(r.id, app=simple_app)
+            status : AsyncResult = simple_app.AsyncResult(r.id, app=simple_app)
             time.sleep(2)
             Console().print(f"Status : {status.state}",style="bold yellow")
+            if status.state == "STARTED":
+                console.print(f"Task {task_name} started",style="bold yellow1")
+                console.print(f"STARTED task state metadata : {status.info}",style="bold yellow1")
             if status.state == "SUCCESS":
                 results = simple_app.AsyncResult(r.id).result
                 Console().print(f"{task_name} completed",style="bold green")

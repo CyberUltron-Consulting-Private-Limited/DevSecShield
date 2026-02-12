@@ -12,6 +12,7 @@ from helpers.context.schema import *
 from helpers.tools.iac_agent.summary_manager import IACSummaryManager , FinalIACVulnerabilities
 from helpers.tools.iac_agent.context import IACTypeContext
 from helpers.tools.sca_sbom_agent.summary_manager import FinalDependencyVulnerabilities, SBOMSCASummaryManager , SBOMSCASummaryManagerForSBOMFile
+from helpers.context.progress_writer import StateUpdateWriter
 from langchain.text_splitter import CharacterTextSplitter
 from helpers.tools.sca_sbom_agent.parser import parse_sbom_results_to_strings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -28,6 +29,7 @@ class SCASBOMAgent(BaseAgent):
         context: GithubContext | GitlabContext | BitbucketContext | None = None,
         zip_context: ZipContext | None = None,
         sbom_json_file_context: FileContext = None,
+        state_update_writer: StateUpdateWriter | None = None,  
         ):
         try:
             directory = None
@@ -44,6 +46,8 @@ class SCASBOMAgent(BaseAgent):
             
             self.directory = directory # SET directory ⭐
             self.sbom_json_file = file  # SET sbom_json_file ⭐
+
+            self.state_update_writer : StateUpdateWriter | None = state_update_writer
 
             #initializing
             self.vulnerabilities : list[type[DependencyVulnerability]] | None = None
@@ -193,6 +197,9 @@ class SCASBOMAgent(BaseAgent):
         Runs the agent and returns the vulnerabilities
         """
         try:
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(20)
+
 
             if self.directory:
                 self.populate_opensource_context()
@@ -200,11 +207,18 @@ class SCASBOMAgent(BaseAgent):
                 self.analyze_sbom_file()
             else:
                 raise ValueError(f"Invalid Input , either directory or sbom_json_file_context is required")
+            
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(80)
 
             # STEP [ 5 ] ================================ Final checks and cleanup =====================================================================
 
             console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
             self.clean_up()
+
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(100)
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
             return self.vulnerabilities

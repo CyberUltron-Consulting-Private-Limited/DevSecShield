@@ -123,14 +123,20 @@ def get_status_and_update_db(
             if scan.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
                 scan.scan_status = SCAN_STATUS
                 console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
-            if SCAN_STATUS == "success":
+            if SCAN_STATUS == "started":
+                info = async_result.info
+                if "current" in info: 
+                    scan.info = {"current": info["current"]}  # for progress bar updates
+            elif SCAN_STATUS == "success":
                 results = simple_app.AsyncResult(task_id).result 
                 if not results:
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
                 SCAN_DATA = results
                 scan.scan_data = SCAN_DATA
+                scan.info = None # reset the info field
                 console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
-            else:  
+            else:
+                scan.info = None # reset the info field
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
             
             session.add(scan)

@@ -26,7 +26,7 @@ class MCPClient:
         self.tools : ListToolsResult = None
         self.prompts : ListPromptsResult = None
         self.resources : ListResourcesResult = None
-        self.recon_context : MCPReconContext = None
+        self.recon_context : MCPReconContext = MCPReconContext()
     
     async def connect_httpstreamable(self):
         # Connect to the streamable HTTP server
@@ -47,7 +47,7 @@ class MCPClient:
             url=self.server_url,
             headers=self.headers
         )
-        read_stream, write_stream, _ = await self.client_context.__aenter__()
+        read_stream, write_stream = await self.client_context.__aenter__()
         # Create a session using the client streams
         self.session_context = ClientSession(read_stream, write_stream) # CREATE session context ⭐
         self.session = await self.session_context.__aenter__() # CREATE session ⭐
@@ -65,16 +65,19 @@ class MCPClient:
                 console.print(f"Listing tools... 🔧",style="bold yellow")
                 tools = await self.session.list_tools()
                 self.tools : ListToolsResult = tools # SET self.tools to the tools ⭐
+                console.print(f"🔧 {len(self.tools.tools)} Tools Detected !",style="bold green")
             except Exception as e:
-                console.print(f"Error in listing tools: {e}",style="bold red")
+                console.print(f"Error in listing tools: {e}",style="dim red")
                 return
+            
             
             try:
                 console.print(f"Listing prompts... 💬",style="bold yellow")
                 prompts = await self.session.list_prompts()
                 self.prompts : ListPromptsResult = prompts # SET self.prompts to the prompts ⭐
+                console.print(f"💬 {len(self.prompts.prompts)} Prompts Detected !",style="bold green")
             except Exception as e:
-                console.print(f"Error in listing prompts: {e}",style="bold red")
+                console.print(f"Error in listing prompts: {e}",style="dim red")
                 return
             
             
@@ -82,8 +85,9 @@ class MCPClient:
                 console.print(f"Listing resources... 📂",style="bold yellow")
                 resources = await self.session.list_resources()
                 self.resources : ListResourcesResult = resources # SET self.resources to the resources ⭐
+                console.print(f"📂 {len(self.resources.resources)} Resources Detected !",style="bold green")
             except Exception as e:
-                console.print(f"Error in listing resources: {e}",style="bold red")
+                console.print(f"Error in listing resources: {e}",style="dim red")
                 return
             
 
@@ -121,6 +125,7 @@ class MCPClient:
                     input_schema=tool.inputSchema,
                     output_schema=tool.outputSchema
                 )
+                list_of_tools.append(tool_context)
             self.recon_context.tools = list_of_tools # SET tools ⭐
         
         # populate prompts
@@ -154,7 +159,7 @@ class MCPClient:
 
     async def connect_and_get_recon_context(self):
         """
-        Connect to the MCP Server and generate a report
+        Main function to connect to the MCP Server and get the recon context
         """
         if self.server_mode == "httpstreamable":
             await self.connect_httpstreamable()

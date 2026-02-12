@@ -19,6 +19,7 @@ from helpers.tools.llm_agent.context import LLMBenchmarkingContext
 from helpers.tools.llm_agent.llm_runner import run_garak_scan
 from helpers.tools.llm_agent.summary_manager import LLMBenchmarkingSummaryManager
 from helpers.tools.llm_agent.summary_manager import FinalLLMBenchmarkingVulnerabilities
+from helpers.context.progress_writer import StateUpdateWriter
 
 
 console = Console()
@@ -29,10 +30,12 @@ console = Console()
 class LLMBenchmarkingAgent(BaseAgent):
     def __init__(
         self,
-        llm_benchmarking_context: LLMBenchmarkingContext
+        llm_benchmarking_context: LLMBenchmarkingContext,
+        state_update_writer: StateUpdateWriter | None = None,   
         ):
         try:
-            self.llm_benchmarking_context = llm_benchmarking_context
+            self.llm_benchmarking_context : LLMBenchmarkingContext = llm_benchmarking_context
+            self.state_update_writer : StateUpdateWriter | None = state_update_writer
 
             #initializing
             self.vulnerabilities : list[type[LLMBenchmarkingVulnerability]] | None = None
@@ -48,14 +51,13 @@ class LLMBenchmarkingAgent(BaseAgent):
         """
         try:
             console.print(f"Populating open source context ...",style="bold yellow")
-            if not self.directory :
-                raise ValueError(f"Directory not found")
+            
             
             open_source_context = OpenSourceContext(
                 open_source_tool=run_garak_scan,
                 model_type = self.llm_benchmarking_context.model_type,
                 model_name = self.llm_benchmarking_context.model_name,
-                probes = self.llm_benchmarking_context.probes,
+                probes = ",".join(self.llm_benchmarking_context.probes),
                 api_key = self.llm_benchmarking_context.api_key,
                 headers = self.llm_benchmarking_context.headers,
                 request_template = self.llm_benchmarking_context.request_template,
@@ -65,12 +67,12 @@ class LLMBenchmarkingAgent(BaseAgent):
                 model_uri = self.llm_benchmarking_context.model_uri,
             )
 
-            summary = open_source_context.prepare_context(
+            opensource_results = open_source_context.prepare_context(
                 load_results_into_vector_store=False,
                 summary_manager=LLMBenchmarkingSummaryManager()
             )
 
-            output : type[FinalLLMBenchmarkingVulnerabilities] = summary 
+            output : type[FinalLLMBenchmarkingVulnerabilities] = opensource_results.summary 
             vulnerabilities = output.vulnerabilities # GET vulnerabilities ⭐
     
             console.print(f"Vulnerabilities length : {len(vulnerabilities)}",style="bold yellow")
@@ -94,42 +96,37 @@ class LLMBenchmarkingAgent(BaseAgent):
         Runs the agent and returns the vulnerabilities
         """
         try:
-
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(30)
             self.populate_opensource_context()
+        
 
-            # STEP [ 5 ] ================================ Final checks and cleanup =====================================================================
+            if self.state_update_writer:
+                self.state_update_writer.write_progress_percentage(100)
 
-            console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
-            self.clean_up()
-
-            # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
-            return self.vulnerabilities
+            
+            parsed_output = self.to_dict_list(self.vulnerabilities)
+            return parsed_output
 
 
         except Exception as e:
             console.print(f"Error occured in run_agent : {str(e)}",style="bold red")
-            self.clean_up()
             raise Exception(f"Error occured while running agent : {str(e)}")
     
 
     def estimate_credits_required(self)->int:
         """
         Estimates the credits required for the sbom sca scan
+
+        each probe costs 0.002 Credits 
+        return number_of_probes * 0.002
         """
         try:
-            total_credits = 0
+            number_of_probes = len(self.llm_benchmarking_context.probes)
 
-            # credits from open source context
-            credits_from_open_source_context = 0.01 / 0.836 # 1 credit ~ 0.836 $ ( note : 0.01 $ is a constant cost for the sbom sca scan )
-            
-            # calculate total credits
-            total_credits = credits_from_open_source_context
-            return total_credits
+            return number_of_probes * 0.002
             
         except Exception as e:
             raise e
         
-        finally:
-            console.print("Performing cleanup .... 🧹",style = "dim bright_cyan")
-            self.clean_up()
     
