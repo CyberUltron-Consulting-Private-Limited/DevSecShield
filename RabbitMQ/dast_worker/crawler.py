@@ -57,7 +57,7 @@ class Crawler:
                 self.visited_urls.append(url)  # Adding the visited URL to the list of visited URLs
 
 if __name__ == '__main__':
-    crawler = Crawler(urls=['https://www.imdb.com/']) # Creating an instance of the Crawler class and starting the crawling process with IMDb's homepage as the starting URL
+    crawler = Crawler(urls=['https://www.imdb.com/',"https://demo.testfire.net/login.jsp"]) # Creating an instance of the Crawler class and starting the crawling process with IMDb's homepage as the starting URL
     crawler.run()
     console.print(f"Crawling completed",style="bold green")
 

@@ -9,6 +9,7 @@ from celery.result import AsyncResult
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.new_models import GuardrailsIntegration
 from backend.utilities.dashboard.guardrail_integration import get_guardrails_integration_dashboard_data
+from backend.utilities.dashboard.guardrails_list import create_dashboard_data_for_guardrails_list
 from backend.utilities.guardrails.auth import create_api_key
 from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
 from backend.utilities.auth.auth_utils import *
@@ -64,7 +65,10 @@ async def list_guardrails_integrations(
                     "created_at": integration.created_at,
                     "last_updated": integration.last_updated
                 })
-            return response_data
+            return {
+                "integrations": response_data,
+                "dashboard_data": create_dashboard_data_for_guardrails_list(team_id=team_id),
+            }
     
     except HTTPException as e:
         raise e

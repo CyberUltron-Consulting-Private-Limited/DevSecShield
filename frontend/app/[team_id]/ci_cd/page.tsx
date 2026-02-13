@@ -28,13 +28,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, RefreshCcw, Loader2, MoreVertical, Pencil, Trash2, Copy, Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Plus, RefreshCcw, Loader2, MoreVertical, Pencil, Trash2, Copy, Check, Search, X, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { CicdIntegration, getCicdIntegrations, createCicdIntegration, CreateCicdIntegrationData, deleteCicdIntegration, renameCicdIntegration } from "@/utils/backend_api";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { showErrorToast } from "@/utils/error-handler";
 import { toast } from "sonner";
 import { useRouter, useParams } from "next/navigation";
+
+const vulnsOverTimeChartConfig = {
+  date: { label: "Date" },
+  Critical: { label: "Critical", color: "hsl(0 84% 60%)" },
+  High: { label: "High", color: "hsl(25 95% 53%)" },
+  Medium: { label: "Medium", color: "hsl(48 96% 53%)" },
+  Low: { label: "Low", color: "hsl(142 71% 45%)" },
+} satisfies ChartConfig;
 
 export default function CicdPage() {
   const params = useParams();
@@ -49,6 +65,8 @@ export default function CicdPage() {
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
   const [formTitle, setFormTitle] = useState("");
   const [formScanType, setFormScanType] = useState<"sast" | "">("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
   const router = useRouter();
   const query = useQuery({ 
     queryKey: ['cicd-integrations', team_id], 
@@ -56,9 +74,27 @@ export default function CicdPage() {
     enabled: !!team_id,
   });
 
+  const dashboardData = query.data?.dashboard_data;
+  const vulnsOverTimeChartArray = useMemo(() => {
+    if (!dashboardData || typeof dashboardData !== "object") return [];
+    return Object.entries(dashboardData)
+      .map(([date, counts]) => ({
+        date,
+        Critical: counts?.Critical ?? 0,
+        High: counts?.High ?? 0,
+        Medium: counts?.Medium ?? 0,
+        Low: counts?.Low ?? 0,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [dashboardData]);
+
+  const hasVulnsOverTimeData = vulnsOverTimeChartArray.length > 0 && vulnsOverTimeChartArray.some(
+    (d) => d.Critical > 0 || d.High > 0 || d.Medium > 0 || d.Low > 0
+  );
+
   useEffect(() => {
-    if (query.data) {
-      setIntegrations(query.data);
+    if (query.data?.integrations) {
+      setIntegrations(query.data.integrations);
     }
     if (query.error) {
       showErrorToast(query.error, 'Error fetching CI/CD integrations');
@@ -166,6 +202,19 @@ export default function CicdPage() {
     }
   };
 
+  const hasActiveFilters = searchQuery !== "" || createdAtSort !== "none";
+  const filteredIntegrations = integrations
+    .filter((i) => {
+      if (searchQuery && !i.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (createdAtSort === "asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (createdAtSort === "desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return 0;
+    });
+  const clearFilters = () => { setSearchQuery(""); setCreatedAtSort("none"); };
+
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
       <div className="flex-1 p-8 overflow-auto">
@@ -223,6 +272,49 @@ export default function CicdPage() {
               </Button>
             </div>
           ) : (
+            <>
+              {/* Filter bar */}
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <Input
+                    placeholder="Search by title..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9 cursor-text"
+                  />
+                </div>
+                <div className="text-zinc-600 dark:text-zinc-400 text-sm">Sort by</div>
+                <Select value={createdAtSort} onValueChange={(v) => setCreatedAtSort(v as "none" | "asc" | "desc")}>
+                  <SelectTrigger className="h-9 min-w-[170px] cursor-pointer">
+                    <SelectValue placeholder="Created at" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none" className="cursor-pointer">Default</SelectItem>
+                    <SelectItem value="desc" className="cursor-pointer">Newest</SelectItem>
+                    <SelectItem value="asc" className="cursor-pointer">Oldest</SelectItem>
+                  </SelectContent>
+                </Select>
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer"
+                    onClick={clearFilters}
+                  >
+                    <X className="h-4 w-4 mr-1" />Clear filters
+                  </Button>
+                )}
+              </div>
+
+              {filteredIntegrations.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-zinc-600 dark:text-zinc-400 mb-4">No integrations match your filters.</p>
+                  <Button variant="outline" className="cursor-pointer" onClick={clearFilters}>
+                    <X className="h-4 w-4 mr-2" />Clear filters
+                  </Button>
+                </div>
+              ) : (
             <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
@@ -236,7 +328,7 @@ export default function CicdPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {integrations.map((integration) => (
+                  {filteredIntegrations.map((integration) => (
                     <TableRow key={integration.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <TableCell className="font-medium">
                         <Link
@@ -312,6 +404,79 @@ export default function CicdPage() {
                 </TableBody>
               </Table>
             </div>
+              )}
+
+              {/* Vulnerabilities over time (all integrations) - below table */}
+              {!query.isLoading && !query.isError && (
+                <Card className="mt-6 border-zinc-200 dark:border-zinc-800">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Vulnerabilities over time by severity
+                    </CardTitle>
+                    <CardDescription>
+                      Count of findings per scan date across all integrations (Critical, High, Medium, Low)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {!hasVulnsOverTimeData ? (
+                      <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">
+                        No vulnerability data to display. Run scans to see trends over time.
+                      </div>
+                    ) : (
+                      <ChartContainer config={vulnsOverTimeChartConfig} className="aspect-auto h-[280px] w-full pb-8">
+                        <AreaChart data={vulnsOverTimeChartArray} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+                          <defs>
+                            <linearGradient id="fillCicdListCritical" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
+                              <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
+                            </linearGradient>
+                            <linearGradient id="fillCicdListHigh" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(25 95% 53%)" stopOpacity={0.8} />
+                              <stop offset="95%" stopColor="hsl(25 95% 53%)" stopOpacity={0.1} />
+                            </linearGradient>
+                            <linearGradient id="fillCicdListMedium" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(48 96% 53%)" stopOpacity={0.8} />
+                              <stop offset="95%" stopColor="hsl(48 96% 53%)" stopOpacity={0.1} />
+                            </linearGradient>
+                            <linearGradient id="fillCicdListLow" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(142 71% 45%)" stopOpacity={0.8} />
+                              <stop offset="95%" stopColor="hsl(142 71% 45%)" stopOpacity={0.1} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                          <XAxis
+                            dataKey="date"
+                            tickLine={false}
+                            axisLine={false}
+                            tickMargin={8}
+                            minTickGap={24}
+                            height={40}
+                            tickFormatter={(v) => {
+                              const d = new Date(v);
+                              return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+                            }}
+                          />
+                          <YAxis hide domain={[0, "auto"]} />
+                          <ChartTooltip
+                            cursor={false}
+                            content={
+                              <ChartTooltipContent
+                                labelFormatter={(v) => new Date(v).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                              />
+                            }
+                          />
+                          <Area type="monotone" dataKey="Critical" fill="url(#fillCicdListCritical)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="High" fill="url(#fillCicdListHigh)" stroke="hsl(25 95% 53%)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="Medium" fill="url(#fillCicdListMedium)" stroke="hsl(48 96% 53%)" strokeWidth={2} />
+                          <Area type="monotone" dataKey="Low" fill="url(#fillCicdListLow)" stroke="hsl(142 71% 45%)" strokeWidth={2} />
+                        </AreaChart>
+                      </ChartContainer>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </div>
       </div>

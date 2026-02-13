@@ -7,6 +7,7 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
+from xml.sax.saxutils import escape as xml_escape
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -109,52 +110,116 @@ def create_header_footer(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate):
     canvas_obj.restoreState()
 
 
+def _cell_paragraph(text: Any, style: ParagraphStyle) -> Paragraph:
+    """Wrap text in a Paragraph so it wraps in table cells; escape XML to avoid breaking markup."""
+    if text is None:
+        return Paragraph("—", style)
+    s = str(text).strip() or "—"
+    return Paragraph(xml_escape(s), style)
+
+
+def _format_owasp_compliance(val: Any) -> str:
+    if val is None:
+        return "—"
+    if isinstance(val, list):
+        return ", ".join(
+            str(x.get(list(x.keys())[0], list(x.keys())[0]) if isinstance(x, dict) and x else x)
+            for x in val[:15]
+        ) or "—"
+    if isinstance(val, dict):
+        return ", ".join(str(v) for v in list(val.values())[:15]) or "—"
+    return str(val)
+
+
+def _is_agent_format(scan_results: dict) -> bool:
+    return (
+        isinstance(scan_results, dict)
+        and (
+            "tools" in scan_results
+            or "prompts" in scan_results
+            or "resources" in scan_results
+        )
+    )
+
+
+def _flatten_agent_vulnerabilities(scan_results: dict) -> list:
+    """Return list of (resource_type, resource_name, vuln_dict)."""
+    out = []
+    for tool in scan_results.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("tool_name", "Unknown")
+        for v in tool.get("vulnerabilities") or []:
+            if isinstance(v, dict):
+                out.append(("Tool", name, v))
+    for prompt in scan_results.get("prompts") or []:
+        if not isinstance(prompt, dict):
+            continue
+        name = prompt.get("prompt_name", "Unknown")
+        for v in prompt.get("vulnerabilities") or []:
+            if isinstance(v, dict):
+                out.append(("Prompt", name, v))
+    for resource in scan_results.get("resources") or []:
+        if not isinstance(resource, dict):
+            continue
+        name = resource.get("resource_name", "Unknown")
+        for v in resource.get("vulnerabilities") or []:
+            if isinstance(v, dict):
+                out.append(("Resource", name, v))
+    return out
+
+
 def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     """
     Generate a PDF report from MCP scan results.
-    
-    Args:
-        scan_results: Dictionary containing MCP scan results
-        output_path: Optional path to save the PDF. If None, generates a timestamped filename.
-    
-    Returns:
-        Path to the generated PDF file
+    Supports agent format { tools, prompts, resources } or legacy { final_issues, error_messages }.
     """
-    # Generate output filename if not provided
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"mcp_scan_report_{timestamp}.pdf"
-    
-    # Extract data from scan results
-    final_issues = scan_results.get("final_issues", [])
-    error_messages = scan_results.get("error_messages", [])
-    
-    # Calculate statistics
-    total_issues = len(final_issues)
-    by_severity = {}
-    by_issue_code = {}
-    by_issue_type = {}
-    by_server = {}
-    unique_tools = set()
-    
-    for issue in final_issues:
-        severity = issue.get("issue_severity", "unknown")
-        by_severity[severity] = by_severity.get(severity, 0) + 1
-        
-        issue_code = issue.get("issue_code", "Unknown")
-        by_issue_code[issue_code] = by_issue_code.get(issue_code, 0) + 1
-        
-        issue_type = issue.get("issue_type", "unknown")
-        by_issue_type[issue_type] = by_issue_type.get(issue_type, 0) + 1
-        
-        server = issue.get("server", "Unknown")
-        by_server[server] = by_server.get(server, 0) + 1
-        
-        tool = issue.get("tool")
-        if tool and isinstance(tool, dict):
-            tool_name = tool.get("name", "")
-            if tool_name:
-                unique_tools.add(tool_name)
+
+    use_agent_format = _is_agent_format(scan_results)
+    if use_agent_format:
+        flat_vulns = _flatten_agent_vulnerabilities(scan_results)
+        tools_list = scan_results.get("tools") or []
+        prompts_list = scan_results.get("prompts") or []
+        resources_list = scan_results.get("resources") or []
+        total_issues = len(flat_vulns)
+        by_severity = {}
+        for _rt, _rn, v in flat_vulns:
+            imp = (v.get("impact") or "unknown").strip().lower() or "unknown"
+            by_severity[imp] = by_severity.get(imp, 0) + 1
+        final_issues = []
+        error_messages = scan_results.get("error_messages", [])
+        num_tools = len(tools_list)
+        num_prompts = len(prompts_list)
+        num_resources = len(resources_list)
+        by_issue_code = {}
+        by_issue_type = {}
+        by_server = {}
+        unique_tools = set()
+    else:
+        final_issues = scan_results.get("final_issues", [])
+        error_messages = scan_results.get("error_messages", [])
+        total_issues = len(final_issues)
+        by_severity = {}
+        by_issue_code = {}
+        by_issue_type = {}
+        by_server = {}
+        unique_tools = set()
+        for issue in final_issues:
+            severity = issue.get("issue_severity", "unknown")
+            by_severity[severity] = by_severity.get(severity, 0) + 1
+            issue_code = issue.get("issue_code", "Unknown")
+            by_issue_code[issue_code] = by_issue_code.get(issue_code, 0) + 1
+            issue_type = issue.get("issue_type", "unknown")
+            by_issue_type[issue_type] = by_issue_type.get(issue_type, 0) + 1
+            server = issue.get("server", "Unknown")
+            by_server[server] = by_server.get(server, 0) + 1
+            tool = issue.get("tool")
+            if tool and isinstance(tool, dict) and tool.get("name"):
+                unique_tools.add(tool["name"])
+        num_tools = num_prompts = num_resources = None
     
     # Create PDF document
     doc = SimpleDocTemplate(
@@ -234,13 +299,23 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     story.append(Spacer(1, 0.3 * inch))
     
     # Summary statistics table
-    summary_data = [
-        ["Metric", "Value"],
-        ["Total Issues Found", str(total_issues)],
-        ["Unique Tools Affected", str(len(unique_tools))],
-        ["Unique Servers Scanned", str(len(by_server))],
-        ["Scan Errors", str(len(error_messages))],
-    ]
+    if use_agent_format:
+        summary_data = [
+            ["Metric", "Value"],
+            ["Tools", str(num_tools)],
+            ["Prompts", str(num_prompts)],
+            ["Resources", str(num_resources)],
+            ["Total Vulnerabilities", str(total_issues)],
+            ["Scan Errors", str(len(error_messages))],
+        ]
+    else:
+        summary_data = [
+            ["Metric", "Value"],
+            ["Total Issues Found", str(total_issues)],
+            ["Unique Tools Affected", str(len(unique_tools))],
+            ["Unique Servers Scanned", str(len(by_server))],
+            ["Scan Errors", str(len(error_messages))],
+        ]
     
     summary_table = Table(summary_data, colWidths=[3.5 * inch, 2.5 * inch], repeatRows=1)
     summary_table.setStyle(TableStyle([
@@ -350,21 +425,67 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     # Detailed Findings
     if total_issues == 0:
         story.append(Paragraph("No security issues detected.", normal_style))
-    else:
-        # Process each issue - each gets 2 pages
-        for idx, issue in enumerate(final_issues, 1):
-            # Page break before each issue (except the first one)
+    elif use_agent_format:
+        for idx, (resource_type, resource_name, vuln) in enumerate(flat_vulns, 1):
             if idx > 1:
                 story.append(PageBreak())
-            
+            title = vuln.get("title") or "Untitled"
+            impact = (vuln.get("impact") or "unknown").strip() or "unknown"
+            description = vuln.get("description") or "—"
+            compliance = vuln.get("compliance_controls")
+            suggested_fix = vuln.get("suggested_fix")
+
+            story.append(Paragraph(f"Finding #{idx}: {title}", heading_style))
+            story.append(Spacer(1, 0.2 * inch))
+            finding_data = [["Property", "Value"]]
+            finding_data.append(["Resource", _cell_paragraph(f"{resource_type}: {resource_name}", normal_style)])
+            finding_data.append(["Title", _cell_paragraph(title, normal_style)])
+            finding_data.append(["Impact", _cell_paragraph(impact.upper(), normal_style)])
+            desc_para = Paragraph(xml_escape(description[:500] + ("..." if len(description) > 500 else "")), normal_style)
+            finding_data.append(["Description", desc_para])
+            finding_data.append(["OWASP Top 10", _cell_paragraph(_format_owasp_compliance(vuln.get("owasp_top_10")), normal_style)])
+            finding_data.append(["OWASP Top 10 (LLM)", _cell_paragraph(_format_owasp_compliance(vuln.get("owasp_top_10_llm")), normal_style)])
+            finding_data.append(["Compliance Controls", _cell_paragraph(_format_owasp_compliance(compliance), normal_style)])
+            fix_text = _format_owasp_compliance(suggested_fix) if suggested_fix is not None else "—"
+            finding_data.append(["Suggested Fix", _cell_paragraph(fix_text, normal_style)])
+
+            finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
+            finding_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), get_severity_color(impact)),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('TOPPADDING', (0, 0), (-1, 0), 8),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ]))
+            story.append(KeepTogether([finding_table]))
+            story.append(Spacer(1, 0.2 * inch))
+            msg_heading = ParagraphStyle(
+                'MessageHeading', parent=normal_style, fontSize=10, fontName='Helvetica-Bold',
+                textColor=colors.HexColor("#1E293B"), spaceAfter=6, spaceBefore=0
+            )
+            story.append(Paragraph("Full Description", msg_heading))
+            story.append(Paragraph(xml_escape(description), normal_style))
+    else:
+        # Legacy: Process each issue
+        for idx, issue in enumerate(final_issues, 1):
+            if idx > 1:
+                story.append(PageBreak())
             issue_code = issue.get("issue_code", "Unknown")
             issue_message = issue.get("issue_message", "No message available")
             issue_type = issue.get("issue_type", "unknown")
             server = issue.get("server", "Unknown")
             tool = issue.get("tool")
             severity = issue.get("issue_severity", "unknown")
-            
-            # Extract tool information
             tool_name = "N/A"
             tool_description = "N/A"
             input_schema = None
@@ -372,36 +493,19 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                 tool_name = tool.get("name", "N/A")
                 tool_description = tool.get("description", "N/A")
                 input_schema = tool.get("input_schema")
-            
-            # Issue header
-            finding_title = f"Issue #{idx}: {issue_code}"
-            story.append(Paragraph(finding_title, heading_style))
+
+            story.append(Paragraph(f"Issue #{idx}: {issue_code}", heading_style))
             story.append(Spacer(1, 0.2 * inch))
-            
-            # Issue details table - wrap long text
-            finding_data = []
-            finding_data.append(["Property", "Value"])
-            
-            # Issue Code
-            finding_data.append(["Issue Code", issue_code])
-            
-            # Severity
-            finding_data.append(["Severity", severity.upper()])
-            
-            # Issue Type
+            finding_data = [["Property", "Value"]]
+            finding_data.append(["Issue Code", _cell_paragraph(issue_code, normal_style)])
+            finding_data.append(["Severity", _cell_paragraph(severity.upper(), normal_style)])
             issue_type_display = issue_type.replace("_", " ").title() if issue_type != "unknown" else "Unknown"
-            finding_data.append(["Issue Type", issue_type_display])
-            
-            # Server
-            finding_data.append(["Server", server])
-            
-            # Tool Name
-            finding_data.append(["Tool Name", tool_name])
-            
-            # Issue Message - wrap if too long
-            message_para = Paragraph(issue_message[:150] + ("..." if len(issue_message) > 150 else ""), normal_style)
+            finding_data.append(["Issue Type", _cell_paragraph(issue_type_display, normal_style)])
+            finding_data.append(["Server", _cell_paragraph(server, normal_style)])
+            finding_data.append(["Tool Name", _cell_paragraph(tool_name, normal_style)])
+            message_para = Paragraph(xml_escape(issue_message[:500] + ("..." if len(issue_message) > 500 else "")), normal_style)
             finding_data.append(["Issue Message", message_para])
-            
+
             finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
             finding_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), get_severity_color(severity)),
@@ -416,79 +520,47 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
                 ('TOPPADDING', (0, 1), (-1, -1), 6),
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),  # Subtle grid
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
             ]))
             story.append(KeepTogether([finding_table]))
-            
-            # Page break after table - description and details go on next page
             story.append(PageBreak())
-            
-            # Full Issue Message section (starts on page 2 of this issue)
+
             message_heading_style = ParagraphStyle(
-                'MessageHeading',
-                parent=normal_style,
-                fontSize=10,
-                fontName='Helvetica-Bold',
-                textColor=colors.HexColor("#1E293B"),
-                spaceAfter=6,
-                spaceBefore=0
+                'MessageHeading', parent=normal_style, fontSize=10, fontName='Helvetica-Bold',
+                textColor=colors.HexColor("#1E293B"), spaceAfter=6, spaceBefore=0
             )
             story.append(Paragraph("Full Issue Message", message_heading_style))
             story.append(Spacer(1, 0.12 * inch))
-            full_message_para = Paragraph(issue_message, normal_style)
-            story.append(full_message_para)
+            story.append(Paragraph(xml_escape(issue_message), normal_style))
             story.append(Spacer(1, 0.25 * inch))
-            
-            # Tool Details if available
+
             if tool and isinstance(tool, dict) and tool_name != "N/A":
                 tool_heading_style = ParagraphStyle(
-                    'ToolHeading',
-                    parent=normal_style,
-                    fontSize=10,
-                    fontName='Helvetica-Bold',
-                    textColor=colors.HexColor("#1E293B"),
-                    spaceAfter=6,
-                    spaceBefore=0
+                    'ToolHeading', parent=normal_style, fontSize=10, fontName='Helvetica-Bold',
+                    textColor=colors.HexColor("#1E293B"), spaceAfter=6, spaceBefore=0
                 )
                 story.append(Paragraph("Tool Details", tool_heading_style))
                 story.append(Spacer(1, 0.12 * inch))
-                
-                tool_info = f"<b>Tool Name:</b> {tool_name}<br/>"
-                tool_info += f"<b>Description:</b> {tool_description}<br/>"
-                
+                tool_info = f"<b>Tool Name:</b> {tool_name}<br/><b>Description:</b> {tool_description}<br/>"
                 if input_schema:
                     schema_type = input_schema.get("type", "N/A")
                     tool_info += f"<b>Input Schema Type:</b> {schema_type}<br/>"
                     properties = input_schema.get("properties", {})
                     if properties:
                         tool_info += f"<b>Properties:</b> {len(properties)} property/properties defined"
-                
-                tool_para = Paragraph(tool_info, normal_style)
-                story.append(tool_para)
+                story.append(Paragraph(tool_info, normal_style))
                 story.append(Spacer(1, 0.25 * inch))
-            
-            # Issue Type Details
+
             type_heading_style = ParagraphStyle(
-                'TypeHeading',
-                parent=normal_style,
-                fontSize=10,
-                fontName='Helvetica-Bold',
-                textColor=colors.HexColor("#1E293B"),
-                spaceAfter=6,
-                spaceBefore=0
+                'TypeHeading', parent=normal_style, fontSize=10, fontName='Helvetica-Bold',
+                textColor=colors.HexColor("#1E293B"), spaceAfter=6, spaceBefore=0
             )
             story.append(Paragraph("Issue Type Information", type_heading_style))
             story.append(Spacer(1, 0.12 * inch))
-            
-            type_info = f"<b>Issue Type:</b> {issue_type_display}<br/>"
-            type_info += f"<b>Issue Code:</b> {issue_code}<br/>"
-            type_info += f"<b>Server:</b> {server}<br/>"
-            type_info += f"<b>Severity:</b> {severity.upper()}"
-            
-            type_para = Paragraph(type_info, normal_style)
-            story.append(type_para)
+            type_info = f"<b>Issue Type:</b> {issue_type_display}<br/><b>Issue Code:</b> {issue_code}<br/><b>Server:</b> {server}<br/><b>Severity:</b> {severity.upper()}"
+            story.append(Paragraph(type_info, normal_style))
     
     # Scan Errors section (if any)
     if error_messages:

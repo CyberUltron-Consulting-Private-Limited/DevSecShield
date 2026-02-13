@@ -115,10 +115,19 @@ class StartSBOMScanData(BaseStartRepositoryScanData):
         return self
 
 
-class StartScanPayload(BaseModel):
-    sast : StartSastScanData | None = None
-    iac : StartIACScanData | None = None
-    sbom_sca : StartSBOMScanData | None = None
+class StartMCPScanData(BaseModel):
+    server_url: str
+    server_mode: Literal["httpstreamable", "sse"]
+    headers: dict | None = None
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.server_url or not self.server_url.strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MCP server URL is required")
+        return self
+
+
+
 
 
 
@@ -135,11 +144,14 @@ class StartLLMBenchmarkingData(BaseModel):
     method: Literal["get", "post"] = "post"
 
 
+class StartScanPayload(BaseModel):
+    sast : StartSastScanData | None = None
+    iac : StartIACScanData | None = None
+    sbom_sca : StartSBOMScanData | None = None
+    mcp : StartMCPScanData | None = None
+    llm : StartLLMBenchmarkingData | None = None
 
 
-# ----------------- for later if need be --------------------
-# class StartMCPScanData(BaseModel):
-#     server_config: str
 
 
 # class HeaderCookieSchema(BaseModel):

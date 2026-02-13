@@ -84,6 +84,20 @@ async def format_input_for_scan(
                 
                 console.print(f"SBOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
+
+            case "mcp":
+                if not start_scan_payload.mcp:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MCP context is required")
+                scan_kwargs["mcp_dict_context"] = start_scan_payload.mcp.model_dump()
+                console.print(f"MCP kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                return scan_kwargs
+
+            case "llm":
+                if not start_scan_payload.llm:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LLM context is required")
+                scan_kwargs["llm_benchmark_dict_context"] = start_scan_payload.llm.model_dump()
+                console.print(f"LLM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                return scan_kwargs
             
             case _:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")

@@ -14,11 +14,19 @@ import {
   Loader2,
   Download,
   Eye,
+  ScanLine,
 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { LLMConversationResponse, startLLMScan, getLLMExportResults, reinitializeLLMScan } from "@/utils/backend_api";
+import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
+import {
+  LLMConversationResponse,
+  estimateCreditsForScan,
+  startScan,
+  getLLMExportResults,
+  reinitializeLLMScan,
+} from "@/utils/backend_api";
+import { handleApiError } from "@/utils/error-handler";
 import { toast } from "sonner";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import ModelChoicePicker from "./ModelChoicePicker";
 import probeDescription from "@/garak_probes.json";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";
@@ -36,7 +44,7 @@ type LLMScanCreateData = {
     model_uri: string;
 }
 
-// Available probe categories and probes
+// Available security benchmarks
 const availableProbes = [
     "malwaregen.TopLevel",
     "malwaregen.Evasion", 
@@ -68,44 +76,51 @@ const availableProbes = [
     "xss.StringAssemblyDataExfil"
 ];
 
-// Display names mapping for probes
+// Display names for security benchmarks
 const probeDisplayNames: Record<string, string> = {
-    "malwaregen.TopLevel": "Malware Generation - Top Level",
-    "malwaregen.Evasion": "Malware Generation - Evasion Techniques",
-    "promptinject.HijackHateHumans": "Prompt Injection - Hate Humans",
-    "promptinject.HijackKillHumans": "Prompt Injection - Kill Humans",
-    "promptinject.HijackLongPrompt": "Prompt Injection - Long Prompt",
-    "realtoxicityprompts.RTPBlank": "Real Toxicity Prompts - Blank",
-    "sata.MLM": "SATA - Masked Language Model",
-    "snowball.GraphConnectivity": "Snowball - Graph Connectivity",
-    "snowball.Primes": "Snowball - Prime Numbers",
-    "snowball.Senators": "Snowball - Senators",
-    "suffix.BEAST": "Suffix Attack - BEAST",
-    "suffix.GCG": "Suffix Attack - GCG",
-    "suffix.GCGCached": "Suffix Attack - GCG Cached",
-    "tap.PAIR": "TAP - PAIR",
-    "tap.TAP": "TAP - Tree of Attacks with Pruning",
-    "tap.TAPCached": "TAP - Tree of Attacks (Cached)",
-    "test.Blank": "Test - Blank Response",
-    "test.Test": "Test - Basic Test",
-    "topic.WordnetAllowedWords": "Topic - WordNet Allowed Words",
-    "topic.WordnetBlockedWords": "Topic - WordNet Blocked Words",
-    "topic.WordnetControversial": "Topic - WordNet Controversial",
-    "visual_jailbreak.FigStep": "Visual Jailbreak - Figure Step",
-    "xss.ColabAIDataLeakage": "XSS - Colab AI Data Leakage",
-    "xss.MarkdownImageExfil": "XSS - Markdown Image Exfiltration",
-    "xss.MarkdownURIImageExfilExtended": "XSS - Markdown URI Image Exfiltration",
-    "xss.MarkdownURINonImageExfilExtended": "XSS - Markdown URI Non-Image Exfiltration",
-    "xss.MdExfil20230929": "XSS - Markdown Exfiltration (2023-09-29)",
-    "xss.StringAssemblyDataExfil": "XSS - String Assembly Data Exfiltration"
+    "malwaregen.TopLevel": "Malware generation capability",
+    "malwaregen.Evasion": "Malware generation with evasion techniques",
+    "promptinject.HijackHateHumans": "Prompt injection: harmful bias",
+    "promptinject.HijackKillHumans": "Prompt injection: extreme harmful intent",
+    "promptinject.HijackLongPrompt": "Prompt injection: long-prompt override",
+    "realtoxicityprompts.RTPBlank": "Toxic content generation",
+    "sata.MLM": "Sensitive data extraction (MLM)",
+    "snowball.GraphConnectivity": "Indirect prompt leakage (graph)",
+    "snowball.Primes": "Indirect prompt leakage (primes)",
+    "snowball.Senators": "Indirect prompt leakage (senators)",
+    "suffix.BEAST": "Adversarial suffix (BEAST)",
+    "suffix.GCG": "Adversarial suffix (GCG)",
+    "suffix.GCGCached": "Adversarial suffix (GCG cached)",
+    "tap.PAIR": "Automated jailbreak (PAIR)",
+    "tap.TAP": "Tree of attacks (TAP)",
+    "tap.TAPCached": "Tree of attacks (TAP cached)",
+    "test.Blank": "Baseline: blank response",
+    "test.Test": "Baseline: basic test",
+    "topic.WordnetAllowedWords": "Topic compliance: allowed vocabulary",
+    "topic.WordnetBlockedWords": "Topic compliance: blocked vocabulary",
+    "topic.WordnetControversial": "Topic compliance: controversial terms",
+    "visual_jailbreak.FigStep": "Visual jailbreak (FigStep)",
+    "xss.ColabAIDataLeakage": "Data leakage via markdown",
+    "xss.MarkdownImageExfil": "Exfiltration via markdown image",
+    "xss.MarkdownURIImageExfilExtended": "Exfiltration via markdown URI (image)",
+    "xss.MarkdownURINonImageExfilExtended": "Exfiltration via markdown URI",
+    "xss.MdExfil20230929": "Markdown-based exfiltration",
+    "xss.StringAssemblyDataExfil": "String assembly data exfiltration"
 };
 
 export function LLMOptionsSidebar({
   query,
-}:{
+  team_id,
+  scan_id,
+}: {
   query: UseQueryResult<LLMConversationResponse>;
+  team_id: number;
+  scan_id: number;
 }) {
-  const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" >("ready");
+  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
+  const [estimationProcessDone, setEstimationProcessDone] = useState(false);
 
   // Unified state object conforming to LLMScanCreateData type
   const [creationData, setCreationData] = useState<LLMScanCreateData>({
@@ -128,7 +143,7 @@ export function LLMOptionsSidebar({
       }));
   };
 
-  // Helper function to toggle probe selection
+  // Helper function to toggle benchmark selection
   const toggleProbe = (probe: string) => {
       setCreationData(prev => ({
           ...prev,
@@ -140,244 +155,199 @@ export function LLMOptionsSidebar({
 
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { conversation_id } = useParams();
 
-  const handleStartScan = ({
-    conversation_id,
-    creationData
-  }: {
-    conversation_id: number;
-    creationData: LLMScanCreateData;
-  }) => {
-    setOptionsSidebarState("scanning");
-    
-    // Validate required fields
-    if (!creationData.api_key && creationData.model_type !== "custom"){
-      toast.error("Please provide the API Key for the model");
-      setOptionsSidebarState("error");
-      throw new Error("Please provide the API Key for the model");
+  /** Validate required inputs; return message for toast on invalid. */
+  const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
+    if (!creationData.model_type || !creationData.model_name) {
+      return { valid: false, message: "Please select Model Type and Model Name." };
     }
-    if(!creationData.model_type || !creationData.model_name || creationData.probes.length === 0){
-      toast.error("Please fill in Model Type, Model Name, and at least one Probe");
-      setOptionsSidebarState("error");
-      throw new Error("Please fill in Model Type, Model Name, and at least one Probe");
+    if (creationData.probes.length === 0) {
+      return { valid: false, message: "Please select at least one Security Benchmark." };
     }
-
-    // For custom models, validate additional required fields
-    if(creationData.model_type === "custom"){
-      if(!creationData.model_uri || !creationData.request_template || !creationData.response_json_field){
-        toast.error("Custom models require Model URI, Request Template, and Response JSON Field");
-        setOptionsSidebarState("error");
-        throw new Error("Custom models require Model URI, Request Template, and Response JSON Field");
+    if (creationData.model_type !== "custom" && !creationData.api_key?.trim()) {
+      return { valid: false, message: "Please provide the API Key for the model." };
+    }
+    if (creationData.model_type === "custom") {
+      if (!creationData.model_uri?.trim() || !creationData.request_template?.trim() || !creationData.response_json_field?.trim()) {
+        return { valid: false, message: "Custom models require Model URI, Request Template, and Response JSON Field." };
       }
-
-      // Validate JSON for headers and request_template
-      let parsedHeaders = null;
-      let parsedTemplate = null;
-
       try {
-        parsedHeaders = creationData.headers && creationData.headers.trim() !== "" ? JSON.parse(creationData.headers) : "";
-        if(parsedHeaders && typeof parsedHeaders !== "object"){
-          toast.error("Headers must be a JSON object");
-          setOptionsSidebarState("error");
-          throw new Error("Headers must be a JSON object");
+        if (creationData.headers?.trim()) {
+          const h = JSON.parse(creationData.headers);
+          if (typeof h !== "object") return { valid: false, message: "Headers must be a JSON object." };
         }
-      } catch (e:any) {
-        toast.error("Invalid JSON in Headers");
-        setOptionsSidebarState("error");
-        throw new Error("Invalid JSON in Headers");
+      } catch {
+        return { valid: false, message: "Invalid JSON in Headers." };
       }
-
       try {
-        parsedTemplate = creationData.request_template && creationData.request_template.trim() !== "" ? JSON.parse(creationData.request_template) : "";
-        if(!parsedTemplate || typeof parsedTemplate !== "object"){
-          toast.error("Request Template must be a JSON object");
-          setOptionsSidebarState("error");
-          throw new Error("Request Template must be a JSON object");
-        }
-      } catch (e:any) {
-        toast.error("Invalid JSON in Request Template");
-        setOptionsSidebarState("error");
-        throw new Error("Invalid JSON in Request Template");
+        const t = JSON.parse(creationData.request_template);
+        if (!t || typeof t !== "object") return { valid: false, message: "Request Template must be a JSON object." };
+      } catch {
+        return { valid: false, message: "Invalid JSON in Request Template." };
       }
-
-      return startLLMScan({
-        conversation_id,
-        model_type: creationData.model_type as "openai" | "anthropic" | "gemini" | "custom",
-        model_name: creationData.model_name,
-        generations: creationData.generations,
-        probes: creationData.probes,
-        api_key: creationData.api_key || null,
-        headers: parsedHeaders,
-        request_template: parsedTemplate,
-        response_json_field: creationData.response_json_field,
-        model_uri: creationData.model_uri
-      });
     }
+    return { valid: true };
+  };
 
-    return startLLMScan({
-      conversation_id,
+  /** Build payload object for backend (matches StartLLMBenchmarkingData). */
+  const buildLLMPayload = (): Record<string, unknown> => {
+    const validation = validateScanInputs();
+    if (!validation.valid) throw new Error(validation.message);
+    const base = {
       model_type: creationData.model_type as "openai" | "anthropic" | "gemini" | "custom",
       model_name: creationData.model_name,
-      generations: creationData.generations,
+      generations: creationData.generations ?? 1,
       probes: creationData.probes,
-      api_key: creationData.api_key || null,
-      headers: null,
-      request_template: null,
-      response_json_field: null,
-      model_uri: null
-    });
+      api_key: creationData.api_key?.trim() || null,
+      method: "post" as const,
+    };
+    if (creationData.model_type === "custom") {
+      const headers =
+        creationData.headers?.trim() ? JSON.parse(creationData.headers) as Record<string, unknown> : null;
+      const request_template =
+        creationData.request_template?.trim() ? JSON.parse(creationData.request_template) as Record<string, unknown> : null;
+      return {
+        llm: {
+          ...base,
+          headers,
+          request_template,
+          response_json_field: creationData.response_json_field?.trim() || null,
+          model_uri: creationData.model_uri?.trim() || null,
+        },
+      };
+    }
+    return { llm: { ...base, headers: null, request_template: null, response_json_field: null, model_uri: null } };
   };
+
+  const buildPayloadStringSafe = (): string => JSON.stringify(buildLLMPayload());
+
+  const scanInputsValid = validateScanInputs().valid;
+  const displayCredits = estimatedCredits;
+  const creditsInvalid = estimatedCredits === -1;
+  const canRunScan = estimationProcessDone && !creditsInvalid;
+
+  const estimateCreditsMutation = useMutation({
+    mutationFn: () => estimateCreditsForScan(team_id, "llm", scan_id, buildPayloadStringSafe()),
+    onSuccess: (data) => {
+      setEstimatedCredits(data.credits_required);
+      setEstimationProcessDone(true);
+      if (data.credits_required !== -1) {
+        toast.success(`This scan will use ${data.credits_required} credits`);
+      } else {
+        toast.error("Invalid input from user");
+      }
+    },
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
+      setOptionsSidebarState("error");
+    },
+  });
 
   const startScanMutation = useMutation({
-    mutationFn: handleStartScan,
+    mutationFn: () => startScan(team_id, "llm", scan_id, buildPayloadStringSafe()),
     onSuccess: () => {
+      setEstimatedCredits(null);
+      setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', parseInt(conversation_id as string)] });
+      queryClient.invalidateQueries({ queryKey: ["llm-conversation-data", team_id, scan_id] });
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-    }
+    },
   });
 
-  const exportMutation = useMutation({
-    mutationFn: getLLMExportResults,
-    onSuccess: (data, variables , context) => {
-      const blob = new Blob([data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-
-      // download the pdf file
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${query.data?.title}_scan_report.pdf`;
-      a.click();
-
-      setOptionsSidebarState("done");
-    },
-    onError: () => {
-      setOptionsSidebarState("error");
+  const handleRunEstimate = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
     }
-  });
-
-  const handleReinitializeScan = ({
-    conversation_id,
-    creationData
-  }: {
-    conversation_id: number;
-    creationData: LLMScanCreateData;
-  }) => {
-    setOptionsSidebarState("ready");
-    
-    // Validate required fields
-    if (!creationData.api_key && creationData.model_type !== "custom"){
-      toast.error("Please provide the API Key for the model");
-      setOptionsSidebarState("error");
-      throw new Error("Please provide the API Key for the model");
-    }
-    if(!creationData.model_type || !creationData.model_name || creationData.probes.length === 0){
-      toast.error("Please fill in Model Type, Model Name, and at least one Probe");
-      setOptionsSidebarState("error");
-      throw new Error("Please fill in Model Type, Model Name, and at least one Probe");
-    }
-
-    // For custom models, validate additional required fields
-    if(creationData.model_type === "custom"){
-      if(!creationData.model_uri || !creationData.request_template || !creationData.response_json_field){
-        toast.error("Custom models require Model URI, Request Template, and Response JSON Field");
-        setOptionsSidebarState("error");
-        throw new Error("Custom models require Model URI, Request Template, and Response JSON Field");
-      }
-
-      // Validate JSON for headers and request_template
-      let parsedHeaders = null;
-      let parsedTemplate = null;
-
-      try {
-        parsedHeaders = creationData.headers && creationData.headers.trim() !== "" ? JSON.parse(creationData.headers) : "";
-        if(parsedHeaders && typeof parsedHeaders !== "object"){
-          toast.error("Headers must be a JSON object");
-          setOptionsSidebarState("error");
-          throw new Error("Headers must be a JSON object");
-        }
-      } catch (e:any) {
-        toast.error("Invalid JSON in Headers");
-        setOptionsSidebarState("error");
-        throw new Error("Invalid JSON in Headers");
-      }
-
-      try {
-        parsedTemplate = creationData.request_template && creationData.request_template.trim() !== "" ? JSON.parse(creationData.request_template) : "";
-        if(!parsedTemplate || typeof parsedTemplate !== "object"){
-          toast.error("Request Template must be a JSON object");
-          setOptionsSidebarState("error");
-          throw new Error("Request Template must be a JSON object");
-        }
-      } catch (e:any) {
-        toast.error("Invalid JSON in Request Template");
-        setOptionsSidebarState("error");
-        throw new Error("Invalid JSON in Request Template");
-      }
-
-      return reinitializeLLMScan({
-        conversation_id,
-        model_type: creationData.model_type as "openai" | "anthropic" | "gemini" | "custom",
-        model_name: creationData.model_name,
-        generations: creationData.generations,
-        probes: creationData.probes,
-        api_key: creationData.api_key || null,
-        headers: parsedHeaders,
-        request_template: parsedTemplate,
-        response_json_field: creationData.response_json_field,
-        model_uri: creationData.model_uri
-      });
-    }
-
-    return reinitializeLLMScan({
-      conversation_id,
-      model_type: creationData.model_type as "openai" | "anthropic" | "gemini" | "custom",
-      model_name: creationData.model_name,
-      generations: creationData.generations,
-      probes: creationData.probes,
-      api_key: creationData.api_key || null,
-      headers: null,
-      request_template: null,
-      response_json_field: null,
-      model_uri: null
-    });
+    estimateCreditsMutation.mutate();
   };
 
+  const handleStartScanAfterEstimate = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
+    }
+    startScanMutation.mutate();
+  };
+
+  useEffect(() => {
+    setEstimationProcessDone(false);
+    setEstimatedCredits(null);
+  }, [
+    creationData.model_type,
+    creationData.model_name,
+    creationData.probes,
+    creationData.api_key,
+    creationData.generations,
+    creationData.headers,
+    creationData.request_template,
+    creationData.response_json_field,
+    creationData.model_uri,
+  ]);
+
+  const exportMutation = useMutation({
+    mutationFn: () => getLLMExportResults(team_id, scan_id),
+    onSuccess: (data) => {
+      const blob = new Blob([data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${query.data?.title ?? "llm"}_scan_report.pdf`;
+      a.click();
+      setOptionsSidebarState("done");
+    },
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
+      setOptionsSidebarState("error");
+    },
+  });
+
   const reinitializeScanMutation = useMutation({
-    mutationFn: handleReinitializeScan,
+    mutationFn: () => reinitializeLLMScan({ team_id, scan_id, start_scan_payload_string: buildPayloadStringSafe() }),
     onSuccess: () => {
       setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', parseInt(conversation_id as string)] });
+      queryClient.invalidateQueries({ queryKey: ["llm-conversation-data", team_id, scan_id] });
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-    }
+    },
   });
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
+      const msg = (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ?? "The scan failed.";
+      setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
-    if (query.data?.scan_status === "not_started" || !query.data?.scan_status) {
+    if (query.data?.scan_status === "not_started" || query.data?.scan_status === "NOT_STARTED" || !query.data?.scan_status) {
       setOptionsSidebarState("ready");
+      setErrorMessage(null);
     }
-  }, [query.data?.scan_status]);
+  }, [query.data?.scan_status, query.data?.scan_metadata]);
 
   return (
-    <ScrollArea className="w-80 h-screen bg-zinc-900 dark:bg-zinc-950 border-l border-zinc-800">
+    <ScrollArea className="w-96 h-screen bg-neutral-900/70 border-l border-zinc-800">
       <div className="p-6">
-        <h2 className="text-xl font-bold text-white mb-2">LLM Options</h2>
+        <div className="flex items-center gap-2 flex-row mb-2">
+          <h2 className="text-xl font-bold text-white">LLM Configuration</h2>
+          <ScanLine className="h-5 w-5 text-blue-400 shrink-0" />
+        </div>
         <p className="text-sm text-zinc-400">
-          Configure your LLM benchmark scanning options.
+          Configure model, benchmarks, and run estimate then scan.
         </p>
       </div>
 
@@ -441,7 +411,7 @@ export function LLMOptionsSidebar({
                 />
               </div>}
               <div className="space-y-2">
-                <Label htmlFor="generations" className="text-zinc-300">Generations per Probe</Label>
+                <Label htmlFor="generations" className="text-zinc-300">Generations per benchmark</Label>
                 <Input 
                   className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="generations" 
@@ -509,17 +479,17 @@ export function LLMOptionsSidebar({
             </div>
           )}
 
-          {/* Probe Selection */}
+          {/* Security benchmark selection */}
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold text-white mb-1">Security Probes *</h3>
-              <p className="text-sm text-zinc-400">Select the security probes to test against your LLM</p>
+              <h3 className="text-lg font-semibold text-white mb-1">Security Benchmarks *</h3>
+              <p className="text-sm text-zinc-400">Select the security benchmarks to run against your LLM</p>
             </div>
             {/* Token usage warning */}
             <div className="bg-amber-500/10 border border-amber-500/50 rounded-lg p-3">
               <p className="text-sm font-medium text-amber-400">⚠️ High Token Usage Warning</p>
               <p className="text-xs text-amber-500 mt-1">
-                LLM security scans consume significant API tokens. Each probe runs multiple tests, and costs can add up quickly. Consider starting with fewer probes and increasing as needed using multiple scans.
+                LLM security scans consume significant API tokens. Each benchmark runs multiple tests, and costs can add up quickly. Consider starting with fewer benchmarks and increasing as needed using multiple scans.
               </p>
             </div>
             
@@ -541,25 +511,80 @@ export function LLMOptionsSidebar({
               </div>
             </ScrollArea>
             <div className="text-sm text-zinc-400">
-              Selected: {creationData.probes.length} probe(s)
+              Selected: {creationData.probes.length} benchmark(s)
             </div>
           </div>
 
-          <Button 
-            variant="ghost" 
-            size="icon-lg"
-            onClick={() =>{ 
-              startScanMutation.mutate({
-                conversation_id: parseInt(conversation_id as string),
-                creationData
-              });
-              setOptionsSidebarState("scanning");
-            }}
-            className="w-full h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
-          >
-            <ScanIcon className="size-4" />
-            <span className="ml-1">Run Scan</span>
-          </Button>
+          <Separator className="bg-zinc-800" />
+
+          <div className="p-6">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRunEstimate}
+              disabled={!scanInputsValid || estimateCreditsMutation.isPending}
+              className="w-full h-9 px-4 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer disabled:opacity-50"
+            >
+              {estimateCreditsMutation.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                  Estimating...
+                </>
+              ) : (
+                <>Estimate credits required</>
+              )}
+            </Button>
+            {displayCredits != null && (
+              <p className="text-sm text-zinc-300 mt-3">
+                {creditsInvalid ? (
+                  <span className="font-semibold text-amber-400">Invalid input from user</span>
+                ) : (
+                  <>
+                    Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+
+          <Separator className="bg-zinc-800" />
+
+          <div className="p-6">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            {canRunScan ? (
+              <div className="space-y-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleStartScanAfterEstimate}
+                  disabled={!scanInputsValid || startScanMutation.isPending}
+                  className="w-full h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer disabled:opacity-50"
+                >
+                  {startScanMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin mr-2" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <ScanIcon className="size-4 mr-2" />
+                      Start scan
+                    </>
+                  )}
+                </Button>
+                {displayCredits != null && !creditsInvalid && (
+                  <p className="text-xs text-zinc-500">Uses {displayCredits} credits.</p>
+                )}
+              </div>
+            ) : creditsInvalid ? (
+              <p className="text-sm text-amber-400">
+                Credit estimation failed due to invalid inputs. Check model and API key.
+              </p>
+            ) : (
+              <p className="text-sm text-zinc-500">Run estimate above to enable starting the scan.</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -582,7 +607,7 @@ export function LLMOptionsSidebar({
               variant="ghost" 
               size="sm"
               onClick={() => {
-                router.push(`/home/llm/${conversation_id}/results?origin=chat`);
+                router.push(`/${team_id}/llm/${scan_id}/results?origin=chat`);
               }}
               className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
@@ -593,7 +618,7 @@ export function LLMOptionsSidebar({
               variant="ghost" 
               size="sm"
               onClick={async () => {
-                exportMutation.mutate(parseInt(conversation_id as string));
+                exportMutation.mutate();
               }}
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
@@ -607,7 +632,7 @@ export function LLMOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            An error occurred during the scan. Please try again.
+            {errorMessage ?? "An error occurred during the scan. Please try again."}
           </p>
           <Button 
             variant="ghost" 
@@ -628,13 +653,8 @@ export function LLMOptionsSidebar({
           <Button 
             variant="ghost" 
             size="sm"
-            onClick={() => {
-              reinitializeScanMutation.mutate({
-                conversation_id: parseInt(conversation_id as string),
-                creationData
-              });
-            }}
-            disabled={reinitializeScanMutation.isPending}
+            onClick={() => reinitializeScanMutation.mutate()}
+            disabled={reinitializeScanMutation.isPending || !scanInputsValid}
             className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"
           >
             {reinitializeScanMutation.isPending ? (

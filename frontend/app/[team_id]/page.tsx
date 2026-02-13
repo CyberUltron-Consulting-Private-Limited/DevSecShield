@@ -352,7 +352,7 @@ export default function TeamPage() {
             </div>
             Your Team's Integrations
           </h2>
-          <p className="text-sm text-muted-foreground mb-4 mt-1">Guardrails and CI/CD integrations created by date; stacked by type</p>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">Guardrails and CI/CD integrations created by date</p>
           <div className="min-h-[220px] mt-9">
             {(() => {
               const guardrailsByDate = aggregateByDate(
@@ -422,7 +422,6 @@ export default function TeamPage() {
                       fill="url(#fillIntegrationsGuardrails)"
                       stroke="var(--color-Guardrails)"
                       strokeWidth={2}
-                      stackId="a"
                     />
                     <Area
                       dataKey="cicd"
@@ -430,7 +429,6 @@ export default function TeamPage() {
                       fill="url(#fillIntegrationsCicd)"
                       stroke="var(--color-cicd)"
                       strokeWidth={2}
-                      stackId="a"
                     />
                   </AreaChart>
                 </ChartContainer>

@@ -222,7 +222,7 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
         {/* Radar: Risk severity totals */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Risk Severity Distribution</CardTitle>
+            <CardTitle className="text-base">IAC Risk Severity Distribution</CardTitle>
             <CardDescription>Total findings across all successful scans</CardDescription>
           </CardHeader>
           <CardContent>
@@ -244,7 +244,7 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
         {/* Area: Risks per day */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Risks Over Time</CardTitle>
+            <CardTitle className="text-base">IAC Risks Over Time</CardTitle>
             <CardDescription>Vulnerability counts per scan date</CardDescription>
           </CardHeader>
           <CardContent>

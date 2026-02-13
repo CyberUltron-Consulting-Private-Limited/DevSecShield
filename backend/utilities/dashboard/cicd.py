@@ -1,4 +1,9 @@
 import datetime
+from backend.get_db import dev_environment
+from backend.get_db import get_db , get_mongo_client_db
+from rich.console import Console
+
+console = Console()
 
 def get_cicd_vuln_chart_data(results_list : list[tuple[list[dict],datetime.date]]) -> dict:
     """
@@ -87,3 +92,33 @@ def get_cicd_vuln_chart_data(results_list : list[tuple[list[dict],datetime.date]
     #     } , 
     # }
     # return mock_data
+
+
+def get_cicd_list_dashboard_data(integration_ids : list[int]) -> dict:
+    """
+    Get the dashboard data for the given results list.
+    Args:
+        results_list : list[tuple[list[dict],datetime.date]]
+    Returns:
+        dict
+    """
+    try:
+        engine = get_db(dev_environment=dev_environment)
+        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        cicd_logs_collection = mongo_db["cicd_logs"]
+
+
+        results_list = []
+        for integration_id in integration_ids:
+            cicd_logs = cicd_logs_collection.find({"ci_cd_integration_id": integration_id, "status": {"$in": ["pending", "started" , "success"]}})
+            for log in cicd_logs:
+                if not log["results"] or log["results"] is None or len(log["results"]) == 0:
+                    continue
+                results_list.append((log["results"],log["created_at"].date()))
+        
+
+        dashboard_data = get_cicd_vuln_chart_data(results_list=results_list)
+        return dashboard_data
+    except Exception as e:
+        console.print(f"Error getting cicd list dashboard data: {str(e)}", style="bold red")
+        return {}

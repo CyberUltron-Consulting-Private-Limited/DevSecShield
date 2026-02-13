@@ -59,6 +59,7 @@ class LLMBenchmarkingVulnerability(BaseModel):
     description : str = Field(description="The description of the vulnerability")
     impact : Impact = Field(description="The impact of the vulnerability")
     owasp_top_10_llm : list[OWASPTop10LLM] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
+    compliance_controls : list[ComplianceControls] = Field(description="A list of compliance controls that this vulnerability is related to")
     suggested_fix : str = Field(description="The suggested fix for the vulnerability")
 
 

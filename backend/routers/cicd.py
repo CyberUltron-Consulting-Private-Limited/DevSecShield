@@ -22,7 +22,7 @@ from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
     UpdateCicdIntegrationData,
 )
-from backend.utilities.dashboard.cicd import get_cicd_vuln_chart_data
+from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_vuln_chart_data
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
@@ -205,7 +205,9 @@ async def list_cicd_integrations(
             integrations = session.exec(select(CicdIntegration).where(CicdIntegration.team_id == team_id)).all()
         
             integrations_data = []
+            integration_ids = []
             for integration in integrations:
+                integration_ids.append(integration.id)
                 integrations_data.append({
                     "id": integration.id,
                     "title": integration.title,
@@ -216,7 +218,12 @@ async def list_cicd_integrations(
                     "scan_type": integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
                     "api_key": integration.api_key,
                 })
-            return integrations_data
+
+            dashboard_data = get_cicd_list_dashboard_data(integration_ids=integration_ids)
+            return {
+                "integrations": integrations_data,
+                "dashboard_data": dashboard_data,
+                }
     except Exception as e:
         console.print(f"Error listing cicd integrations: {str(e)}", style="bold red")
         if isinstance(e, HTTPException):

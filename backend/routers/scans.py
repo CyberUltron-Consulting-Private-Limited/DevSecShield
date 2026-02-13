@@ -78,7 +78,7 @@ async def list_scans(
             dashboard_data = generate_dashboard_data_for_scan_list(scans=scans)
             return {
                 "scans_list_data": scans_list_data,
-                "dashboard_data": dashboard_data,
+                "dashboard_data": dashboard_data, #dashboard data will look different for different scan types
             }
 
     except HTTPException as e:
@@ -390,7 +390,7 @@ async def start_scan(
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
-            if scan.credit_consumed == None or scan.credit_consumed == 0 :
+            if scan.credit_consumed == None :
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not been estimated yet , please estimate the credits for the scan first")
             if scan.credit_consumed == -1:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error in estimating credits for scan , please try again later")

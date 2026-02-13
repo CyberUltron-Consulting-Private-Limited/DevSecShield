@@ -35,5 +35,18 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "repo_type": start_scan_payload.sbom_sca.repo_context.mode if start_scan_payload.sbom_sca.repo_context else None,
                 "sbom_file_used": start_scan_payload.sbom_sca.sbom_file_used,
             }
+        case "mcp":
+            return {
+                "server_url": start_scan_payload.mcp.server_url,
+                "server_mode": start_scan_payload.mcp.server_mode,
+                "headers": start_scan_payload.mcp.headers,
+            }
+        case "llm":
+            return {
+                "model_type": start_scan_payload.llm.model_type,
+                "model_name": start_scan_payload.llm.model_name,
+                "generations": start_scan_payload.llm.generations,
+                "probes": start_scan_payload.llm.probes,
+            }
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")

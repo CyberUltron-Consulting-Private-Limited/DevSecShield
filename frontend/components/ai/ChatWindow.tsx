@@ -189,10 +189,10 @@ const ChatWindow = ({
       queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });
     }
     else if (type === 'llm') {
-      queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', scan_id] });
+      queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, scan_id] });
     }
     else if (type === 'mcp') {
-      queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', scan_id] });
+      queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', team_id, scan_id] });
     }
     else if (type === 'iac') {
       queryClient.invalidateQueries({ queryKey: ['iac-conversation-data', team_id, scan_id] });

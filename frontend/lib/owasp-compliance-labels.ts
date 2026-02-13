@@ -1,3 +1,17 @@
+/** OWASP Top 10 for LLM enum key → display value (matches backend OWASPTop10LLM enum) */
+export const OWASP_LLM_KEY_TO_LABEL: Record<string, string> = {
+  PROMPT_INJECTION: "LLM01:2025 - Prompt Injection",
+  INSECURE_OUTPUT_HANDLING: "LLM02:2025 - Insecure Output Handling",
+  TRAINING_DATA_POISONING: "LLM03:2025 - Training Data Poisoning",
+  MODEL_DENIAL_OF_SERVICE: "LLM04:2025 - Model Denial of Service",
+  SUPPLY_CHAIN_VULNERABILITIES: "LLM05:2025 - Supply Chain Vulnerabilities",
+  SENSITIVE_INFORMATION_DISCLOSURE: "LLM06:2025 - Sensitive Information Disclosure",
+  INSECURE_PLUGIN_DESIGN: "LLM07:2025 - Insecure Plugin Design",
+  EXCESSIVE_AGENCY: "LLM08:2025 - Excessive Agency",
+  OVERRELIANCE: "LLM09:2025 - Overreliance",
+  MODEL_THEFT: "LLM10:2025 - Model Theft",
+};
+
 /** OWASP Top 10 enum key → display value (matches backend OWASPTop10 enum) */
 export const OWASP_KEY_TO_LABEL: Record<string, string> = {
   BROKEN_ACCESS_CONTROL: "A01:2021 - Broken Access Control",

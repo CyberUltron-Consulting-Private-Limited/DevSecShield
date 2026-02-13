@@ -149,8 +149,8 @@ const homeItem = { name: "Home", path: "", icon: Home };
 const toolsItems = [
   { name: "SAST", path: "sast", icon: Code },
   { name: "SCA + SBOM", path: "sbom_sca", icon: Package },
-  // { name: "MCP", path: "mcp", icon: Server },
-  // { name: "LLM", path: "llm", icon: Box },
+  { name: "MCP", path: "mcp", icon: Server },
+  { name: "LLM", path: "llm", icon: Box },
   { name: "IAC", path: "iac", icon: FileText },
   // { name: "AI Agent Discovery", path: "agent_discovery", icon: ScanLine },
   // { name: "DAST ", path: "dast", icon: Globe },

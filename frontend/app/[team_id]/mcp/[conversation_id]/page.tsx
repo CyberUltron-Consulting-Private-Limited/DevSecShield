@@ -5,40 +5,42 @@ import { MCPOptionsSidebar } from "@/components/mcp-options-sidebar";
 import ChatWindow, { ChatMessage } from "@/components/ai/ChatWindow";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePathname } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { toast } from "sonner";
-import { MCPConversationResponse } from "@/utils/backend_api";
 import { getMCPConversationMessages } from "@/utils/backend_api";
 
-
-
 export default function MCPPage() {
+  const params = useParams();
+  const pathname = usePathname();
+  const team_id = parseInt((params?.team_id as string) ?? "0", 10);
+  const conversation_id = parseInt((params?.conversation_id as string) ?? pathname?.split("/").pop() ?? "0", 10);
   const [scan_status, setScanStatus] = useState<string>("unknown");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-
-  const conversation_id = parseInt(usePathname().split('/').pop() || '0');
-  if (!conversation_id) {
-    toast.error("Conversation id not found");
-    return <div className="flex h-screen w-full items-center justify-center">
-      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-        Conversation id not found
-      </p>
-    </div>
-  }
-
   const queryClient = useQueryClient();
+
   const query = useQuery({
-    queryKey: ['mcp-conversation-data', conversation_id],
-    queryFn: getMCPConversationMessages
+    queryKey: ['mcp-conversation-data', team_id, conversation_id],
+    queryFn: getMCPConversationMessages,
+    enabled: team_id > 0 && conversation_id > 0,
   });
+
+  if (team_id <= 0 || conversation_id <= 0) {
+    toast.error("Conversation id not found");
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4">Conversation id not found</p>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', conversation_id] });
+      const t = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', team_id, conversation_id] });
       }, 6 * 1000);
+      return () => clearTimeout(t);
     }
-  }, [query.dataUpdatedAt, conversation_id]);
+  }, [query.data?.scan_status, query.dataUpdatedAt, team_id, conversation_id, queryClient]);
 
   useEffect(() => {
     setScanStatus(query.data?.scan_status || "unknown");
@@ -73,7 +75,7 @@ export default function MCPPage() {
       </div>
 
       {/* Right Sidebar - MCP Options */}
-      <MCPOptionsSidebar query={query} />
+      <MCPOptionsSidebar query={query} team_id={team_id} scan_id={conversation_id} />
     </div>
   );
 }

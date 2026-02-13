@@ -270,7 +270,7 @@ const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: Fi
 /** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
 const estimateCreditsForScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -287,7 +287,7 @@ const estimateCreditsForScan = async (
 /** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
 const startScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -312,7 +312,7 @@ export interface CreateTicketData {
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
 const createTicket = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
   scan_id: number,
   data: CreateTicketData
 ): Promise<{ message: string }> => {
@@ -349,20 +349,41 @@ export interface LLMConversation {
     scan_status: string
 }
 
-const getLLMConversations = async (): Promise<LLMConversation[]> => {
+/** Response from GET /{team_id}/llm/scans (backend scans router) */
+/** List item shape from GET /{team_id}/llm/scans (same backend return_scan_list_for_type as SAST) */
+export interface LLMScanListItem {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+    scan_metadata?: Record<string, unknown> | null
+    estimated_credits?: number | null
+    owner_user_email?: string | null
+    owner_user_full_name?: string | null
+    info?: ScanInfoField | null
+    risk_data?: ScanRiskData | null
+}
+
+export interface LLMScansListResponse {
+    scans_list_data: LLMScanListItem[]
+    dashboard_data: ScanListDashboardData
+}
+
+const getLLMConversations = async (team_id: number): Promise<LLMScansListResponse> => {
     try {
-        const response = await api.get("/llm/conversations")
+        const response = await api.get(`/${team_id}/llm/scans`)
         toast.success("LLM conversations fetched successfully")
-        return response.data
+        return response.data as LLMScansListResponse
     } catch (error) {
-        showErrorToast(error,"Error fetching sast export results")
+        showErrorToast(error, "Error fetching LLM conversations")
         throw error
     }
 }
 
-const deleteLLMConversation = async (conversation_id: number) => {
+const deleteLLMConversation = async (team_id: number, conversation_id: number) => {
     try {
-        const response = await api.delete(`/llm/conversation/${conversation_id}`)
+        const response = await api.delete(`/${team_id}/llm/scan/${conversation_id}`)
         toast.success("LLM conversation deleted successfully")
         return response.data
     } catch (error) {
@@ -370,9 +391,9 @@ const deleteLLMConversation = async (conversation_id: number) => {
     }
 }
 
-const renameLLMConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+const renameLLMConversation = async ({ team_id, conversation_id, title }: { team_id: number; conversation_id: number; title: string }) => {
     try {
-        const response = await api.put(`/llm/conversation/${conversation_id}`, { title: title })
+        const response = await api.put(`/${team_id}/llm/scan/${conversation_id}`, { title })
         toast.success("LLM conversation renamed successfully")
         return response.data
     } catch (error) {
@@ -380,11 +401,11 @@ const renameLLMConversation = async ({conversation_id, title}: {conversation_id:
     }
 }
 
-const createLLMConversation = async (title: string) => {
+const createLLMConversation = async (team_id: number, title: string): Promise<number> => {
     try {
-        const response = await api.post("/llm/conversation", { title: title })
+        const response = await api.post(`/${team_id}/llm/scan`, { title })
         toast.success("LLM conversation created successfully")
-        return response.data.conversation_id as number  
+        return response.data.scan_id as number
     } catch (error) {
         throw error
     }
@@ -404,23 +425,49 @@ export interface LLMConversationResponse {
     scan_status: string
     data: any
     messages: LLMConversationMessage[]
+    scan_metadata?: Record<string, unknown> | null
+    dashboard?: unknown
+    integration_settings?: Record<string, unknown> | null
+    info?: ScanInfoField | null
 }
 
-const getLLMConversationMessages = async ({queryKey}: {queryKey: ['llm-conversation-data', number]}): Promise<LLMConversationResponse> => {
-    const conversation_id = queryKey[1]
+const getLLMConversationMessages = async ({ queryKey }: { queryKey: ['llm-conversation-data', number, number] }): Promise<LLMConversationResponse> => {
+    const [, team_id, scan_id] = queryKey
     try {
-        const response = await api.get(`/llm/conversation/${conversation_id}`)
+        const response = await api.get(`/${team_id}/llm/scan/${scan_id}`)
+        const raw = response.data as {
+            title: string
+            scan_metadata?: Record<string, unknown> | null
+            scan_status: string
+            data: any
+            dashboard?: unknown
+            messages: LLMConversationMessage[]
+            integration_settings?: Record<string, unknown> | null
+            info?: ScanInfoField | null
+        }
         toast.success("LLM conversation messages fetched successfully")
-        return response.data as LLMConversationResponse
+        return {
+            title: raw.title,
+            model_type: (raw.scan_metadata?.model_type as string) ?? null,
+            model_name: (raw.scan_metadata?.model_name as string) ?? null,
+            scan_status: raw.scan_status,
+            data: raw.data,
+            messages: raw.messages ?? [],
+            scan_metadata: raw.scan_metadata,
+            dashboard: raw.dashboard,
+            integration_settings: raw.integration_settings,
+            info: raw.info,
+        }
     } catch (error) {
-        showErrorToast(error,"Error fetching llm conversation messages")
+        showErrorToast(error, "Error fetching LLM conversation messages")
         throw error
     }
 }
 
 const startLLMScan = async (
     {
-        conversation_id, 
+        team_id,
+        scan_id,
         model_type,
         model_name,
         generations,
@@ -431,33 +478,24 @@ const startLLMScan = async (
         response_json_field,
         model_uri
     }: {
-            conversation_id: number, 
-            model_type: "openai" | "anthropic" | "gemini" | "custom",
-            model_name: string,
-            generations?: number,
-            probes: string[],
-            api_key?: string | null,
-            headers?: Record<string, any> | null,
-            request_template?: Record<string, any> | null,
-            response_json_field?: string | null,
-            model_uri?: string | null
+        team_id: number
+        scan_id: number
+        model_type: "openai" | "anthropic" | "gemini" | "custom"
+        model_name: string
+        generations?: number
+        probes: string[]
+        api_key?: string | null
+        headers?: Record<string, any> | null
+        request_template?: Record<string, any> | null
+        response_json_field?: string | null
+        model_uri?: string | null
     }) => {
     try {
-        const response = await api.post(`/llm/conversation/${conversation_id}/scan`, 
-        {
-        llm_data :   { 
-            model_type,
-            model_name,
-            generations,
-            probes,
-            api_key,
-            headers,
-            request_template,
-            response_json_field,
-            model_uri
-        },
-        }
-    )
+        const payload = { llm: { model_type, model_name, generations, probes, api_key, headers, request_template, response_json_field, model_uri } }
+        const form = buildScanFormData(JSON.stringify(payload), null)
+        const response = await api.post(`/${team_id}/llm/scan/${scan_id}/start`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+        })
         toast.success("LLM scan started successfully")
         return response.data
     } catch (error) {
@@ -465,57 +503,25 @@ const startLLMScan = async (
     }
 }
 
-const getLLMExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/llm/conversation/${conversation_id}/export`)
+const getLLMExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+    try {
+        const response = await api.get(`/${team_id}/llm/scan/${scan_id}/export`, { responseType: "blob" })
         toast.success("LLM export results fetched successfully")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching llm export results")
+        showErrorToast(error, "Error fetching LLM export results")
         throw error
     }
 }
 
 const reinitializeLLMScan = async (
-    {
-        conversation_id, 
-        model_type,
-        model_name,
-        generations,
-        probes,
-        api_key,
-        headers,
-        request_template,
-        response_json_field,
-        model_uri
-    }: {
-            conversation_id: number, 
-            model_type: "openai" | "anthropic" | "gemini" | "custom",
-            model_name: string,
-            generations?: number,
-            probes: string[],
-            api_key?: string | null,
-            headers?: Record<string, any> | null,
-            request_template?: Record<string, any> | null,
-            response_json_field?: string | null,
-            model_uri?: string | null
-    }) => {
+    { team_id, scan_id, start_scan_payload_string }: { team_id: number; scan_id: number; start_scan_payload_string: string }
+) => {
     try {
-        const response = await api.post(`/llm/conversation/${conversation_id}/reinitialize`, 
-        {
-        llm_data :   { 
-            model_type,
-            model_name,
-            generations,
-            probes,
-            api_key,
-            headers,
-            request_template,
-            response_json_field,
-            model_uri
-        },
-        }
-    )
+        const form = buildScanFormData(start_scan_payload_string, null)
+        const response = await api.post(`/${team_id}/llm/scan/${scan_id}/reinitialize`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+        })
         toast.success("LLM scan reinitialized successfully")
         return response.data
     } catch (error) {
@@ -543,6 +549,24 @@ interface MCPConversationMessage {
     is_streaming: boolean
 }
 
+/** MCP scan dashboard (from generate_scan_dashboard for type "mcp") */
+export interface MCPDashboardData {
+    owasp_top_10_metrics?: Record<string, number>
+    compliance_controls_metrics?: Record<string, number>
+    risk_metrics?: Record<string, number>
+    tools_detected?: number
+    tools_vulnerability_metrics?: Record<string, number>
+    tools_impact_metrics?: Record<string, { critical: number; high: number; medium: number; low: number }>
+    tools_compliance_controls_metrics?: Record<string, number>
+}
+
+/** LLM scan dashboard (from generate_scan_dashboard for type "llm") */
+export interface LLMDashboardData {
+    owasp_top_10_llm_metrics?: Record<string, number>
+    compliance_controls_metrics?: Record<string, number>
+    risk_metrics?: { Low?: number; Medium?: number; High?: number; Critical?: number }
+}
+
 export interface MCPConversationResponse {
     id: number
     title: string
@@ -551,17 +575,38 @@ export interface MCPConversationResponse {
     scan_status: string
     data: any
     messages: MCPConversationMessage[]
-    
+    dashboard?: MCPDashboardData | null
+    integration_settings?: Record<string, unknown> | null
 }
 
-const getMCPConversationMessages = async ({queryKey}: {queryKey: ['mcp-conversation-data', number]}): Promise<MCPConversationResponse> => {
-    const conversation_id = queryKey[1]
+const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conversation-data', number, number] }): Promise<MCPConversationResponse> => {
+    const [, team_id, scan_id] = queryKey
     try {
-        const response = await api.get(`/mcp/conversation/${conversation_id}`)
+        const response = await api.get(`/${team_id}/mcp/scan/${scan_id}`)
+        const raw = response.data as {
+            title: string
+            scan_metadata?: Record<string, unknown> | null
+            scan_status: string
+            data: any
+            dashboard?: unknown
+            messages: MCPConversationMessage[]
+            integration_settings?: Record<string, unknown> | null
+            info?: ScanInfoField | null
+        }
         toast.success("MCP conversation messages fetched successfully")
-        return response.data as MCPConversationResponse
+        return {
+            id: scan_id,
+            title: raw.title,
+            created_at: "",
+            last_updated: "",
+            scan_status: raw.scan_status,
+            data: raw.data,
+            messages: raw.messages ?? [],
+            dashboard: raw.dashboard ?? null,
+            integration_settings: raw.integration_settings ?? null,
+        }
     } catch (error) {
-        showErrorToast(error,"Error fetching mcp conversation messages")
+        showErrorToast(error, "Error fetching MCP conversation messages")
         throw error
     }
 }
@@ -574,20 +619,26 @@ export interface MCPConversation {
     scan_status: string
 }
 
-const getMCPConversations = async (): Promise<MCPConversation[]> => {
+/** Response from GET /{team_id}/mcp/scans (backend scans router) */
+export interface MCPScansListResponse {
+    scans_list_data: MCPConversation[]
+    dashboard_data: Record<string, unknown>
+}
+
+const getMCPConversations = async (team_id: number): Promise<MCPScansListResponse> => {
     try {
-        const response = await api.get("/mcp/conversations")
+        const response = await api.get(`/${team_id}/mcp/scans`)
         toast.success("MCP conversations fetched successfully")
-        return response.data as MCPConversation[]
+        return response.data as MCPScansListResponse
     } catch (error) {
-        showErrorToast(error,"Error fetching mcp conversations")
+        showErrorToast(error, "Error fetching MCP conversations")
         throw error
     }
 }
 
-const deleteMCPConversation = async (conversation_id: number) => {
+const deleteMCPConversation = async (team_id: number, conversation_id: number) => {
     try {
-        const response = await api.delete(`/mcp/conversation/${conversation_id}`)
+        const response = await api.delete(`/${team_id}/mcp/scan/${conversation_id}`)
         toast.success("MCP conversation deleted successfully")
         return response.data
     } catch (error) {
@@ -595,9 +646,9 @@ const deleteMCPConversation = async (conversation_id: number) => {
     }
 }
 
-const renameMCPConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
+const renameMCPConversation = async ({ team_id, conversation_id, title }: { team_id: number; conversation_id: number; title: string }) => {
     try {
-        const response = await api.put(`/mcp/conversation/${conversation_id}`, { title: title })
+        const response = await api.put(`/${team_id}/mcp/scan/${conversation_id}`, { title })
         toast.success("MCP conversation renamed successfully")
         return response.data
     } catch (error) {
@@ -605,32 +656,25 @@ const renameMCPConversation = async ({conversation_id, title}: {conversation_id:
     }
 }
 
-const createMCPConversation = async (title: string) => {
+const createMCPConversation = async (team_id: number, title: string): Promise<number> => {
     try {
-        const response = await api.post("/mcp/conversation", { title: title })
+        const response = await api.post(`/${team_id}/mcp/scan`, { title })
         toast.success("MCP conversation created successfully")
-        return response.data.conversation_id as number  
+        return response.data.scan_id as number
     } catch (error) {
         throw error
     }
 }
 
+/** Start MCP scan using generic start with type "mcp" and payload { mcp: { server_url, server_mode, headers } }. Prefer startScan(team_id, "mcp", scan_id, payloadString) after estimating. */
 const startMCPScan = async (
-    {
-        conversation_id,
-        server_config
-    }: {
-        conversation_id: number,
-        server_config: string
-    }
+    { team_id, scan_id, start_scan_payload_string }: { team_id: number; scan_id: number; start_scan_payload_string: string }
 ) => {
-
     try {
-        const response = await api.post(`/mcp/conversation/${conversation_id}/scan`, 
-            { 
-            mcp_data: { server_config: server_config } 
-            }
-        )
+        const form = buildScanFormData(start_scan_payload_string, null)
+        const response = await api.post(`/${team_id}/mcp/scan/${scan_id}/start`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+        })
         toast.success("MCP scan started successfully")
         return response.data
     } catch (error) {
@@ -638,31 +682,25 @@ const startMCPScan = async (
     }
 }
 
-const getMCPExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/mcp/conversation/${conversation_id}/export`)
+const getMCPExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+    try {
+        const response = await api.get(`/${team_id}/mcp/scan/${scan_id}/export`, { responseType: "blob" })
         toast.success("MCP export results fetched successfully")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching mcp export results")
+        showErrorToast(error, "Error fetching MCP export results")
         throw error
     }
 }
+
 const reinitializeMCPScan = async (
-    {
-        conversation_id,
-        server_config
-    }: {
-        conversation_id: number,
-        server_config: string
-    }
+    { team_id, scan_id, start_scan_payload_string }: { team_id: number; scan_id: number; start_scan_payload_string: string }
 ) => {
     try {
-        const response = await api.post(`/mcp/conversation/${conversation_id}/reinitialize`, 
-            { 
-            mcp_data: { server_config: server_config } 
-            }
-        )
+        const form = buildScanFormData(start_scan_payload_string, null)
+        const response = await api.post(`/${team_id}/mcp/scan/${scan_id}/reinitialize`, form, {
+            headers: { "Content-Type": "multipart/form-data" },
+        })
         toast.success("MCP scan reinitialized successfully")
         return response.data
     } catch (error) {
@@ -1246,7 +1284,7 @@ const updateScan = async ({
     data,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm";
     scan_id: number;
     data: UpdateScanPayload;
 }) => {
@@ -1779,11 +1817,48 @@ export interface GuardrailsIntegration {
     owner_user_full_name?: string
 }
 
-const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsIntegration[]> => {
+/** Dashboard for guardrails list page: card_data (log counts), risk score counts, daily high/critical usage */
+export interface GuardrailsListDashboardData {
+    card_data: {
+        total_logs: number
+        pending_logs: number
+        started_logs: number
+        not_started_logs: number
+        success_logs: number
+        failure_logs: number
+    }
+    past_30_days_risk_score_data: {
+        critical: number
+        high: number
+        medium: number
+        low: number
+    }
+    /** Date string (YYYY-MM-DD) -> count of high/critical risks that day */
+    high_or_critical_risks_daily_usage: Record<string, number>
+}
+
+const getGuardrailsListDashboard = async (team_id: number): Promise<GuardrailsListDashboardData> => {
+    try {
+        const response = await api.get(`/guardrails/${team_id}/integrations/dashboard`)
+        return response.data as GuardrailsListDashboardData
+    } catch (error) {
+        showErrorToast(error, "Error fetching guardrails list dashboard")
+        throw error
+    }
+}
+
+/** Response from GET /guardrails/{team_id}/integrations (includes dashboard_data) */
+export interface GuardrailsIntegrationsResponse {
+    integrations: GuardrailsIntegration[]
+    dashboard_data: GuardrailsListDashboardData
+}
+
+const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsIntegrationsResponse> => {
     try {
         const response = await api.get(`/guardrails/${team_id}/integrations`)
         toast.success("Guardrails integrations fetched successfully")
-        return response.data as GuardrailsIntegration[]
+        const data = response.data as { integrations: GuardrailsIntegration[]; dashboard_data: GuardrailsListDashboardData }
+        return data
     } catch (error) {
         showErrorToast(error,"Error fetching guardrails integrations")
         throw error
@@ -1998,6 +2073,7 @@ const getGuardrailsIntegrationSettings = async (team_id: number, integration_id:
 
 export { 
     getGuardrailsIntegrations, 
+    getGuardrailsListDashboard,
     deleteGuardrailsIntegration, 
     renameGuardrailsIntegration,
     getGuardrailsIntegrationDashboard,
@@ -2206,11 +2282,20 @@ export interface CicdIntegration {
     api_key: string
 }
 
-const getCicdIntegrations = async (team_id: number): Promise<CicdIntegration[]> => {
+/** Vulns-over-time chart data: date string -> counts by severity (from get_cicd_list_dashboard_data) */
+export type CicdListDashboardData = Record<string, { Critical: number; High: number; Medium: number; Low: number }>
+
+/** Response from GET /{team_id}/cicd/integrations */
+export interface CicdIntegrationsResponse {
+    integrations: CicdIntegration[]
+    dashboard_data: CicdListDashboardData
+}
+
+const getCicdIntegrations = async (team_id: number): Promise<CicdIntegrationsResponse> => {
     try {
         const response = await api.get(`/${team_id}/cicd/integrations`)
         toast.success("CI/CD integrations fetched successfully")
-        return response.data as CicdIntegration[]
+        return response.data as CicdIntegrationsResponse
     } catch (error) {
         showErrorToast(error,"Error fetching CI/CD integrations")
         throw error

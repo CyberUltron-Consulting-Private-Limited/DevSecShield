@@ -91,7 +91,7 @@ class MCPClient:
                 return
             
 
-            console.print(f"⚙️ MCP Client Connected to SSE MCP Server: Detected {len(self.tools.tools) if self.tools else "No tools"} tools , {len(self.prompts.prompts) if self.prompts else "No prompts"} prompts , {len(self.resources.resources) if self.resources else "No resources"} resources ",style="bold green")
+            console.print(f"⚙️ MCP Client Connected to MCP Server: Detected {len(self.tools.tools) if self.tools else "No tools"} tools , {len(self.prompts.prompts) if self.prompts else "No prompts"} prompts , {len(self.resources.resources) if self.resources else "No resources"} resources ",style="bold green")
         
         except Exception as e:
 

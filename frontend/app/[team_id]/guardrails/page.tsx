@@ -31,9 +31,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Copy, Check, X } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Copy, Check, X, Search, Activity, AlertTriangle, CheckCircle2, Clock, XCircle, PieChart } from "lucide-react";
 import { useEffect, useState } from "react";
 import { GuardrailsIntegration, deleteGuardrailsIntegration, getGuardrailsIntegrations, renameGuardrailsIntegration, createGuardrailsIntegration, SettingsData } from "@/utils/backend_api";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import { RadialBarChart, RadialBar, RadarChart, Radar, PolarGrid, PolarAngleAxis, Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
@@ -52,7 +60,9 @@ export default function GuardrailsPage() {
   const [selectedIntegration, setSelectedIntegration] = useState<GuardrailsIntegration | null>(null);
   const [newName, setNewName] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
-  
+  const [searchQuery, setSearchQuery] = useState("");
+  const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
+
   // Form state
   const [formTitle, setFormTitle] = useState("");
   const [formSettings, setFormSettings] = useState<SettingsData>({
@@ -72,10 +82,11 @@ export default function GuardrailsPage() {
     queryFn: () => getGuardrailsIntegrations(Number(team_id)),
     enabled: !!team_id,
   });
+  const dashboardData = query.data?.dashboard_data ?? null;
 
   useEffect(() => {
-    if (query.data) {
-      setIntegrations(query.data);
+    if (query.data?.integrations) {
+      setIntegrations(query.data.integrations);
     }
     if (query.error) {
       showErrorToast(query.error, 'Error fetching guardrails integrations');
@@ -183,6 +194,16 @@ export default function GuardrailsPage() {
     }
   };
 
+  const hasActiveFilters = searchQuery !== "" || createdAtSort !== "none";
+  const filteredIntegrations = integrations
+    .filter((i) => !searchQuery || i.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      if (createdAtSort === "asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (createdAtSort === "desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return 0;
+    });
+  const clearFilters = () => { setSearchQuery(""); setCreatedAtSort("none"); };
+
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
       <div className="flex-1 p-8 overflow-auto">
@@ -233,6 +254,49 @@ export default function GuardrailsPage() {
               </p>
             </div>
           ) : (
+            <>
+              {/* Filter bar */}
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <Input
+                    placeholder="Search by title..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9 cursor-text"
+                  />
+                </div>
+                <div className="text-zinc-600 dark:text-zinc-400 text-sm">Sort by</div>
+                <Select value={createdAtSort} onValueChange={(v) => setCreatedAtSort(v as "none" | "asc" | "desc")}>
+                  <SelectTrigger className="h-9 min-w-[170px] cursor-pointer">
+                    <SelectValue placeholder="Created at" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none" className="cursor-pointer">Default</SelectItem>
+                    <SelectItem value="desc" className="cursor-pointer">Newest</SelectItem>
+                    <SelectItem value="asc" className="cursor-pointer">Oldest</SelectItem>
+                  </SelectContent>
+                </Select>
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer"
+                    onClick={clearFilters}
+                  >
+                    <X className="h-4 w-4 mr-1" />Clear filters
+                  </Button>
+                )}
+              </div>
+
+              {filteredIntegrations.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-zinc-600 dark:text-zinc-400 mb-4">No integrations match your filters.</p>
+                  <Button variant="outline" className="cursor-pointer" onClick={clearFilters}>
+                    <X className="h-4 w-4 mr-2" />Clear filters
+                  </Button>
+                </div>
+              ) : (
             <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
@@ -246,7 +310,7 @@ export default function GuardrailsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {integrations.map((integration) => (
+                  {filteredIntegrations.map((integration) => (
                     <TableRow key={integration.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <TableCell className="font-medium">
                         <Link
@@ -349,6 +413,204 @@ export default function GuardrailsPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+              )}
+            </>
+          )}
+
+          {/* Dashboard: radial + radar (below table) */}
+          {query.isLoading && (
+            <div className="mt-8 flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading dashboard…</span>
+            </div>
+          )}
+          {dashboardData && (
+            <div className="mt-8 space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+                {/* Log summary — radial chart */}
+                <Card className="border-zinc-200 dark:border-zinc-800 flex-1 min-w-0">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <PieChart className="w-4 h-4" />
+                      Log summary
+                    </CardTitle>
+                    <CardDescription>
+                      Total: {dashboardData.card_data.total_logs} — proportion by status
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const logKeys = [
+                        { key: "success_logs" as const, label: "Success", color: "hsl(142 71% 45%)" },
+                        { key: "failure_logs" as const, label: "Failure", color: "hsl(0 84% 60%)" },
+                        { key: "pending_logs" as const, label: "Pending", color: "hsl(48 96% 53%)" },
+                        { key: "started_logs" as const, label: "Started", color: "hsl(217 91% 60%)" },
+                        { key: "not_started_logs" as const, label: "Not started", color: "hsl(262 83% 58%)" },
+                      ];
+                      const cd = dashboardData.card_data;
+                      const radialData = logKeys.map(({ key, label, color }) => ({
+                        name: label,
+                        actualCount: cd[key] ?? 0,
+                        fill: color,
+                      }));
+                      const maxCount = Math.max(1, ...radialData.map((d) => d.actualCount));
+                      const radialDataNorm = radialData.map((d) => ({
+                        ...d,
+                        count: maxCount > 0 ? (d.actualCount / maxCount) * 100 : 0,
+                      }));
+                      const logChartConfig: ChartConfig = {
+                        count: { label: "Count" },
+                        ...Object.fromEntries(logKeys.map(({ label, color }) => [label, { label, color }])),
+                      };
+                      return (
+                        <ChartContainer
+                          config={logChartConfig}
+                          className="mx-auto aspect-square max-h-[280px]"
+                        >
+                          <RadialBarChart
+                            data={radialDataNorm}
+                            innerRadius={40}
+                            outerRadius={100}
+                            startAngle={90}
+                            endAngle={-270}
+                          >
+                            <ChartTooltip
+                              cursor={false}
+                              content={
+                                <ChartTooltipContent
+                                  nameKey="name"
+                                  formatter={(_, __, ___, ____, payload) => {
+                                    const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
+                                    return <span className="font-medium font-mono tabular-nums">{count}</span>;
+                                  }}
+                                />
+                              }
+                            />
+                            <RadialBar dataKey="count" background className="cursor-pointer" />
+                          </RadialBarChart>
+                        </ChartContainer>
+                      );
+                    })()}
+                    <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+                      {["Success", "Failure", "Pending", "Started", "Not started"].map((label, i) => {
+                        const colors = ["hsl(142 71% 45%)", "hsl(0 84% 60%)", "hsl(48 96% 53%)", "hsl(217 91% 60%)", "hsl(262 83% 58%)"];
+                        return (
+                          <div key={label} className="flex items-center gap-1.5 text-xs">
+                            <span className="shrink-0 w-3 h-3 rounded-full" style={{ backgroundColor: colors[i] }} aria-hidden />
+                            <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Past 30 days risk scores — radar chart */}
+                <Card className="border-zinc-200 dark:border-zinc-800 flex-1 min-w-0">
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Past 30 days — risk scores
+                    </CardTitle>
+                    <CardDescription>
+                      Counts by severity (Critical, High, Medium, Low)
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const riskKeys = [
+                        { key: "critical" as const, label: "Critical" },
+                        { key: "high" as const, label: "High" },
+                        { key: "medium" as const, label: "Medium" },
+                        { key: "low" as const, label: "Low" },
+                      ];
+                      const riskData = riskKeys.map(({ key, label }) => ({
+                        subject: label,
+                        count: dashboardData.past_30_days_risk_score_data[key] ?? 0,
+                      }));
+                      const radarConfig: ChartConfig = {
+                        subject: { label: "Severity" },
+                        count: { label: "Count", color: "hsl(0 84% 60%)" },
+                      };
+                      return (
+                        <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[280px]">
+                          <RadarChart data={riskData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+                            <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value, name) => [value, name ?? "Count"]} />} />
+                            <PolarAngleAxis dataKey="subject" />
+                            <PolarGrid />
+                            <Radar dataKey="count" fill="hsl(0 84% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+                          </RadarChart>
+                        </ChartContainer>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* High/critical risks per day (last 14 days) — line/area chart */}
+              {(() => {
+                const daily = dashboardData.high_or_critical_risks_daily_usage || {};
+                const sortedEntries = Object.entries(daily)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .slice(-14);
+                const chartData = sortedEntries.length > 0
+                  ? sortedEntries.map(([dateStr, count]) => ({ date: dateStr, count }))
+                  : [];
+                const highCriticalChartConfig: ChartConfig = {
+                  date: { label: "Date" },
+                  count: { label: "High / critical risks", color: "hsl(0 84% 60%)" },
+                };
+                if (chartData.length === 0) return null;
+                return (
+                  <Card className="border-zinc-200 dark:border-zinc-800 w-full">
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        High / critical risks by day (last 14 days)
+                      </CardTitle>
+                      <CardDescription>
+                        Daily count of high- or critical-severity risks; dates on x-axis
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ChartContainer config={highCriticalChartConfig} className="aspect-auto h-[280px] w-full pb-8">
+                        <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+                          <defs>
+                            <linearGradient id="fillGuardrailsHighCritical" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
+                              <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                          <XAxis
+                            dataKey="date"
+                            tickLine={false}
+                            axisLine={false}
+                            tickMargin={8}
+                            minTickGap={24}
+                            height={40}
+                            tickFormatter={(v) => {
+                              const d = new Date(v);
+                              return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+                            }}
+                          />
+                          <YAxis hide domain={[0, "auto"]} />
+                          <ChartTooltip
+                            cursor={false}
+                            content={
+                              <ChartTooltipContent
+                                labelFormatter={(v) => new Date(v).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                              />
+                            }
+                          />
+                          <Area type="monotone" dataKey="count" fill="url(#fillGuardrailsHighCritical)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+                        </AreaChart>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
             </div>
           )}
         </div>

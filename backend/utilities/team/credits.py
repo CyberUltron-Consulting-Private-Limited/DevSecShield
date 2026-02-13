@@ -71,7 +71,7 @@ def deduct_credits_from_team(
             session.commit()
             session.refresh(team)
 
-            if team.credit_balance == original_credit_balance:
+            if credits > 0 and team.credit_balance == original_credit_balance:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in deducting credits from team, please try again later")
             console.print(f"{credits} credits 🪙 deducted from team {team_id} : {original_credit_balance} -> {new_credit_balance}",style="bold yellow2")
             return team
