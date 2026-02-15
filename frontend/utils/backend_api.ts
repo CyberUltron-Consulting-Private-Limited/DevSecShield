@@ -166,6 +166,8 @@ export interface SastDashboardData {
   owasp_top_10_metrics?: Record<string, number>;
   compliance_controls_metrics?: Record<string, number>;
   cves_per_vulnerability?: Record<string, number>;
+  /** IAC: counts by compliance standard (e.g. "NIST 800-53", "ISO 27001") */
+  compliance_standards_metrics?: Record<string, number>;
 }
 
 export interface SastConversationResponse {
@@ -577,6 +579,7 @@ export interface MCPConversationResponse {
     messages: MCPConversationMessage[]
     dashboard?: MCPDashboardData | null
     integration_settings?: Record<string, unknown> | null
+    info?: ScanInfoField | null
 }
 
 const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conversation-data', number, number] }): Promise<MCPConversationResponse> => {
@@ -604,6 +607,7 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
             messages: raw.messages ?? [],
             dashboard: raw.dashboard ?? null,
             integration_settings: raw.integration_settings ?? null,
+            info: raw.info,
         }
     } catch (error) {
         showErrorToast(error, "Error fetching MCP conversation messages")

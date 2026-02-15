@@ -26,8 +26,6 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -39,8 +37,11 @@ import {
   RadialBarChart,
   XAxis,
   YAxis,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
 } from "recharts";
-import { PieChart, BarChart3, TrendingUp } from "lucide-react";
+import { PieChart, BarChart3, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -109,6 +110,15 @@ function getImpactBadgeClass(impact: string): string {
 }
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
+
+// ----- Risk metric cards -----
+const RISK_CARDS = [
+  { key: "Critical" as const, label: "Critical", description: "Most severe, requires immediate attention", color: "hsl(0 84% 60%)", icon: AlertTriangle },
+  { key: "High" as const, label: "High", description: "Serious issues that should be addressed soon", color: "hsl(25 95% 53%)", icon: AlertTriangle },
+  { key: "Medium" as const, label: "Medium", description: "Moderate risk, should be remediated", color: "hsl(48 96% 53%)", icon: AlertTriangle },
+  { key: "Low" as const, label: "Low", description: "Minor findings, lower priority", color: "hsl(142 71% 45%)", icon: AlertTriangle },
+] as const;
+
 const riskRadarChartConfig = {
   subject: { label: "Severity" },
   count: { label: "Count", color: "hsl(0 84% 60%)" },
@@ -124,16 +134,15 @@ const complianceBarChartConfig = {
   count: { label: "Count", color: "hsl(217 91% 60%)" },
 } satisfies ChartConfig;
 
-const cvesAreaChartConfig = {
-  cve: { label: "CVE" },
-  count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" },
+const complianceStandardsPieChartConfig = {
+  value: { label: "Findings" },
 } satisfies ChartConfig;
 
 function IACDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
   const riskMetrics = dashboard.risk_metrics ?? {};
   const owaspMetrics = dashboard.owasp_top_10_metrics ?? {};
   const complianceMetrics = dashboard.compliance_controls_metrics ?? {};
-  const cvesMetrics = dashboard.cves_per_vulnerability ?? {};
+  const complianceStandardsMetrics = dashboard.compliance_standards_metrics ?? {};
 
   const riskRadarData = RISK_ORDER.map((subject) => ({
     subject,
@@ -160,20 +169,108 @@ function IACDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
     .map(([key, count]) => ({ name: COMPLIANCE_KEY_TO_LABEL[key] ?? key, count }))
     .sort((a, b) => b.count - a.count);
 
-  const cvesAreaData = Object.entries(cvesMetrics)
-    .map(([cve, count]) => ({ cve, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 20);
-  const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "—", count: 0 }];
+  const complianceStandardsPieData = Object.entries(complianceStandardsMetrics)
+    .filter(([, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, value], i) => {
+      const colors = ["hsl(217 91% 60%)", "hsl(142 71% 45%)", "hsl(48 96% 53%)", "hsl(25 95% 53%)", "hsl(262 83% 58%)", "hsl(0 84% 60%)"];
+      return { name, value, fill: colors[i % colors.length] };
+    });
+  const pieChartConfig: ChartConfig = {
+    ...complianceStandardsPieChartConfig,
+    ...Object.fromEntries(complianceStandardsPieData.map((d) => [d.name, { label: d.name, color: d.fill }])),
+  };
 
   const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
   const hasRiskData = riskRadarData.some((d) => d.count > 0);
-  const hasCvesData = cvesAreaData.length > 0;
+  const hasComplianceStandardsData = complianceStandardsPieData.length > 0;
   const hasComplianceData = complianceBarData.length > 0;
 
   return (
     <div className="space-y-6">
+      {/* Risk metrics — 4 cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {RISK_CARDS.map(({ key, label, description, color, icon: Icon }) => (
+          <Card key={key} className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between">
+                <CardTitle className="text-base">{label}</CardTitle>
+                <Icon className="h-4 w-4 shrink-0" style={{ color }} />
+              </div>
+              <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{riskMetrics[key] ?? 0}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              Compliance standards
+            </CardTitle>
+            <CardDescription>Findings by compliance standard (e.g. NIST 800-53, ISO 27001)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasComplianceStandardsData ? (
+              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+              <ChartContainer config={pieChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+                <RechartsPieChart>
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="name" />} />
+                  <Pie
+                    data={complianceStandardsPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={90}
+                  >
+                    {complianceStandardsPieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                </RechartsPieChart>
+              </ChartContainer>
+            )}
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Distribution of findings by compliance framework or standard.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Risk metrics
+            </CardTitle>
+            <CardDescription>Findings by impact severity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasRiskData ? (
+              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+            <ChartContainer config={riskRadarChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
+              <RadarChart data={riskRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+                <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
+                <PolarAngleAxis dataKey="subject" />
+                <PolarGrid />
+                <Radar dataKey="count" fill="hsl(0 84% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+              </RadarChart>
+            </ChartContainer>
+            )}
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Number of findings for each impact level (Critical, High, Medium, Low).
+            </p>
+          </CardContent>
+        </Card>
+
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -215,76 +312,6 @@ function IACDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
             </div>
             </>
             )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Risk metrics
-            </CardTitle>
-            <CardDescription>Findings by impact severity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasRiskData ? (
-              <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
-            ) : (
-            <ChartContainer config={riskRadarChartConfig} className="mx-auto aspect-square max-h-[280px] cursor-pointer">
-              <RadarChart data={riskRadarData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
-                <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(value) => [value, "Count"]} />} />
-                <PolarAngleAxis dataKey="subject" />
-                <PolarGrid />
-                <Radar dataKey="count" fill="hsl(0 84% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
-              </RadarChart>
-            </ChartContainer>
-            )}
-            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
-              Number of findings for each impact level (Critical, High, Medium, Low).
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-zinc-200 dark:border-zinc-800 justify-between">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
-              CVEs per vulnerability
-            </CardTitle>
-            <CardDescription>Vulnerability count by CVE (top 20)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasCvesData ? (
-              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
-            ) : (
-            <ChartContainer config={cvesAreaChartConfig} className="aspect-auto h-[260px] w-full pb-8 cursor-pointer">
-              <AreaChart data={cvesAreaDisplay} margin={{ bottom: 28 }}>
-                <defs>
-                  <linearGradient id="fillIacCves" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                <XAxis
-                  dataKey="cve"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={20}
-                  height={56}
-                  interval={0}
-                  tickFormatter={(v) => (String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v)}
-                />
-                <YAxis hide domain={[0, "auto"]} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent formatter={(value) => [value, "Vulnerabilities"]} />} />
-                <Area dataKey="count" type="monotone" fill="url(#fillIacCves)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
-              </AreaChart>
-            </ChartContainer>
-            )}
-            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
-              Number of vulnerabilities linked to each CVE identifier (top 20).
-            </p>
           </CardContent>
         </Card>
       </div>

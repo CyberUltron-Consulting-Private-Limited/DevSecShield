@@ -59,12 +59,12 @@ def generate_scan_dashboard(
             for item in results:
                 for vulnerability in item["vulnerabilities"]:
                     for key,value in vulnerability["owasp_top_10"].items(): 
-                        owasp_top_10_metrics[key] += 1
+                        owasp_top_10_metrics[value] += 1
                     for key,value in vulnerability["compliance_controls"].items():
-                        compliance_controls_metrics[key] += 1
+                        compliance_controls_metrics[value] += 1
                     risk_metrics[vulnerability["impact"]] += 1
                     for key,value in vulnerability["cves"].items():
-                        cves_per_vulnerability[key] += 1
+                        cves_per_vulnerability[value] += 1
             
 
             return {
@@ -74,7 +74,7 @@ def generate_scan_dashboard(
                 "cves_per_vulnerability": cves_per_vulnerability
             }
     
-        elif scan_type == "iac" or scan_type == "sbom_sca":
+        elif scan_type == "sbom_sca":
             # STEP [ 1 ] : =========== Generate the Dashboard ===========================
             owasp_top_10_metrics = defaultdict(int)
             compliance_controls_metrics = defaultdict(int)
@@ -89,12 +89,12 @@ def generate_scan_dashboard(
             # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
             for vulnerability in results:
                 for key,value in vulnerability["owasp_top_10"].items(): 
-                    owasp_top_10_metrics[key] += 1
+                    owasp_top_10_metrics[value] += 1
                 for key,value in vulnerability["compliance_controls"].items():
-                    compliance_controls_metrics[key] += 1
+                    compliance_controls_metrics[value] += 1
                 risk_metrics[vulnerability["impact"]] += 1
                 for key,value in vulnerability["cves"].items():
-                    cves_per_vulnerability[key] += 1
+                    cves_per_vulnerability[value] += 1
             
 
             return {
@@ -102,6 +102,74 @@ def generate_scan_dashboard(
                 "compliance_controls_metrics": compliance_controls_metrics,
                 "risk_metrics": risk_metrics,
                 "cves_per_vulnerability": cves_per_vulnerability
+            }
+        
+        elif scan_type == "iac" :
+
+            # STEP [ 1 ] : =========== Generate the Dashboard ===========================
+            owasp_top_10_metrics = defaultdict(int)
+            compliance_controls_metrics = defaultdict(int)
+            compliance_standards_metrics = defaultdict(int)
+            risk_metrics = {
+                "Low": 0,
+                "Medium": 0,
+                "High": 0,
+                "Critical": 0
+            }
+
+            # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
+            for vulnerability in results:
+                for key,value in vulnerability["owasp_top_10"].items(): 
+                    owasp_top_10_metrics[value] += 1
+                for key,value in vulnerability["compliance_controls"].items():
+                    compliance_controls_metrics[value] += 1
+                    compliance_standard = value.split(" - ")[0]
+                    compliance_standards_metrics[compliance_standard] += 1 
+                    
+                risk_metrics[vulnerability["impact"]] += 1
+                for key,value in vulnerability["cves"].items():
+                    cves_per_vulnerability[value] += 1
+            
+            
+            """
+                compliance_controls_metrics will look like this : 
+                {
+                    "NIST 800-53 - Access Control": 23 , 
+                    "ISO 27001 - A.9 Access Control": 45 , 
+                    "PCI DSS - 12.3 Data Protection": 12 , 
+                }
+
+                compliance_standards_metrics will look like this : 
+                {
+                    "NIST 800-53": 23 , 
+                    "ISO 27001": 45 , 
+                    "PCI DSS": 12 , 
+                }
+
+                risk_metrics will look like this : 
+                {
+                    "Low": 23 , 
+                    "Medium": 45 , 
+                    "High": 12 , 
+                    "Critical": 5 , 
+                }
+
+                owasp_top_10_metrics will look like this : 
+                {
+                    "A01:2021 - Broken Access Control": 23 , 
+                    "A02:2021 - Cryptographic Failures": 45 , 
+                    "A03:2021 - Injection": 12 , 
+                }
+            """
+            
+            
+            
+            
+            return {
+                "owasp_top_10_metrics": owasp_top_10_metrics,
+                "compliance_controls_metrics": compliance_controls_metrics,
+                "risk_metrics": risk_metrics,
+                "compliance_standards_metrics": compliance_standards_metrics
             }
         
         elif scan_type == "mcp":
@@ -127,12 +195,12 @@ def generate_scan_dashboard(
                 tools_impact_metrics[tool["tool_name"]] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
                 tools_compliance_controls_metrics[tool["tool_name"]] = 0 
                 for vulnerability in tool["vulnerabilities"]:
-                    for key,_ in vulnerability["owasp_top_10"].items(): 
-                        owasp_top_10_metrics[key] += 1
-                    for key,_ in vulnerability["owasp_top_10_llm"].items(): 
-                        owasp_top_10_llm_metrics[key] += 1
-                    for key,_ in vulnerability["compliance_controls"].items():
-                        compliance_controls_metrics[key] += 1
+                    for key, val in (vulnerability.get("owasp_top_10") or {}).items():
+                        owasp_top_10_metrics[val] += 1
+                    for key, val in (vulnerability.get("owasp_top_10_llm") or {}).items():
+                        owasp_top_10_llm_metrics[val] += 1
+                    for key, val in (vulnerability.get("compliance_controls") or {}).items():
+                        compliance_controls_metrics[val] += 1
                         tools_compliance_controls_metrics[tool["tool_name"]] += 1
                     risk_metrics[vulnerability["impact"]] += 1
                     impact_key = (vulnerability.get("impact") or "unknown").lower()
@@ -194,22 +262,22 @@ def generate_scan_dashboard(
                     continue
                 owasp_llm = vulnerability.get("owasp_top_10_llm")
                 if isinstance(owasp_llm, dict):
-                    for key in owasp_llm:
-                        owasp_top_10_llm_metrics[key] += 1
+                    for key, val in owasp_llm.items():
+                        owasp_top_10_llm_metrics[val] += 1
                 elif isinstance(owasp_llm, list):
                     for item in owasp_llm:
                         if isinstance(item, dict):
-                            for key in item:
-                                owasp_top_10_llm_metrics[key] += 1
+                            for key, val in item.items():
+                                owasp_top_10_llm_metrics[val] += 1
                 compliance = vulnerability.get("compliance_controls")
                 if isinstance(compliance, dict):
-                    for key in compliance:
-                        compliance_controls_metrics[key] += 1
+                    for key, val in compliance.items():
+                        compliance_controls_metrics[val] += 1
                 elif isinstance(compliance, list):
                     for item in compliance:
                         if isinstance(item, dict):
-                            for key in item:
-                                compliance_controls_metrics[key] += 1
+                            for key, val in item.items():
+                                compliance_controls_metrics[val] += 1
                 impact = vulnerability.get("impact")
                 if isinstance(impact, str) and impact.strip():
                     impact_key = impact.strip().capitalize()
@@ -220,7 +288,7 @@ def generate_scan_dashboard(
             console.print(f"Compliance Controls Metrics: {compliance_controls_metrics}",style="bold yellow")
             console.print(f"Risk Metrics: {risk_metrics}",style="bold orange1")
             return {
-                "owasp_top_10_llm_metrics": dict(owasp_top_10_llm_metrics),
+            "owasp_top_10_llm_metrics": dict(owasp_top_10_llm_metrics),
                 "compliance_controls_metrics": dict(compliance_controls_metrics),
                 "risk_metrics": risk_metrics,
             }

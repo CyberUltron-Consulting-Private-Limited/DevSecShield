@@ -150,6 +150,14 @@ function renderKeyValue(obj: Record<string, string> | undefined) {
   );
 }
 
+// ----- Risk metric cards -----
+const RISK_CARDS = [
+  { key: "Critical" as const, label: "Critical", description: "Most severe, requires immediate attention", color: "hsl(0 84% 60%)", icon: AlertTriangle },
+  { key: "High" as const, label: "High", description: "Serious issues that should be addressed soon", color: "hsl(25 95% 53%)", icon: AlertTriangle },
+  { key: "Medium" as const, label: "Medium", description: "Moderate risk, should be remediated", color: "hsl(48 96% 53%)", icon: AlertTriangle },
+  { key: "Low" as const, label: "Low", description: "Minor findings, lower priority", color: "hsl(142 71% 45%)", icon: AlertTriangle },
+] as const;
+
 // ----- Dashboard charts (tools_* metrics) -----
 const toolsVulnChartConfig = { name: { label: "Tool" }, count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" } } satisfies ChartConfig;
 const toolsComplianceChartConfig = { name: { label: "Tool" }, count: { label: "Compliance controls", color: "hsl(217 91% 60%)" } } satisfies ChartConfig;
@@ -162,6 +170,7 @@ const toolsImpactChartConfig = {
 } satisfies ChartConfig;
 
 function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
+  const riskMetrics = dashboard.risk_metrics ?? {};
   const toolsVuln = dashboard.tools_vulnerability_metrics ?? {};
   const toolsCompliance = dashboard.tools_compliance_controls_metrics ?? {};
   const toolsImpact = dashboard.tools_impact_metrics ?? {};
@@ -186,6 +195,24 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
 
   return (
     <div className="space-y-6">
+      {/* Risk metrics — 4 cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {RISK_CARDS.map(({ key, label, description, color, icon: Icon }) => (
+          <Card key={key} className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader className="pb-2">
+              <div className="flex items-start justify-between">
+                <CardTitle className="text-base">{label}</CardTitle>
+                <Icon className="h-4 w-4 shrink-0" style={{ color }} />
+              </div>
+              <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">{riskMetrics[key] ?? 0}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
@@ -559,7 +586,7 @@ function AgentResultsView({
         />
       ) : (
         <>
-      {dashboard && (dashboard.tools_vulnerability_metrics != null || dashboard.tools_impact_metrics != null || dashboard.tools_compliance_controls_metrics != null) && (
+      {dashboard && (dashboard.risk_metrics != null || dashboard.tools_vulnerability_metrics != null || dashboard.tools_impact_metrics != null || dashboard.tools_compliance_controls_metrics != null) && (
         <MCPDashboardCharts dashboard={dashboard} />
       )}
 
