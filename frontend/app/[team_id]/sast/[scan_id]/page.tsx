@@ -67,6 +67,7 @@ export default function SASTPage() {
   const [mode, setMode] = useState<Mode>("unknown");
   const [repo_url, setRepoUrl] = useState<string>("");
   const [PAT, setPAT] = useState<string>("");
+  const [branch, setBranch] = useState<string>("main");
   const [scan_status, setScanStatus] = useState<string>("unknown");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -140,7 +141,7 @@ export default function SASTPage() {
       </div>
 
       {/* Right Sidebar - SAST Options */}
-      <SASTOptionsSidebar query={query} app_lang={app_lang} setAppLang={setAppLang} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} />
+      <SASTOptionsSidebar query={query} app_lang={app_lang} setAppLang={setAppLang} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} branch={branch} setBranch={setBranch} />
     </div>
   );
 }

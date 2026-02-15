@@ -16,6 +16,7 @@ export default function SCASBOMPage() {
   const [mode, setMode] = useState<Mode>("unknown");
   const [repo_url, setRepoUrl] = useState<string>("");
   const [PAT, setPAT] = useState<string>("");
+  const [branch, setBranch] = useState<string>("main");
   const [scan_status, setScanStatus] = useState<string>("unknown");
   const [messages, setMessages] = useState<{ id: number; content: string; role: "user" | "assistant"; timestamp: string; is_streaming: boolean }[]>([]);
 
@@ -78,6 +79,8 @@ export default function SCASBOMPage() {
         setRepoUrl={setRepoUrl}
         PAT={PAT}
         setPAT={setPAT}
+        branch={branch}
+        setBranch={setBranch}
       />
     </div>
   );

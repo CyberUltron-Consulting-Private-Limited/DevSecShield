@@ -9,8 +9,6 @@ dependencies = [
     "playwright>=1.57.0",
     "pymongo>=4.15.5",
     "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
     "rich>=14.2.0",
-    "selenium>=4.40.0",
-    "wapiti3==3.2.10",
-    "zaproxy>=0.5.0",
 ]

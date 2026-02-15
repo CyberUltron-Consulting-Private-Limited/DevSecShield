@@ -18,15 +18,14 @@ MessageType = Literal["message", "tool"]
 SenderType = Literal["user", "assistant"]
 
 
-# class Conversation(TypedDict, total=False): # removed from use ⚠️
+class ScanFindings(TypedDict, total=False):
 
-#     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
-#     # user_id: int 
-#     messages: List[str]  # Array of ObjectIds ( as string ) of message collection documents in order (earliest to latest)
-#     created_at: datetime
-#     conv_type: ConversationType
-#     title: str
+    scan_id: int # int of scan collection document 
 
+    finding_data : dict | None = None
+    fixed : bool = False
+    fixed_date : datetime | None = None
+    info : dict | None = None
 
 class MessageLog(TypedDict, total=False):
 

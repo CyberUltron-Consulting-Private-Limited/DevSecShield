@@ -16,6 +16,7 @@ export default function IACPage() {
   const [mode, setMode] = useState<Mode>("unknown");
   const [repo_url, setRepoUrl] = useState<string>("");
   const [PAT, setPAT] = useState<string>("");
+  const [branch, setBranch] = useState<string>("main");
   const [scan_status, setScanStatus] = useState<string>("unknown");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -68,7 +69,7 @@ export default function IACPage() {
           <ChatWindow query={query}/>
         </div>
       </div>
-      <IACOptionsSidebar query={query} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} />
+      <IACOptionsSidebar query={query} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} branch={branch} setBranch={setBranch} />
     </div>
   );
 }

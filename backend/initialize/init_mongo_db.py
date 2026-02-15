@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 
 def mongo_db_create_collections_and_documents(
     dev_environment: bool = False,
-    db_name: str = 'devsecshield_backend_server_db'
+    db_name: str = 'devsecshield_backend_server_db' , 
+    collection_names: list[str] = [ "message_log", "active_context", "guardrails_logs", "cicd_logs", "scan_findings"]
     ):
     """
     Mongo connection url format : 
@@ -30,41 +31,13 @@ def mongo_db_create_collections_and_documents(
         collections = db.list_collection_names()
         console = Console()
         console.print(f"collections: {collections}",style="bold green")
-
-        # conversations collection ( removed in the new architecture ⚠️ )
-        # if 'conversations' not in collections:
-        #     db.create_collection('conversations')
-        #     console.print(f"conversations collection created",style="bold green")
-
-        # message_log collection
-        if 'message_log' not in collections:
-            db.create_collection('message_log')
-            console.print(f"message_log collection created",style="bold green")
-
-        # active_context collection
-        if 'active_context' not in collections:
-            db.create_collection('active_context')
-            console.print(f"active_context collection created",style="bold green")
-
-        # guardrail_logs collection
-        if 'guardrails_logs' not in collections:
-            db.create_collection('guardrails_logs')
-            console.print(f"guardrails_logs collection created",style="bold green")
         
-        # cicd_logs collection
-        if 'cicd_logs' not in collections:
-            db.create_collection('cicd_logs')
-            console.print(f"cicd_logs collection created",style="bold green")
-        
-        # codebase_context collection ( for RAG )
-        if 'codebase_context' not in collections:
-            db.create_collection('codebase_context')
-            console.print(f"codebase_context collection created",style="bold green")
-        
-        # open_source_context collection ( for RAG )
-        if 'open_source_context' not in collections:
-            db.create_collection('open_source_context')
-            console.print(f"open_source_context collection created",style="bold green")
+
+        for collection_name in collection_names:
+            if collection_name not in collections:
+                db.create_collection(collection_name)
+                console.print(f"{collection_name} collection created",style="bold green")
+
         
         console.print(f"collections created",style="bold green")
         console.print(f"list of collections: {db.list_collection_names()}",style="bold green")

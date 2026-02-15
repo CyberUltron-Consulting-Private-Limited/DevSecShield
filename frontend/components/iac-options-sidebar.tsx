@@ -67,6 +67,8 @@ export function IACOptionsSidebar({
   setRepoUrl,
   PAT,
   setPAT,
+  branch,
+  setBranch,
 }: {
   query: UseQueryResult<IACConversationResponse>;
   mode: Mode;
@@ -75,12 +77,15 @@ export function IACOptionsSidebar({
   setRepoUrl: Dispatch<SetStateAction<string>>;
   PAT: string;
   setPAT: Dispatch<SetStateAction<string>>;
+  branch: string;
+  setBranch: Dispatch<SetStateAction<string>>;
 }) {
   useEffect(() => {
     setMode(mode);
     setRepoUrl(repo_url);
     setPAT(PAT);
-  }, [mode, repo_url, PAT]);
+    setBranch(branch);
+  }, [mode, repo_url, PAT, branch]);
 
   const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
   const [error_message, setErrorMessage] = useState<string | null>(null);
@@ -133,7 +138,7 @@ export function IACOptionsSidebar({
     }));
     const payload: StartScanPayload = {
       iac: {
-        repo_context: zip_file_used ? null : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT },
+        repo_context: zip_file_used ? null : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT, branch: (branch?.trim() || "main") },
         zip_file_used,
         iac_contexts: contexts,
       },
@@ -315,6 +320,8 @@ export function IACOptionsSidebar({
               setRepoUrl={setRepoUrl}
               pat={PAT}
               setPat={setPAT}
+              branch={branch}
+              setBranch={setBranch}
               mode={mode}
               setMode={setMode}
             />

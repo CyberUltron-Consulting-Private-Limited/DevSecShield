@@ -24,6 +24,9 @@ export interface RepositoryCardProps {
   /** Personal Access Token for repo */
   pat: string;
   setPat: Dispatch<SetStateAction<string>>;
+  /** Branch to scan (e.g. main, develop). Defaults to main in worker. */
+  branch: string;
+  setBranch: Dispatch<SetStateAction<string>>;
   /** Selected repo platform when using repo source */
   mode: RepositoryMode;
   setMode: Dispatch<SetStateAction<RepositoryMode>>;
@@ -36,6 +39,8 @@ export function RepositoryCard({
   setRepoUrl,
   pat,
   setPat,
+  branch,
+  setBranch,
   mode,
   setMode,
 }: RepositoryCardProps) {
@@ -96,6 +101,12 @@ export function RepositoryCard({
                       onChange={(e) => { setRepoUrl(e.target.value); setMode("github"); }}
                     />
                     <Input
+                      value={branch}
+                      placeholder="Branch (e.g. main)"
+                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
+                      onChange={(e) => setBranch(e.target.value)}
+                    />
+                    <Input
                       type="password"
                       value={pat}
                       placeholder="Personal Access Token"
@@ -119,6 +130,12 @@ export function RepositoryCard({
                       onChange={(e) => { setRepoUrl(e.target.value); setMode("gitlab"); }}
                     />
                     <Input
+                      value={branch}
+                      placeholder="Branch (e.g. main)"
+                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
+                      onChange={(e) => setBranch(e.target.value)}
+                    />
+                    <Input
                       type="password"
                       value={pat}
                       placeholder="Personal Access Token"
@@ -140,6 +157,12 @@ export function RepositoryCard({
                       placeholder="Repository URL"
                       className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
                       onChange={(e) => { setRepoUrl(e.target.value); setMode("bitbucket"); }}
+                    />
+                    <Input
+                      value={branch}
+                      placeholder="Branch (e.g. main)"
+                      className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
+                      onChange={(e) => setBranch(e.target.value)}
                     />
                     <Input
                       type="password"

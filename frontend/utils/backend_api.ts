@@ -13,16 +13,19 @@ export interface GithubContextSchema {
   mode: "github";
   repo_url: string;
   PAT: string;
+  branch?: string;
 }
 export interface GitlabContextSchema {
   mode: "gitlab";
   repo_url: string;
   PAT: string;
+  branch?: string;
 }
 export interface BitbucketContextSchema {
   mode: "bitbucket";
   repo_url: string;
   PAT: string;
+  branch?: string;
 }
 
 export type RepoContextSchema = GithubContextSchema | GitlabContextSchema | BitbucketContextSchema;
@@ -200,10 +203,11 @@ const startSastScan = async (params: {
     PAT: string
     app_lang: SastAppLang
     mode: RepoMode
+    branch?: string
 }) => {
     const payload: StartScanPayload = {
         sast: {
-            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT },
+            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT, branch: params.branch ?? "main" },
             zip_file_used: false,
             exclude_path_arrays: null,
             app_lang: params.app_lang,
@@ -232,10 +236,11 @@ const reinitializeSastScan = async (params: {
     PAT: string
     app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin"
     mode: "github" | "gitlab" | "bitbucket"
+    branch?: string
 }) => {
     const payload: StartScanPayload = {
         sast: {
-            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT },
+            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT, branch: params.branch ?? "main" },
             zip_file_used: false,
             exclude_path_arrays: null,
             app_lang: params.app_lang,

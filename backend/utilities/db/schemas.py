@@ -54,16 +54,19 @@ class GithubContextSchema(BaseModel):
     mode: Literal["github"] = "github"
     repo_url: str
     PAT: str
+    branch: str = "main"
 
 class GitlabContextSchema(BaseModel):
     mode: Literal["gitlab"] = "gitlab"
     repo_url: str
     PAT: str
+    branch: str = "main"
 
 class BitbucketContextSchema(BaseModel):
     mode: Literal["bitbucket"] = "bitbucket"
     repo_url: str
     PAT: str
+    branch: str = "main"
 
 class BaseStartRepositoryScanData(BaseModel):
     repo_context: GithubContextSchema | GitlabContextSchema | BitbucketContextSchema | None = None

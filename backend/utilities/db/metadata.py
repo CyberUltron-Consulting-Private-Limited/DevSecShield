@@ -18,6 +18,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "zip_file_used": start_scan_payload.sast.zip_file_used,
                 "repo_url": start_scan_payload.sast.repo_context.repo_url if start_scan_payload.sast.repo_context else None,
                 "repo_type": start_scan_payload.sast.repo_context.mode if start_scan_payload.sast.repo_context else None,
+                "branch": start_scan_payload.sast.repo_context.branch if start_scan_payload.sast.repo_context else None,
                 "app_lang": start_scan_payload.sast.app_lang,
                 "exclude_path_arrays": start_scan_payload.sast.exclude_path_arrays,
             }
@@ -26,6 +27,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "zip_file_used": start_scan_payload.iac.zip_file_used,
                 "repo_url": start_scan_payload.iac.repo_context.repo_url if start_scan_payload.iac.repo_context else None,
                 "repo_type": start_scan_payload.iac.repo_context.mode if start_scan_payload.iac.repo_context else None,
+                "branch": start_scan_payload.iac.repo_context.branch if start_scan_payload.iac.repo_context else None,
                 "iac_contexts": [iac_context.model_dump() for iac_context in start_scan_payload.iac.iac_contexts],
             }
         case "sbom_sca":
@@ -33,6 +35,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "zip_file_used": start_scan_payload.sbom_sca.zip_file_used,
                 "repo_url": start_scan_payload.sbom_sca.repo_context.repo_url if start_scan_payload.sbom_sca.repo_context else None,
                 "repo_type": start_scan_payload.sbom_sca.repo_context.mode if start_scan_payload.sbom_sca.repo_context else None,
+                "branch": start_scan_payload.sbom_sca.repo_context.branch if start_scan_payload.sbom_sca.repo_context else None,
                 "sbom_file_used": start_scan_payload.sbom_sca.sbom_file_used,
             }
         case "mcp":
