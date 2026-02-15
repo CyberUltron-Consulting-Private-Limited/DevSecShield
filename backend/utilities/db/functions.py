@@ -148,6 +148,7 @@ def return_scan_list_for_type(
                 "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
                 "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
                 'risk_data': risk_data,
+                "raw_scan_data": scan.scan_data,
 
             })
 

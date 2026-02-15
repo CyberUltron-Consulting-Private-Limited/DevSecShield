@@ -86,6 +86,7 @@ export interface SastConversation {
     owner_user_full_name?: string
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    raw_scan_data?: unknown
 }
 
 /** Card counts returned by list SAST scans (card_data) */
