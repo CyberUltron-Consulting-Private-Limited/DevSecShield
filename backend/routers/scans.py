@@ -18,6 +18,7 @@ from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exce
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
 from backend.utilities.db.metadata import get_scan_metadata_for_type
+from backend.utilities.db.findings import get_findings_for_scan_type
 from backend.utilities.pdf import generate_pdf_for_type
 from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
@@ -176,7 +177,7 @@ async def send_message_to_scan(
                 console.print(f"Scan with id: {scan_id} and team_id: {team_id} not found in main database" ,style="bold red")
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found ")
             
-            scan.last_updated = datetime.datetime.now(datetime.timezone.utc) # updating last_updated field
+            scan.last_updated = datetime.now(timezone.utc) # updating last_updated field
             session.add(scan)
             session.commit()
             session.refresh(scan)
@@ -208,7 +209,7 @@ async def send_message_to_scan(
             content=data.user_message,
             type="message",
             sender="user",
-            created_at=datetime.datetime.now(datetime.timezone.utc),
+            created_at=datetime.now(timezone.utc),
         )
         result = message_collection.insert_one(message_instance)
         user_message_id = str(result.inserted_id)
@@ -224,7 +225,7 @@ async def send_message_to_scan(
             content=data.user_message,
             type="message",
             sender="user",
-            created_at=datetime.datetime.now(datetime.timezone.utc),
+            created_at=datetime.now(timezone.utc),
         )
         result = active_context_collection.insert_one(active_context_instance)
         active_context_message_id = str(result.inserted_id)
@@ -327,23 +328,30 @@ async def get_scan(
         
         # STEP [ 4 ] : =================== Get the dashboard data ======================
         if SCAN_DATA : 
-            dashboard_data = generate_scan_dashboard(scan_type=type, scan_results=SCAN_DATA)
+            dashboard_data = generate_scan_dashboard(scan_type=type, scan_results=SCAN_DATA ,scan_id=scan_id)
         else:
             dashboard_data = None
 
-        scan_metadata = get_scan_metadata(scan_type=type, scan_object=scan)
+        scan_metadata = get_scan_metadata(scan_type=type, scan=scan)
+
+        findings_list = get_findings_for_scan_type(scan_type=type, scan_id=scan_id)
+
         
+
         # STEP [ 4 ] : =================== Return the scan data ======================
-        return {
+        data = {
                 "title": scan.title,
-                "scan_metadata": scan_metadata, #TODO modify this to be different for different scan types
+                "scan_metadata": scan_metadata,
                 "scan_status": SCAN_STATUS.lower(),
-                "findings": None , # TODO : Modify this to be a list of findings along with their mongo id as string for later toggling of status
-                "dashboard": dashboard_data, # TODO : This must return different data for different scan types
+                "findings": findings_list,
+                "dashboard": dashboard_data,
                 "messages": MESSAGES,
                 "integration_settings": scan.integration_settings or {},
                 "info": SCAN_INFO,
             }
+
+        
+        return data
         
     
     except HTTPException as e:
@@ -418,7 +426,7 @@ async def start_scan(
             if scan_metadata == None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error in getting scan metadata")
             scan.scan_metadata = scan_metadata
-            scan.last_updated = datetime.datetime.now(datetime.timezone.utc) # updating last_updated field
+            scan.last_updated = datetime.now(timezone.utc) # updating last_updated field
             session.add(scan)
             session.commit()
             # Capture credits while session is open; scan is detached after the block exits
@@ -618,8 +626,10 @@ async def export_scan(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.scan_status not in ["success"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
-            if scan.scan_data:
-                scan_data = scan.scan_data
+            if scan.scan_data and "results" in scan.scan_data:
+                scan_data = scan.scan_data["results"]
+            else :
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
 
         
         
@@ -873,6 +883,8 @@ async def toggle_finding_state(
             scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state, "fixed_at": datetime.now(timezone.utc)}})
         elif data.state == "ignored":
             scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state, "ignored_at": datetime.now(timezone.utc)}})
+        else:
+            scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state}})
         console.print(f"Finding state updated for {data.finding_id} to {data.state}",style="bold green")
 
         return {

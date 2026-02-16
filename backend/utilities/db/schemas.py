@@ -100,6 +100,7 @@ class IACContextSchema(BaseModel):
 
 class StartIACScanData(BaseStartRepositoryScanData):
     iac_contexts: list[IACContextSchema]
+    environment: Literal["production", "staging", "development"] = "development"
 
 
     @model_validator(mode="after")

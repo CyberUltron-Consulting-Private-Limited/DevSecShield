@@ -28,6 +28,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "repo_url": start_scan_payload.iac.repo_context.repo_url if start_scan_payload.iac.repo_context else None,
                 "repo_type": start_scan_payload.iac.repo_context.mode if start_scan_payload.iac.repo_context else None,
                 "branch": start_scan_payload.iac.repo_context.branch if start_scan_payload.iac.repo_context else None,
+                "environment": start_scan_payload.iac.environment if start_scan_payload.iac.environment else "development",
                 "iac_contexts": [iac_context.model_dump() for iac_context in start_scan_payload.iac.iac_contexts],
             }
         case "sbom_sca":

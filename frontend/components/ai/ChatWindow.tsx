@@ -27,6 +27,7 @@ import {
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai/source';
 import { DisplaySuggestions } from '@/components/ai/DisplaySuggestions';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { ChevronRightIcon, EyeIcon, MicIcon, PaperclipIcon, RefreshCcwIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
 import { nanoid } from 'nanoid';
@@ -53,10 +54,15 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
+export type ChatWindowProgress = { current: number };
+
 const ChatWindow = ({
-  query }: {
-    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<SCASBOMConversationResponse>;
-  }) => {
+  query,
+  progress,
+}: {
+  query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<SCASBOMConversationResponse>;
+  progress?: ChatWindowProgress;
+}) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const router = useRouter();
   const [inputValue, setInputValue] = useState('');
@@ -251,13 +257,19 @@ const ChatWindow = ({
     <div className="flex h-screen w-full flex-col overflow-hidden rounded-xl border bg-background shadow-sm ">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/${team_id}/${type}`)}>{Heading}</span>
             <ChevronRightIcon className="size-4 text-zinc-500" />
-            <span className="text-neutral-200 font-medium">{query.data?.title}</span>
+            <span className="text-neutral-200 font-medium truncate">{query.data?.title}</span>
           </div>
-          <div className="h-4 w-px bg-border" />
+          {progress != null && (
+            <div className="flex items-center gap-2 min-w-0 flex-1 max-w-xs">
+              <Progress value={progress.current} className="h-2 flex-1" />
+              <span className="text-sm tabular-nums text-zinc-500 shrink-0">{progress.current}%</span>
+            </div>
+          )}
+          <div className="h-4 w-px bg-border shrink-0" />
           <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
         </div>
 

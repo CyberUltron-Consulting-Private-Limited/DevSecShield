@@ -36,6 +36,7 @@ import {
   type RepoMode,
   type IACContextMode,
   type IACContextSchema,
+  type IACEnvironment,
 } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
@@ -51,6 +52,12 @@ const IAC_MODES: { value: IACContextMode; label: string }[] = [
   { value: "helm", label: "Helm" },
   { value: "aws_cloudformation", label: "AWS CloudFormation" },
   { value: "aws_cdk", label: "AWS CDK" },
+];
+
+const IAC_ENVIRONMENTS: { value: IACEnvironment; label: string }[] = [
+  { value: "development", label: "Development" },
+  { value: "staging", label: "Staging" },
+  { value: "production", label: "Production" },
 ];
 
 export interface IACContextEntry {
@@ -95,6 +102,7 @@ export function IACOptionsSidebar({
   const [iac_contexts, setIacContexts] = useState<IACContextEntry[]>([
     { id: crypto.randomUUID(), mode: "terraform", include_path_arrays: [] },
   ]);
+  const [environment, setEnvironment] = useState<IACEnvironment>("development");
 
   const zip_file_used = uploaded_file !== null;
 
@@ -141,6 +149,7 @@ export function IACOptionsSidebar({
         repo_context: zip_file_used ? null : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT, branch: (branch?.trim() || "main") },
         zip_file_used,
         iac_contexts: contexts,
+        environment,
       },
     };
     return JSON.stringify(payload);
@@ -205,7 +214,7 @@ export function IACOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
-  }, [mode, repo_url, PAT, uploaded_file, iac_contexts]);
+  }, [mode, repo_url, PAT, uploaded_file, iac_contexts, environment]);
 
   const displayCredits = estimatedCredits;
   const creditsInvalid = estimatedCredits === -1;
@@ -325,6 +334,30 @@ export function IACOptionsSidebar({
               mode={mode}
               setMode={setMode}
             />
+
+            {/* Environment */}
+            <Card className="border-zinc-700 bg-zinc-800/50 py-4 shadow-none">
+              <CardHeader className="pb-2 px-4">
+                <CardTitle className="text-sm font-medium text-zinc-300">Environment</CardTitle>
+                <CardDescription className="text-zinc-500 text-xs">
+                  Select the target environment for this IAC scan.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 pt-0">
+                <Select value={environment} onValueChange={(v) => setEnvironment(v as IACEnvironment)}>
+                  <SelectTrigger className="h-8 bg-zinc-800 border-zinc-700 text-white text-xs cursor-pointer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-700">
+                    {IAC_ENVIRONMENTS.map((e) => (
+                      <SelectItem key={e.value} value={e.value} className="text-white hover:bg-zinc-700 cursor-pointer text-xs">
+                        {e.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
 
             {/* IAC contexts */}
             <Card className="border-zinc-700 bg-zinc-800/50 py-4 shadow-none">

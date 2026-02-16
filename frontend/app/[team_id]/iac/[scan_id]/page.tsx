@@ -16,7 +16,7 @@ export default function IACPage() {
   const [mode, setMode] = useState<Mode>("unknown");
   const [repo_url, setRepoUrl] = useState<string>("");
   const [PAT, setPAT] = useState<string>("");
-  const [branch, setBranch] = useState<string>("main");
+  const [branch, setBranch] = useState<string>("");
   const [scan_status, setScanStatus] = useState<string>("unknown");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -62,11 +62,18 @@ export default function IACPage() {
       <Loader2 className="size-10 animate-spin text-blue-600" />
     </div>;
   }
+
+  const scanInfo = query.data?.info;
+  const isInProgress = scan_status === "pending" || scan_status === "started";
+
   return (
     <div className="flex h-screen">
-      <div className="flex-1 bg-white dark:bg-zinc-900  overflow-auto">
-        <div className="mx-auto">
-          <ChatWindow query={query}/>
+      <div className="flex-1 bg-white dark:bg-zinc-900 overflow-auto flex flex-col">
+        <div className="mx-auto flex-1 w-full">
+          <ChatWindow
+            query={query}
+            progress={isInProgress && scanInfo?.current != null ? { current: scanInfo.current } : undefined}
+          />
         </div>
       </div>
       <IACOptionsSidebar query={query} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} branch={branch} setBranch={setBranch} />

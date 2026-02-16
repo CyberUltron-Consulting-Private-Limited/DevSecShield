@@ -49,6 +49,8 @@ export default function IACResultsPage() {
   // IAC scan data: backend returns query.data.data as array of vulnerabilities (worker_iac_agent format)
   const iacData = query.data?.data;
   const dashboard = query.data?.dashboard;
+  const findings = query.data?.findings ?? undefined;
+  const scan_metadata = query.data?.scan_metadata ?? undefined;
   const integrationSettings = query.data?.integration_settings ?? undefined;
 
   // Normalize: accept either direct array or legacy { results: [] }
@@ -64,9 +66,12 @@ export default function IACResultsPage() {
         data={dataArray ?? undefined}
         conversationId={scan_id}
         dashboard={dashboard}
+        findings={findings}
+        scanMetadata={scan_metadata}
         teamId={String(team_id)}
         integrationSettings={integrationSettings}
         onIntegrationSettingsUpdated={() => query.refetch()}
+        onFindingsUpdated={() => query.refetch()}
       />
     </div>
   );

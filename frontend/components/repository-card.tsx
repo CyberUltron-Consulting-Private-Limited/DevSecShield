@@ -102,7 +102,7 @@ export function RepositoryCard({
                     />
                     <Input
                       value={branch}
-                      placeholder="Branch (e.g. main)"
+                      placeholder="Branch name (leave empty for main)"
                       className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
                       onChange={(e) => setBranch(e.target.value)}
                     />
@@ -131,7 +131,7 @@ export function RepositoryCard({
                     />
                     <Input
                       value={branch}
-                      placeholder="Branch (e.g. main)"
+                      placeholder="Branch name (leave empty for main)"
                       className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
                       onChange={(e) => setBranch(e.target.value)}
                     />
@@ -160,7 +160,7 @@ export function RepositoryCard({
                     />
                     <Input
                       value={branch}
-                      placeholder="Branch (e.g. main)"
+                      placeholder="Branch name (leave empty for main)"
                       className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
                       onChange={(e) => setBranch(e.target.value)}
                     />

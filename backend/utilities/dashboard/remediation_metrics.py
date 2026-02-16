@@ -42,7 +42,10 @@ def get_remediation_metrics(findings: list[ScanFindings]) -> dict:
         
     # calculating mean time to remediate 
     if len(array_of_time_deltas) > 0:
-        sum_of_time_deltas : timedelta = sum(array_of_time_deltas)
+        sum_of_time_deltas = array_of_time_deltas[0]
+        for time_delta in array_of_time_deltas[1:]:
+            sum_of_time_deltas += time_delta
+        
         mean_time_to_remediate_time_delta : timedelta = sum_of_time_deltas / len(array_of_time_deltas)
         days = mean_time_to_remediate_time_delta.days
         hours = mean_time_to_remediate_time_delta.seconds // 3600

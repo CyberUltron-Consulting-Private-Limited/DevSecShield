@@ -474,6 +474,11 @@ class CodebaseContext(BaseContextManager):
             else:
                 summary = None
 
+            
+            # additional tranformation for metadata 
+            self.metadata["included_documents"] = list(self.metadata["included_documents"])
+            self.metadata["excluded_documents"] = list(self.metadata["excluded_documents"])
+
 
             return BaseResult(context_id=context_id, summary=summary)
 

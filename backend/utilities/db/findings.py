@@ -1,5 +1,6 @@
 from backend.get_db import get_mongo_client_db , dev_environment
 from backend.mongo_models import ScanFindings
+from backend.new_models import scan_types
 
 
 
@@ -15,3 +16,52 @@ def get_findings_for_scan_id(scan_id: int) -> list[dict]:
         findings_list.append(finding)
     
     return findings_list
+
+risk_score_map = {
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dict]:
+    findings = []
+    if scan_type == "sast":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": finding["finding_data"]["title"],
+                "description": finding["finding_data"]["description"],
+                "impact": finding["finding_data"]["impact"],
+                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "status": finding["finding_status"],
+                "compliance_controls": finding["finding_data"]["compliance_controls"],
+                "owasp_top_10": finding["finding_data"]["owasp_top_10"],
+                "suggested_fix": finding["finding_data"]["suggested_fix"],
+                "location": finding["finding_data"]["location"],
+                "snippet": finding["finding_data"]["snippet"],
+                "cves": finding["finding_data"]["cves"],
+            })
+    
+    elif scan_type == "iac":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": finding["finding_data"]["title"],
+                "description": finding["finding_data"]["description"],
+                "impact": finding["finding_data"]["impact"],
+                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "status": finding["finding_status"],
+                "compliance_controls": finding["finding_data"]["compliance_controls"],
+                "owasp_top_10": finding["finding_data"]["owasp_top_10"],
+                "suggested_fix": finding["finding_data"]["suggested_fix"],
+                "location": finding["finding_data"]["location"],
+                "snippet": finding["finding_data"]["snippet"],
+                "cves": finding["finding_data"]["cves"],
+                "category": finding["finding_data"]["category"],
+                "resource": finding["finding_data"]["resource"],
+            })
+    return findings

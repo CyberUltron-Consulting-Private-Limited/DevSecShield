@@ -55,15 +55,15 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
     
     high_and_critical_vuln_in_past_month : dict[str,int] = { "low" : 0 , "medium" : 0 , "high" : 0 , "critical" : 0 }
     for scan in scans_in_past_month:
-        if scan.scan_type == "iac" or scan.scan_type == "sbom_sca":
-            for vulnerability in scan.scan_data:
+        if scan.scan_type == "iac" or scan.scan_type == "sbom_sca" and "results" in scan.scan_data:
+            for vulnerability in scan.scan_data["results"]:
                 impact : str = vulnerability.get("impact") or "low"
                 impact = impact.lower()
                 if impact == "high" or impact == "critical":
                     high_and_critical_vuln_in_past_month[impact] += 1
                 
         elif scan.scan_type == "sast" :
-            for item in scan.scan_data:
+            for item in scan.scan_data["results"]:
                 for vulnerability in item.get("vulnerabilities", []):
                     impact : str = vulnerability.get("impact") or  "low"
                     impact = impact.lower()

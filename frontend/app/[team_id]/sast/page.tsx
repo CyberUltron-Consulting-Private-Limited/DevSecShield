@@ -25,10 +25,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, Filter, ArrowUpDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { SastConversation, deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import type { ScanListDashboardData } from "@/utils/backend_api";
@@ -46,7 +48,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   ChartContainer,
   ChartTooltip,
@@ -76,13 +78,76 @@ import {
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
+/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+type ScanTypeFilter = "all" | "github" | "gitlab" | "bitbucket" | "zip_file";
+type TableSortBy =
+  | "none"
+  | "created_asc"
+  | "created_desc"
+  | "risk_desc"
+  | "risk_asc"
+  | "coverage_desc"
+  | "coverage_asc"
+  | "credits_desc"
+  | "credits_asc";
+
+function getDisplayRiskScore(c: SastConversation): number | null {
+  if (!c.risk_data || c.risk_score == null) return null;
+  const rd = c.risk_data;
+  const total = rd.total_critical + rd.total_high + rd.total_medium + rd.total_low;
+  if (total === 0) return null;
+  return Math.round(Math.min(10, Math.max(0, (c.risk_score / total / 4) * 10)) * 10) / 10;
+}
+
+function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+  if (filter === "all") return true;
+  if (score == null) return false;
+  if (filter === "critical") return score >= 9;
+  if (filter === "high") return score >= 7 && score < 9;
+  if (filter === "medium") return score >= 5 && score < 7;
+  if (filter === "low") return score < 5;
+  return true;
+}
+
+const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+  all: "Risk score",
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const SCAN_TYPE_LABELS: Record<ScanTypeFilter, string> = {
+  all: "Scan type",
+  github: "GitHub",
+  gitlab: "GitLab",
+  bitbucket: "Bitbucket",
+  zip_file: "Zip file",
+};
+
+const SORT_BY_LABELS: Record<TableSortBy, string> = {
+  none: "Sort",
+  created_asc: "Oldest",
+  created_desc: "Newest",
+  risk_asc: "Risk ↑",
+  risk_desc: "Risk ↓",
+  coverage_asc: "Coverage ↑",
+  coverage_desc: "Coverage ↓",
+  credits_asc: "Credits ↑",
+  credits_desc: "Credits ↓",
+};
+
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
 
 function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardData: ScanListDashboardData; scansListData?: SastConversation[] }) {
   const card = dashboardData.card_data;
 
-  // ── Radar: risk severity totals across all scans ──
+  // ── Radar: risk severity totals (from backend or fallback) ──
   const riskTotals = useMemo(() => {
+    if (dashboardData.risk_totals && dashboardData.risk_totals.length > 0) {
+      return dashboardData.risk_totals;
+    }
     let critical = 0, high = 0, medium = 0, low = 0;
     for (const day of Object.values(dashboardData.risks_per_day)) {
       critical += day.critical;
@@ -96,7 +161,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       { severity: "Medium", count: medium },
       { severity: "Low", count: low },
     ];
-  }, [dashboardData.risks_per_day]);
+  }, [dashboardData.risks_per_day, dashboardData.risk_totals]);
 
   const radarConfig = {
     count: { label: "Findings", color: "hsl(220 70% 50%)" },
@@ -145,8 +210,19 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
     not_started: { label: "Not Started", color: "hsl(270 50% 60%)" },
   } satisfies ChartConfig;
 
-  // ── Average Risk Score (weighted 1–10) ──
+  // ── Average Risk Score (from backend or derived from riskTotals) ──
   const { averageRiskScore, totalIssues, criticalCount } = useMemo(() => {
+    if (
+      dashboardData.average_risk_score !== undefined &&
+      dashboardData.total_issues !== undefined &&
+      dashboardData.critical_count !== undefined
+    ) {
+      return {
+        averageRiskScore: dashboardData.average_risk_score,
+        totalIssues: dashboardData.total_issues,
+        criticalCount: dashboardData.critical_count,
+      };
+    }
     const critical = riskTotals.find((r) => r.severity === "Critical")?.count ?? 0;
     const high = riskTotals.find((r) => r.severity === "High")?.count ?? 0;
     const medium = riskTotals.find((r) => r.severity === "Medium")?.count ?? 0;
@@ -154,19 +230,18 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
     const total = critical + high + medium + low;
     const weighted = total > 0 ? (critical * 4 + high * 3 + medium * 2 + low * 1) / total : 0;
     const score = Math.min(10, Math.max(0, (weighted / 4) * 10));
-    const result = {
+    return {
       averageRiskScore: Math.round(score * 10) / 10,
       totalIssues: total,
       criticalCount: critical,
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3a590bd9-f575-449d-91a2-d6c8197f7d92',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sast/page.tsx:avgRisk',message:'Average risk score calc',data:{critical,high,medium,low,total,weighted,score,avgScore:result.averageRiskScore},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
-    return result;
-  }, [riskTotals]);
+  }, [riskTotals, dashboardData.average_risk_score, dashboardData.total_issues, dashboardData.critical_count]);
 
-  // ── OWASP by category (from raw_scan_data) ──
+  // ── OWASP by category (from backend or fallback from raw_scan_data) ──
   const owaspByCategory = useMemo(() => {
+    if (dashboardData.owasp_by_category && dashboardData.owasp_by_category.length > 0) {
+      return dashboardData.owasp_by_category;
+    }
     const map: Record<string, number> = {};
     const labelMap: Record<string, string> = {
       "A03:2021 - Injection": "Injection",
@@ -201,7 +276,6 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
               map[label] = (map[label] ?? 0) + 1;
             }
           } else if (owasp && typeof owasp === "object") {
-            // base_vuln.py serializes as { name: value }; use VALUES (e.g. "A03:2021 - Injection") not keys
             for (const val of Object.values(owasp)) {
               const s = typeof val === "string" ? val : String(val);
               const label = shortLabel(s);
@@ -215,12 +289,14 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       .map(([category, count]) => ({ category, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
-  }, [scansListData]);
+  }, [scansListData, dashboardData.owasp_by_category]);
 
-  // ── Policy compliance (from raw_scan_data): compliance % = share of that standard in total controls ──
+  // ── Policy compliance (from backend or fallback from raw_scan_data) ──
   const policyCompliance = useMemo(() => {
+    if (dashboardData.policy_compliance && dashboardData.policy_compliance.length > 0) {
+      return dashboardData.policy_compliance;
+    }
     const standards: Record<string, number> = {};
-
     const extractStandard = (s: string): string => {
       const parts = s.split(" - ");
       return (parts[0] ?? s).trim();
@@ -241,7 +317,6 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
               if (std) standards[std] = (standards[std] ?? 0) + 1;
             }
           } else if (cc && typeof cc === "object") {
-            // base_vuln.py serializes as { name: value }; use VALUES (e.g. "ISO 27001 - A.9 Access Control") not keys
             for (const val of Object.values(cc)) {
               const s = typeof val === "string" ? val : String(val);
               const std = extractStandard(s);
@@ -262,16 +337,22 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       }))
       .sort((a, b) => b.violations - a.violations)
       .slice(0, 8);
-  }, [scansListData]);
+  }, [scansListData, dashboardData.policy_compliance]);
 
   const overallComplianceScore = useMemo(() => {
+    if (dashboardData.overall_compliance_score !== undefined) {
+      return dashboardData.overall_compliance_score;
+    }
     if (policyCompliance.length === 0) return 0;
     const sum = policyCompliance.reduce((acc, p) => acc + p.compliance, 0);
     return Math.round((sum / policyCompliance.length) * 10) / 10;
-  }, [policyCompliance]);
+  }, [policyCompliance, dashboardData.overall_compliance_score]);
 
-  // ── By language (from scan_metadata.app_lang per metadata.py) ──
+  // ── By language (from backend or fallback from scan_metadata.app_lang) ──
   const byLanguage = useMemo(() => {
+    if (dashboardData.by_language && dashboardData.by_language.length > 0) {
+      return dashboardData.by_language;
+    }
     const map: Record<string, number> = {};
     const langDisplay: Record<string, string> = {
       python: "Python",
@@ -309,10 +390,21 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       .map(([language, count]) => ({ language, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
-  }, [scansListData]);
+  }, [scansListData, dashboardData.by_language]);
 
-  // ── Top repos by risk ──
+  // ── Top repos by risk (from backend or fallback from scansListData) ──
   const topReposByRisk = useMemo(() => {
+    if (dashboardData.top_repos_by_risk && dashboardData.top_repos_by_risk.length > 0) {
+      return dashboardData.top_repos_by_risk.map((r) => ({
+        name: r.name,
+        repoUrl: r.repo_url ?? null,
+        zipFileUsed: r.zip_file_used,
+        issues: r.issues,
+        riskScore: r.risk_score,
+        trend: r.trend,
+        language: r.language,
+      }));
+    }
     const langDisplay: Record<string, string> = {
       python: "Python",
       javascript: "JavaScript",
@@ -355,7 +447,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
       })
       .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 5);
-  }, [scansListData]);
+  }, [scansListData, dashboardData.top_repos_by_risk]);
 
   const lineChartConfig = {
     critical: { label: "critical", color: "#dc2626" },
@@ -368,115 +460,115 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
 
   return (
     <div className="space-y-6">
-      {/* Summary stat cards: 4 per row, 2 rows (8 cards) — styled with icon accents */}
+      {/* Summary stat cards: 4 per row, 2 rows (8 cards) — icon top-left, text bottom-left, uniform padding */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-500/15 dark:bg-zinc-400/10">
-                <CircleDot className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-500/15 dark:bg-zinc-400/10">
+                <CircleDot className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Not Started</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.not_started_scans}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Not Started</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.not_started_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
-                <Timer className="h-5 w-5 text-blue-500" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                <Timer className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.pending_scans}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Pending</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.pending_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
-                <Play className="h-5 w-5 text-blue-500" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                <Play className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.started_scans}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Started</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.started_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-500/15 dark:bg-green-500/10">
-                <CheckCircle className="h-5 w-5 text-green-500" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/15 dark:bg-green-500/10">
+                <CheckCircle className="h-4 w-4 text-green-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.success_scans}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Success</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.success_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
-                <XCircle className="h-5 w-5 text-red-500" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <XCircle className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.failure_scans}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Failure</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.failure_scans}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
-                <CalendarPlus className="h-5 w-5 text-amber-500" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                <CalendarPlus className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_created_today}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Created today</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.scans_created_today}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
-                <CalendarCheck className="h-5 w-5 text-amber-500" />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                <CalendarCheck className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_updated_today}</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Updated today</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.scans_updated_today}</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardContent className="p-3">
-            <div className="flex flex-col justify-between gap-2 min-h-[72px]">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${averageRiskScore >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : averageRiskScore >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
-                <Shield className={`h-5 w-5 ${averageRiskScore >= 7 ? "text-red-500" : averageRiskScore >= 5 ? "text-amber-500" : "text-green-500"}`} />
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${averageRiskScore >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : averageRiskScore >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                <Shield className={`h-4 w-4 ${averageRiskScore >= 7 ? "text-red-500" : averageRiskScore >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Average Risk Score</p>
-                <div className="text-2xl font-bold text-zinc-900 dark:text-white">{averageRiskScore} / 10</div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Average Risk Score</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{averageRiskScore} / 10</p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Security posture</p>
               </div>
             </div>
@@ -824,6 +916,113 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
           </CardContent>
         </Card>
       </div>
+
+      {/* Remediation Metrics — performance and efficiency tracking */}
+      {dashboardData.remediation_metrics && (
+        <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl">Remediation Metrics</CardTitle>
+            <CardDescription>Performance and efficiency tracking</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Mean Time to Remediate */}
+              {(() => {
+                const [days, hours, minutes] = dashboardData.remediation_metrics.mean_time_to_remediate;
+                const totalDays = days + hours / 24 + minutes / (60 * 24);
+                const targetDays = 3;
+                const progress = totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
+                const delta = totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean Time to Remediate</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">
+                      {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetDays} days</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="h-2 flex-1" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Critical Issues Fixed */}
+              {(() => {
+                const fixed = dashboardData.remediation_metrics.critical_issues_fixed;
+                const totalCritical = dashboardData.critical_count ?? 0;
+                const total = fixed + totalCritical;
+                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                const targetPct = 95;
+                const progress = Math.min(100, (pct / targetPct) * 100);
+                const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical Issues Fixed</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="h-2 flex-1" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* High Priority Backlog */}
+              {(() => {
+                const backlog = dashboardData.remediation_metrics.high_priority_backlog;
+                const target = 10;
+                const progress = target <= 0 ? 100 : Math.max(0, Math.min(100, (1 - (backlog - target) / Math.max(target, backlog)) * 100));
+                const delta = backlog > target ? `-${backlog - target}` : backlog < target ? `+${target - backlog}` : "0";
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High Priority Backlog</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={backlog <= target ? 100 : Math.max(0, (target / backlog) * 100)} className="h-2 flex-1 [&>div]:bg-orange-500" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Remediation Velocity */}
+              {(() => {
+                const velocity = dashboardData.remediation_metrics.remediation_velocity;
+                const target = 20;
+                const progress = Math.min(100, (velocity / target) * 100);
+                const delta = velocity >= target ? "+0" : `+${target - velocity}`;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation Velocity</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="h-2 flex-1" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -845,7 +1044,9 @@ export default function SASTPage() {
   const [newScanTitle, setNewScanTitle] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
+  const [riskScoreFilter, setRiskScoreFilter] = useState<RiskScoreFilter>("all");
+  const [scanTypeFilter, setScanTypeFilter] = useState<ScanTypeFilter>("all");
+  const [sortBy, setSortBy] = useState<TableSortBy>("none");
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -934,21 +1135,51 @@ export default function SASTPage() {
     }
   };
 
-  const hasActiveFilters = searchQuery !== "" || statusFilter !== "all" || createdAtSort !== "none";
+  const hasActiveFilters =
+    searchQuery !== "" ||
+    statusFilter !== "all" ||
+    riskScoreFilter !== "all" ||
+    scanTypeFilter !== "all" ||
+    sortBy !== "none";
 
   const filteredConversations = conversations
     .filter((c) => {
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (statusFilter !== "all" && c.scan_status !== statusFilter) return false;
+      const score = getDisplayRiskScore(c);
+      if (!matchesRiskScoreFilter(score, riskScoreFilter)) return false;
+      if (scanTypeFilter !== "all") {
+        const st = (c.scan_type ?? "").toLowerCase();
+        if (scanTypeFilter === "zip_file" && st !== "zip_file") return false;
+        if (scanTypeFilter !== "zip_file" && st !== scanTypeFilter) return false;
+      }
       return true;
     })
     .sort((a, b) => {
-      if (createdAtSort === "asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (createdAtSort === "desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const scoreA = getDisplayRiskScore(a) ?? -1;
+      const scoreB = getDisplayRiskScore(b) ?? -1;
+      if (sortBy === "risk_desc") return scoreB - scoreA;
+      if (sortBy === "risk_asc") return scoreA - scoreB;
+      const covA = a.code_coverage != null ? Number(a.code_coverage) : -1;
+      const covB = b.code_coverage != null ? Number(b.code_coverage) : -1;
+      if (sortBy === "coverage_desc") return covB - covA;
+      if (sortBy === "coverage_asc") return covA - covB;
+      const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
+      const credB = b.estimated_credits != null ? Number(b.estimated_credits) : -1;
+      if (sortBy === "credits_desc") return credB - credA;
+      if (sortBy === "credits_asc") return credA - credB;
       return 0;
     });
 
-  const clearFilters = () => { setSearchQuery(""); setStatusFilter("all"); setCreatedAtSort("none"); };
+  const clearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setRiskScoreFilter("all");
+    setScanTypeFilter("all");
+    setSortBy("none");
+  };
 
   const dashboardData = query.data?.dashboard_data;
 
@@ -960,7 +1191,7 @@ export default function SASTPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">SAST Scans</h1>
-              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your SAST scan conversations.</p>
+              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your SAST scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
@@ -1019,15 +1250,161 @@ export default function SASTPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="text-zinc-600 dark:text-zinc-400 text-sm">Sort by</div>
-                    <Select value={createdAtSort} onValueChange={(v) => setCreatedAtSort(v as "none" | "asc" | "desc")}>
-                      <SelectTrigger className="h-9 min-w-[170px] cursor-pointer"><SelectValue placeholder="Created at" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Default</SelectItem>
-                        <SelectItem value="desc">Newest</SelectItem>
-                        <SelectItem value="asc">Oldest</SelectItem>
-                      </SelectContent>
-                    </Select>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            riskScoreFilter === "critical"
+                              ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                              : riskScoreFilter === "high"
+                                ? "border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
+                                : riskScoreFilter === "medium"
+                                  ? "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                                  : riskScoreFilter === "low"
+                                    ? "border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                                    : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{RISK_SCORE_LABELS[riskScoreFilter]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[180px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("all")}>
+                          {riskScoreFilter === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          All
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
+                          {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                          Critical (≥9)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
+                          {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                          High (7–9)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
+                          {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                          Medium (5–7)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
+                          {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                          Low (&lt;5)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            scanTypeFilter === "github"
+                              ? "border-zinc-500 bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                              : scanTypeFilter === "gitlab"
+                                ? "border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
+                                : scanTypeFilter === "bitbucket"
+                                  ? "border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                                  : scanTypeFilter === "zip_file"
+                                    ? "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                                    : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{SCAN_TYPE_LABELS[scanTypeFilter]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[160px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by source</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setScanTypeFilter("all")}>
+                          {scanTypeFilter === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          All
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setScanTypeFilter("github")}>
+                          {scanTypeFilter === "github" ? <Check className="h-4 w-4" /> : <GitBranch className="h-4 w-4" />}
+                          GitHub
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setScanTypeFilter("gitlab")}>
+                          {scanTypeFilter === "gitlab" ? <Check className="h-4 w-4" /> : <GitBranch className="h-4 w-4" />}
+                          GitLab
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setScanTypeFilter("bitbucket")}>
+                          {scanTypeFilter === "bitbucket" ? <Check className="h-4 w-4" /> : <GitBranch className="h-4 w-4" />}
+                          Bitbucket
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setScanTypeFilter("zip_file")}>
+                          {scanTypeFilter === "zip_file" ? <Check className="h-4 w-4" /> : <FileArchive className="h-4 w-4" />}
+                          Zip file
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            sortBy !== "none"
+                              ? "border-violet-500 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:text-violet-300 dark:hover:bg-violet-950/50"
+                              : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <ArrowUpDown className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{SORT_BY_LABELS[sortBy]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[200px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("none")}>
+                          {sortBy === "none" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          Default
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("created_desc")}>
+                          {sortBy === "created_desc" ? <Check className="h-4 w-4" /> : <CalendarPlus className="h-4 w-4" />}
+                          Created (newest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("created_asc")}>
+                          {sortBy === "created_asc" ? <Check className="h-4 w-4" /> : <CalendarCheck className="h-4 w-4" />}
+                          Created (oldest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("risk_desc")}>
+                          {sortBy === "risk_desc" ? <Check className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                          Risk score (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("risk_asc")}>
+                          {sortBy === "risk_asc" ? <Check className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+                          Risk score (low first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("coverage_desc")}>
+                          {sortBy === "coverage_desc" ? <Check className="h-4 w-4" /> : <Percent className="h-4 w-4" />}
+                          Coverage (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("coverage_asc")}>
+                          {sortBy === "coverage_asc" ? <Check className="h-4 w-4" /> : <Percent className="h-4 w-4" />}
+                          Coverage (low first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("credits_desc")}>
+                          {sortBy === "credits_desc" ? <Check className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                          Credits (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("credits_asc")}>
+                          {sortBy === "credits_asc" ? <Check className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                          Credits (low first)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
                     {hasActiveFilters && (
                       <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer" onClick={clearFilters}>
                         <X className="h-4 w-4 mr-1" />Clear filters
@@ -1050,19 +1427,27 @@ export default function SASTPage() {
                     <Button variant="outline" className="cursor-pointer" onClick={clearFilters}><X className="h-4 w-4 mr-2" />Clear filters</Button>
                   </div>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[220px]">Title</TableHead>
-                          <TableHead>Owner</TableHead>
-                          <TableHead>Created at</TableHead>
-                          <TableHead>Last updated</TableHead>
-                          <TableHead>Scan status</TableHead>
-                          <TableHead className="w-[180px]">View scan metadata</TableHead>
-                          <TableHead className="text-right w-[80px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
+                  <ScrollArea className="w-full border rounded-lg">
+                    <div className="min-w-max">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
+                            <TableHead className="w-[90px]">Language</TableHead>
+                            <TableHead>Created at</TableHead>
+                            <TableHead>Last updated</TableHead>
+                            <TableHead>Scan status</TableHead>
+                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
+                            <TableHead className="w-[90px]">Risk score</TableHead>
+                            <TableHead className="w-[100px]">Scan type</TableHead>
+                            <TableHead className="w-[160px]">Repo / Source</TableHead>
+                            <TableHead className="w-[100px]">Branch</TableHead>
+                            <TableHead className="w-[90px]">Coverage</TableHead>
+                            <TableHead className="w-[80px]">Credits</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead className="text-right w-[80px]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
                       <TableBody>
                         {filteredConversations.map((conversation) => (
                           <TableRow
@@ -1077,13 +1462,135 @@ export default function SASTPage() {
                               router.push(dest);
                             }}
                           >
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium max-w-[160px] min-w-[120px]">
                               <Link
                                 href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/sast/${conversation.id}/results` : `/${team_id}/sast/${conversation.id}`}
-                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
+                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer truncate block"
+                                title={conversation.title}
                               >
                                 {conversation.title}
                               </Link>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {conversation.app_lang != null && conversation.app_lang !== "" ? (
+                                <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">
+                                  {conversation.app_lang === "python"
+                                    ? "Python"
+                                    : conversation.app_lang === "javascript"
+                                      ? "JavaScript"
+                                      : conversation.app_lang === "typescript"
+                                        ? "TypeScript"
+                                        : conversation.app_lang === "java"
+                                          ? "Java"
+                                          : conversation.app_lang === "php"
+                                            ? "PHP"
+                                            : conversation.app_lang === "csharp"
+                                              ? "C#"
+                                              : conversation.app_lang === "kotlin"
+                                                ? "Kotlin"
+                                                : conversation.app_lang === "ruby"
+                                                  ? "Ruby"
+                                                  : conversation.app_lang === "rust"
+                                                    ? "Rust"
+                                                    : conversation.app_lang === "swift"
+                                                      ? "Swift"
+                                                      : conversation.app_lang === "c"
+                                                        ? "C"
+                                                        : conversation.app_lang.charAt(0).toUpperCase() + conversation.app_lang.slice(1)}
+                                </span>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
+                            <TableCell className="text-sm">
+                              <div className="flex flex-col gap-1.5">
+                                {getStatusBadge(conversation.scan_status as ScanStatus)}
+                                {conversation.info?.current != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
+                                  <div className="flex items-center gap-2">
+                                    <Progress value={conversation.info.current} className="h-1.5 flex-1" />
+                                    <span className="text-xs text-zinc-500 tabular-nums">{conversation.info.current}%</span>
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.risk_data ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {[
+                                    { label: "Critical", n: conversation.risk_data.total_critical, dot: "bg-red-500" },
+                                    { label: "High", n: conversation.risk_data.total_high, dot: "bg-orange-500" },
+                                    { label: "Medium", n: conversation.risk_data.total_medium, dot: "bg-amber-500" },
+                                    { label: "Low", n: conversation.risk_data.total_low, dot: "bg-blue-500" },
+                                  ].map(({ label, n, dot }) => (
+                                    <span key={label} className="flex items-center gap-1.5 shrink-0" title={label}>
+                                      <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} aria-hidden />
+                                      <span className="tabular-nums">{typeof n === "number" ? n : 0}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                              {conversation.risk_data && conversation.risk_score != null
+                                ? (() => {
+                                    const rd = conversation.risk_data;
+                                    const total = rd.total_critical + rd.total_high + rd.total_medium + rd.total_low;
+                                    if (total === 0) return "—";
+                                    return Math.round(Math.min(10, Math.max(0, (conversation.risk_score / total / 4) * 10)) * 10) / 10;
+                                  })()
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {conversation.scan_type != null && conversation.scan_type !== "" ? (
+                                <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${
+                                  conversation.scan_type === "zip_file"
+                                    ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-600 dark:text-zinc-200"
+                                    : conversation.scan_type === "github"
+                                      ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300"
+                                      : conversation.scan_type === "gitlab"
+                                        ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
+                                        : conversation.scan_type === "bitbucket"
+                                          ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+                                          : "bg-zinc-200 text-zinc-800 dark:bg-zinc-600 dark:text-zinc-200"
+                                }`}>
+                                  {conversation.scan_type === "zip_file"
+                                    ? "Zip file"
+                                    : conversation.scan_type === "github"
+                                      ? "GitHub"
+                                      : conversation.scan_type === "gitlab"
+                                        ? "GitLab"
+                                        : conversation.scan_type === "bitbucket"
+                                          ? "Bitbucket"
+                                          : conversation.scan_type}
+                                </span>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
+                              {conversation.zip_file_used ? (
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <FileArchive className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                                  <span className="truncate">Zip file</span>
+                                </span>
+                              ) : conversation.repo_url ? (
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                                  <span className="truncate">{conversation.repo_url.split("/").pop() ?? conversation.repo_url}</span>
+                                </span>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.branch != null && conversation.branch !== "" ? (
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                                  <span className="truncate">{conversation.branch}</span>
+                                </span>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                              {conversation.code_coverage != null ? `${Number(conversation.code_coverage).toFixed(1)}%` : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                              {conversation.estimated_credits != null ? conversation.estimated_credits : "—"}
                             </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400">
                               {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" || conversation.owner_user_email ? (
@@ -1105,24 +1612,6 @@ export default function SASTPage() {
                                   </div>
                                 </div>
                               ) : ("—")}
-                            </TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
-                            <TableCell className="text-sm">
-                              <div className="flex flex-col gap-1.5">
-                                {getStatusBadge(conversation.scan_status as ScanStatus)}
-                                {conversation.info?.current != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
-                                  <div className="flex items-center gap-2">
-                                    <Progress value={conversation.info.current} className="h-1.5 flex-1" />
-                                    <span className="text-xs text-zinc-500 tabular-nums">{conversation.info.current}%</span>
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => { setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
-                                <Eye className="h-4 w-4 mr-1.5" />View
-                              </Button>
                             </TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
@@ -1148,7 +1637,9 @@ export default function SASTPage() {
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
                 )}
               </TabsContent>
             </Tabs>

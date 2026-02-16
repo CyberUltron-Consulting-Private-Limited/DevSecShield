@@ -11,6 +11,20 @@ import {
   MessageCircle,
   Download,
   Ticket,
+  Pencil,
+  CheckCircle,
+  EyeOff,
+  Loader2,
+  Circle,
+  XCircle,
+  Clock,
+  Crosshair,
+  Activity,
+  Percent,
+  FileStack,
+  Github,
+  GitBranch,
+  Archive,
 } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -20,9 +34,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useRouter, useSearchParams, usePathname, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getExportResults, updateScan, createTicket, type SastDashboardData, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { getExportResults, updateScan, createTicket, toggleFindingState, type SastDashboardData, type SastScanMetadata, type SastFinding, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
 import {
@@ -46,10 +66,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { PieChart, BarChart3, TrendingUp } from "lucide-react";
+import { PieChart, BarChart3, TrendingUp, ChevronDown, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
+import { Progress } from "@/components/ui/progress";
 
 // Agent output format (from worker_sast_agent_results_testing.json)
 type OwaspOrComplianceItem = Record<string, string>;
@@ -106,12 +127,14 @@ function getOwaspComplianceEntries(val: OwaspOrCompliance): [string, string][] {
 }
 
 interface SASTResultsProps {
-  data: SastAgentLogicalComponent[] | null | undefined;
   conversationId?: number;
   dashboard?: SastDashboardData | null;
+  findings?: SastFinding[] | null;
   teamId?: string;
+  scanMetadata?: SastScanMetadata | Record<string, unknown> | null;
   integrationSettings?: Record<string, unknown> | null;
   onIntegrationSettingsUpdated?: () => void;
+  onFindingsUpdated?: () => void;
 }
 
 function getImpactBadgeClass(impact: string): string {
@@ -121,6 +144,16 @@ function getImpactBadgeClass(impact: string): string {
   if (i === "medium") return "bg-amber-500 hover:bg-amber-600 text-white";
   if (i === "low") return "bg-blue-500 hover:bg-blue-600 text-white";
   return "bg-zinc-500 hover:bg-zinc-600 text-white";
+}
+
+/** Colored box classes for finding status (fixed, ignored, in_progress, not_started) */
+function getFindingStatusBadgeClass(status: string): string {
+  const s = (status ?? "").toLowerCase().replace(/\s/g, "_");
+  if (s === "fixed") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
+  if (s === "ignored") return "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200";
+  if (s === "in_progress") return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
+  if (s === "not_started") return "bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300";
+  return "bg-zinc-100 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-300";
 }
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
@@ -151,11 +184,19 @@ const cvesAreaChartConfig = {
   count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" },
 } satisfies ChartConfig;
 
+const riskScoreAreaChartConfig = {
+  finding: { label: "Finding" },
+  score: { label: "Risk score", color: "hsl(217 91% 60%)" },
+} satisfies ChartConfig;
+
 function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
   const riskMetrics = dashboard.risk_metrics ?? {};
   const owaspMetrics = dashboard.owasp_top_10_metrics ?? {};
   const complianceMetrics = dashboard.compliance_controls_metrics ?? {};
   const cvesMetrics = dashboard.cves_per_vulnerability ?? {};
+  const policyViolations = dashboard.policy_violations ?? {};
+  const riskScoresPerFinding = dashboard.risk_scores_per_finding ?? {};
+  const remediationMetrics = dashboard.remediation_metrics;
 
   const riskRadarData = RISK_ORDER.map((subject) => ({
     subject,
@@ -192,6 +233,26 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
   const hasRiskData = riskRadarData.some((d) => d.count > 0);
   const hasCvesData = cvesAreaData.length > 0;
   const hasComplianceData = complianceBarData.length > 0;
+
+  const policyViolationsList = Object.entries(policyViolations)
+    .map(([name, violations]) => ({ name, violations }))
+    .sort((a, b) => b.violations - a.violations)
+    .slice(0, 12);
+  const totalViolations = policyViolationsList.reduce((acc, p) => acc + p.violations, 0);
+  const policyViolationsWithCompliance = policyViolationsList.map((p) => ({
+    ...p,
+    compliance: totalViolations > 0 ? Math.round((p.violations / totalViolations) * 1000) / 10 : 0,
+  }));
+  const hasPolicyViolationsData = policyViolationsWithCompliance.length > 0;
+
+  const riskScoresAreaData = Object.entries(riskScoresPerFinding)
+    .map(([finding, score]) => ({ finding, score, fullName: finding }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 24)
+    .map((row, i) => ({ ...row, finding: `F${i + 1}` }));
+  const hasRiskScoresData = riskScoresAreaData.length > 0;
+
+  const criticalCount = riskMetrics["Critical"] ?? 0;
 
   return (
     <div className="space-y-6">
@@ -361,12 +422,214 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Row: Policy Violations | Risk scores per finding (area chart) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base">Policy Violations</CardTitle>
+            <CardDescription>Security standards adherence by violation count</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasPolicyViolationsData ? (
+              <div className="flex items-center justify-center h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No policy violation data to display</div>
+            ) : (
+              <ScrollArea className="h-[260px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
+                <div className="space-y-4 p-2">
+                  {policyViolationsWithCompliance.map((p) => (
+                    <div key={p.name} className="flex items-center gap-3">
+                      {p.compliance >= 90 ? (
+                        <CheckCircle className="h-5 w-5 shrink-0 text-green-500" />
+                      ) : p.compliance >= 70 ? (
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+                      ) : (
+                        <XCircle className="h-5 w-5 shrink-0 text-red-500" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white truncate" title={p.name}>{p.name}</p>
+                        <p className="text-xs text-zinc-500">{p.violations} violations · {p.compliance}% of total</p>
+                        <Progress value={p.compliance} className="h-2 mt-1" />
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                    <span className="text-sm text-zinc-600 dark:text-zinc-400">Total violations</span>
+                    <span className="text-lg font-bold text-zinc-900 dark:text-white tabular-nums">{totalViolations}</span>
+                  </div>
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Risk scores per finding
+            </CardTitle>
+            <CardDescription>Risk score by finding (top 24, descending)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasRiskScoresData ? (
+              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No risk score data to display</div>
+            ) : (
+              <ChartContainer config={riskScoreAreaChartConfig} className="aspect-auto h-[260px] w-full pb-8 cursor-pointer">
+                <AreaChart data={riskScoresAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+                  <defs>
+                    <linearGradient id="fillSastRiskScore" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(217 91% 60%)" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="hsl(217 91% 60%)" stopOpacity={0.1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis
+                    dataKey="finding"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={16}
+                    height={56}
+                    interval={0}
+                  />
+                  <YAxis hide domain={[0, 10]} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        className="gap-2 py-2.5 px-3 min-w-48"
+                        hideIndicator
+                        formatter={(value) => ["Risk score  :  ",value]}
+                        labelFormatter={(_, payload) => {
+                          const fullName = (payload?.[0]?.payload as { fullName?: string } | undefined)?.fullName;
+                          return fullName ? <span className="block font-medium text-zinc-900 dark:text-zinc-100">{fullName}</span> : "—";
+                        }}
+                      />
+                    }
+                  />
+                  <Area type="monotone" dataKey="score" fill="url(#fillSastRiskScore)" stroke="hsl(217 91% 60%)" strokeWidth={2} />
+                </AreaChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Remediation Metrics */}
+      {remediationMetrics && (
+        <Card className="border-zinc-200 dark:border-zinc-800 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl">Remediation Metrics</CardTitle>
+            <CardDescription>Performance and efficiency tracking</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {(() => {
+                const [days, hours, minutes] = remediationMetrics.mean_time_to_remediate;
+                const totalDays = days + hours / 24 + minutes / (60 * 24);
+                const targetDays = 3;
+                const progress = totalDays <= 0 ? 100 : Math.min(100, (targetDays / totalDays) * 100);
+                const delta = totalDays > 0 && targetDays > 0 ? `${Math.round(((totalDays - targetDays) / targetDays) * 100)}%` : "—";
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <Clock className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Mean Time to Remediate</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">
+                      {totalDays < 0.1 && totalDays >= 0 ? "<0.1 days" : `${totalDays.toFixed(1)} days`}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetDays} days</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="h-2 flex-1" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const fixed = remediationMetrics.critical_issues_fixed;
+                const totalCritical = criticalCount;
+                const total = fixed + totalCritical;
+                const pct = total > 0 ? Math.round((fixed / total) * 100) : 0;
+                const targetPct = 95;
+                const progress = Math.min(100, (pct / targetPct) * 100);
+                const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <CheckCircle className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Critical Issues Fixed</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{pct}%</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {targetPct}%</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="h-2 flex-1" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const backlog = remediationMetrics.high_priority_backlog;
+                const target = 10;
+                const progress = target <= 0 ? 100 : Math.max(0, Math.min(100, (1 - (backlog - target) / Math.max(target, backlog)) * 100));
+                const delta = backlog > target ? `-${backlog - target}` : backlog < target ? `+${target - backlog}` : "0";
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <Crosshair className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">High Priority Backlog</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{backlog}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={backlog <= target ? 100 : Math.max(0, (target / backlog) * 100)} className="h-2 flex-1 [&>div]:bg-orange-500" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const velocity = remediationMetrics.remediation_velocity;
+                const target = 20;
+                const progress = Math.min(100, (velocity / target) * 100);
+                const delta = velocity >= target ? "+0" : `+${target - velocity}`;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                      <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Remediation Velocity</p>
+                    <p className="text-2xl font-bold text-zinc-900 dark:text-white">{velocity}/week</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Target: {target}/week</p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="h-2 flex-1" />
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{delta}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
+/** Count from API finding list (owasp_top_10, compliance_controls, cves can be array or object) */
+function countFindingField(val: unknown): number {
+  if (val == null) return 0;
+  if (Array.isArray(val)) return val.length;
+  if (typeof val === "object") return Object.keys(val).length;
+  return 0;
+}
+
 function SASTResultsAgentView({
-  components,
   conversationId,
   teamId,
   isCicdContext,
@@ -376,10 +639,12 @@ function SASTResultsAgentView({
   onDownloadReport,
   isExporting = false,
   dashboard,
+  scanMetadata,
+  findings,
   integrationSettings,
   onIntegrationSettingsUpdated,
+  onFindingsUpdated,
 }: {
-  components: SastAgentLogicalComponent[];
   conversationId?: number;
   teamId?: string;
   isCicdContext: boolean;
@@ -389,14 +654,16 @@ function SASTResultsAgentView({
   onDownloadReport?: () => void;
   isExporting?: boolean;
   dashboard?: SastDashboardData | null;
+  scanMetadata?: SastScanMetadata | Record<string, unknown> | null;
+  findings?: SastFinding[] | null;
   integrationSettings?: Record<string, unknown> | null;
   onIntegrationSettingsUpdated?: () => void;
+  onFindingsUpdated?: () => void;
 }) {
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedVuln, setSelectedVuln] = useState<{ vuln: SastAgentVulnerability; componentTitle: string } | null>(null);
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
-  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [jiraProjectId, setJiraProjectId] = useState("");
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [selectedFinding, setSelectedFinding] = useState<SastFinding | null>(null);
   const queryClient = useQueryClient();
 
   const jiraFromSettings =
@@ -432,38 +699,23 @@ function SASTResultsAgentView({
 
   const hasTicketingTab = !isCicdContext && teamId && conversationId != null && onIntegrationSettingsUpdated != null;
 
-  const totalFindings = components.reduce((sum, c) => sum + (Array.isArray(c.vulnerabilities) ? c.vulnerabilities.length : 0), 0);
-  const byImpact = components.reduce((acc, c) => {
-    (c.vulnerabilities ?? []).forEach((v) => {
-      const impact = (v.impact ?? "Unknown").trim() || "Unknown";
-      acc[impact] = (acc[impact] || 0) + 1;
-    });
-    return acc;
-  }, {} as Record<string, number>);
+  const totalFindings = findings?.length ?? 0;
 
-  // Flatten to rows: { componentTitle, vuln } for table
-  const tableRows: { componentTitle: string; vuln: SastAgentVulnerability }[] = [];
-  components.forEach((comp, compIndex) => {
-    const title = comp.logical_component_title ?? `Component ${compIndex + 1}`;
-    (comp.vulnerabilities ?? []).forEach((v) => {
-      tableRows.push({ componentTitle: title, vuln: v });
-    });
-  });
-
-  const toggleRowSelection = (idx: number) => {
-    setSelectedRows((prev) => {
+  const toggleRowSelection = (findingId: string) => {
+    setSelectedRowIds((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
+      if (next.has(findingId)) next.delete(findingId);
+      else next.add(findingId);
       return next;
     });
   };
 
   const toggleSelectAll = () => {
-    if (selectedRows.size === tableRows.length) {
-      setSelectedRows(new Set());
+    if (!findings?.length) return;
+    if (selectedRowIds.size === findings.length) {
+      setSelectedRowIds(new Set());
     } else {
-      setSelectedRows(new Set(tableRows.map((_, i) => i)));
+      setSelectedRowIds(new Set(findings.map((f) => f.id)));
     }
   };
 
@@ -471,30 +723,27 @@ function SASTResultsAgentView({
     mutationFn: async () => {
       const tid = parseInt(teamId ?? "0", 10);
       if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      const selectedFindings = Array.from(selectedRows).map((i) => tableRows[i]);
+      const selected = (findings ?? []).filter((f) => selectedRowIds.has(f.id));
+      if (selected.length === 0) throw new Error("No findings selected");
 
-      // Summary: count by impact (e.g. "2 Critical, 3 High, 1 Medium")
       const impactCounts: Record<string, number> = {};
-      for (const { vuln } of selectedFindings) {
-        const impact = (vuln.impact ?? "Unknown").trim() || "Unknown";
+      for (const f of selected) {
+        const impact = (f.impact ?? "Unknown").trim() || "Unknown";
         impactCounts[impact] = (impactCounts[impact] ?? 0) + 1;
       }
-      let summary = Object.entries(impactCounts)
-        .sort(([a], [b]) => RISK_ORDER.indexOf(a as typeof RISK_ORDER[number]) - RISK_ORDER.indexOf(b as typeof RISK_ORDER[number]))
-        .map(([impact, count]) => `${count} ${impact}`)
-        .join(", ") || `${selectedFindings.length} finding(s)`;
-      
+      const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
+      let summary =
+        Object.entries(impactCounts)
+          .sort(([a], [b]) => RISK_ORDER.indexOf(a as (typeof RISK_ORDER)[number]) - RISK_ORDER.indexOf(b as (typeof RISK_ORDER)[number]))
+          .map(([impact, count]) => `${count} ${impact}`)
+          .join(", ") || `${selected.length} finding(s)`;
       summary = summary + " - Vulnerabilities found in SAST scan";
 
-      // Description: all vulnerability data combined
-      const descSections = selectedFindings.map(({ componentTitle, vuln }, idx) => {
+      const descSections = selected.map((f, idx) => {
         const parts: string[] = [`--- Finding ${idx + 1} ---`];
-        parts.push(`Title: ${(vuln.title ?? "Untitled finding").trim() || "Untitled finding"}`);
-        if ((vuln.description ?? "").trim()) parts.push(`Description: ${vuln.description!.trim()}`);
-        if ((componentTitle ?? "").trim()) parts.push(`Logical component: ${componentTitle}`);
-        if ((vuln.impact ?? "").trim()) parts.push(`Impact: ${vuln.impact!.trim()}`);
-        if ((vuln.location ?? "").trim()) parts.push(`Location: ${vuln.location!.trim()}`);
-        if ((vuln.suggested_fix ?? "").trim()) parts.push(`Suggested fix: ${vuln.suggested_fix!.trim()}`);
+        parts.push(`Title: ${(f.title ?? "Untitled").trim() || "Untitled"}`);
+        if ((f.description ?? "").trim()) parts.push(`Description: ${f.description!.trim()}`);
+        if ((f.impact ?? "").trim()) parts.push(`Impact: ${f.impact!.trim()}`);
         return parts.join("\n");
       });
       const description = descSections.join("\n\n");
@@ -511,11 +760,11 @@ function SASTResultsAgentView({
     },
     onSuccess: (_data, _variables, context) => {
       if (context?.toastId != null) {
-        toast.success(`Jira ticket(s) created for ${selectedRows.size} finding(s)`, { id: context.toastId });
+        toast.success(`Jira ticket(s) created for ${selectedRowIds.size} finding(s)`, { id: context.toastId });
       } else {
-        toast.success(`Jira ticket(s) created for ${selectedRows.size} finding(s)`);
+        toast.success(`Jira ticket(s) created for ${selectedRowIds.size} finding(s)`);
       }
-      setSelectedRows(new Set());
+      setSelectedRowIds(new Set());
     },
     onError: (err, _variables, context) => {
       if (context?.toastId != null) toast.dismiss(context.toastId);
@@ -523,12 +772,24 @@ function SASTResultsAgentView({
     },
   });
 
-  const handleCreateJiraTicket = () => createJiraTicketsMutation.mutate();
-
-  const openVulnDetail = (vuln: SastAgentVulnerability, componentTitle: string) => {
-    setSelectedVuln({ vuln, componentTitle });
-    setDetailDialogOpen(true);
-  };
+  const toggleFindingMutation = useMutation({
+    mutationFn: ({ finding_id, state }: { finding_id: string; state: "fixed" | "ignored" | "in_progress" | "not_started" }) => {
+      const tid = parseInt(teamId ?? "0", 10);
+      if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      return toggleFindingState({ team_id: tid, type: "sast", scan_id: conversationId, finding_id, state });
+    },
+    onSuccess: () => {
+      onFindingsUpdated?.();
+      const tid = parseInt(teamId ?? "0", 10);
+      if (conversationId != null && tid > 0) {
+        queryClient.invalidateQueries({ queryKey: ["sast-conversation-data", tid, conversationId] });
+      }
+      toast.success("Finding status updated");
+    },
+    onError: (err) => {
+      showErrorToast(err, "Failed to update finding status");
+    },
+  });
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -632,6 +893,75 @@ function SASTResultsAgentView({
         />
       ) : (
         <>
+      {scanMetadata && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {"code_coverage" in scanMetadata && scanMetadata.code_coverage != null && (
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="pt-4 pb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                  <Percent className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Code coverage</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{Number(scanMetadata.code_coverage).toFixed(1)}%</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {"files_scanned" in scanMetadata && scanMetadata.files_scanned != null && "total_files" in scanMetadata && scanMetadata.total_files != null && (
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="pt-4 pb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                  <FileStack className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Files scanned</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{Number(scanMetadata.files_scanned)} / {Number(scanMetadata.total_files)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {"repo_url" in scanMetadata && scanMetadata.repo_url != null && String(scanMetadata.repo_url).trim() !== "" && (
+            <Card className="border-zinc-200 dark:border-zinc-800 lg:col-span-1 xl:col-span-1">
+              <CardContent className="pt-4 pb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400">
+                  <Github className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Repository</p>
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate" title={String(scanMetadata.repo_url)}>{String(scanMetadata.repo_url)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {"branch" in scanMetadata && scanMetadata.branch != null && String(scanMetadata.branch).trim() !== "" && (
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="pt-4 pb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                  <GitBranch className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{String(scanMetadata.branch)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {"zip_file_used" in scanMetadata && (
+            <Card className="border-zinc-200 dark:border-zinc-800">
+              <CardContent className="pt-4 pb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                  <Archive className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{scanMetadata.zip_file_used ? "ZIP upload" : "Repository"}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
       {dashboard && (
         <SASTDashboardCharts dashboard={dashboard} />
       )}
@@ -639,200 +969,300 @@ function SASTResultsAgentView({
       <Card>
         <CardHeader>
           <CardTitle>Findings</CardTitle>
-          <CardDescription>{totalFindings} vulnerability findings. Click a title to view details</CardDescription>
+          <CardDescription>
+            {findings && findings.length > 0
+              ? `${findings.length} findings. Select rows to create Jira tickets; use Action to change finding state.`
+              : "No findings to display."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <FindingSelectionMenu
-            selectedCount={selectedRows.size}
-            onClearSelection={() => setSelectedRows(new Set())}
-            jiraOnClickHandler={handleCreateJiraTicket}
-            ticketType="jira"
-            isJiraCreating={createJiraTicketsMutation.isPending}
-          />
-          <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[48px]">
-                    <Checkbox
-                      checked={tableRows.length > 0 && selectedRows.size === tableRows.length}
-                      onCheckedChange={toggleSelectAll}
-                      aria-label="Select all rows"
-                      className="cursor-pointer"
-                    />
-                  </TableHead>
-                  <TableHead className="w-[280px]">Vulnerability</TableHead>
-                  <TableHead className="w-[200px]">Logical component</TableHead>
-                  <TableHead className="w-[80px] text-center">OWASP Top 10</TableHead>
-                  <TableHead className="w-[80px] text-center">Compliance Controls</TableHead>
-                  <TableHead className="w-[100px]">Impact</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tableRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                      No findings to display.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  tableRows.map(({ componentTitle, vuln }, idx) => {
-                    const vTitle = vuln.title ?? "Untitled finding";
-                    const impact = (vuln.impact ?? "").trim() || "â€”";
-                    const owaspCount = getOwaspComplianceCount(vuln.owasp_top_10);
-                    const complianceCount = getOwaspComplianceCount(vuln.compliance_controls);
-                    return (
-                      <TableRow
-                        key={idx}
-                        className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRows.has(idx) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
-                      >
-                        <TableCell
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-[48px]"
-                        >
+          {findings && findings.length > 0 ? (
+            <>
+              <FindingSelectionMenu
+                selectedCount={selectedRowIds.size}
+                onClearSelection={() => setSelectedRowIds(new Set())}
+                jiraOnClickHandler={() => createJiraTicketsMutation.mutate()}
+                ticketType="jira"
+                isJiraCreating={createJiraTicketsMutation.isPending}
+              />
+              <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
+                <div className="min-w-max">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[48px] w-12">
                           <Checkbox
-                            checked={selectedRows.has(idx)}
-                            onCheckedChange={() => toggleRowSelection(idx)}
-                            aria-label={`Select row ${idx + 1}`}
+                            checked={findings.length > 0 && selectedRowIds.size === findings.length}
+                            onCheckedChange={toggleSelectAll}
+                            aria-label="Select all rows"
                             className="cursor-pointer"
                           />
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          <button
-                            type="button"
-                            onClick={() => openVulnDetail(vuln, componentTitle)}
-                            className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium"
-                          >
-                            {vTitle}
-                          </button>
-                        </TableCell>
-                        <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
-                          {componentTitle}
-                        </TableCell>
-                        <TableCell className="text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
-                          {owaspCount}
-                        </TableCell>
-                        <TableCell className="text-center text-zinc-700 dark:text-zinc-300 tabular-nums">
-                          {complianceCount}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={getImpactBadgeClass(impact)}>
-                            {impact}
-                          </Badge>
-                        </TableCell>
+                        </TableHead>
+                        <TableHead className="min-w-[180px]">Title</TableHead>
+                        <TableHead className="min-w-[200px]">Description</TableHead>
+                        <TableHead className="min-w-[90px]">Impact</TableHead>
+                        <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
+                        <TableHead className="min-w-[100px]">Status</TableHead>
+                        <TableHead className="min-w-[90px] text-center">OWASP count</TableHead>
+                        <TableHead className="min-w-[100px] text-center">Compliance count</TableHead>
+                        <TableHead className="min-w-[70px] text-center">CVE count</TableHead>
+                        <TableHead className="min-w-[120px] text-right">Actions</TableHead>
                       </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </ScrollArea>
+                    </TableHeader>
+                  <TableBody>
+                    {findings.map((f) => {
+                      const impact = (f.impact ?? "").trim() || "—";
+                      const desc = (f.description ?? "").trim();
+                      const descTrunc = desc.length > 80 ? `${desc.slice(0, 80)}…` : desc || "—";
+                      const statusLabel = (f.status ?? "not_started").replace(/_/g, " ");
+                      const riskScore = f.risk_score;
+                      const owaspCount = countFindingField(f.owasp_top_10);
+                      const complianceCount = countFindingField(f.compliance_controls);
+                      const cveCount = countFindingField(f.cves);
+                      return (
+                        <TableRow
+                          key={f.id}
+                          className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRowIds.has(f.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
+                        >
+                          <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[48px] w-12">
+                            <Checkbox
+                              checked={selectedRowIds.has(f.id)}
+                              onCheckedChange={() => toggleRowSelection(f.id)}
+                              aria-label={`Select finding ${f.title ?? f.id}`}
+                              className="cursor-pointer"
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFinding(f)}
+                              className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium"
+                            >
+                              {(f.title ?? "").trim() || "Untitled"}
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-sm text-zinc-600 dark:text-zinc-400" title={desc || undefined}>
+                            {descTrunc}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={getImpactBadgeClass(impact)}>
+                              {impact}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span
+                              className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${
+                                riskScore >= 4 ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" :
+                                riskScore >= 3 ? "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200" :
+                                riskScore >= 2 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" :
+                                "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                              }`}
+                              title="Risk score"
+                            >
+                              {riskScore}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(f.status ?? "not_started")}`}
+                              title="Finding status"
+                            >
+                              {statusLabel}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span
+                              className="inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200"
+                              title="OWASP Top 10 count"
+                            >
+                              {owaspCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span
+                              className="inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                              title="Compliance controls count"
+                            >
+                              {complianceCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span
+                              className="inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                              title="CVE count"
+                            >
+                              {cveCount}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="cursor-pointer gap-1.5 h-8 shrink-0"
+                                  aria-label="Finding actions"
+                                >
+                                  <Pencil className="h-3.5 w-3.5 opacity-70" />
+                                  Action
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "fixed" })}
+                                  disabled={toggleFindingMutation.isPending}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                  Mark as Fixed
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "ignored" })}
+                                  disabled={toggleFindingMutation.isPending}
+                                >
+                                  <EyeOff className="h-4 w-4" />
+                                  Mark as Ignored
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "in_progress" })}
+                                  disabled={toggleFindingMutation.isPending}
+                                >
+                                  <Loader2 className="h-4 w-4" />
+                                  Mark as In progress
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "not_started" })}
+                                  disabled={toggleFindingMutation.isPending}
+                                >
+                                  <Circle className="h-4 w-4" />
+                                  Mark as Not started
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                  </Table>
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+            </>
+          ) : (
+            <div className="flex items-center justify-center py-12 text-zinc-500 dark:text-zinc-400 text-sm">
+              No findings to display.
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
-          <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+      <Dialog open={!!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
+          <DialogHeader className="px-6 pt-6 pb-2 shrink-0 border-b border-zinc-200 dark:border-zinc-800">
             <DialogTitle className="pr-8">
-              {selectedVuln?.vuln.title ?? "Vulnerability details"}
+              {selectedFinding ? ((selectedFinding.title ?? "").trim() || "Finding details") : "Finding details"}
             </DialogTitle>
           </DialogHeader>
-          {selectedVuln && (
-            <div className="h-[70vh] min-h-0 shrink px-6 pb-6">
-              <ScrollArea className="h-full w-full rounded-md">
-                <div className="space-y-4 pt-2 pr-4">
-              {selectedVuln.componentTitle && (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Logical component</div>
-                  <p className="text-sm text-zinc-800 dark:text-zinc-200">{selectedVuln.componentTitle}</p>
-                </div>
-              )}
-              {(selectedVuln.vuln.impact ?? "").trim() && (
+          {selectedFinding && (
+            <ScrollArea className="h-[70vh] min-h-[200px] w-full px-6 pb-6">
+              <div className="space-y-4 pt-4 pr-4 pb-4">
+                {(selectedFinding.description ?? "").trim() && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Description</div>
+                    <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">{selectedFinding.description!.trim()}</p>
+                  </div>
+                )}
+                {(selectedFinding.location ?? "").trim() && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Location</div>
+                    <p className="text-sm font-mono text-zinc-800 dark:text-zinc-200">{selectedFinding.location!.trim()}</p>
+                  </div>
+                )}
+                {(selectedFinding.suggested_fix ?? "").trim() && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Suggested fix</div>
+                    <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">{selectedFinding.suggested_fix!.trim()}</p>
+                  </div>
+                )}
+                {(selectedFinding.snippet ?? "").trim() && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Code snippet</div>
+                    <pre className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-md overflow-x-auto whitespace-pre-wrap font-mono text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">
+                      {selectedFinding.snippet!.trim()}
+                    </pre>
+                  </div>
+                )}
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>
-                  <Badge variant="outline" className={getImpactBadgeClass(selectedVuln.vuln.impact!.trim())}>
-                    {selectedVuln.vuln.impact!.trim()}
+                  <Badge variant="outline" className={getImpactBadgeClass((selectedFinding.impact ?? "").trim() || "—")}>
+                    {(selectedFinding.impact ?? "").trim() || "—"}
                   </Badge>
                 </div>
-              )}
-              {(selectedVuln.vuln.description ?? "").trim() && (
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Description</div>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.vuln.description!.trim()}</p>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Risk score</div>
+                  <span className="text-sm font-medium tabular-nums">{selectedFinding.risk_score}</span>
                 </div>
-              )}
-              {(selectedVuln.vuln.location ?? "").trim() && (
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Location</div>
-                  <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300">{selectedVuln.vuln.location!.trim()}</p>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Status</div>
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(selectedFinding.status ?? "not_started")}`}>
+                    {(selectedFinding.status ?? "not_started").replace(/_/g, " ")}
+                  </span>
                 </div>
-              )}
-              {(selectedVuln.vuln.snippet ?? "").trim() && (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Code snippet</div>
-                  <pre className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded overflow-x-auto whitespace-pre-wrap font-mono text-zinc-800 dark:text-zinc-200">
-                    {selectedVuln.vuln.snippet!.trim()}
-                  </pre>
-                </div>
-              )}
-              {(selectedVuln.vuln.suggested_fix ?? "").trim() && (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Suggested fix</div>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.vuln.suggested_fix!.trim()}</p>
-                </div>
-              )}
-              {getOwaspComplianceEntries(selectedVuln.vuln.owasp_top_10).length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
-                  <div className="flex flex-wrap gap-1">
-                    {getOwaspComplianceEntries(selectedVuln.vuln.owasp_top_10).map(([, description], i) => (
-                      <Badge key={i} variant="secondary" className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
-                        {description}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {getOwaspComplianceEntries(selectedVuln.vuln.compliance_controls).length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
-                  <div className="flex flex-wrap gap-1">
-                    {getOwaspComplianceEntries(selectedVuln.vuln.compliance_controls).map(([, description], i) => (
-                      <Badge key={i} variant="outline" className="text-xs">
-                        {description}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {(() => {
-                const cves = selectedVuln.vuln.cves;
-                const cveEntries: [string, string][] = [];
-                if (Array.isArray(cves) && cves.length > 0) {
-                  cves.forEach((cve, i) => {
-                    const id = typeof cve === "string" ? cve : (cve && typeof cve === "object" && "id" in (cve as object) ? String((cve as { id?: string }).id) : null);
-                    if (id) cveEntries.push([id, ""]);
-                  });
-                } else if (cves && typeof cves === "object" && !Array.isArray(cves) && Object.keys(cves).length > 0) {
-                  cveEntries.push(...(Object.entries(cves) as [string, string][]));
-                }
-                return cveEntries.length > 0 ? (
+                {getOwaspComplianceEntries(selectedFinding.owasp_top_10 as OwaspOrCompliance).length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Related CVEs</div>
-                    <ul className="space-y-2 text-sm">
-                      {cveEntries.map(([id, desc], i) => (
-                        <li key={i} className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-2">
-                          <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{id}</span>
-                          {desc && <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">{desc}</p>}
-                        </li>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
+                    <div className="flex flex-wrap gap-1">
+                      {getOwaspComplianceEntries(selectedFinding.owasp_top_10 as OwaspOrCompliance).map(([, description], i) => (
+                        <Badge key={i} variant="secondary" className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-200">
+                          {description}
+                        </Badge>
                       ))}
-                    </ul>
+                    </div>
                   </div>
-                ) : null;
-              })()}
-                </div>
-              </ScrollArea>
-            </div>
+                )}
+                {getOwaspComplianceEntries(selectedFinding.compliance_controls as OwaspOrCompliance).length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
+                    <div className="flex flex-wrap gap-1">
+                      {getOwaspComplianceEntries(selectedFinding.compliance_controls as OwaspOrCompliance).map(([, description], i) => (
+                        <Badge key={i} variant="outline" className="text-xs">
+                          {description}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(() => {
+                  const cves = selectedFinding.cves;
+                  const cveEntries: [string, string][] = [];
+                  if (Array.isArray(cves) && cves.length > 0) {
+                    cves.forEach((cve) => {
+                      const id = typeof cve === "string" ? cve : (cve && typeof cve === "object" && "id" in (cve as object) ? String((cve as { id?: string }).id) : null);
+                      if (id) cveEntries.push([id, ""]);
+                    });
+                  } else if (cves && typeof cves === "object" && !Array.isArray(cves) && Object.keys(cves).length > 0) {
+                    cveEntries.push(...(Object.entries(cves) as [string, string][]));
+                  }
+                  return cveEntries.length > 0 ? (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Related CVEs</div>
+                      <ul className="space-y-2 text-sm">
+                        {cveEntries.map(([id, desc], i) => (
+                          <li key={i} className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-2">
+                            <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{id}</span>
+                            {desc && <p className="text-zinc-600 dark:text-zinc-400 mt-0.5">{desc}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+            </ScrollArea>
           )}
         </DialogContent>
       </Dialog>
@@ -842,7 +1272,7 @@ function SASTResultsAgentView({
   );
 }
 
-export default function SASTResults({ data, conversationId, dashboard, teamId: teamIdProp, integrationSettings, onIntegrationSettingsUpdated }: SASTResultsProps) {
+export default function SASTResults({ conversationId, dashboard, findings, teamId: teamIdProp, scanMetadata, integrationSettings, onIntegrationSettingsUpdated, onFindingsUpdated }: SASTResultsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -886,8 +1316,9 @@ export default function SASTResults({ data, conversationId, dashboard, teamId: t
   const handleDownloadReport = () => exportMutation.mutate();
   const isExporting = exportMutation.isPending;
 
-  // Format detection and failsafe: no data
-  if (data == null || (Array.isArray(data) && data.length === 0)) {
+  const hasFindings = Array.isArray(findings) && findings.length > 0;
+  const hasDashboard = dashboard != null;
+  if (!hasFindings && !hasDashboard) {
     return (
       <div className="container mx-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
@@ -933,7 +1364,6 @@ export default function SASTResults({ data, conversationId, dashboard, teamId: t
 
   return (
     <SASTResultsAgentView
-      components={data}
       conversationId={conversationId}
       teamId={teamId}
       isCicdContext={isCicdContext}
@@ -943,8 +1373,11 @@ export default function SASTResults({ data, conversationId, dashboard, teamId: t
       onDownloadReport={teamId && conversationId != null ? handleDownloadReport : undefined}
       isExporting={isExporting}
       dashboard={dashboard}
+      scanMetadata={scanMetadata}
+      findings={findings}
       integrationSettings={integrationSettings}
       onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
+      onFindingsUpdated={onFindingsUpdated}
     />
   );
 }

@@ -16,6 +16,17 @@ risk_score_for_impact = {
     "low" : 2.5,
 }
 
+# All impact severities and default categories for IAC dashboard (always present with 0 if no count)
+IAC_SEVERITY_KEYS = ("Critical", "High", "Medium", "Low")
+IAC_DEFAULT_CATEGORIES = (
+    "Network Security",
+    "Access Control",
+    "Data Protection",
+    "Logging and Monitoring",
+    "Secret Management",
+    "Audit and Compliance",
+)
+
 console = Console()
 def generate_scan_dashboard(
     scan_type: scan_types,
@@ -46,15 +57,15 @@ def generate_scan_dashboard(
         
         if scan and "results" in scan.scan_data:
             results = scan.scan_data["results"] 
-        elif scan_results:
-            results = scan_results
+        elif scan_results and "results" in scan_results:
+            results = scan_results["results"]
         else:
             raise ValueError("Either scan_id or scan_object or scan_results must be provided")
 
         if scan : 
             scan_id = scan.id
         elif not scan_id:
-            raise ValueError("Either scan_id or scan_object must be provided")
+            raise ValueError("scan_id must be provided")
         
 
         # ------------------------------ SAST Dashboard Generation ------------------------------
@@ -100,9 +111,9 @@ def generate_scan_dashboard(
                         complaince_standard = value.split(" - ")[0]
                         policy_violations[complaince_standard] += 1
 
-                    # calculate remediation metrics 
-                    findings = get_findings_for_scan_id(scan_id)
-                    remediation_metrics = get_remediation_metrics(findings)
+            # calculate remediation metrics 
+            findings = get_findings_for_scan_id(scan_id)
+            remediation_metrics = get_remediation_metrics(findings)
 
 
             return {
@@ -119,6 +130,52 @@ def generate_scan_dashboard(
 
 
         elif scan_type == "iac" :
+            """
+            Need to calculate the following metrics : 
+            1. compliance framework violations ( Cards with numbers )
+                {
+                    "NIST80053": 10,
+                    "ISO27001": 20,
+                    "ISO27002": 30,
+                    "ISO27003": 40,
+                    "ISO27004": 50,
+                }
+            2. issues by finding_status ( Issue status metrics - Pie chart )
+                {
+                    "not_started": 10,
+                    "in_progress": 20,
+                    "fixed": 30,
+                    "ignored": 40,
+                }
+            3. risk metrics ( radar chart ) 
+                {
+                    "critical": 10,
+                    "high": 20,
+                    "medium": 30,
+                    "low": 40,
+                }
+            4. Security Posture Overview Pie chart : 
+                {
+                    "Network Security": 10,
+                    "Access Control": 10,
+                    "Data Protection": 20,
+                    "Logging and Monitoring": 30,
+                    "Secret Management": 40,
+                    "Audit and Compliance": 50,
+                }
+            5. Issues by risk score ( area - line chart ) : 
+                {
+                    "finding_title" : risk score ( calculate using risk_score_for_impact )
+                    "finding_title" : risk score ( calculate using risk_score_for_impact )
+                    "finding_title" : risk score ( calculate using risk_score_for_impact )
+                }
+            6. Compliance failure trends ( area - line chart ) : 
+                {
+                    "finding_title" : 10, ( total number of compliance controls violated )
+                    "finding_title" : 20, ( total number of compliance controls violated )
+                    "finding_title" : 30, ( total number of compliance controls violated )
+                }
+            """
             # STEP [ 1 ] : =========== Generate the Dashboard ===========================
             owasp_top_10_metrics = defaultdict(int)
             compliance_controls_metrics = defaultdict(int)
@@ -136,60 +193,103 @@ def generate_scan_dashboard(
             average_risk_score_per_category = defaultdict(float)
             issue_status_metrics = defaultdict(int)
 
-            # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
+            # STEP [ 1a ] : -----------------> Calculate metrics from scan results (vulnerabilities)
+            risk_scores_per_finding: dict[str, float] = {}
+            compliance_failure_trends = defaultdict(int)
+
+            _impact_to_key = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
             for vulnerability in results:
+                vuln_impact_raw = vulnerability.get("impact") or "Low"
+                impact_key = _impact_to_key.get(str(vuln_impact_raw).lower(), "Low")
+                vuln_title = vulnerability.get("title") or "Untitled"
+                vuln_category = vulnerability.get("category") or "Other"
+                owasp = vulnerability.get("owasp_top_10") or {}
+                compliance = vulnerability.get("compliance_controls") or {}
+                cves = vulnerability.get("cves") or {}
 
-                # calculating owasp metrics 
-                for key,value in vulnerability["owasp_top_10"].items(): 
-                    owasp_top_10_metrics[key] += 1
-                
-                # calculating compliance controls metrics 
-                for key,value in vulnerability["compliance_controls"].items():
-                    compliance_controls_metrics[key] += 1
-                
-                # calculating risk metrics 
-                risk_metrics[vulnerability["impact"]] += 1
-                
-                # calculating cves per vulnerability 
-                for key,value in vulnerability["cves"].items():
-                    cves_per_vulnerability[key] += 1
-                
-                # calculating policy violations 
-                for key,value in vulnerability["compliance_controls"].items():
-                    complaince_standard = value.split(" - ")[0]
-                    policy_violations[complaince_standard] += 1
-                
-                # issues by category 
-                issues_by_category[vulnerability["category"]] += 1
-                
-                # issues by severity 
-                issues_by_severity[vulnerability["impact"]] += 1
-                
-                # issue status count 
-                findings = get_findings_for_scan_id(scan_id)
-                issue_status_metrics = get_issue_status_metrics(findings)
+                # OWASP metrics
+                if isinstance(owasp, dict):
+                    for k, v in owasp.items():
+                        owasp_top_10_metrics[k] += 1
+                else:
+                    for item in (owasp if isinstance(owasp, list) else []):
+                        owasp_top_10_metrics[str(item)] += 1
 
+                # Compliance controls metrics
+                if isinstance(compliance, dict):
+                    for k, v in compliance.items():
+                        compliance_controls_metrics[v] += 1
+                else:
+                    for item in (compliance if isinstance(compliance, list) else []):
+                        compliance_controls_metrics[str(item)] += 1
 
-                # issue address metrics 
-                issue_address_metrics = get_issue_address_metrics(findings)
+                risk_metrics[impact_key] += 1
 
-                # average risk score per category 
-                risk_score = risk_score_for_impact[vulnerability["impact"].lower()]
-                sum_of_risk_scores_per_category[vulnerability["category"]] += risk_score
+                if isinstance(cves, dict):
+                    for k, v in cves.items():
+                        cves_per_vulnerability[v] += 1
+                else:
+                    for item in (cves if isinstance(cves, list) else []):
+                        cves_per_vulnerability[str(item)] += 1
 
-            for key,value in sum_of_risk_scores_per_category.items():
-                average_risk_score_per_category[key] = value / issues_by_category[key]
+                # Policy violations: count per framework (e.g. NIST80053, ISO27001)
+                if isinstance(compliance, dict):
+                    for _k, val in compliance.items():
+                        framework = (val.split(" - ")[0]).strip() if isinstance(val, str) else str(val)
+                        policy_violations[framework] += 1
+                elif isinstance(compliance, list):
+                    for item in compliance:
+                        framework = (str(item).split(" - ")[0]).strip()
+                        policy_violations[framework] += 1
+
+                issues_by_category[vuln_category] += 1
+                issues_by_severity[impact_key] += 1
+
+                # 5. Issues by risk score (area/line chart): finding_title -> risk score
+                impact_lower = str(vuln_impact_raw).lower()
+                risk_score = risk_score_for_impact.get(impact_lower, risk_score_for_impact["low"])
+                risk_scores_per_finding[vuln_title] = risk_score
+                sum_of_risk_scores_per_category[vuln_category] += risk_score
+
+                # 6. Compliance failure trends: finding_title -> total compliance controls violated
+                num_controls = len(compliance) if isinstance(compliance, (dict, list)) else 0
+                compliance_failure_trends[vuln_title] += num_controls
+
+            # Ensure all severities and categories are present with 0 when no count
+            issues_by_severity_out: dict[str, int] = {s: issues_by_severity.get(s, 0) for s in IAC_SEVERITY_KEYS}
+            issues_by_category_out: dict[str, int] = {c: 0 for c in IAC_DEFAULT_CATEGORIES}
+            for k, v in issues_by_category.items():
+                issues_by_category_out[k] = issues_by_category_out.get(k, 0) + v
+
+            for cat in issues_by_category_out:
+                denom = issues_by_category_out[cat]
+                average_risk_score_per_category[cat] = (sum_of_risk_scores_per_category[cat] / denom) if denom else 0.0
+
+            # 1. Compliance framework coverage: percentages per framework (for cards)
+            total_policy = sum(policy_violations.values())
+            compliance_framework_coverage: dict[str, float] = {}
+            for framework, count in policy_violations.items():
+                compliance_framework_coverage[framework] = round((count / total_policy * 100.0), 1) if total_policy else 0.0
+
+            # 2. Issue status metrics and issue address metrics (from DB findings, once)
+            findings = get_findings_for_scan_id(scan_id)
+            issue_status_metrics = get_issue_status_metrics(findings)
+            issue_address_metrics = get_issue_address_metrics(findings)
 
             return {
-                "owasp_top_10_metrics": owasp_top_10_metrics,
-                "compliance_controls_metrics": compliance_controls_metrics,
+                "owasp_top_10_metrics": dict(owasp_top_10_metrics),
+                "compliance_controls_metrics": dict(compliance_controls_metrics),
                 "risk_metrics": risk_metrics,
-                "cves_per_vulnerability": cves_per_vulnerability,
+                "cves_per_vulnerability": dict(cves_per_vulnerability),
+                "policy_violations": dict(policy_violations),
+                "compliance_framework_coverage": compliance_framework_coverage,
                 "issue_status_metrics": issue_status_metrics,
                 "issue_address_metrics": issue_address_metrics,
-                "issues_by_category": issues_by_category,
-                "issues_by_severity": issues_by_severity,
-                "average_risk_score_per_category": average_risk_score_per_category,
+                "issues_by_category": issues_by_category_out,
+                "issues_by_severity": issues_by_severity_out,
+                "average_risk_score_per_category": dict(average_risk_score_per_category),
+                "risk_scores_per_finding": risk_scores_per_finding,
+                "compliance_failure_trends": dict(compliance_failure_trends),
             }
         
 

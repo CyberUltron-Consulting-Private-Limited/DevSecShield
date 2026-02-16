@@ -38,6 +38,7 @@ example :
         "excluded_documents" : [ "file_path.extension" , "file_path.extension" , ...( multiple files ) ],
         "included_documents" : [ "file_path.extension" , "file_path.extension" , ...( multiple files ) ],
     }
+    "duration_of_scan": 10.5, // duration in seconds
 }
 ```
 
@@ -60,6 +61,8 @@ example :
                 "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control"
                 },
                 "suggested_fix": "Mitigate by enfo.......",
+                "location": "terraform/main.tf",
+                "snippet": "print(aws_s3_bucket.public_data)",
                 "category": "Access Control",
                 "resource": "aws_s3_bucket.public_data",
                 "cves": {}
@@ -71,6 +74,7 @@ example :
         "excluded_documents" : [ "file_path.extension" , "file_path.extension" , ...( multiple files ) ],
         "included_documents" : [ "file_path.extension" , "file_path.extension" , ...( multiple files ) ],
     }
+    "duration_of_scan": 10.5, // duration in seconds
 }
 
 ```

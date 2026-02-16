@@ -127,9 +127,12 @@ try:
                 )
                 result , metadata = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
                 return {
                     "results": parsed_output,
                     "metadata": metadata,
+                    "duration_of_scan": duration_of_scan,
                 }
             elif zip_context:
                 agent = SASTAgent(
@@ -154,13 +157,13 @@ try:
         except Exception as e:
             console.print(f"Error in sast task: {str(e)}",style="bold red")
             raise e
-        # finally:
-        #     if zip_context:
-        #         # delete the files from bucket 
-        #         if delete_file(zip_context.bucket_name, zip_context.object_name):
-        #             console.print(f"Deleted zip file from bucket",style="bold green")
-        #         else:
-        #             console.print(f"Error in deleting zip file from bucket",style="bold red")
+        finally:
+            if zip_context:
+                # delete the files from bucket 
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered SAST task",style="bold green")
 
@@ -310,12 +313,12 @@ try:
         except Exception as e:
             console.print(f"Error in iac task: {str(e)}",style="bold red")
             raise e
-        # finally:
-        #     if zip_context:
-        #         if delete_file(zip_context.bucket_name, zip_context.object_name):
-        #             console.print(f"Deleted zip file from bucket",style="bold green")
-        #         else:
-        #             console.print(f"Error in deleting zip file from bucket",style="bold red")
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered IAC task with context pattern",style="bold green")
 

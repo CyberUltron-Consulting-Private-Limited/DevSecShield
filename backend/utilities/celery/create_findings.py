@@ -30,18 +30,27 @@ def create_findings_in_mongo_db(
                     scan_id = scan_id,
                     finding_data = vulnerability,
                     created_at = datetime.now(timezone.utc),
+                    finding_status = "not_started",
+                    fixed_at = None,
+                    ignored_at = None,
+                    info = None,
                 )
                 to_insert.append(scan_finding)
         mongo_db["scan_findings"].insert_many(to_insert)
         
     
     elif scan_type == "iac":
+        results = scan_results["results"]
         to_insert = []
         for vulnerability in results:
             scan_finding = ScanFindings(
                 scan_id = scan_id,
                 finding_data = vulnerability,
                 created_at = datetime.now(timezone.utc),
+                finding_status = "not_started",
+                fixed_at = None,
+                ignored_at = None,
+                info = None,
             )
             to_insert.append(scan_finding)
         mongo_db["scan_findings"].insert_many(to_insert)

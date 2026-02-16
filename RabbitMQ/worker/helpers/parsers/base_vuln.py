@@ -13,6 +13,7 @@ from helpers.context.schema import (
     MCPVulnerability,
     OWASPTop10,
     OWASPTop10LLM,
+    IACVulnerabilityCategory,
 )
 console = Console()
 
@@ -57,6 +58,12 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
             impact : type[Impact] = dumped["impact"]
             dumped["impact"] = impact.value
             console.print(f"✅ Impact parsed successfully",style="bold green")
+        
+        if "category" in dumped:
+            console.print(f"⚠️ Category found in dumped,parsing it...",style="bold yellow")
+            category : type[IACVulnerabilityCategory] = dumped["category"]
+            dumped["category"] = category.value
+            console.print(f"✅ Category parsed successfully",style="bold green")
         
         if "owasp_top_10_llm" in dumped:
             console.print(f"⚠️ Owasp top 10 LLM found in dumped,parsing it...",style="bold yellow")

@@ -11,6 +11,8 @@ import datetime
 from datetime import timezone
 
 from backend.new_models import Scan
+from backend.utilities.celery.create_findings import create_findings_in_mongo_db
+from backend.get_db import get_mongo_client_db , dev_environment
 console = Console()
 
 def get_celery_app():
@@ -133,6 +135,9 @@ def get_status_and_update_db(
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
                 SCAN_DATA = results
                 scan.scan_data = SCAN_DATA
+                
+                mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+                create_findings_in_mongo_db(scan_id=scan_id, scan_results=SCAN_DATA, scan_type=scan.scan_type, mongo_db=mongo_db)
                 scan.info = None # reset the info field
                 console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
             else:

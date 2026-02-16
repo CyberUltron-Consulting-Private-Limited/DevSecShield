@@ -45,10 +45,13 @@ export interface IACContextSchema {
   include_path_arrays: string[][];
 }
 
+export type IACEnvironment = "production" | "staging" | "development";
+
 export interface StartIACScanData {
   repo_context: RepoContextSchema | null;
   zip_file_used: boolean;
   iac_contexts: IACContextSchema[];
+  environment?: IACEnvironment;
 }
 
 /** SBOM/SCA scan input: exactly one of repo_context, zip_file_used, or sbom_file_used (matches backend StartSBOMScanData) */
@@ -90,6 +93,18 @@ export interface SastConversation {
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
     raw_scan_data?: unknown
+    /** From backend return_sast_list_item */
+    repo_url?: string | null
+    zip_file_used?: boolean | null
+    branch?: string | null
+    app_lang?: string | null
+    /** Weighted sum (critical*4 + high*3 + medium*2 + low*1); use with risk_data for 0–10 score */
+    risk_score?: number | null
+    code_coverage?: number | null
+    /** github, gitlab, bitbucket, zip_file */
+    scan_type?: string | null
+    duration?: number | string | null
+    top_vulnerabilities?: Array<{ title?: string; impact?: string; description?: string; policy_violation?: number }> | null
 }
 
 /** Card counts returned by list SAST scans (card_data) */
@@ -103,12 +118,40 @@ export interface SastListCardData {
     scans_updated_today: number
 }
 
+/** Top repo item from backend (snake_case) */
+export interface TopRepoByRiskItem {
+    name: string
+    repo_url: string | null
+    zip_file_used: boolean
+    issues: number
+    risk_score: number
+    trend: string
+    language: string
+}
+
 export interface ScanListDashboardData {
     card_data: SastListCardData
     repos_scanned: { repo_url: string }[]
     zip_files_scanned: number
     scans_per_day: Record<string, number>
     risks_per_day: Record<string, { critical: number; high: number; medium: number; low: number }>
+    /** Pre-computed by backend when available */
+    risk_totals?: { severity: string; count: number }[]
+    average_risk_score?: number
+    total_issues?: number
+    critical_count?: number
+    owasp_by_category?: { category: string; count: number }[]
+    policy_compliance?: { name: string; violations: number; compliance: number }[]
+    overall_compliance_score?: number
+    by_language?: { language: string; count: number }[]
+    top_repos_by_risk?: TopRepoByRiskItem[]
+    /** From get_remediation_metrics: mean time [d,h,m], counts, velocity (past 7 days) */
+    remediation_metrics?: {
+        mean_time_to_remediate: [number, number, number]
+        critical_issues_fixed: number
+        remediation_velocity: number
+        high_priority_backlog: number
+    }
 }
 
 export interface SastListResponse {
@@ -164,22 +207,104 @@ export interface SastConversationMessage {
     timestamp: string
     is_streaming: boolean
 }   
+/** Remediation metrics from backend get_remediation_metrics */
+export interface SastRemediationMetrics {
+  mean_time_to_remediate: [number, number, number]; // [days, hours, minutes]
+  critical_issues_fixed: number;
+  remediation_velocity: number;
+  high_priority_backlog: number;
+}
+
 /** SAST scan dashboard from backend generate_sast_dashboard */
 export interface SastDashboardData {
   risk_metrics?: Record<string, number>;
   owasp_top_10_metrics?: Record<string, number>;
   compliance_controls_metrics?: Record<string, number>;
   cves_per_vulnerability?: Record<string, number>;
+  remediation_metrics?: SastRemediationMetrics;
+  policy_violations?: Record<string, number>;
+  risk_scores_per_finding?: Record<string, number>;
+}
+
+/** SAST scan metadata from backend get_scan_metadata (SAST branch) */
+export interface SastScanMetadata {
+  repo_url?: string;
+  branch?: string;
+  zip_file_used?: boolean;
+  files_scanned?: number;
+  total_files?: number;
+  code_coverage?: number;
+}
+
+/** IAC scan metadata from backend get_scan_metadata (IAC branch) */
+export interface IACScanMetadata {
+  repo_url?: string | null;
+  branch?: string | null;
+  zip_file_used?: boolean;
+  dependency_diagram?: string | null;
+}
+
+/** SAST finding from backend get_findings_for_scan_type (for table + toggle status) */
+export interface SastFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  cves: unknown
+  suggested_fix?: string | null
+  location?: string | null
+  snippet?: string | null
+}
+
+/** IAC finding from backend get_findings_for_scan_type (IAC branch: includes category, resource) */
+export interface IACFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  cves: unknown
+  suggested_fix?: string | null
+  location?: string | null
+  snippet?: string | null
+  category?: string | null
+  resource?: string | null
+}
+
+/** IAC single-scan dashboard from backend generate_scan_dashboard (scan.py IAC branch) */
+export interface IACScanDashboardData {
+  risk_metrics?: Record<string, number>
+  owasp_top_10_metrics?: Record<string, number>
+  compliance_controls_metrics?: Record<string, number>
+  cves_per_vulnerability?: Record<string, number>
+  policy_violations?: Record<string, number>
+  compliance_framework_coverage?: Record<string, number>
+  issue_status_metrics?: Record<string, number>
+  /** finding_title -> [days, hours, minutes] */
+  issue_address_metrics?: Record<string, number[]>
+  issues_by_category?: Record<string, number>
+  issues_by_severity?: Record<string, number>
+  average_risk_score_per_category?: Record<string, number>
+  risk_scores_per_finding?: Record<string, number>
+  compliance_failure_trends?: Record<string, number>
 }
 
 export interface SastConversationResponse {
     title: string
     scan_status: string
     estimated_credits: number | null
-    scan_metadata?: Record<string, unknown> | null
+    scan_metadata?: SastScanMetadata | Record<string, unknown> | null
     data: any
     messages: SastConversationMessage[]
     dashboard?: SastDashboardData | null
+    findings?: SastFinding[] | null
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null
 }
@@ -1046,11 +1171,51 @@ export interface IACConversation {
     owner_user_full_name?: string | null
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    /** From return_iac_list_item */
+    repo_url?: string | null
+    zip_file_used?: boolean | null
+    branch?: string | null
+    cloud_provider?: string[]
+    average_risk_score?: number | null
+    coverage_percentage?: number | null
+    environment?: string | null
+}
+
+/** IAC list dashboard card_data from backend generate_iac_dashboard_data */
+export interface IACListCardData {
+    total_scans: number
+    total_issues: number
+    total_critical_issues: number
+    avg_mttr_days: number
+    coverage_percentage: number
+    total_policy_violations: number
+    average_risk_score: number
+}
+
+/** IAC list dashboard from backend generate_iac_dashboard_data (GET /{team_id}/iac/scans) */
+export interface IACListDashboardData {
+    card_data: IACListCardData
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    issues_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    security_posture_overview: Record<string, number>
+    compliance_framework_coverage?: Record<string, number>
+    compliance_framework_counts?: Record<string, number>
+    remediation_pipeline: { total_issues: number; fixed: number; in_progress: number; not_started: number; ignored: number }
+    mttr_per_day: Record<string, [number, number, number]>
+    resources_by_provider: Record<string, number>
+    environment: Record<string, number>
+    environment_cloud_resource_heatmap: Record<string, Record<string, number>>
+    remediation_metrics?: {
+        mean_time_to_remediate: [number, number, number]
+        critical_issues_fixed: number
+        remediation_velocity: number
+        high_priority_backlog: number
+    }
 }
 
 export interface IACListResponse {
     scans_list_data: IACConversation[]
-    dashboard_data: ScanListDashboardData
+    dashboard_data: IACListDashboardData
 }
 
 const getIACConversations = async (team_id: number): Promise<IACListResponse> => {
@@ -1106,10 +1271,11 @@ export interface IACConversationResponse {
   title: string
   repo_url?: string | null
   scan_status: string
-  scan_metadata?: Record<string, unknown> | null
+  scan_metadata?: IACScanMetadata | Record<string, unknown> | null
   data: any
   messages: IACConversationMessage[]
-  dashboard?: SastDashboardData | null
+  dashboard?: IACScanDashboardData | SastDashboardData | null
+  findings?: IACFinding[] | null
   integration_settings?: Record<string, unknown> | null
   info?: ScanInfoField | null
 }
@@ -1295,6 +1461,27 @@ const updateScan = async ({
     data: UpdateScanPayload;
 }) => {
     const response = await api.put(`/${team_id}/${type}/scan/${scan_id}`, data);
+    return response.data;
+};
+
+/** Toggle finding state: fixed | ignored | in_progress | not_started. POST /{team_id}/{type}/scan/{scan_id}/finding */
+const toggleFindingState = async ({
+    team_id,
+    type,
+    scan_id,
+    finding_id,
+    state,
+}: {
+    team_id: number;
+    type: "sast" | "iac" | "sbom_sca";
+    scan_id: number;
+    finding_id: string;
+    state: "fixed" | "ignored" | "in_progress" | "not_started";
+}): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(
+        `/${team_id}/${type}/scan/${scan_id}/finding`,
+        { finding_id, state }
+    );
     return response.data;
 };
 
@@ -1522,6 +1709,7 @@ export {
     reinitializeSCASBOMScan,
     reinitializeSBOMScanWithPayload,
     updateScan,
+    toggleFindingState,
 }
 
 // -------------------------------------------------------------- Discovery API Routes --------------------------------------------------------------

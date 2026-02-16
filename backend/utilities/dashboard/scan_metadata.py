@@ -16,18 +16,24 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
 
     """
     if scan_type == "sast":
-        repo_url = scan.scan_metadata if ("repo_url" in scan.scan_metadata) and (scan.scan_metadata["repo_url"]) else None
-        zip_file_used = scan.scan_metadata if ("zip_file_used" in scan.scan_metadata) and (scan.scan_metadata["zip_file_used"]) else None
-        branch = scan.scan_metadata if ("branch" in scan.scan_metadata) and (scan.scan_metadata["branch"]) else "main"
-        
-        if scan.scan_data == None or scan.scan_data == {}:
-            return 
-        
-        metadata = scan.scan_data["metadata"]
-        files_scanned = len(metadata["included_documents"])
-        total_files = len(metadata["included_documents"]) + len(metadata["excluded_documents"])
-        code_coverage = (files_scanned / total_files) * 100
-        
+        _meta = scan.scan_metadata or {}
+        repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
+        zip_file_used = bool(_meta.get("zip_file_used"))
+        branch = _meta.get("branch") or "main"
+
+        files_scanned = 0
+        total_files = 0
+        code_coverage = 0
+        if scan.scan_data and isinstance(scan.scan_data, dict) and scan.scan_data.get("metadata"):
+            metadata = scan.scan_data["metadata"]
+            included = metadata.get("included_documents")
+            excluded = metadata.get("excluded_documents")
+            included_list = included if isinstance(included, list) else []
+            excluded_list = excluded if isinstance(excluded, list) else []
+            files_scanned = len(included_list)
+            total_files = len(included_list) + len(excluded_list)
+            code_coverage = (files_scanned / total_files) * 100 if total_files > 0 else 0
+
         return {
             "repo_url": repo_url,
             "branch": branch,
@@ -37,18 +43,19 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "code_coverage": code_coverage,
         }
     
-    elif scan_type == "iac":
+    elif scan_type == "iac": 
+        _meta = scan.scan_metadata or {}
+        repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
+        zip_file_used = bool(_meta.get("zip_file_used"))
+        branch = _meta.get("branch",None)
 
-        repo_url = scan.scan_metadata if ("repo_url" in scan.scan_metadata) and (scan.scan_metadata["repo_url"]) else None
-        zip_file_used = scan.scan_metadata if ("zip_file_used" in scan.scan_metadata) and (scan.scan_metadata["zip_file_used"]) else None
-        
-        if scan.scan_data == None or scan.scan_data == {}:
-            return 
-        
-        dependency_diagram = scan.scan_data["dependency_diagram"]
-        
+        dependency_diagram = None
+        if scan.scan_data and isinstance(scan.scan_data, dict) and "dependency_diagram" in scan.scan_data:
+            dependency_diagram = scan.scan_data["dependency_diagram"]
+
         return {
             "repo_url": repo_url,
+            "branch": branch,
             "zip_file_used": zip_file_used,
             "dependency_diagram": dependency_diagram,
         }

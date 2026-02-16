@@ -61,5 +61,41 @@ def get_issue_address_metrics(findings: list[ScanFindings]) -> dict:
             issue_address_metrics[finding["finding_data"]["title"]] = [ 0, 0, 0 ]
     
 
-    console.print(f"Issue address metrics : {issue_address_metrics}")
+   
     return issue_address_metrics
+
+
+def get_mttr_per_day(findings: list[ScanFindings]) -> dict[str, list[int]]:
+    """
+    Mean time to remediate per day (by fixed_at date).
+    Returns: { "2026-01-01": [days, hours, minutes], ... }
+    Only includes findings that are fixed or ignored; each date's value is the average MTTR for findings resolved on that day.
+    """
+    from collections import defaultdict
+    from datetime import timedelta
+
+    by_date: dict[str, list[timedelta]] = defaultdict(list)
+    for finding in findings:
+        if finding["finding_status"] == "fixed" and finding.get("fixed_at"):
+            delta = finding["fixed_at"] - finding["created_at"]
+            date_key = str(finding["fixed_at"].date())
+            by_date[date_key].append(delta)
+        elif finding["finding_status"] == "ignored" and finding.get("ignored_at"):
+            delta = finding["ignored_at"] - finding["created_at"]
+            date_key = str(finding["ignored_at"].date())
+            by_date[date_key].append(delta)
+
+    result: dict[str, list[int]] = {}
+    for date_key, deltas in by_date.items():
+        if not deltas:
+            continue
+        total = deltas[0]
+        for d in deltas[1:]:
+            total += d
+        avg = total / len(deltas)
+        result[date_key] = [
+            avg.days,
+            avg.seconds // 3600,
+            avg.seconds % 3600 // 60,
+        ]
+    return result
