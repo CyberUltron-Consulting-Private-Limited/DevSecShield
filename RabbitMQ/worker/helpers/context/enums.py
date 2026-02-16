@@ -1,5 +1,13 @@
 from enum import Enum
 
+class IACVulnerabilityCategory(Enum):
+    NETWORK_SECURITY = "Network Security"
+    DATA_PROTECTION = "Data Protection"
+    ACCESS_CONTROL = "Access Control"
+    LOGGING_AND_MONITORING = "Logging and Monitoring"
+    SECRET_MANAGEMENT = "Secret Management"
+    AUDIT_AND_COMPLIANCE = "Audit and Compliance"
+
 class OWASPTop10(Enum):
     BROKEN_ACCESS_CONTROL = "A01:2021 - Broken Access Control"
     CRYPTOGRAPHIC_FAILURES = "A02:2021 - Cryptographic Failures"

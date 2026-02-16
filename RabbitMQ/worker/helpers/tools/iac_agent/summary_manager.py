@@ -1,5 +1,5 @@
 from helpers.context import  BaseSummaryManager 
-from helpers.context.schema import CodebaseVulnerability
+from helpers.context.schema import IACVulnerability
 from helpers.context.output_model import OutputModelManager
 from pydantic import BaseModel, Field
 from rich.console import Console
@@ -7,7 +7,7 @@ from langchain.schema import Document
 console = Console()
 
 class FinalIACVulnerabilities(BaseModel):
-    vulnerabilities: list[CodebaseVulnerability] = Field(..., description="A list of IAC Vulnerabilities")
+    vulnerabilities: list[IACVulnerability] = Field(..., description="A list of IAC Vulnerabilities")
 
 RefinePrompt = """
 ## Your Task : \n
@@ -61,7 +61,7 @@ class IACSummaryManager(BaseSummaryManager,OutputModelManager):
         """
         ModifiedMapPrompt = MapPrompt + addition_to_map_prompt
 
-        output_model = self.get_codebase_output_model()
+        output_model = self.get_iac_output_model()
         
         super().__init__(
             summary_output_model=output_model,

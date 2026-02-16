@@ -104,6 +104,7 @@ class SASTAgent(BaseAgent):
             self.open_source_context = None
             self.logical_components : type[LogicalComponents] = []
             self.vulnerabilities : list[dict[str,list[type[CodebaseVulnerability]]]] = []
+            self.metadata : dict = {} 
 
         except Exception as e:
             raise ValueError(f"Error in initializing SASTAgent: {e}")
@@ -130,6 +131,11 @@ class SASTAgent(BaseAgent):
             self.codebase_collection_name = codebase_context.collection_name # SET codebase_collection_name ⭐
 
             self.codebase_context = codebase_context # SET codebase_context ⭐
+
+            try:
+                self.metadata = codebase_context.metadata # SET metadata ⭐
+            except Exception as e:
+                raise ValueError(f"Error in getting metadata from codebase context: {e}")
 
             summary : type[LogicalComponents] = output.summary
             
@@ -326,7 +332,7 @@ class SASTAgent(BaseAgent):
             raise e 
     
 
-    def run_agent(self):
+    def run_agent(self)->tuple[list,dict]:
         """
         Cycles through each Logical Component of the codebase performing the ...
 
@@ -424,7 +430,7 @@ class SASTAgent(BaseAgent):
                 self.state_update_writer.write_progress_percentage(100)
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
-            return self.vulnerabilities
+            return (self.vulnerabilities,self.metadata)
         
 
 

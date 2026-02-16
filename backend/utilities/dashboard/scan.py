@@ -5,6 +5,16 @@ from fastapi import HTTPException
 from backend.get_db import get_db
 from collections import defaultdict
 from backend.get_db import dev_environment
+from backend.utilities.db.findings import get_findings_for_scan_id
+from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
+from backend.utilities.dashboard.finding_metrics import get_issue_address_metrics, get_issue_status_metrics
+
+risk_score_for_impact = {
+    "critical" : 10.0,
+    "high" : 7.5,
+    "medium" : 5,
+    "low" : 2.5,
+}
 
 console = Console()
 def generate_scan_dashboard(
@@ -34,12 +44,17 @@ def generate_scan_dashboard(
             scan = scan_object
         
         
-        if scan:
-            results = scan.scan_data
+        if scan and "results" in scan.scan_data:
+            results = scan.scan_data["results"] 
         elif scan_results:
             results = scan_results
         else:
             raise ValueError("Either scan_id or scan_object or scan_results must be provided")
+
+        if scan : 
+            scan_id = scan.id
+        elif not scan_id:
+            raise ValueError("Either scan_id or scan_object must be provided")
         
 
         # ------------------------------ SAST Dashboard Generation ------------------------------
@@ -54,27 +69,56 @@ def generate_scan_dashboard(
                 "Critical": 0
             }
             cves_per_vulnerability = defaultdict(int)
+            risk_scores_per_finding = defaultdict(float)
+            policy_violations = defaultdict(int)
 
             # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
             for item in results:
                 for vulnerability in item["vulnerabilities"]:
+
+                    # calculating owasp metrics 
                     for key,value in vulnerability["owasp_top_10"].items(): 
-                        owasp_top_10_metrics[key] += 1
+                        owasp_top_10_metrics[value] += 1
+
+                    # calculating compliance controls metrics 
                     for key,value in vulnerability["compliance_controls"].items():
-                        compliance_controls_metrics[key] += 1
+                        compliance_controls_metrics[value] += 1
+
+                    # calculating risk metrics 
                     risk_metrics[vulnerability["impact"]] += 1
+
+                    # calculating cves per vulnerability 
                     for key,value in vulnerability["cves"].items():
-                        cves_per_vulnerability[key] += 1
-            
+                        cves_per_vulnerability[value] += 1
+                    
+                    # calculating risk score per finding 
+                    risk_score = risk_score_for_impact[vulnerability["impact"].lower()]
+                    risk_scores_per_finding[vulnerability["title"]] = risk_score
+
+                    # calculating policy violations 
+                    for key,value in vulnerability["compliance_controls"].items():
+                        complaince_standard = value.split(" - ")[0]
+                        policy_violations[complaince_standard] += 1
+
+                    # calculate remediation metrics 
+                    findings = get_findings_for_scan_id(scan_id)
+                    remediation_metrics = get_remediation_metrics(findings)
+
 
             return {
                 "owasp_top_10_metrics": owasp_top_10_metrics,
                 "compliance_controls_metrics": compliance_controls_metrics,
                 "risk_metrics": risk_metrics,
-                "cves_per_vulnerability": cves_per_vulnerability
+                "cves_per_vulnerability": cves_per_vulnerability,
+                "remediation_metrics": remediation_metrics,
+                "policy_violations": policy_violations,
+                "risk_scores_per_finding": risk_scores_per_finding,
             }
     
-        elif scan_type == "iac" or scan_type == "sbom_sca":
+
+
+
+        elif scan_type == "iac" :
             # STEP [ 1 ] : =========== Generate the Dashboard ===========================
             owasp_top_10_metrics = defaultdict(int)
             compliance_controls_metrics = defaultdict(int)
@@ -85,25 +129,72 @@ def generate_scan_dashboard(
                 "Critical": 0
             }
             cves_per_vulnerability = defaultdict(int)
+            policy_violations = defaultdict(int)
+            issues_by_category = defaultdict(int)
+            issues_by_severity = defaultdict(int)
+            sum_of_risk_scores_per_category = defaultdict(float) # needed for average risk score per category
+            average_risk_score_per_category = defaultdict(float)
+            issue_status_metrics = defaultdict(int)
 
             # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
             for vulnerability in results:
+
+                # calculating owasp metrics 
                 for key,value in vulnerability["owasp_top_10"].items(): 
                     owasp_top_10_metrics[key] += 1
+                
+                # calculating compliance controls metrics 
                 for key,value in vulnerability["compliance_controls"].items():
                     compliance_controls_metrics[key] += 1
+                
+                # calculating risk metrics 
                 risk_metrics[vulnerability["impact"]] += 1
+                
+                # calculating cves per vulnerability 
                 for key,value in vulnerability["cves"].items():
                     cves_per_vulnerability[key] += 1
-            
+                
+                # calculating policy violations 
+                for key,value in vulnerability["compliance_controls"].items():
+                    complaince_standard = value.split(" - ")[0]
+                    policy_violations[complaince_standard] += 1
+                
+                # issues by category 
+                issues_by_category[vulnerability["category"]] += 1
+                
+                # issues by severity 
+                issues_by_severity[vulnerability["impact"]] += 1
+                
+                # issue status count 
+                findings = get_findings_for_scan_id(scan_id)
+                issue_status_metrics = get_issue_status_metrics(findings)
+
+
+                # issue address metrics 
+                issue_address_metrics = get_issue_address_metrics(findings)
+
+                # average risk score per category 
+                risk_score = risk_score_for_impact[vulnerability["impact"].lower()]
+                sum_of_risk_scores_per_category[vulnerability["category"]] += risk_score
+
+            for key,value in sum_of_risk_scores_per_category.items():
+                average_risk_score_per_category[key] = value / issues_by_category[key]
 
             return {
                 "owasp_top_10_metrics": owasp_top_10_metrics,
                 "compliance_controls_metrics": compliance_controls_metrics,
                 "risk_metrics": risk_metrics,
-                "cves_per_vulnerability": cves_per_vulnerability
+                "cves_per_vulnerability": cves_per_vulnerability,
+                "issue_status_metrics": issue_status_metrics,
+                "issue_address_metrics": issue_address_metrics,
+                "issues_by_category": issues_by_category,
+                "issues_by_severity": issues_by_severity,
+                "average_risk_score_per_category": average_risk_score_per_category,
             }
         
+
+
+
         elif scan_type == "mcp":
             # STEP [ 1 ] : =========== Generate the Dashboard ===========================
             owasp_top_10_metrics = defaultdict(int)

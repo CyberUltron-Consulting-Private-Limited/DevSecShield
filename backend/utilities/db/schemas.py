@@ -10,6 +10,10 @@ class SendMessageToScanData(BaseModel):
     user_message: str
 
 
+class ToggleFindingStateData(BaseModel):
+    finding_id: str
+    state: Literal["fixed" , "ignored" , "in_progress" , "not_started"]
+
 
 class CreateTeamData(BaseModel):
     name: str

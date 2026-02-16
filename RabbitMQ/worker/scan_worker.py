@@ -105,6 +105,8 @@ try:
 
 
         try :
+
+            start_time = time.time()
             
             # STEP [ 1 ] : =========== Validate the context ======================
             repo_context , zip_context = None, None
@@ -123,9 +125,12 @@ try:
                     exclude_path_arrays=exclude_path_arrays,
                     state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()
+                result , metadata = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+                return {
+                    "results": parsed_output,
+                    "metadata": metadata,
+                }
             elif zip_context:
                 agent = SASTAgent(
                     zip_context=zip_context,
@@ -133,9 +138,16 @@ try:
                     exclude_path_arrays=exclude_path_arrays,
                     state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()
+                result , metadata = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "metadata": metadata,
+                    "duration_of_scan": duration_of_scan,
+                }
             else:
                 raise Exception("No context provided")
 
@@ -238,6 +250,8 @@ try:
 
 
         try:
+            start_time = time.time()
+
             # STEP [ 1 ] : =========== Validate the context ======================
             repo_context , zip_context = None, None
             if repo_dict_context:
@@ -264,18 +278,32 @@ try:
                     iac_contexts=iac_contexts,
                     state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()  
+                result , dependency_diagram , metadata = agent.run_agent()  
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "metadata": metadata,
+                    "dependency_diagram": dependency_diagram,
+                    "duration_of_scan": duration_of_scan,
+                }
             elif zip_context:
                 agent = IACAgent(
                     zip_context=zip_context,
                     iac_contexts=iac_contexts,
                     state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()
+                result , dependency_diagram , metadata = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "metadata": metadata,
+                    "dependency_diagram": dependency_diagram,
+                    "duration_of_scan": duration_of_scan,
+                }
             else:
                 raise Exception("Unable to run iac scan with the provided context")
         

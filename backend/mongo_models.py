@@ -21,10 +21,12 @@ SenderType = Literal["user", "assistant"]
 class ScanFindings(TypedDict, total=False):
 
     scan_id: int # int of scan collection document 
+    created_at: datetime
 
     finding_data : dict | None = None
-    fixed : bool = False
-    fixed_date : datetime | None = None
+    finding_status : Literal["fixed" , "ignored" , "in_progress" , "not_started"] = "not_started"
+    fixed_at : datetime | None = None
+    ignored_at : datetime | None = None
     info : dict | None = None
 
 class MessageLog(TypedDict, total=False):

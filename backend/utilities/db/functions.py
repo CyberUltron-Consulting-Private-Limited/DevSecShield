@@ -7,6 +7,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from pydantic import BaseModel, model_validator
 from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
+from backend.utilities.db.scan_list_item import return_sast_list_item, return_iac_list_item
 from rich.console import Console
 from pymongo.database import Database
 import json
@@ -103,54 +104,14 @@ def return_scan_list_for_type(
         for scan in sequence:
             if (scan.scan_status == "pending" or scan.scan_status == "started") and scan.task_id:
                 scans_to_update.append((scan.id,scan.task_id))
-
-            total_critical , total_high , total_medium , total_low  = 0,0,0,0
-            if scan.scan_type == "sast" and scan.scan_data and scan.scan_data != {} and isinstance(scan.scan_data,list) and scan.scan_status == "success":
-                for item in scan.scan_data:
-                    for vulnerability in item["vulnerabilities"]:
-                        if vulnerability["impact"].lower() == "critical":
-                            total_critical += 1
-                        elif vulnerability["impact"].lower() == "high":
-                            total_high += 1
-                        elif vulnerability["impact"].lower() == "medium":
-                            total_medium += 1
-                        elif vulnerability["impact"].lower() == "low":
-                            total_low += 1
             
-            if (scan.scan_type == "sbom_sca" or scan.scan_type == "iac") and scan.scan_data and scan.scan_data != {} and isinstance(scan.scan_data,list):
-                for vulnerability in scan.scan_data:
-                    if vulnerability["impact"].lower() == "critical":
-                        total_critical += 1
-                    elif vulnerability["impact"].lower() == "high":
-                        total_high += 1
-                    elif vulnerability["impact"].lower() == "medium":
-                        total_medium += 1
-                    elif vulnerability["impact"].lower() == "low":
-                        total_low += 1
+            if scan.scan_type == "sast": 
+                list_item = return_sast_list_item(scan)
+                scans_list_data.append(list_item)
             
-            risk_data = {
-                "total_critical": total_critical,
-                "total_high": total_high,
-                "total_medium": total_medium,
-                "total_low": total_low,
-            }
-                
-
-            scans_list_data.append({
-                "id": scan.id,
-                "scan_metadata": scan.scan_metadata,
-                "title": scan.title,
-                "created_at": scan.created_at,
-                "last_updated": scan.last_updated,
-                "scan_status": scan.scan_status.lower(),
-                "estimated_credits": scan.credit_consumed,
-                "owner_user_email": scan.owner_user.email,
-                "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
-                "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
-                'risk_data': risk_data,
-                "raw_scan_data": scan.scan_data,
-
-            })
+            elif scan.scan_type == "iac":
+                list_item = return_iac_list_item(scan)
+                scans_list_data.append(list_item)
 
         return (scans_list_data,scans_to_update)
     
@@ -159,6 +120,7 @@ def return_scan_list_for_type(
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in returning scan list , please try again later")
+
 
 
 

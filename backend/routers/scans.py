@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import ActiveContextLog, MessageLog
 from backend.new_models import Scan
+from backend.utilities.dashboard.scan_metadata import get_scan_metadata
 from backend.utilities.team.credits import deduct_credits_from_team_for_message
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
@@ -34,6 +35,7 @@ from backend.new_models import scan_types
 from rich.console import Console
 from backend.utilities.dashboard.scan_list import generate_dashboard_data_for_scan_list
 from backend.get_db import dev_environment
+from datetime import datetime, timezone
 
 
 router = APIRouter( tags=["scans"])   
@@ -75,7 +77,7 @@ async def list_scans(
                 console.print(f"Background task added to update statuses of scans: {scans_list_to_update}" ,style="bold green")
             
             
-            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans)
+            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type)
             return {
                 "scans_list_data": scans_list_data,
                 "dashboard_data": dashboard_data, #dashboard data will look different for different scan types
@@ -188,7 +190,7 @@ async def send_message_to_scan(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to send messages to this scan")
         if not SCAN:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
-        if not SCAN_DATA or SCAN_DATA == {} or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS == "started" or SCAN_STATUS != "success":
+        if not SCAN_DATA or SCAN_DATA == {} or "results" not in SCAN_DATA or SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_STATUS == "started" or SCAN_STATUS != "success":
             return { "content" : "Scan has not run or hasn't completed yet, please wait for the scan to complete if it has been initiated or start the scan" }
 
         
@@ -328,14 +330,16 @@ async def get_scan(
             dashboard_data = generate_scan_dashboard(scan_type=type, scan_results=SCAN_DATA)
         else:
             dashboard_data = None
+
+        scan_metadata = get_scan_metadata(scan_type=type, scan_object=scan)
         
         # STEP [ 4 ] : =================== Return the scan data ======================
         return {
                 "title": scan.title,
-                "scan_metadata": scan.scan_metadata,
+                "scan_metadata": scan_metadata, #TODO modify this to be different for different scan types
                 "scan_status": SCAN_STATUS.lower(),
-                "data": SCAN_DATA,
-                "dashboard": dashboard_data,
+                "findings": None , # TODO : Modify this to be a list of findings along with their mongo id as string for later toggling of status
+                "dashboard": dashboard_data, # TODO : This must return different data for different scan types
                 "messages": MESSAGES,
                 "integration_settings": scan.integration_settings or {},
                 "info": SCAN_INFO,
@@ -836,3 +840,48 @@ async def create_ticket(
     except Exception as e:
         console.print(f"Error in creating ticket for {type} scan: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")
+
+
+@router.post("/{team_id}/{type}/scan/{scan_id}/finding",summary="Toggle finding state between fixed | ignored | in_progress | not_started ") 
+async def toggle_finding_state(
+    type: scan_types,
+    scan_id: int,
+    team_id: int,
+    data: ToggleFindingStateData,
+    Authorization: Annotated[str | None, Header()] = None , 
+    dependencies=[Depends(limiter)] ,
+    ):
+    """
+    Toggle finding state between fixed | ignored | in_progress | not_started 
+    """
+    try:
+        # STEP [ 0 ] : =========== Get the engine and user ======================
+        engine = get_db(dev_environment=dev_environment)
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        mongo_db = get_mongo_client_db(dev_environment)
+
+        # STEP [ 1 ] : =========== Check if user is in team ======================
+        check_if_user_is_admin_of_team(user.id, team_id, engine)
+        
+        
+        # STEP [ 2 ] : ================= update scan finding in mongo db ======================
+        if data.state not in ["fixed" , "ignored" , "in_progress" , "not_started"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid finding state")
+        
+        scan_findings_collection = mongo_db["scan_findings"]
+        if data.state == "fixed":
+            scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state, "fixed_at": datetime.now(timezone.utc)}})
+        elif data.state == "ignored":
+            scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state, "ignored_at": datetime.now(timezone.utc)}})
+        console.print(f"Finding state updated for {data.finding_id} to {data.state}",style="bold green")
+
+        return {
+            "message": f"Finding state updated successfully for finding id: {data.finding_id} to {data.state}",
+        }
+
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error in toggling finding state for {type} scan: {e}",style="bold red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in toggling finding state for scan , please try again later")

@@ -24,6 +24,10 @@ class CodebaseVulnerability(BaseVulnerability):
     location : str = Field(description="The location of the vulnerability in the codebase i.e. its file path ")
     snippet : str = Field(description="The snippet of code that contains the vulnerability")
 
+class IACVulnerability(CodebaseVulnerability):
+    category : IACVulnerabilityCategory = Field(description="The category of the IAC vulnerability")
+    resource : str = Field(description="The name of the resource that is vulnerable ( get this from the code snippet )")
+
 
 class DependencyVulnerability(BaseVulnerability):
     dependencies : list[str] = Field(description="A list of dependencies that this vulnerability is related to")
