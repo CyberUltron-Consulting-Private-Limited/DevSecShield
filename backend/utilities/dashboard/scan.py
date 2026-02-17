@@ -336,6 +336,81 @@ def generate_scan_dashboard(
 
 
         elif scan_type == "mcp":
+            """
+            Need to calculate the following metrics :
+            1. Card Data :
+                - overall risk score ( average risk score )
+                - total findings
+                - exploitability index ( based on average risk score )
+                - attack surface ( total numebr of tools , resources and prompts summed up )
+                - mttr ( mean time to remediation )
+                - active vulnerabilities ( number of vulnerabilities that are not fixed or ignored )
+                - compliance score ( based on number of compliance control violations in each vulnerability)
+                - category coverage ( percentage of categories covered by the tools )
+                note : all categories are : web, file_system, code_execution, database, search, vector_store, document_store, cache, ai_model, embedding, auth, secrets, version_control, package_registry, container, cloud, message_queue, event_stream, scheduler, observability, config
+
+            2. Severity distribution ( pie chart ) :
+                {
+                    "critical" : total_critical_issues,
+                    "high" : total_high_issues,
+                    "medium" : total_medium_issues,
+                    "low" : total_low_issues,
+                }
+            3. Category coverage ( pie chart ) :
+                {
+                    "web" : total_web_issues,
+                    "file_system" : total_file_system_issues,
+                    "code_execution" : total_code_execution_issues,
+                    "database" : total_database_issues,
+                }
+            4. Category threat landscape ( bar chart )
+                {
+                    "web" : { "avg_risk_score" : avg_risk_score_web , "total_issues" : total_issues_web },
+                    "file_system" : { "avg_risk_score" : avg_risk_score_file_system , "total_issues" : total_issues_file_system },
+                    "code_execution" : { "avg_risk_score" : avg_risk_score_code_execution , "total_issues" : total_issues_code_execution },
+                    "database" : { "avg_risk_score" : avg_risk_score_database , "total_issues" : total_issues_database },
+                }
+            5. Complaince frameworke scores ( pie chart ) :
+                {
+                    "NIST80053" : 12, ( total number of compliance controls violated )
+                    "ISO27001" : 2,
+                    "ISO27002" : 3,
+                    "ISO27003" : 4,
+                    "ISO27004" : 5,
+                }
+            6. Compliance failure trends ( area - line chart ) :
+                {
+                    "finding_title" : 10, ( total number of compliance controls violated )
+                    "finding_title" : 20, ( total number of compliance controls violated )
+                    "finding_title" : 30, ( total number of compliance controls violated )
+                }
+            7. Asset attack surface ( bar chart ) :
+                {
+                    "tool_name" : tool_risk_level ( critical , high , medium , low )
+                    "tool_name2" : tool_risk_level ( critical , high , medium , low )
+                    "resource_name" : resource_risk_level ( critical , high , medium , low )
+                    "prompt_name" : prompt_risk_level ( critical , high , medium , low )
+                }
+            8. Tool impact analysis ( area - line chart ) :
+                note : each tool has vulns , each vuln has an impact class ( critical , high , medium , low ) , therefer calculate impact metrics for each tool by summing up the impact classes of all vulns for that tool
+                {
+                    "tool_name" : { "critical" : total_critical_issues, "high" : total_high_issues, "medium" : total_medium_issues, "low" : total_low_issues }
+                }
+            9. Asset Compliance violations ( area - line chart ) :
+                {
+                    "tool_name" : 24 ( totla number of compliance controls violated )
+                    "resource_name" : 27 ( totla number of compliance controls violated )
+                    "prompt_name" : 30 ( totla number of compliance controls violated )
+                }
+            10 . OWASP Top 10 llm metrics ( area - line chart ) :
+                {
+                    "LLM01:2025 - Prompt Injection" : 10, ( total number of prompt injection issues )
+                    "LLM02:2025 - Insecure Output Handling" : 20,
+                    "LLM03:2025 - Training Data Poisoning" : 30,
+                    ...
+                    "LLM10:2025 - Model Theft" : 100,
+                }
+            """
             results = results if isinstance(results, dict) else {}
             tools = results.get("tools") or []
             prompts = results.get("prompts") or []
@@ -447,6 +522,59 @@ def generate_scan_dashboard(
 
         
         elif scan_type == "llm":
+            """
+            Need to calculate the following metrics :
+            1. Card Data :
+                - Attacks run ( total number of probes used , get it from the metadata field in scan.scan_data )
+                - total vulnerabilities found ( total number of vulnerabilities found )
+                - pass rate ( get from the metadata field in scan.scan_data )
+                - Risk score ( average risk score of the vulnerabilities based on impact class weighted average )
+                - Scan duration ( get from the duration_of_scan field in scan.scan_data )
+                - policy violations ( total compliance controls violated + total mitre atlas tactics violated  + total owasp top 10 violations  across all vulnerabilities )
+
+            2. Security Posture ( radar chart ) :
+                note : show all categories , default to 0 if no data is available
+                {
+                    "jailbreak_resistance_score": 10,
+                    "injection_resistance_score": 10,
+                    "hallucination_resistance_score": 10,
+                    "bias_resistance_score": 10,
+                    "content_safety_score": 10,
+                    "data_privacy_score": 10,
+                }
+            3. Owasp top 10 LLM metrics ( radar chart ) :
+                note : show all categories , default to 0 if no data is available
+                {
+                    "LLM01:2025 - Prompt Injection" : 10, ( total number of prompt injection issues )
+                    "LLM02:2025 - Insecure Output Handling" : 20,
+                    ...
+                    "LLM10:2025 - Model Theft" : 100,
+                }
+            4. Mitre Atlas Tactics metrics ( Bar chart ) :
+                note : show all categories , default to 0 if no data is available
+                {
+                    "reconnaissance" : 10, "resource_development" : 20, "initial_access" : 30,
+                    "ml_model_access" : 40, "execution" : 50, "persistence" : 60,
+                    "privilege_escalation" : 70, "defense_evasion" : 80, "credential_access" : 90,
+                    "discovery" : 100, "lateral_movement" : 110, "collection" : 120,
+                    "exfiltration" : 130, "impact" : 140,
+                }
+
+            5. Vulnerability break down ( pie chart ) ( risk distribution of the vulnerabilities )
+                {
+                    "critical" : 10, "high" : 20, "medium" : 30, "low" : 40,
+                }
+            6. Adversarial Attack outcomes ( multiple bar ,bar chart ):
+                {
+                    "probe_name_1" : { "passed" : 10 , "total" : 100 },
+                    "probe_name_2" : { "passed" : 20 , "total" : 100 },
+                }
+
+            7. Attack Details ( table ) : ( use garak_probes to get a short description of the probe and display that also )
+                {
+                    "probe_name" : { "passed" : 10 , "total" : 100 , "hit_rate" : 10.0 , "description" : "short description of the probe" },
+                }
+            """
             results = results if isinstance(results, dict) else {}
             scan_data = (scan.scan_data or {}) if scan else {}
             metadata = scan_data.get("metadata") or {}
@@ -536,6 +664,77 @@ def generate_scan_dashboard(
         
 
         elif scan_type == "sbom_sca":
+            """
+            Need to calculate the following metrics :
+            1. Card Data :
+                - total vulnerabilities
+                - total critical vulnerabilities
+                - total policy violations
+                - total license risks ( total high and medium risk licenses )
+                - total high risk licenses
+                note : Risk level splitup for licenses :
+                        Low risk ---> permissive , public_domain , unknown
+                        Medium risk ---> weak_copyleft , creative_commons , commercial
+                        High risk ---> strong_copyleft , network_copyleft , source_available
+                - average risk score ( based on weighted average of impact class of all vulnerabilities )
+                - total reachable issues
+
+            2. Remediation Actions required :
+                {
+                    "total_findings" : total_findings,
+                    "total_fixed" : total_fixed,
+                    "total_in_progress" : total_in_progress,
+                    "total_not_started" : total_not_started,
+                    "total_ignored" : total_ignored,
+                }
+            3. severity distribution :
+                {
+                    "critical" : total_critical_issues,
+                    "high" : total_high_issues,
+                    "medium" : total_medium_issues,
+                    "low" : total_low_issues,
+                }
+            4. Reachability Age ( how long a certail finding remained in not_reachable or potentially_reachable status )
+                {
+                    "not_reachable" : total_not_reachable_issues,
+                    "potentially_reachable" : total_potentially_reachable_issues,
+                    "reachable" : total_reachable_issues,
+                    "unknown" : total_unknown_issues,
+                }
+            5. Vulnerability Trends over time :
+                {
+                    "2026-01-01" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+                    "2026-01-02" : { "critical" : 15, "high" : 25, "medium" : 35, "low" : 45 },
+                }
+            6. Licenses Distribution :
+                {
+                    "permissive" : total_permissive_licenses,
+                    "public_domain" : total_public_domain_licenses,
+                    "weak_copyleft" : total_weak_copyleft_licenses,
+                    "creative_commons" : total_creative_commons_licenses,
+                    "commercial" : total_commercial_licenses,
+                }
+            7. Top Vulnerabilities by Risk Score :
+                ( sorted by impact in descending order )
+                [
+                    {
+                        "dependency" : dependency_name,
+                        "reachability" : reachability,
+                        "dependency_type" : dependency_type,
+                        "license_type" : license_type,
+                        "impact" : impact,
+                    },
+                ]
+
+            8. Average risk score per reachability level :
+                note : calculate average risk score for each reachability level by weighted average of impact class of all vulnerabilities for that reachability level
+                {
+                    "reachable" : average_risk_score_reachable,
+                    "potentially_reachable" : average_risk_score_potentially_reachable,
+                    "not_reachable" : average_risk_score_not_reachable,
+                    "unknown" : average_risk_score_unknown,
+                }
+            """
             results_list = results if isinstance(results, list) else []
             severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             reachability_counts: dict[str, int] = defaultdict(int)
