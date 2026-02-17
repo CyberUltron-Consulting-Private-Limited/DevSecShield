@@ -3,7 +3,7 @@ from pathlib import Path
 from langchain.schema import Document
 from helpers.context import OpenSourceContext , BaseSummaryManager
 from helpers.context.scan_context import get_directory_from_zip_context , ZipContext
-from helpers.tools.sast_agent.semgrep_util import run_sast_scan_on_directory
+from helpers.tools.llm_agent.llm_runner import run_garak_scan
 from pydantic import BaseModel
 from rich.console import Console
 console = Console()
@@ -73,32 +73,35 @@ class OpenSourceSummaryManager(BaseSummaryManager):
             raise ValueError(f"Error in formatting documents to string: {e}")
 
 if __name__ == "__main__":
-    # zip_context = ZipContext(
-    #         bucket_name="devsecshield-storage",
-    #         object_name="transformers-main.zip",
-    #         # object_name="RiskPilot-main (1).zip",
-    #     )
-
-    # directory = get_directory_from_zip_context(zip_context)
+    model_type="custom"
+    model_name="gpt-4o"
+    headers:dict = {
+            "Authorization": "Bearer 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",
+            "Content-Type": "application/json"
+            }
+    request_template={
+        "model": "gpt-4o",
+        "input": "$INPUT"
+        }
+    response_json_field="$.output[0].content[0].text"
+    probes=["malwaregen.Evasion" , "malwaregen.TopLevel"]
+    model_uri="https://api.openai.com/v1/responses"
     
     open_source_context = OpenSourceContext(
-        open_source_tool=run_sast_scan_on_directory,
-        # directory=directory,
-        app_lang="python" ,
+        open_source_tool=run_garak_scan,
+        model_type=model_type,
+        model_name=model_name,
+        headers=headers,
+        request_template=request_template,
+        response_json_field=response_json_field,
+        probes=",".join(probes),
+        model_uri=model_uri,
+        
         ) 
     
-    
-    # to test really big results json file
-    with open("C:\\Users\\HP\\Desktop\\DevSecShield\\RabbitMQ\\worker\\opensource_context_result.json", "r") as f:
-        results = json.load(f)
-    
-    console.print(f"Results type: {type(results)}",style="dim yellow")
+    open_source_context.run_open_source_tool()
 
-    open_source_context.results = results
-    
-    result = open_source_context.save_results_into_vector_store_and_return_context_id()
-    # console.print(f"OpenSourceSummary: {result.summary}",style="dim yellow")
-    # console.print(f"Opensource context_id : {result.context_id}")
-    # with open("opensource_context_result.json", "w+") as f:
-    #     data = open_source_context.results
-    #     json.dump(data, f, indent=4)
+    results = open_source_context.results
+
+    with open("garak_results.json", "w+") as f:
+        json.dump(results, f, indent=2)

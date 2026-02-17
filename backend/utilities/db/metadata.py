@@ -44,6 +44,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "server_url": start_scan_payload.mcp.server_url,
                 "server_mode": start_scan_payload.mcp.server_mode,
                 "headers": start_scan_payload.mcp.headers,
+                "environment": start_scan_payload.mcp.environment if start_scan_payload.mcp.environment else "development",
             }
         case "llm":
             return {

@@ -39,6 +39,7 @@ class LLMBenchmarkingAgent(BaseAgent):
 
             #initializing
             self.vulnerabilities : list[type[LLMBenchmarkingVulnerability]] | None = None
+            self.metadata : dict | None = None
 
         except Exception as e:
             raise ValueError(f"Error in initializing LLMBenchmarkingAgent: {e}")
@@ -71,6 +72,8 @@ class LLMBenchmarkingAgent(BaseAgent):
                 load_results_into_vector_store=False,
                 summary_manager=LLMBenchmarkingSummaryManager()
             )
+
+            self.metadata = opensource_results.results # SET metadata as the row scan results ⭐
 
             output : type[FinalLLMBenchmarkingVulnerabilities] = opensource_results.summary 
             vulnerabilities = output.vulnerabilities # GET vulnerabilities ⭐
@@ -106,7 +109,7 @@ class LLMBenchmarkingAgent(BaseAgent):
 
             
             parsed_output = self.to_dict_list(self.vulnerabilities)
-            return parsed_output
+            return parsed_output , self.metadata
 
 
         except Exception as e:

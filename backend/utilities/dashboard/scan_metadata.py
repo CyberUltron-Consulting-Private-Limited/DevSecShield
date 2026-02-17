@@ -60,3 +60,35 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "dependency_diagram": dependency_diagram,
         }
 
+    elif scan_type == "sbom_sca":
+        _meta = scan.scan_metadata or {}
+        repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
+        zip_file_used = bool(_meta.get("zip_file_used"))
+        branch = _meta.get("branch",None)
+
+        return {
+            "repo_url": repo_url,
+            "branch": branch,
+            "zip_file_used": zip_file_used,
+        }
+    
+    elif scan_type == "mcp":
+        _meta = scan.scan_metadata or {}
+        server_url = _meta.get("server_url") if _meta.get("server_url") else None
+        server_mode = _meta.get("server_mode") if _meta.get("server_mode") else None
+
+        return {
+            "server_url": server_url,
+            "server_mode": server_mode,
+        }
+    
+
+    elif scan_type == "llm":
+        _meta = scan.scan_metadata or {}
+        model_type = _meta.get("model_type") if _meta.get("model_type") else None
+        probes = _meta.get("probes") if _meta.get("probes") else None
+
+        return {
+            "model_type": model_type,
+            "probes": probes,
+        }

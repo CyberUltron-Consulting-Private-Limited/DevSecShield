@@ -64,4 +64,56 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "category": finding["finding_data"]["category"],
                 "resource": finding["finding_data"]["resource"],
             })
+    
+    elif scan_type == "sbom_sca":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": finding["finding_data"]["title"],
+                "description": finding["finding_data"]["description"],
+                "impact": finding["finding_data"]["impact"],
+                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "status": finding["finding_status"],
+                "compliance_controls": finding["finding_data"]["compliance_controls"],
+                "owasp_top_10": finding["finding_data"]["owasp_top_10"],
+                "suggested_fix": finding["finding_data"]["suggested_fix"],
+                "cves": finding["finding_data"]["cves"],
+                "dependency": finding["finding_data"]["dependency"],
+                "reachability": finding["finding_data"]["reachability"],
+                "dependency_type": finding["finding_data"]["dependency_type"],
+                "license_type": finding["finding_data"]["license_type"],
+            })
+    
+    elif scan_type == "mcp":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": finding["finding_data"]["title"],
+                "description": finding["finding_data"]["description"],
+                "impact": finding["finding_data"]["impact"],
+                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "status": finding["finding_status"],
+                "owasp_top_10": finding["finding_data"]["owasp_top_10"],
+                "owasp_top_10_llm": finding["finding_data"]["owasp_top_10_llm"],
+                "compliance_controls": finding["finding_data"]["compliance_controls"],
+                "suggested_fix": finding["finding_data"]["suggested_fix"],
+                "type": finding["finding_data"]["type"],
+            })
+    
+    elif scan_type == "llm":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": finding["finding_data"]["title"],
+                "description": finding["finding_data"]["description"],
+                "impact": finding["finding_data"]["impact"],
+                "vulnerability_predictions": finding["finding_data"]["vulnerability_predictions"],
+                "owasp_top_10_llm": finding["finding_data"]["owasp_top_10_llm"],
+                "compliance_controls": finding["finding_data"]["compliance_controls"],
+                "suggested_fix": finding["finding_data"]["suggested_fix"],
+            })
+
     return findings

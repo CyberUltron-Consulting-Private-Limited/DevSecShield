@@ -7,7 +7,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Sequence, Session, select
 from pydantic import BaseModel, model_validator
 from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
-from backend.utilities.db.scan_list_item import return_sast_list_item, return_iac_list_item
+from backend.utilities.db.scan_list_item import return_sast_list_item, return_iac_list_item, return_sbom_sca_list_item, return_mcp_list_item, return_llm_list_item
 from rich.console import Console
 from pymongo.database import Database
 import json
@@ -111,6 +111,18 @@ def return_scan_list_for_type(
             
             elif scan.scan_type == "iac":
                 list_item = return_iac_list_item(scan)
+                scans_list_data.append(list_item)
+            
+            elif scan.scan_type == "sbom_sca":
+                list_item = return_sbom_sca_list_item(scan)
+                scans_list_data.append(list_item)
+            
+            elif scan.scan_type == "mcp":
+                list_item = return_mcp_list_item(scan)
+                scans_list_data.append(list_item)
+            
+            elif scan.scan_type == "llm":
+                list_item = return_llm_list_item(scan)
                 scans_list_data.append(list_item)
 
         return (scans_list_data,scans_to_update)

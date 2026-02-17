@@ -99,3 +99,16 @@ def get_mttr_per_day(findings: list[ScanFindings]) -> dict[str, list[int]]:
             avg.seconds % 3600 // 60,
         ]
     return result
+
+
+def get_average_resolution_time(findings: list[ScanFindings]) -> dict:
+    """
+    Average resolution time per finding.
+    Returns: { "finding_title" : 10.5, "finding_title2" : 20.5, "finding_title3" : 30.5 }
+    """
+    average_resolution_time = defaultdict(float)
+    for finding in findings:
+        if finding["finding_status"] == "fixed":
+            time_delta = finding["fixed_at"] - finding["created_at"]
+            average_resolution_time[finding["finding_data"]["title"]] = time_delta.total_seconds()
+    return average_resolution_time

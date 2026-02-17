@@ -560,9 +560,9 @@ function IACResultsAgentView({
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
-              <CardTitle className="text-base">Compliance Framework Coverage</CardTitle>
+              <CardTitle className="text-base">Compliance Violations</CardTitle>
             </div>
-            <CardDescription>Coverage and violations by framework</CardDescription>
+            <CardDescription>Violations by framework</CardDescription>
           </CardHeader>
           <CardContent>
             {(() => {
@@ -766,6 +766,96 @@ function IACResultsAgentView({
           })()}
         </div>
       )}
+
+      {/* Compliance failure trends + Average resolution time */}
+      {dashboard && "compliance_failure_trends" in dashboard && (() => {
+        const iacDash = dashboard as IACScanDashboardData;
+        const failureTrends = iacDash.compliance_failure_trends ?? {};
+        const resolutionTime = iacDash.average_resolution_time ?? {};
+        const hasFailureTrends = Object.keys(failureTrends).length > 0;
+        const hasResolutionTime = Object.keys(resolutionTime).length > 0;
+        if (!hasFailureTrends && !hasResolutionTime) return null;
+        const failureData = Object.entries(failureTrends).map(([name, count], i) => ({
+          name: name.length > 12 ? `${name.slice(0, 12)}…` : name,
+          fullName: name,
+          count,
+          index: i + 1,
+        }));
+        const resolutionData = Object.entries(resolutionTime).map(([name, seconds], i) => ({
+          name: name.length > 12 ? `${name.slice(0, 12)}…` : name,
+          fullName: name,
+          seconds,
+          hours: Math.round((seconds / 3600) * 10) / 10,
+          index: i + 1,
+        }));
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {hasFailureTrends && (
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader>
+                  <CardTitle className="text-base">Compliance failure trends</CardTitle>
+                  <CardDescription>Total compliance controls violated per finding</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={{ name: { label: "Finding" }, count: { label: "Violations", color: "hsl(25 95% 53%)" } }} className="h-[260px] w-full">
+                    <AreaChart data={failureData} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
+                      <defs>
+                        <linearGradient id="fillIacComplianceFailure" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(25 95% 53%)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="hsl(25 95% 53%)" stopOpacity={0.1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}…` : v)} />
+                      <YAxis tickLine={false} axisLine={false} allowDecimals={false} domain={[0, "auto"]} />
+                      <ChartTooltip content={<ChartTooltipContent nameKey="fullName" formatter={(v) => [v, "Violations"]} />} />
+                      <Area type="monotone" dataKey="count" fill="url(#fillIacComplianceFailure)" stroke="hsl(25 95% 53%)" strokeWidth={2} />
+                    </AreaChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+            {hasResolutionTime && (
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader>
+                  <CardTitle className="text-base">Average resolution time</CardTitle>
+                  <CardDescription>Time to resolve (hours) per finding</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer config={{ name: { label: "Finding" }, hours: { label: "Hours", color: "hsl(142 76% 36%)" } }} className="h-[260px] w-full">
+                    <AreaChart data={resolutionData} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
+                      <defs>
+                        <linearGradient id="fillIacResolutionTime" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(142 76% 36%)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="hsl(142 76% 36%)" stopOpacity={0.1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}…` : v)} />
+                      <YAxis tickLine={false} axisLine={false} allowDecimals domain={[0, "auto"]} tickFormatter={(v) => `${v}h`} />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            nameKey="fullName"
+                            formatter={(_, __, ___, ____, payload) => {
+                              const raw = (Array.isArray(payload) ? payload[0]?.payload : payload) as { seconds?: number } | undefined;
+                              const sec = raw?.seconds ?? 0;
+                              const h = Math.floor(sec / 3600);
+                              const m = Math.floor((sec % 3600) / 60);
+                              return [`${h}h ${m}m`, "Resolution time"];
+                            }}
+                          />
+                        }
+                      />
+                      <Area type="monotone" dataKey="hours" fill="url(#fillIacResolutionTime)" stroke="hsl(142 76% 36%)" strokeWidth={2} />
+                    </AreaChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        );
+      })()}
 
       <Card>
         <CardHeader>

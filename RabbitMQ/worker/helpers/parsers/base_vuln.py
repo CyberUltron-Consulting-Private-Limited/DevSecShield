@@ -14,6 +14,10 @@ from helpers.context.schema import (
     OWASPTop10,
     OWASPTop10LLM,
     IACVulnerabilityCategory,
+    Reachability,
+    LicenseCategory,
+    DependencyType,
+    MitreAtlasTactic,
 )
 console = Console()
 
@@ -74,6 +78,29 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
             dumped["owasp_top_10_llm"] = temp_owasp_top_10_llm
             console.print(f"✅ Owasp top 10 LLM parsed successfully",style="bold green")
         
+        if "license_type" in dumped:
+            console.print(f"⚠️ License type found in dumped,parsing it...",style="bold yellow")
+            license_type : type[LicenseCategory] = dumped["license_type"]
+            dumped["license_type"] = license_type.value
+            console.print(f"✅ License type parsed successfully",style="bold green")
+        
+        if "dependency_type" in dumped:
+            console.print(f"⚠️ Dependency type found in dumped,parsing it...",style="bold yellow")
+            dependency_type : type[DependencyType] = dumped["dependency_type"]
+            dumped["dependency_type"] = dependency_type.value
+            console.print(f"✅ Dependency type parsed successfully",style="bold green")
+        
+        if "reachability" in dumped:
+            console.print(f"⚠️ Reachability found in dumped,parsing it...",style="bold yellow")
+            reachability : type[Reachability] = dumped["reachability"]
+            dumped["reachability"] = reachability.value
+            console.print(f"✅ Reachability parsed successfully",style="bold green")
+        
+        if "mitre_atlas_tactic" in dumped:
+            console.print(f"⚠️ Mitre Atlas Tactic found in dumped,parsing it...",style="bold yellow")
+            mitre_atlas_tactic : type[MitreAtlasTactic] = dumped["mitre_atlas_tactic"]
+            dumped["mitre_atlas_tactic"] = mitre_atlas_tactic.value
+            console.print(f"✅ Mitre Atlas Tactic parsed successfully",style="bold green")
         console.print(f"✅ Vulnerability parsed successfully",style="bold green")
         return dumped
     

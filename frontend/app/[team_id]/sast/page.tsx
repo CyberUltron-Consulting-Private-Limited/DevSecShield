@@ -30,8 +30,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, Filter, ArrowUpDown } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, ChevronRight, Filter, ArrowUpDown, Info } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { SastConversation, deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import type { ScanListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1047,7 +1047,13 @@ export default function SASTPage() {
   const [riskScoreFilter, setRiskScoreFilter] = useState<RiskScoreFilter>("all");
   const [scanTypeFilter, setScanTypeFilter] = useState<ScanTypeFilter>("all");
   const [sortBy, setSortBy] = useState<TableSortBy>("none");
+  const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
   const queryClient = useQueryClient();
+
+  const toggleAccordion = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedRowId((prev) => (prev === id ? null : id));
+  };
 
   const query = useQuery({
     queryKey: ['sast-conversations', team_id],
@@ -1096,6 +1102,17 @@ export default function SASTPage() {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+
+  const formatDuration = (duration: number | string | null | undefined): string => {
+    if (duration == null) return "—";
+    if (typeof duration === "string") return duration;
+    const sec = Number(duration);
+    if (isNaN(sec) || sec < 0) return "—";
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   };
 
   const getStatusBadge = (status: ScanStatus) => {
@@ -1450,26 +1467,42 @@ export default function SASTPage() {
                         </TableHeader>
                       <TableBody>
                         {filteredConversations.map((conversation) => (
-                          <TableRow
-                            key={conversation.id}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
-                            onClick={(e) => {
-                              const target = e.target as HTMLElement;
-                              if (target.closest("button") || target.closest("[role='menuitem']")) return;
-                              const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
-                                ? `/${team_id}/sast/${conversation.id}/results`
-                                : `/${team_id}/sast/${conversation.id}`;
-                              router.push(dest);
-                            }}
-                          >
+                          <Fragment key={conversation.id}>
+                            <TableRow
+                              key={conversation.id}
+                              className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                              onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.closest("button") || target.closest("[role='menuitem']") || target.closest("[data-accordion-toggle]")) return;
+                                const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
+                                  ? `/${team_id}/sast/${conversation.id}/results`
+                                  : `/${team_id}/sast/${conversation.id}`;
+                                router.push(dest);
+                              }}
+                            >
                             <TableCell className="font-medium max-w-[160px] min-w-[120px]">
-                              <Link
-                                href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/sast/${conversation.id}/results` : `/${team_id}/sast/${conversation.id}`}
-                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer truncate block"
-                                title={conversation.title}
-                              >
-                                {conversation.title}
-                              </Link>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  data-accordion-toggle
+                                  onClick={(e) => toggleAccordion(conversation.id, e)}
+                                  className="shrink-0 p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                                  aria-label={expandedRowId === conversation.id ? "Collapse details" : "Expand details"}
+                                >
+                                  {expandedRowId === conversation.id ? (
+                                    <ChevronDown className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                                  )}
+                                </button>
+                                <Link
+                                  href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/sast/${conversation.id}/results` : `/${team_id}/sast/${conversation.id}`}
+                                  className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:underline cursor-pointer truncate flex-1 min-w-0"
+                                  title={conversation.title}
+                                >
+                                  {conversation.title}
+                                </Link>
+                              </div>
                             </TableCell>
                             <TableCell className="text-sm">
                               {conversation.app_lang != null && conversation.app_lang !== "" ? (
@@ -1634,6 +1667,173 @@ export default function SASTPage() {
                               </DropdownMenu>
                             </TableCell>
                           </TableRow>
+                          {expandedRowId === conversation.id && (
+                            <TableRow key={`${conversation.id}-accordion`} className="bg-zinc-50/80 dark:bg-zinc-800/50 hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50">
+                              <TableCell colSpan={14} className="p-0 align-top">
+                                <div className="flex flex-col lg:flex-row gap-6 p-6 border-t border-zinc-200 dark:border-zinc-700">
+                                  {/* Scan Information — cards like dashboard */}
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-semibold text-zinc-900 dark:text-white mb-3">Scan Information</h4>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                      <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+                                        <CardContent className="p-0">
+                                          <div className="flex flex-col items-start gap-2">
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                                              <GitBranch className="h-4 w-4 text-blue-500" />
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Branch</p>
+                                              <p className="text-sm font-bold text-zinc-900 dark:text-white truncate max-w-full" title={conversation.branch ?? undefined}>{conversation.branch ?? "—"}</p>
+                                            </div>
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                      <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+                                        <CardContent className="p-0">
+                                          <div className="flex flex-col items-start gap-2">
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/15 dark:bg-teal-500/10">
+                                              <Timer className="h-4 w-4 text-teal-500" />
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Duration</p>
+                                              <p className="text-sm font-bold text-zinc-900 dark:text-white">{formatDuration(conversation.duration)}</p>
+                                            </div>
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                      <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+                                        <CardContent className="p-0">
+                                          <div className="flex flex-col items-start gap-2">
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 dark:bg-sky-500/10">
+                                              <Percent className="h-4 w-4 text-sky-500" />
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Coverage</p>
+                                              <p className="text-sm font-bold text-zinc-900 dark:text-white">{conversation.code_coverage != null ? `${Number(conversation.code_coverage).toFixed(1)}%` : "—"}</p>
+                                            </div>
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                      <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+                                        <CardContent className="p-0">
+                                          {(() => {
+                                            const score = getDisplayRiskScore(conversation);
+                                            const isHigh = score != null && score >= 7;
+                                            return (
+                                              <div className="flex flex-col items-start gap-2">
+                                                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${isHigh ? "bg-red-500/15 dark:bg-red-500/10" : "bg-amber-500/15 dark:bg-amber-500/10"}`}>
+                                                  <Shield className={`h-4 w-4 ${isHigh ? "text-red-500" : "text-amber-500"}`} />
+                                                </div>
+                                                <div>
+                                                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Risk Score</p>
+                                                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{score != null ? score : "—"}</p>
+                                                </div>
+                                              </div>
+                                            );
+                                          })()}
+                                        </CardContent>
+                                      </Card>
+                                      {conversation.repo_url && (
+                                        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3 sm:col-span-2">
+                                          <CardContent className="p-0">
+                                            <div className="flex flex-col items-start gap-2">
+                                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                                                <GitBranch className="h-4 w-4 text-blue-500" />
+                                              </div>
+                                              <div className="min-w-0 flex-1 w-full">
+                                                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Repository</p>
+                                                <a href={conversation.repo_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400 truncate block">
+                                                  {conversation.repo_url}
+                                                </a>
+                                              </div>
+                                            </div>
+                                          </CardContent>
+                                        </Card>
+                                      )}
+                                      {(() => {
+                                        const totalPolicy = (conversation.top_vulnerabilities ?? []).reduce((sum, v) => sum + (v.policy_violation ?? 0), 0);
+                                        return totalPolicy > 0 ? (
+                                          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+                                            <CardContent className="p-0">
+                                              <div className="flex flex-col items-start gap-2">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                                                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                                                </div>
+                                                <div>
+                                                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Policy Violations</p>
+                                                  <p className="text-sm font-bold text-red-600 dark:text-red-400">{totalPolicy} violations</p>
+                                                </div>
+                                              </div>
+                                            </CardContent>
+                                          </Card>
+                                        ) : null;
+                                      })()}
+                                    </div>
+                                  </div>
+                                  {/* Top Vulnerabilities — vertical scroll area */}
+                                  <div className="flex-1 min-w-0 flex flex-col">
+                                    <h4 className="text-sm font-semibold text-zinc-900 dark:text-white mb-3">Top Vulnerabilities</h4>
+                                    <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col min-w-0 overflow-hidden flex-1">
+                                      <CardContent className="p-0 min-h-0 flex-1">
+                                        {conversation.top_vulnerabilities && conversation.top_vulnerabilities.length > 0 ? (
+                                          <ScrollArea className="h-[300px] w-full">
+                                            <div className="space-y-3 p-4 pr-4">
+                                              {conversation.top_vulnerabilities.map((vuln, idx) => (
+                                                <div
+                                                  key={idx}
+                                                  className="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 bg-white dark:bg-zinc-900"
+                                                >
+                                                  <div className="flex items-center gap-2 mb-1.5">
+                                                    <Badge
+                                                      variant="outline"
+                                                      className={`text-xs ${
+                                                        (vuln.impact ?? "").toLowerCase() === "critical"
+                                                          ? "border-red-500 text-red-600 dark:text-red-400"
+                                                          : (vuln.impact ?? "").toLowerCase() === "high"
+                                                            ? "border-orange-500 text-orange-600 dark:text-orange-400"
+                                                            : "border-amber-500 text-amber-600 dark:text-amber-400"
+                                                      }`}
+                                                    >
+                                                      {(vuln.impact ?? "").toLowerCase() === "high" && <AlertTriangle className="h-3 w-3 mr-1" />}
+                                                      {(vuln.impact ?? "").toLowerCase() === "critical" && <AlertTriangle className="h-3 w-3 mr-1" />}
+                                                      {(vuln.impact ?? "").toLowerCase() === "medium" && <Info className="h-3 w-3 mr-1" />}
+                                                      {vuln.impact ?? "Unknown"}
+                                                    </Badge>
+                                                    {(vuln.policy_violation ?? 0) > 0 && (
+                                                      <span className="text-xs text-red-600 dark:text-red-400">{vuln.policy_violation} policy violations</span>
+                                                    )}
+                                                  </div>
+                                                  <p className="font-medium text-zinc-900 dark:text-white text-sm">{vuln.title ?? "Untitled"}</p>
+                                                  {vuln.description && (
+                                                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">{vuln.description}</p>
+                                                  )}
+                                                </div>
+                                              ))}
+                                              {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
+                                                <Button
+                                                  variant="outline"
+                                                  className="w-full border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700 dark:border-green-600 dark:text-green-400 dark:hover:bg-green-950/30 cursor-pointer"
+                                                  onClick={() => router.push(`/${team_id}/sast/${conversation.id}/results?origin=list`)}
+                                                >
+                                                  <Eye className="h-4 w-4 mr-2" />
+                                                  View All Vulnerabilities
+                                                </Button>
+                                              )}
+                                            </div>
+                                          </ScrollArea>
+                                        ) : (
+                                          <div className="p-4">
+                                            <p className="text-sm text-zinc-500 dark:text-zinc-400">No critical or high vulnerabilities found.</p>
+                                          </div>
+                                        )}
+                                      </CardContent>
+                                    </Card>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>

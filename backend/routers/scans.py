@@ -71,14 +71,14 @@ async def list_scans(
             if scans==None :
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No scans found")
             console.print(f"{len(scans)} {type} scans found for team: {team_id}" ,style="bold green")
-            scans_list_data,scans_list_to_update = return_scan_list_for_type(sequence=scans)
+            scans_list_data,scans_list_to_update = return_scan_list_for_type(sequence=scans) # ✅ done for sast , iac , sbom_sca , mcp , llm 
 
             if len(scans_list_to_update) > 0:
                 background_tasks.add_task(update_status_of_scan_in_main_db, scans = scans_list_to_update, engine = engine)
                 console.print(f"Background task added to update statuses of scans: {scans_list_to_update}" ,style="bold green")
             
             
-            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type)
+            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type)  # ✅ done for sast , iac , sbom_sca , mcp , llm 
             return {
                 "scans_list_data": scans_list_data,
                 "dashboard_data": dashboard_data, #dashboard data will look different for different scan types
@@ -332,9 +332,9 @@ async def get_scan(
         else:
             dashboard_data = None
 
-        scan_metadata = get_scan_metadata(scan_type=type, scan=scan)
+        scan_metadata = get_scan_metadata(scan_type=type, scan=scan) # ✅ done for mcp , sbom_sca , llm , sast , iac 
 
-        findings_list = get_findings_for_scan_type(scan_type=type, scan_id=scan_id)
+        findings_list = get_findings_for_scan_type(scan_type=type, scan_id=scan_id) # ✅ done for iac , sbom_sca , mcp , llm , sast 
 
         
 

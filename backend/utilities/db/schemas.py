@@ -127,6 +127,7 @@ class StartMCPScanData(BaseModel):
     server_url: str
     server_mode: Literal["httpstreamable", "sse"]
     headers: dict | None = None
+    environment: Literal["production", "staging", "development"] = "development"
 
     @model_validator(mode="after")
     def validate_data(self):

@@ -4,10 +4,12 @@ from sqlmodel import Session, select
 from fastapi import HTTPException
 from backend.get_db import get_db
 from collections import defaultdict
+from datetime import datetime, timezone
 from backend.get_db import dev_environment
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
-from backend.utilities.dashboard.finding_metrics import get_issue_address_metrics, get_issue_status_metrics
+from backend.utilities.dashboard.finding_metrics import get_average_resolution_time, get_issue_address_metrics, get_issue_status_metrics
+from backend.utilities.dashboard.garak_probes import GARAK_PROBES_DESCRIPTION
 
 risk_score_for_impact = {
     "critical" : 10.0,
@@ -26,6 +28,36 @@ IAC_DEFAULT_CATEGORIES = (
     "Secret Management",
     "Audit and Compliance",
 )
+
+# MCP dashboard: all asset categories for category coverage
+MCP_CATEGORIES = (
+    "web", "file_system", "code_execution", "database", "search", "vector_store",
+    "document_store", "cache", "ai_model", "embedding", "auth", "secrets",
+    "version_control", "package_registry", "container", "cloud", "message_queue",
+    "event_stream", "scheduler", "observability", "config",
+)
+OWASP_LLM_KEYS = (
+    "LLM01:2025 - Prompt Injection",
+    "LLM02:2025 - Insecure Output Handling",
+    "LLM03:2025 - Training Data Poisoning",
+    "LLM04:2025 - Model Denial of Service",
+    "LLM05:2025 - Supply Chain Vulnerabilities",
+    "LLM06:2025 - Sensitive Information Disclosure",
+    "LLM07:2025 - Insecure Plugin Design",
+    "LLM08:2025 - Excessive Agency",
+    "LLM09:2025 - Overreliance",
+    "LLM10:2025 - Model Theft",
+)
+MITRE_ATLAS_TACTICS = (
+    "reconnaissance", "resource_development", "initial_access", "ml_model_access",
+    "execution", "persistence", "privilege_escalation", "defense_evasion",
+    "credential_access", "discovery", "lateral_movement", "collection",
+    "exfiltration", "impact",
+)
+# SBOM SCA license risk levels
+LICENSE_HIGH_RISK = {"strong_copyleft", "network_copyleft", "source_available"}
+LICENSE_MEDIUM_RISK = {"weak_copyleft", "creative_commons", "commercial"}
+LICENSE_DOCSTRING_KEYS = ("permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial")
 
 console = Console()
 def generate_scan_dashboard(
@@ -68,7 +100,7 @@ def generate_scan_dashboard(
             raise ValueError("scan_id must be provided")
         
 
-        # ------------------------------ SAST Dashboard Generation ------------------------------
+        
         if scan_type == "sast":    
             # STEP [ 1 ] : =========== Generate the Dashboard ===========================
             owasp_top_10_metrics = defaultdict(int)
@@ -175,6 +207,12 @@ def generate_scan_dashboard(
                     "finding_title" : 20, ( total number of compliance controls violated )
                     "finding_title" : 30, ( total number of compliance controls violated )
                 }
+            7. Average resolution time ( line chart ) : 
+                {
+                    "finding_title" : 10.5, ( average resolution time in seconds )
+                    "finding_title" : 20.5, ( average resolution time in seconds )
+                    "finding_title" : 30.5, ( average resolution time in seconds )
+                }
             """
             # STEP [ 1 ] : =========== Generate the Dashboard ===========================
             owasp_top_10_metrics = defaultdict(int)
@@ -275,6 +313,7 @@ def generate_scan_dashboard(
             findings = get_findings_for_scan_id(scan_id)
             issue_status_metrics = get_issue_status_metrics(findings)
             issue_address_metrics = get_issue_address_metrics(findings)
+            average_resolution_time = get_average_resolution_time(findings)
 
             return {
                 "owasp_top_10_metrics": dict(owasp_top_10_metrics),
@@ -290,132 +329,314 @@ def generate_scan_dashboard(
                 "average_risk_score_per_category": dict(average_risk_score_per_category),
                 "risk_scores_per_finding": risk_scores_per_finding,
                 "compliance_failure_trends": dict(compliance_failure_trends),
+                "average_resolution_time": average_resolution_time,
             }
         
 
 
 
         elif scan_type == "mcp":
-            # STEP [ 1 ] : =========== Generate the Dashboard ===========================
-            owasp_top_10_metrics = defaultdict(int)
-            owasp_top_10_llm_metrics = defaultdict(int)
-            compliance_controls_metrics = defaultdict(int)
-            risk_metrics = {
-                "Low": 0,
-                "Medium": 0,
-                "High": 0,
-                "Critical": 0
-            }
-            tools_detected:int = 0 
-            tools_vulnerability_metrics = defaultdict(int)
-            tools_impact_metrics : dict = {}
-            tools_compliance_controls_metrics : dict = {}
+            results = results if isinstance(results, dict) else {}
+            tools = results.get("tools") or []
+            prompts = results.get("prompts") or []
+            resources = results.get("resources") or []
 
-            # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
-            for tool in results.get("tools", []):
-                tools_detected += 1
-                tools_vulnerability_metrics[tool["tool_name"]] = len(tool["vulnerabilities"])
-                tools_impact_metrics[tool["tool_name"]] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-                tools_compliance_controls_metrics[tool["tool_name"]] = 0 
-                for vulnerability in tool["vulnerabilities"]:
-                    for key,_ in vulnerability["owasp_top_10"].items(): 
-                        owasp_top_10_metrics[key] += 1
-                    for key,_ in vulnerability["owasp_top_10_llm"].items(): 
-                        owasp_top_10_llm_metrics[key] += 1
-                    for key,_ in vulnerability["compliance_controls"].items():
-                        compliance_controls_metrics[key] += 1
-                        tools_compliance_controls_metrics[tool["tool_name"]] += 1
-                    risk_metrics[vulnerability["impact"]] += 1
-                    impact_key = (vulnerability.get("impact") or "unknown").lower()
-                    if impact_key in tools_impact_metrics[tool["tool_name"]]:
-                        tools_impact_metrics[tool["tool_name"]][impact_key] += 1
+            severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            category_issues = defaultdict(int)
+            category_risk_sum = defaultdict(float)
+            category_risk_count = defaultdict(int)
+            compliance_framework_scores = defaultdict(int)
+            compliance_failure_trends = defaultdict(int)
+            asset_attack_surface: dict[str, str] = {}
+            tool_impact_analysis: dict[str, dict[str, int]] = defaultdict(lambda: {"critical": 0, "high": 0, "medium": 0, "low": 0})
+            asset_compliance_violations: dict[str, int] = {}
+            owasp_llm_counts = defaultdict(int)
 
-                    """
-                    tools_vulnerability_metrics will look like this : 
-                    {
-                        "tool_name": 23 , 
-                        "tool_name2": 45 , 
-                        "tool_name3": 12 , 
-                    }
+            risk_sum = 0.0
+            total_findings_count = 0
+            categories_present: set[str] = set()
 
-                    tools_detected will be integer value of the number of tools detected in the scan
+            def _process_asset_vulns(asset: dict, asset_name_key: str, risk_level_key: str, category_key: str) -> None:
+                name = asset.get(asset_name_key) or "unknown"
+                risk_level = (asset.get(risk_level_key) or "low").lower().strip()
+                category = (asset.get(category_key) or "config").lower().strip().replace(" ", "_")
+                vulns = asset.get("vulnerabilities") or []
+                categories_present.add(category)
+                asset_attack_surface[name] = risk_level
+                comp_count = 0
+                for v in vulns:
+                    imp = (v.get("impact") or "low").lower().strip()
+                    if imp in severity_distribution:
+                        severity_distribution[imp] += 1
+                    rs = risk_score_for_impact.get(imp, risk_score_for_impact["low"])
+                    nonlocal risk_sum, total_findings_count
+                    risk_sum += rs
+                    total_findings_count += 1
+                    category_issues[category] += 1
+                    category_risk_sum[category] += rs
+                    category_risk_count[category] += 1
+                    cc = v.get("compliance_controls") or {}
+                    n_cc = len(cc) if isinstance(cc, (dict, list)) else 0
+                    comp_count += n_cc
+                    for _k, val in (cc.items() if isinstance(cc, dict) else []):
+                        framework = (str(val).split(" - ")[0]).strip().replace(" ", "") if isinstance(val, str) else str(val)
+                        compliance_framework_scores[framework] += 1
+                    title = (v.get("title") or "Untitled").strip()
+                    compliance_failure_trends[title] += n_cc
+                    owasp = v.get("owasp_top_10_llm") or {}
+                    if isinstance(owasp, dict):
+                        for _k, label in owasp.items():
+                            owasp_llm_counts[str(label)] += 1
+                asset_compliance_violations[name] = comp_count
 
-                    tools_impact_metrics will look like this : 
-                    {
-                        "tool_name": {
-                            "critical": 0,
-                            "high": 0,
-                            "medium": 0,
-                            "low": 0
-                        }
-                    }
+            for tool in tools:
+                _process_asset_vulns(tool, "tool_name", "tool_risk_level", "tool_category")
+                vulns = tool.get("vulnerabilities") or []
+                tname = tool.get("tool_name") or "unknown"
+                for v in vulns:
+                    imp = (v.get("impact") or "low").lower().strip()
+                    if imp in tool_impact_analysis[tname]:
+                        tool_impact_analysis[tname][imp] += 1
+            for prompt in prompts:
+                _process_asset_vulns(prompt, "prompt_name", "prompt_risk_level", "prompt_category")
+            for resource in resources:
+                _process_asset_vulns(resource, "resource_name", "resource_risk_level", "resource_category")
 
-                    tools_compliance_controls_metrics will look like this : 
-                    {
-                        "tool_name": 23 , 
-                        "tool_name2": 45 , 
-                        "tool_name3": 12 , 
-                    }
-                    """
-            
+            overall_risk_score = round(risk_sum / total_findings_count, 1) if total_findings_count else 0.0
+            exploitability_index = round((overall_risk_score / 10.0) * 100, 1) if overall_risk_score else 0
+            attack_surface = len(tools) + len(prompts) + len(resources)
+            findings = get_findings_for_scan_id(scan_id)
+            remediation = get_remediation_metrics(findings)
+            mttr = remediation.get("mean_time_to_remediate", [0, 0, 0])
+            active_vulnerabilities = sum(1 for f in findings if f.get("finding_status") not in ("fixed", "ignored"))
+            total_compliance_violations = sum(compliance_framework_scores.values())
+            compliance_score = max(0, round(100 - min(100, total_compliance_violations), 1))
+            category_coverage = round((len(categories_present) / len(MCP_CATEGORIES)) * 100.0, 1) if MCP_CATEGORIES else 0.0
+
+            category_threat_landscape: dict[str, dict[str, float | int]] = {}
+            for cat in set(category_issues.keys()):
+                n = category_risk_count.get(cat, 0)
+                category_threat_landscape[cat] = {
+                    "avg_risk_score": round(category_risk_sum[cat] / n, 1) if n else 0.0,
+                    "total_issues": category_issues[cat],
+                }
+
+            owasp_top_10_llm_metrics = {k: owasp_llm_counts.get(k, 0) for k in OWASP_LLM_KEYS}
 
             return {
-                "owasp_top_10_metrics": owasp_top_10_metrics,
-                "compliance_controls_metrics": compliance_controls_metrics,
-                "risk_metrics": risk_metrics,
-                "tools_detected": tools_detected,
-                "tools_vulnerability_metrics": tools_vulnerability_metrics,
-                "tools_impact_metrics": tools_impact_metrics,
-                "tools_compliance_controls_metrics": tools_compliance_controls_metrics
+                "card_data": {
+                    "overall_risk_score": overall_risk_score,
+                    "total_findings": total_findings_count,
+                    "exploitability_index": exploitability_index,
+                    "attack_surface": attack_surface,
+                    "mttr": mttr,
+                    "active_vulnerabilities": active_vulnerabilities,
+                    "compliance_score": compliance_score,
+                    "category_coverage": category_coverage,
+                },
+                "severity_distribution": severity_distribution,
+                "category_coverage": dict(category_issues),
+                "category_threat_landscape": category_threat_landscape,
+                "compliance_framework_scores": dict(compliance_framework_scores),
+                "compliance_failure_trends": dict(compliance_failure_trends),
+                "asset_attack_surface": asset_attack_surface,
+                "tool_impact_analysis": dict(tool_impact_analysis),
+                "asset_compliance_violations": asset_compliance_violations,
+                "owasp_top_10_llm_metrics": owasp_top_10_llm_metrics,
             }
 
         
         elif scan_type == "llm":
-            owasp_top_10_llm_metrics = defaultdict(int)
-            compliance_controls_metrics = defaultdict(int)
-            risk_metrics = {
-                "Low": 0,
-                "Medium": 0,
-                "High": 0,
-                "Critical": 0
+            results = results if isinstance(results, dict) else {}
+            scan_data = (scan.scan_data or {}) if scan else {}
+            metadata = scan_data.get("metadata") or {}
+            vulns = results.get("vulnerabilities") or []
+            model_vulns = results.get("model_vulnerabilities") or {}
+
+            attacks_run = len(metadata.get("probes_used") or [])
+            probes_summary = metadata.get("probes_summary") or {}
+            if not attacks_run and probes_summary:
+                attacks_run = len(set((p.get("probe") or k for k, p in probes_summary.items() if isinstance(p, dict))))
+            total_tests = metadata.get("total_tests") or 0
+            total_hits = metadata.get("total_hits") or 0
+            pass_rate = round((total_tests - total_hits) / total_tests * 100, 1) if total_tests else 0.0
+            duration_of_scan = scan_data.get("duration_of_scan") or 0
+
+            risk_sum = 0.0
+            n_vulns = len(vulns)
+            for v in vulns:
+                imp = (v.get("impact") or "low").lower().strip()
+                risk_sum += risk_score_for_impact.get(imp, risk_score_for_impact["low"])
+            risk_score = round(risk_sum / n_vulns, 1) if n_vulns else 0.0
+
+            policy_violations = 0
+            owasp_llm_counts = defaultdict(int)
+            mitre_counts = defaultdict(int)
+            vulnerability_breakdown = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            for v in vulns:
+                cc = v.get("compliance_controls") or {}
+                policy_violations += len(cc) if isinstance(cc, (dict, list)) else 0
+                if v.get("mitre_atlas_tactic"):
+                    tactic = (v.get("mitre_atlas_tactic") or "").lower().strip()
+                    mitre_counts[tactic] += 1
+                    policy_violations += 1
+                owasp = v.get("owasp_top_10_llm") or {}
+                if isinstance(owasp, dict):
+                    for _k, label in owasp.items():
+                        owasp_llm_counts[str(label)] += 1
+                        policy_violations += 1
+                imp = (v.get("impact") or "low").lower().strip()
+                if imp in vulnerability_breakdown:
+                    vulnerability_breakdown[imp] += 1
+
+            security_posture = {
+                "jailbreak_resistance_score": float(model_vulns.get("jailbreak_resistance_score") or 0),
+                "injection_resistance_score": float(model_vulns.get("injection_resistance_score") or 0),
+                "hallucination_resistance_score": float(model_vulns.get("hallucination_resistance_score") or 0),
+                "bias_resistance_score": float(model_vulns.get("bias_resistance_score") or 0),
+                "content_safety_score": float(model_vulns.get("content_safety_score") or 0),
+                "data_privacy_score": float(model_vulns.get("data_privacy_score") or 0),
             }
-            vuln_list = results if isinstance(results, list) else (results.get("vulnerabilities") or [])
-            for vulnerability in vuln_list:
-                if not isinstance(vulnerability, dict):
+            owasp_top_10_llm_metrics = {k: owasp_llm_counts.get(k, 0) for k in OWASP_LLM_KEYS}
+            mitre_atlas_metrics = {t: mitre_counts.get(t, 0) for t in MITRE_ATLAS_TACTICS}
+
+            adversarial_attack_outcomes: dict[str, dict[str, int]] = {}
+            attack_details: dict[str, dict[str, int | float | str]] = {}
+            for probe_key, probe_data in probes_summary.items():
+                if not isinstance(probe_data, dict):
                     continue
-                owasp_llm = vulnerability.get("owasp_top_10_llm")
-                if isinstance(owasp_llm, dict):
-                    for key in owasp_llm:
-                        owasp_top_10_llm_metrics[key] += 1
-                elif isinstance(owasp_llm, list):
-                    for item in owasp_llm:
-                        if isinstance(item, dict):
-                            for key in item:
-                                owasp_top_10_llm_metrics[key] += 1
-                compliance = vulnerability.get("compliance_controls")
-                if isinstance(compliance, dict):
-                    for key in compliance:
-                        compliance_controls_metrics[key] += 1
-                elif isinstance(compliance, list):
-                    for item in compliance:
-                        if isinstance(item, dict):
-                            for key in item:
-                                compliance_controls_metrics[key] += 1
-                impact = vulnerability.get("impact")
-                if isinstance(impact, str) and impact.strip():
-                    impact_key = impact.strip().capitalize()
-                    if impact_key in risk_metrics:
-                        risk_metrics[impact_key] += 1
-            
-            console.print(f"OWASP Top 10 LLM Metrics: {owasp_top_10_llm_metrics}",style="bold yellow1")
-            console.print(f"Compliance Controls Metrics: {compliance_controls_metrics}",style="bold yellow")
-            console.print(f"Risk Metrics: {risk_metrics}",style="bold orange1")
+                probe_name = probe_data.get("probe") or probe_key
+                passed = probe_data.get("passed") or 0
+                total = probe_data.get("total") or 0
+                hit_rate = round(passed / total * 100.0, 1) if total else 0.0
+                adversarial_attack_outcomes[probe_name] = {"passed": passed, "total": total}
+                attack_details[probe_name] = {
+                    "passed": passed,
+                    "total": total,
+                    "hit_rate": hit_rate,
+                    "description": GARAK_PROBES_DESCRIPTION.get(probe_name, ""),
+                }
+
             return {
-                "owasp_top_10_llm_metrics": dict(owasp_top_10_llm_metrics),
-                "compliance_controls_metrics": dict(compliance_controls_metrics),
-                "risk_metrics": risk_metrics,
+                "card_data": {
+                    "attacks_run": attacks_run,
+                    "total_vulnerabilities_found": n_vulns,
+                    "pass_rate": pass_rate,
+                    "risk_score": risk_score,
+                    "scan_duration": duration_of_scan,
+                    "policy_violations": policy_violations,
+                },
+                "security_posture": security_posture,
+                "owasp_top_10_llm_metrics": owasp_top_10_llm_metrics,
+                "mitre_atlas_metrics": mitre_atlas_metrics,
+                "vulnerability_breakdown": vulnerability_breakdown,
+                "adversarial_attack_outcomes": adversarial_attack_outcomes,
+                "attack_details": attack_details,
+            }
+        
+
+        elif scan_type == "sbom_sca":
+            results_list = results if isinstance(results, list) else []
+            severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            reachability_counts: dict[str, int] = defaultdict(int)
+            license_counts: dict[str, int] = defaultdict(int)
+            total_policy_violations = 0
+            risk_score_weighted_sum = 0.0
+            total_reachable = 0
+            reachability_risk_sum: dict[str, float] = defaultdict(float)
+            reachability_risk_count: dict[str, int] = defaultdict(int)
+            impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+            for item in results_list:
+                imp = (item.get("impact") or "low").lower().strip()
+                if imp in severity_counts:
+                    severity_counts[imp] += 1
+                reach = (item.get("reachability") or "unknown").lower().strip().replace(" ", "_")
+                reachability_counts[reach] += 1
+                if reach == "reachable":
+                    total_reachable += 1
+                lic = (item.get("license_type") or "unknown").lower().strip()
+                license_counts[lic] += 1
+                cc = item.get("compliance_controls") or {}
+                if isinstance(cc, dict):
+                    total_policy_violations += len(cc)
+                elif isinstance(cc, list):
+                    total_policy_violations += len(cc)
+                w = risk_score_for_impact.get(imp, risk_score_for_impact["low"])
+                risk_score_weighted_sum += w
+                reachability_risk_sum[reach] += w
+                reachability_risk_count[reach] += 1
+
+            total_vulnerabilities = len(results_list)
+            total_critical = severity_counts["critical"]
+            average_risk_score = round(risk_score_weighted_sum / total_vulnerabilities, 1) if total_vulnerabilities else 0.0
+            total_license_risks = sum(1 for item in results_list if (item.get("license_type") or "").lower().strip() in LICENSE_MEDIUM_RISK | LICENSE_HIGH_RISK)
+            total_high_risk_licenses = sum(1 for item in results_list if (item.get("license_type") or "").lower().strip() in LICENSE_HIGH_RISK)
+
+            findings = get_findings_for_scan_id(scan_id)
+            status_metrics = get_issue_status_metrics(findings) if findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
+            remediation_actions_required = {
+                "total_findings": len(findings),
+                "total_fixed": status_metrics.get("fixed", 0),
+                "total_in_progress": status_metrics.get("in_progress", 0),
+                "total_not_started": status_metrics.get("not_started", 0),
+                "total_ignored": status_metrics.get("ignored", 0),
             }
 
+            reachability_distribution = {
+                "not_reachable": reachability_counts.get("not_reachable", 0),
+                "potentially_reachable": reachability_counts.get("potentially_reachable", 0),
+                "reachable": reachability_counts.get("reachable", 0),
+                "unknown": reachability_counts.get("unknown", 0),
+            }
+            other_reach = sum(v for k, v in reachability_counts.items() if k not in reachability_distribution)
+            reachability_distribution["unknown"] = reachability_distribution.get("unknown", 0) + other_reach
+
+            date_key = str(scan.created_at.date()) if (scan and getattr(scan, "created_at", None)) else ""
+            if not date_key:
+                date_key = str(datetime.now(timezone.utc).date())
+            vulnerability_trends_over_time = {date_key: dict(severity_counts)}
+
+            licenses_distribution = {k: license_counts.get(k, 0) for k in LICENSE_DOCSTRING_KEYS}
+
+            top_vulnerabilities_by_risk_score = [
+                {
+                    "dependency": item.get("dependency") or item.get("title") or "—",
+                    "reachability": item.get("reachability") or "unknown",
+                    "dependency_type": item.get("dependency_type") or "—",
+                    "license_type": item.get("license_type") or "unknown",
+                    "impact": item.get("impact") or "low",
+                }
+                for item in results_list
+            ]
+            top_vulnerabilities_by_risk_score.sort(
+                key=lambda x: (impact_order.get((x.get("impact") or "low").lower(), 0),),
+                reverse=True,
+            )
+
+            average_risk_score_per_reachability: dict[str, float] = {}
+            for reach in ("reachable", "potentially_reachable", "not_reachable", "unknown"):
+                n = reachability_risk_count.get(reach, 0)
+                average_risk_score_per_reachability[reach] = round(reachability_risk_sum[reach] / n, 1) if n else 0.0
+
+            return {
+                "card_data": {
+                    "total_vulnerabilities": total_vulnerabilities,
+                    "total_critical_vulnerabilities": total_critical,
+                    "total_policy_violations": total_policy_violations,
+                    "total_license_risks": total_license_risks,
+                    "total_high_risk_licenses": total_high_risk_licenses,
+                    "average_risk_score": average_risk_score,
+                    "total_reachable_issues": total_reachable,
+                },
+                "remediation_actions_required": remediation_actions_required,
+                "severity_distribution": severity_counts,
+                "reachability_distribution": reachability_distribution,
+                "vulnerability_trends_over_time": vulnerability_trends_over_time,
+                "licenses_distribution": licenses_distribution,
+                "top_vulnerabilities_by_risk_score": top_vulnerabilities_by_risk_score,
+                "average_risk_score_per_reachability": average_risk_score_per_reachability,
+            }
             
 
     except Exception as e:

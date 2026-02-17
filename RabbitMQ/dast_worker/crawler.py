@@ -1,64 +1,33 @@
-from urllib.parse import urljoin  # Importing module for URL manipulation
-import requests  # Importing module for sending HTTP requests
-from bs4 import BeautifulSoup  # Importing module for web scraping
-from rich.console import Console
-console = Console()
-class Crawler:
-    def __init__(self, urls=[]):
-        """
-        Constructor for the Crawler class.
-        """
-        self.visited_urls = []  # List to store visited URLs
-        self.urls_to_visit = urls  # List to store URLs yet to be visited
+# crawl_urls.py
+import scrapy
+from urllib.parse import urlparse
 
-    def download_url(self, url):
-        """
-        Function to download the content of a webpage given its URL.
-        """
-        return requests.get(url).text  # Sending a GET request to the URL and returning the HTML content
 
-    def get_linked_urls(self, url, html):
-        """
-        Function to extract linked URLs from the HTML content of a webpage.
-        """
-        soup = BeautifulSoup(html, 'html.parser')  # Creating a BeautifulSoup object
-        for link in soup.find_all('a'):  # Finding all <a> tags in the HTML
-            path = link.get('href')  # Getting the 'href' attribute of the <a> tag
-            if path and path.startswith('/'):  # Checking if the URL is relative
-                path = urljoin(url, path)  # Resolving the relative URL
-            yield path  # Yielding the resolved URL
+class CrawlUrlsSpider(scrapy.Spider):
+    name = "crawl_urls"
 
-    def add_url_to_visit(self, url):
-        """
-        Function to add a URL to the list of URLs to visit if it has not been visited before.
-        """
-        if url not in self.visited_urls and url not in self.urls_to_visit:  # Checking if the URL is not already visited or in the list of URLs to visit
-            self.urls_to_visit.append(url)  # Adding the URL to the list of URLs to visit
+    def __init__(self, start_url=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    def crawl(self, url):
-        """
-        Function to crawl a webpage by downloading its content and extracting linked URLs.
-        """
-        html = self.download_url(url)  # Downloading the content of the webpage
-        for url in self.get_linked_urls(url, html):  # Iterating through linked URLs found in the webpage
-            self.add_url_to_visit(url)  # Adding each linked URL to the list of URLs to visit
+        if not start_url:
+            raise ValueError("Pass start_url")
 
-    def run(self):
-        """
-        Function to start the crawling process.
-        """
-        while self.urls_to_visit:  # Loop until there are URLs to visit
-            url = self.urls_to_visit.pop(0)  # Get the next URL to visit from the list
-            try:
-                self.crawl(url)  # Crawling the webpage
-            except Exception:
-                print(f'Failed to crawl: {url}')  # Handling exceptions
-            finally:
-                self.visited_urls.append(url)  # Adding the visited URL to the list of visited URLs
+        self.start_urls = [start_url]
+        self.allowed_netloc = urlparse(start_url).netloc
+        self.visited = set()
 
-if __name__ == '__main__':
-    crawler = Crawler(urls=['https://www.imdb.com/',"https://demo.testfire.net/login.jsp"]) # Creating an instance of the Crawler class and starting the crawling process with IMDb's homepage as the starting URL
-    crawler.run()
-    console.print(f"Crawling completed",style="bold green")
+    def parse(self, response):
+        if response.url in self.visited:
+            return
 
-    console.print(f"Visited URLs: {crawler.visited_urls}",style="bold yellow")
+        self.visited.add(response.url)
+
+        # output the discovered URL
+        yield {"url": response.url}
+
+        for href in response.css("a::attr(href)").getall():
+            url = response.urljoin(href)
+            parsed = urlparse(url)
+
+            if parsed.scheme in ("http", "https") and parsed.netloc == self.allowed_netloc:
+                yield scrapy.Request(url, callback=self.parse, dont_filter=True)

@@ -1,5 +1,6 @@
 from backend.new_models import Scan, scan_types
-from datetime import datetime , timezone
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 from rich.console import Console
 from fastapi import HTTPException , status
 from backend.utilities.db.findings import get_findings_for_scan_id
@@ -65,8 +66,14 @@ def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_typ
     try:
         if scan_type == "sast":
             return generate_sast_dashboard_data(scans=scans)
-        if scan_type == "iac":
+        elif scan_type == "iac":
             return generate_iac_dashboard_data(scans=scans)
+        elif scan_type == "sbom_sca":
+            return generate_sbom_sca_dashboard_data(scans=scans)
+        elif scan_type == "mcp":
+            return generate_mcp_dashboard_data(scans=scans)
+        elif scan_type == "llm":
+            return generate_llm_dashboard_data(scans=scans)
     except Exception as e:
         console.print(f"Error in generating dashboard data for scan list: {e}", style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating dashboard data for scan list, please try again later")
@@ -77,6 +84,26 @@ def _iac_results(scan: Scan) -> list:
     if not scan.scan_data or not isinstance(scan.scan_data, dict):
         return []
     return scan.scan_data.get("results", []) or []
+
+
+def _sbom_results(scan: Scan) -> list:
+    """Get SBOM/SCA results list from scan.scan_data (dict with 'results' key)."""
+    if not scan.scan_data or not isinstance(scan.scan_data, dict):
+        return []
+    return scan.scan_data.get("results", []) or []
+
+
+def _mcp_cleaned_server_url(scan: Scan) -> str:
+    """Return a short label for MCP scan (from scan_metadata.server_url)."""
+    meta = scan.scan_metadata or {}
+    url = meta.get("server_url") or ""
+    if not url:
+        return f"scan_{scan.id}"
+    url = url.replace("https://", "").replace("http://", "").strip()
+    parts = url.split(".")
+    if len(parts) >= 2:
+        return parts[-2]
+    return url[:30] if len(url) > 30 else url or f"scan_{scan.id}"
 
 
 def generate_iac_dashboard_data(scans: list[Scan]) -> dict:
@@ -626,4 +653,742 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
         "by_language": by_language,
         "top_repos_by_risk": top_repos_by_risk,
         "remediation_metrics": remediation_metrics,
+    }
+
+
+def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
+    """
+    1. Remediation Actions required :
+        {
+            "total_findings" : total_findings,
+            "total_fixed" : total_fixed,
+            "total_in_progress" : total_in_progress,
+            "total_not_started" : total_not_started,
+            "total_ignored" : total_ignored,
+        }
+    2. severity distribution :
+        {
+            "critical" : total_critical_issues,
+            "high" : total_high_issues,
+            "medium" : total_medium_issues,
+            "low" : total_low_issues,
+        }
+    3. Reachability Age ( how long a certail finding remained in not_reachable or potentially_reachable status )
+        {
+            "not_reachable" : total_not_reachable_issues,
+            "potentially_reachable" : total_potentially_reachable_issues,
+            "reachable" : total_reachable_issues,
+            "unknown" : total_unknown_issues,
+        }
+    4. Vulnerability Trends over time : 
+        {
+            "2026-01-01" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+            "2026-01-02" : { "critical" : 15, "high" : 25, "medium" : 35, "low" : 45 },
+            "2026-01-03" : { "critical" : 20, "high" : 30, "medium" : 40, "low" : 50 },
+        }
+    5. Licenses Distribution :
+        {
+            "permissive" : total_permissive_licenses,
+            "public_domain" : total_public_domain_licenses,
+            "weak_copyleft" : total_weak_copyleft_licenses,
+            "creative_commons" : total_creative_commons_licenses,
+            "commercial" : total_commercial_licenses,
+        }
+    6. Top Vulnerabilities by Risk Score :
+        ( sorted by impact in descending order )
+        [
+            {
+                "dependency" : dependency_name,
+                "reachability" : reachability,
+                "dependency_type" : dependency_type,
+                "license_type" : license_type,
+                "impact" : impact, 
+            },
+        ]
+    7. Card Data : 
+        - total vulnerabilities
+        - total critical vulnerabilities
+        - total policy violations
+        - total license risks ( total high and medium risk licenses )
+        - total high risk licenses 
+        note : Risk level splitup for licenses : 
+                Low risk ---> permissive , public_domain , unknown
+                Medium risk ---> weak_copyleft , creative_commons , commercial
+                High risk ---> strong_copyleft , network_copyleft , source_available
+        - average risk score ( based on weighted average of impact class of all vulnerabilities )
+        - total reachable issues 
+    
+    8. Average risk score per reachability level :
+        note : calculate average risk score for each reachability level by weighted average of impact class of all vulnerabilities for that reachability level
+        {
+            "reachable" : average_risk_score_reachable,
+            "potentially_reachable" : average_risk_score_potentially_reachable,
+            "not_reachable" : average_risk_score_not_reachable,
+            "unknown" : average_risk_score_unknown,
+        }
+    
+    """
+    sbom_scans = [s for s in scans if s.scan_type == "sbom_sca"]
+    all_results: list[dict] = []
+    all_findings: list = []
+    for scan in sbom_scans:
+        if scan.scan_status == "success":
+            all_results.extend(_sbom_results(scan))
+        all_findings.extend(get_findings_for_scan_id(scan.id))
+
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    reachability_counts: dict[str, int] = defaultdict(int)
+    vulnerability_trends_over_time: dict[str, dict[str, int]] = {}
+    license_counts: dict[str, int] = defaultdict(int)
+    total_policy_violations = 0
+    risk_score_weighted_sum = 0.0
+    risk_score_count = 0
+    total_reachable = 0
+    reachability_risk_sum: dict[str, float] = defaultdict(float)
+    reachability_risk_count: dict[str, int] = defaultdict(int)
+    impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    license_high_risk = {"strong_copyleft", "network_copyleft", "source_available"}
+    license_medium_risk = {"weak_copyleft", "creative_commons", "commercial"}
+    license_docstring_keys = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial"]
+
+    for scan in sbom_scans:
+        if scan.scan_status != "success":
+            continue
+        results = _sbom_results(scan)
+        if not results:
+            continue
+        date_key = str(scan.created_at.date()) if scan.created_at else ""
+        temp_sev = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for item in results:
+            imp = (item.get("impact") or "low").lower().strip()
+            if imp == "critical":
+                temp_sev["critical"] += 1
+            elif imp == "high":
+                temp_sev["high"] += 1
+            elif imp == "medium":
+                temp_sev["medium"] += 1
+            elif imp == "low":
+                temp_sev["low"] += 1
+            severity_counts[imp] = severity_counts.get(imp, 0) + 1
+            reach = (item.get("reachability") or "unknown").lower().strip().replace(" ", "_")
+            reachability_counts[reach] += 1
+            if reach == "reachable":
+                total_reachable += 1
+            lic = (item.get("license_type") or "unknown").lower().strip()
+            license_counts[lic] += 1
+            cc = item.get("compliance_controls")
+            if isinstance(cc, dict):
+                total_policy_violations += len(cc)
+            elif isinstance(cc, list):
+                total_policy_violations += len(cc)
+            w = impact_order.get(imp, 1)
+            risk_score_weighted_sum += (w / 4) * 10
+            risk_score_count += 1
+            reachability_risk_sum[reach] += (w / 4) * 10
+            reachability_risk_count[reach] += 1
+        if date_key:
+            if date_key not in vulnerability_trends_over_time:
+                vulnerability_trends_over_time[date_key] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            for k in ("critical", "high", "medium", "low"):
+                vulnerability_trends_over_time[date_key][k] = vulnerability_trends_over_time[date_key].get(k, 0) + temp_sev[k]
+
+    status_metrics = get_issue_status_metrics(all_findings) if all_findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
+    remediation_actions_required = {
+        "total_findings": len(all_findings),
+        "total_fixed": status_metrics.get("fixed", 0),
+        "total_in_progress": status_metrics.get("in_progress", 0),
+        "total_not_started": status_metrics.get("not_started", 0),
+        "total_ignored": status_metrics.get("ignored", 0),
+    }
+    severity_distribution = {
+        "critical": severity_counts["critical"],
+        "high": severity_counts["high"],
+        "medium": severity_counts["medium"],
+        "low": severity_counts["low"],
+    }
+    other_reach = sum(v for k, v in reachability_counts.items() if k not in ("not_reachable", "potentially_reachable", "reachable", "unknown"))
+    reachability_distribution = {
+        "not_reachable": reachability_counts.get("not_reachable", 0),
+        "potentially_reachable": reachability_counts.get("potentially_reachable", 0),
+        "reachable": reachability_counts.get("reachable", 0),
+        "unknown": reachability_counts.get("unknown", 0) + other_reach,
+    }
+    vulnerability_trends_over_time = dict(sorted(vulnerability_trends_over_time.items()))
+    licenses_distribution = {k: license_counts.get(k, 0) for k in license_docstring_keys}
+
+    top_vulnerabilities_by_risk_score = []
+    for item in all_results:
+        top_vulnerabilities_by_risk_score.append({
+            "dependency": item.get("dependency") or item.get("title") or "—",
+            "reachability": item.get("reachability") or "unknown",
+            "dependency_type": item.get("dependency_type") or "—",
+            "license_type": item.get("license_type") or "unknown",
+            "impact": item.get("impact") or "low",
+        })
+    top_vulnerabilities_by_risk_score.sort(
+        key=lambda x: (impact_order.get((x.get("impact") or "low").lower(), 0),),
+        reverse=True,
+    )
+
+    total_high_license = sum(license_counts.get(k, 0) for k in license_high_risk)
+    total_medium_license = sum(license_counts.get(k, 0) for k in license_medium_risk)
+    total_license_risks = total_high_license + total_medium_license
+    average_risk_score = round(risk_score_weighted_sum / risk_score_count, 1) if risk_score_count > 0 else 0.0
+    card_data = {
+        "total_vulnerabilities": len(all_results),
+        "total_critical_vulnerabilities": severity_counts["critical"],
+        "total_policy_violations": total_policy_violations,
+        "total_license_risks": total_license_risks,
+        "total_high_risk_licenses": total_high_license,
+        "average_risk_score": average_risk_score,
+        "total_reachable_issues": total_reachable,
+    }
+    average_risk_score_per_reachability_level = {}
+    for r in ["reachable", "potentially_reachable", "not_reachable", "unknown"]:
+        cnt = reachability_risk_count.get(r, 0)
+        if cnt > 0:
+            average_risk_score_per_reachability_level[r] = round(reachability_risk_sum[r] / cnt, 1)
+        else:
+            average_risk_score_per_reachability_level[r] = 0.0
+
+    return {
+        "remediation_actions_required": remediation_actions_required,
+        "severity_distribution": severity_distribution,
+        "reachability_distribution": reachability_distribution,
+        "vulnerability_trends_over_time": vulnerability_trends_over_time,
+        "licenses_distribution": licenses_distribution,
+        "top_vulnerabilities_by_risk_score": top_vulnerabilities_by_risk_score,
+        "card_data": card_data,
+        "average_risk_score_per_reachability_level": average_risk_score_per_reachability_level,
+    }
+
+
+def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
+    """
+    Need to calculate the following metrics : 
+    1. Card Data :
+        - total scans 
+        - total critical issues 
+        - average risk score ( based on weighted average of impact class of all vulnerabilities )
+        - total active scans ( total count of "started" scan_status scans )
+        - total resolved issues ( total count of "fixed" findings across all mcp scans in the past 7 days )
+    
+    2. Scan status distribution ( pie chart ) :
+        {
+            "not_started" : total_not_started_scans,
+            "started" : total_started_scans,
+            "success" : total_success_scans,
+            "failure" : total_failure_scans,
+        }
+    
+    3. Risk score trend ( average risk score per scan ) ( area - line chart )
+        note : calculate average risk score for each scan by weighted average of impact class of all vulnerabilities for that scan
+        {
+            "server_url_cleaned_of_mcp_scan_1" : average_risk_score_per_scan,
+            "server_url_cleaned_of_mcp_scan_2" : average_risk_score_per_scan,
+            "server_url_cleaned_of_mcp_scan_3" : average_risk_score_per_scan,
+        } 
+    4. Risks over time ( area - line chart ) :
+        {
+            "2026-01-01" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+            "2026-01-02" : { "critical" : 15, "high" : 25, "medium" : 35, "low" : 45 },
+            "2026-01-03" : { "critical" : 20, "high" : 30, "medium" : 40, "low" : 50 },
+        }
+    5. Severity distribution ( bar chart ) :
+        {
+            "critical" : total_critical_issues,
+            "high" : total_high_issues,
+            "medium" : total_medium_issues,
+            "low" : total_low_issues,
+        }
+    6. Environment risk analysis ( bar chart ) :
+        {
+            "development" : total_development_issues,
+            "production" : total_production_issues,
+            "staging" : total_staging_issues,
+        }
+    7. Compliance framework distribution ( pie chart ) :
+        {
+            "PCI DSS" : total_pci_dss_issues,
+            "ISO 27001" : total_iso_27001_issues,
+            "ISO 27002" : total_iso_27002_issues,
+            "ISO 27003" : total_iso_27003_issues,
+            "ISO 27004" : total_iso_27004_issues,
+        }
+    8. Remediation status Tracking ( bar chart ) :
+        {
+            "not_started" : total_not_started_issues,
+            "in_progress" : total_in_progress_issues,
+            "fixed" : total_fixed_issues,
+            "ignored" : total_ignored_issues,
+        }
+    9. Asset Category Vulnerabilities ( bar chart ) : 
+        note : calculate this from the tool_category field of tools or prompt_category field of prompts or resource_category field of resources
+        {
+            "web" : total_web_issues,
+            "file_system" : total_file_system_issues,
+            "code_execution" : total_code_execution_issues,
+            "database" : total_database_issues,
+            "search" : total_search_issues,
+            "vector_store" : total_vector_store_issues,
+            "document_store" : total_document_store_issues,
+        }
+    10 . Scan duration trends ( bar chart ) :
+        {
+            "server_url_cleaned_of_mcp_scan_1" : scan_duration_per_scan,
+            "server_url_cleaned_of_mcp_scan_2" : scan_duration_per_scan,
+            "server_url_cleaned_of_mcp_scan_3" : scan_duration_per_scan,
+        }
+    11. Security Posture overview ( radar chart ) ( risk score per category ) ( show all categories and default to 0 if no data is available ) :
+        {
+            "web" : risk_score_web,
+            "file_system" : risk_score_file_system,
+            "code_execution" : risk_score_code_execution,
+            "database" : risk_score_database,
+            "search" : risk_score_search,
+            "vector_store" : risk_score_vector_store,
+            "document_store" : risk_score_document_store,
+        }
+    12. Mean time to remediate per day ( area - line chart ) :
+        {
+            "2026-01-01" : [ 10, 20, 30 ], # where [ days , hours , minutes ]
+            "2026-01-02" : [ 10, 20, 30 ],
+            "2026-01-03" : [ 10, 20, 30 ],
+        }
+    13. Scan effecttiveness trend ( bar chart with multiple bars ) : 
+        note : calculate false positive count by finding count of "ignored" status findings across all mcp scan
+        {
+            "2026-01-01" : { "false_positive" : 10, "total_findings" : 100 },
+            "2026-01-02" : { "false_positive" : 15, "total_findings" : 105 },
+            "2026-01-03" : { "false_positive" : 20, "total_findings" : 110 },
+        }
+    14. Compliance Framework Score trend ( area - line chart ) :
+        {
+            "2026-01-01" : { "PCI DSS" : 80, "ISO 27001" : 85, "ISO 27002" : 90 },
+            "2026-01-02" : { "PCI DSS" : 85, "ISO 27001" : 90, "ISO 27002" : 95 },
+            "2026-01-03" : { "PCI DSS" : 90, "ISO 27001" : 95, "ISO 27002" : 100 },
+        }
+    15. Vulnerability age distribution ( bar chart ) :
+        note : calculate this for the findings that have "fixed" or "ignored" status and use the "created_at" field + "fixed_at" / "ignored_at" field to calculate the age of the finding
+        {
+            "0-30 days" : total_0_30_days_issues,
+            "30-60 days" : total_30_60_days_issues,
+            "60-90 days" : total_60_90_days_issues,
+            "90-120 days" : total_90_120_days_issues,
+            "120-150 days" : total_120_150_days_issues,
+            "150-180 days" : total_150_180_days_issues,
+            "180-210 days" : total_180_210_days_issues,
+        }
+            
+    """
+    mcp_scans = [s for s in scans if s.scan_type == "mcp"]
+    all_mcp_findings: list = []
+    for scan in mcp_scans:
+        all_mcp_findings.extend(get_findings_for_scan_id(scan.id))
+
+    now_utc = datetime.now(timezone.utc)
+    seven_days_ago = now_utc - timedelta(days=7)
+    total_resolved_past_7_days = sum(
+        1 for f in all_mcp_findings
+        if f.get("finding_status") == "fixed" and f.get("fixed_at") and f["fixed_at"] >= seven_days_ago
+    )
+
+    scan_status_distribution = {"not_started": 0, "started": 0, "success": 0, "failure": 0}
+    risk_score_trend: dict[str, float] = {}
+    risks_over_time: dict[str, dict[str, int]] = {}
+    severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    environment_risk_analysis = {"development": 0, "production": 0, "staging": 0}
+    compliance_framework_distribution: dict[str, int] = defaultdict(int)
+    asset_category_vulnerabilities = {
+        "web": 0, "file_system": 0, "code_execution": 0, "database": 0,
+        "search": 0, "vector_store": 0, "document_store": 0,
+    }
+    scan_duration_trends: dict[str, float] = {}
+    security_posture_overview = {
+        "web": 0.0, "file_system": 0.0, "code_execution": 0.0, "database": 0.0,
+        "search": 0.0, "vector_store": 0.0, "document_store": 0.0,
+    }
+    category_risk_sum: dict[str, float] = defaultdict(float)
+    category_risk_count: dict[str, int] = defaultdict(int)
+    compliance_by_date: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    scan_id_to_date: dict[int, str] = {}
+    impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    total_critical = 0
+    total_vulns = 0
+    risk_score_weighted_sum = 0.0
+
+    def _mcp_vulns(scan: Scan) -> list[tuple[dict, str]]:
+        out: list[tuple[dict, str]] = []
+        results = (scan.scan_data or {}).get("results") or {}
+        for tool in results.get("tools") or []:
+            cat = (tool.get("tool_category") or "web").lower().strip().replace(" ", "_")
+            for v in tool.get("vulnerabilities") or []:
+                out.append((v, cat))
+        for prompt in results.get("prompts") or []:
+            cat = (prompt.get("prompt_category") or "web").lower().strip().replace(" ", "_")
+            for v in prompt.get("vulnerabilities") or []:
+                out.append((v, cat))
+        for resource in results.get("resources") or []:
+            cat = (resource.get("resource_category") or "web").lower().strip().replace(" ", "_")
+            for v in resource.get("vulnerabilities") or []:
+                out.append((v, cat))
+        return out
+
+    for scan in mcp_scans:
+        status = (scan.scan_status or "not_started").lower()
+        if status == "started":
+            scan_status_distribution["started"] += 1
+        elif status == "success":
+            scan_status_distribution["success"] += 1
+        elif status == "failure":
+            scan_status_distribution["failure"] += 1
+        else:
+            scan_status_distribution["not_started"] += 1
+
+        vulns_with_cat = _mcp_vulns(scan)
+        if not vulns_with_cat:
+            continue
+        date_key = str(scan.created_at.date()) if scan.created_at else ""
+        server_label = _mcp_cleaned_server_url(scan)
+        temp_sev = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        scan_risk_sum = 0.0
+        for v, cat in vulns_with_cat:
+            imp = (v.get("impact") or "low").lower().strip()
+            if imp == "critical":
+                temp_sev["critical"] += 1
+            elif imp == "high":
+                temp_sev["high"] += 1
+            elif imp == "medium":
+                temp_sev["medium"] += 1
+            elif imp == "low":
+                temp_sev["low"] += 1
+            severity_distribution[imp] = severity_distribution.get(imp, 0) + 1
+            w = impact_order.get(imp, 1)
+            scan_risk_sum += (w / 4) * 10
+            risk_score_weighted_sum += (w / 4) * 10
+            total_vulns += 1
+            if imp == "critical":
+                total_critical += 1
+            env = (scan.scan_metadata or {}).get("environment") or "development"
+            env = str(env).lower().strip()
+            if env in environment_risk_analysis:
+                environment_risk_analysis[env] += 1
+            cc = v.get("compliance_controls")
+            if isinstance(cc, dict):
+                for _k, val in cc.items():
+                    std = _extract_standard(str(val) if val is not None else "")
+                    if std:
+                        compliance_framework_distribution[std] += 1
+                        if date_key:
+                            compliance_by_date[date_key][std] += 1
+            elif isinstance(cc, list):
+                for c in cc:
+                    s = c.get("value", c) if isinstance(c, dict) else c
+                    std = _extract_standard(str(s) if s is not None else "")
+                    if std:
+                        compliance_framework_distribution[std] += 1
+                        if date_key:
+                            compliance_by_date[date_key][std] += 1
+            if cat in asset_category_vulnerabilities:
+                asset_category_vulnerabilities[cat] += 1
+            category_risk_sum[cat] += (w / 4) * 10
+            category_risk_count[cat] += 1
+        if vulns_with_cat:
+            risk_score_trend[server_label] = round(scan_risk_sum / len(vulns_with_cat), 1)
+        if date_key:
+            if date_key not in risks_over_time:
+                risks_over_time[date_key] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            for k in ("critical", "high", "medium", "low"):
+                risks_over_time[date_key][k] = risks_over_time[date_key].get(k, 0) + temp_sev[k]
+        dur = (scan.scan_data or {}).get("duration_of_scan")
+        if dur is not None:
+            scan_duration_trends[server_label] = float(dur)
+        if date_key:
+            scan_id_to_date[scan.id] = date_key
+
+    for cat in security_posture_overview:
+        cnt = category_risk_count.get(cat, 0)
+        if cnt > 0:
+            security_posture_overview[cat] = round(category_risk_sum[cat] / cnt, 1)
+
+    average_risk_score = round(risk_score_weighted_sum / total_vulns, 1) if total_vulns > 0 else 0.0
+    total_active_scans = scan_status_distribution["started"]
+    card_data = {
+        "total_scans": len(mcp_scans),
+        "total_critical_issues": total_critical,
+        "average_risk_score": average_risk_score,
+        "total_active_scans": total_active_scans,
+        "total_resolved_issues": total_resolved_past_7_days,
+    }
+    risks_over_time = dict(sorted(risks_over_time.items()))
+    remediation_status_tracking = get_issue_status_metrics(all_mcp_findings) if all_mcp_findings else {"not_started": 0, "in_progress": 0, "fixed": 0, "ignored": 0}
+    mttr_per_day = get_mttr_per_day(all_mcp_findings) if all_mcp_findings else {}
+    mttr_per_day = dict(sorted(mttr_per_day.items()))
+
+    compliance_framework_score_trend: dict[str, dict[str, float]] = {}
+    for date_key in sorted(compliance_by_date.keys()):
+        by_fw = compliance_by_date[date_key]
+        total_fw = sum(by_fw.values())
+        compliance_framework_score_trend[date_key] = {}
+        for fw, count in by_fw.items():
+            compliance_framework_score_trend[date_key][fw] = round(100 - (count / total_fw * 100), 1) if total_fw > 0 else 100.0
+
+    scan_effectiveness_trend = defaultdict(lambda: {"false_positive": 0, "total_findings": 0})
+    for f in all_mcp_findings:
+        sid = f.get("scan_id")
+        if sid is None:
+            continue
+        date_key = scan_id_to_date.get(sid)
+        if not date_key:
+            continue
+        scan_effectiveness_trend[date_key]["total_findings"] += 1
+        if f.get("finding_status") == "ignored":
+            scan_effectiveness_trend[date_key]["false_positive"] += 1
+    scan_effectiveness_trend = dict(sorted(scan_effectiveness_trend.items()))
+
+    age_buckets = [
+        "0-30 days", "30-60 days", "60-90 days", "90-120 days",
+        "120-150 days", "150-180 days", "180-210 days",
+    ]
+    bucket_limits = [(0, 30), (30, 60), (60, 90), (90, 120), (120, 150), (150, 180), (180, 210)]
+    vulnerability_age_distribution = {b: 0 for b in age_buckets}
+    for f in all_mcp_findings:
+        status = f.get("finding_status")
+        if status not in ("fixed", "ignored"):
+            continue
+        resolved_at = f.get("fixed_at") or f.get("ignored_at")
+        created_at = f.get("created_at")
+        if not resolved_at or not created_at:
+            continue
+        delta = resolved_at - created_at
+        days = delta.days
+        for i, (lo, hi) in enumerate(bucket_limits):
+            if lo <= days < hi:
+                vulnerability_age_distribution[age_buckets[i]] += 1
+                break
+
+    return {
+        "card_data": card_data,
+        "scan_status_distribution": scan_status_distribution,
+        "risk_score_trend": risk_score_trend,
+        "risks_over_time": risks_over_time,
+        "severity_distribution": severity_distribution,
+        "environment_risk_analysis": environment_risk_analysis,
+        "compliance_framework_distribution": dict(compliance_framework_distribution),
+        "remediation_status_tracking": remediation_status_tracking,
+        "asset_category_vulnerabilities": asset_category_vulnerabilities,
+        "scan_duration_trends": scan_duration_trends,
+        "security_posture_overview": security_posture_overview,
+        "mttr_per_day": mttr_per_day,
+        "scan_effectiveness_trend": scan_effectiveness_trend,
+        "compliance_framework_score_trend": compliance_framework_score_trend,
+        "vulnerability_age_distribution": vulnerability_age_distribution,
+    }
+
+
+def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
+    """
+    Need to calculate the following metrics : 
+    1. Card Data :
+        - total scans 
+        - average risk score ( based on weighted average of impact class of all vulnerabilities )
+        - total critical vulnerabilities
+        - total vulnerabilities 
+        - owasp compliance score ( x out of 10 , calculate across all llm scans )
+        - passed rate ( total passed tests across all llm scans , get this from the metadata field of the scan.scan_data .)
+    
+    2. Risk Level Distribution ( pie chart ) :
+        {
+            "critical" : total_critical_issues,
+            "high" : total_high_issues,
+            "medium" : total_medium_issues,
+            "low" : total_low_issues,
+        }
+    3. Attack Vector Test Results ( no of tests passed and failed per probe , across all llm scans )
+        note : get this from the metadata field of the scan.scan_data . that has the test results for each probe.
+        {
+            "probe_name_1" : { "passed" : total_passed_tests, "failed" : total_failed_tests },
+            "probe_name_2" : { "passed" : total_passed_tests, "failed" : total_failed_tests },
+            "probe_name_3" : { "passed" : total_passed_tests, "failed" : total_failed_tests },
+        }
+    4. Model Risk comparison ( area - line chart ) :
+        note : calculate the average risk score for each model by weighted average of impact class of all vulnerabilities for that model
+        {
+            "model_name_1" : average_risk_score_model_1,
+            "model_name_2" : average_risk_score_model_2,
+            "model_name_3" : average_risk_score_model_3,
+        }
+    5. AI Security Posture overview ( radar chart ) 
+        {
+            "jailbreak resistance" : average_jailbreak_resistance_score_across_all_llm_scans,
+            "injection resistance" : average_injection_resistance_score_across_all_llm_scans,
+            "hallucination resistance" : average_hallucination_resistance_score_across_all_llm_scans,
+            "bias resistance" : average_bias_resistance_score_across_all_llm_scans,
+            "content safety" : average_content_safety_score_across_all_llm_scans,
+            "data privacy" : average_data_privacy_score_across_all_llm_scans,
+        }
+    6. OWASP Top 10 LLM Metrics ( pie chart)
+        note : default to 0 for each category if no data is available
+        {
+            "LLM01:2025 - Prompt Injection" : total_prompt_injection_issues,
+            "LLM02:2025 - Insecure Output Handling" : total_insecure_output_handling_issues,
+            "LLM03:2025 - Training Data Poisoning" : total_training_data_poisoning_issues,
+            "LLM04:2025 - Model Denial of Service" : total_model_denial_of_service_issues,
+            "LLM05:2025 - Supply Chain Vulnerabilities" : total_supply_chain_vulnerabilities_issues,
+            "LLM06:2025 - Sensitive Information Disclosure" : total_sensitive_information_disclosure_issues,
+            "LLM07:2025 - Insecure Plugin Design" : total_insecure_plugin_design_issues,
+            "LLM08:2025 - Excessive Agency" : total_excessive_agency_issues,
+            "LLM09:2025 - Overreliance" : total_overreliance_issues,
+            "LLM10:2025 - Model Theft" : total_model_theft_issues,
+        } 
+    """
+    llm_scans = [s for s in scans if s.scan_type == "llm"]
+    all_vulns: list[dict] = []
+    risk_level_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    model_risk_comparison: dict[str, float] = defaultdict(float)
+    model_risk_count: dict[str, int] = defaultdict(int)
+    attack_vector_test_results: dict[str, dict[str, int]] = defaultdict(lambda: {"passed": 0, "failed": 0})
+    posture_scores: dict[str, list[float]] = defaultdict(list)
+    owasp_llm_counts: dict[str, int] = defaultdict(int)
+    total_tests_sum = 0
+    total_hits_sum = 0
+
+    OWASP_LLM_KEYS = [
+        "LLM01:2025 - Prompt Injection",
+        "LLM02:2025 - Insecure Output Handling",
+        "LLM03:2025 - Training Data Poisoning",
+        "LLM04:2025 - Model Denial of Service",
+        "LLM05:2025 - Supply Chain Vulnerabilities",
+        "LLM06:2025 - Sensitive Information Disclosure",
+        "LLM07:2025 - Insecure Plugin Design",
+        "LLM08:2025 - Excessive Agency",
+        "LLM09:2025 - Overreliance",
+        "LLM10:2025 - Model Theft",
+    ]
+    POSTURE_KEY_MAP = {
+        "jailbreak_resistance_score": "jailbreak resistance",
+        "injection_resistance_score": "injection resistance",
+        "hallucination_resistance_score": "hallucination resistance",
+        "bias_resistance_score": "bias resistance",
+        "content_safety_score": "content safety",
+        "data_privacy_score": "data privacy",
+    }
+
+    for scan in llm_scans:
+        if scan.scan_status != "success":
+            continue
+        data = scan.scan_data or {}
+        results = data.get("results") or {}
+        vulns = results.get("vulnerabilities") or []
+        all_vulns.extend(vulns)
+        meta = data.get("metadata") or {}
+        scan_meta = scan.scan_metadata or {}
+        model_name = scan_meta.get("model_name") or meta.get("model_name") or "unknown"
+
+        for v in vulns:
+            imp = (v.get("impact") or "low").lower().strip()
+            if imp in risk_level_distribution:
+                risk_level_distribution[imp] += 1
+            owasp_llm = v.get("owasp_top_10_llm")
+            if isinstance(owasp_llm, dict):
+                for key in owasp_llm:
+                    owasp_llm_counts[key] += 1
+            elif isinstance(owasp_llm, list):
+                for item in owasp_llm:
+                    if isinstance(item, dict):
+                        for key in item:
+                            owasp_llm_counts[key] += 1
+                    else:
+                        owasp_llm_counts[str(item)] += 1
+
+        if vulns:
+            c = sum(1 for v in vulns if (v.get("impact") or "").lower() == "critical")
+            h = sum(1 for v in vulns if (v.get("impact") or "").lower() == "high")
+            m = sum(1 for v in vulns if (v.get("impact") or "").lower() == "medium")
+            l = sum(1 for v in vulns if (v.get("impact") or "").lower() == "low")
+            n = c + h + m + l
+            if n > 0:
+                w = (c * 4 + h * 3 + m * 2 + l * 1) / n
+                score = (w / 4) * 10
+                model_risk_comparison[model_name] += score * n
+                model_risk_count[model_name] += n
+
+        probes_summary = meta.get("probes_summary") or {}
+        for _probe_key, probe_data in probes_summary.items():
+            if not isinstance(probe_data, dict):
+                continue
+            probe_name = probe_data.get("probe") or _probe_key
+            passed = probe_data.get("passed") or 0
+            total = probe_data.get("total") or 0
+            failed = total - passed
+            attack_vector_test_results[probe_name]["passed"] += passed
+            attack_vector_test_results[probe_name]["failed"] += failed
+
+        total_tests = meta.get("total_tests") or 0
+        total_hits = meta.get("total_hits") or 0
+        total_tests_sum += total_tests
+        total_hits_sum += total_hits
+
+        model_vulns = results.get("model_vulnerabilities") or {}
+        for key, label in POSTURE_KEY_MAP.items():
+            val = model_vulns.get(key)
+            if val is not None:
+                try:
+                    posture_scores[label].append(float(val))
+                except (TypeError, ValueError):
+                    pass
+
+    total_critical = risk_level_distribution["critical"]
+    total_vulns = len(all_vulns)
+    risk_score_weighted_sum = 0.0
+    risk_score_count = 0
+    for v in all_vulns:
+        imp = (v.get("impact") or "low").lower().strip()
+        w = impact_order.get(imp, 1)
+        risk_score_weighted_sum += (w / 4) * 10
+        risk_score_count += 1
+    average_risk_score = round(risk_score_weighted_sum / risk_score_count, 1) if risk_score_count > 0 else 0.0
+
+    owasp_categories_with_issues = sum(1 for k in OWASP_LLM_KEYS if owasp_llm_counts.get(k, 0) > 0)
+    owasp_compliance_score = round(10 - min(10, owasp_categories_with_issues), 1)
+    if owasp_compliance_score < 0:
+        owasp_compliance_score = 0.0
+
+    passed_rate = 0.0
+    if total_tests_sum > 0:
+        passed_rate = round((total_tests_sum - total_hits_sum) / total_tests_sum * 100, 1)
+
+    card_data = {
+        "total_scans": len([s for s in llm_scans if s.scan_status == "success"]),
+        "average_risk_score": average_risk_score,
+        "total_critical_vulnerabilities": total_critical,
+        "total_vulnerabilities": total_vulns,
+        "owasp_compliance_score": owasp_compliance_score,
+        "passed_rate": passed_rate,
+    }
+
+    for model_name in model_risk_count:
+        n = model_risk_count[model_name]
+        if n > 0:
+            model_risk_comparison[model_name] = round(model_risk_comparison[model_name] / n, 1)
+    model_risk_comparison = dict(model_risk_comparison)
+
+    ai_security_posture_overview = {}
+    for label in POSTURE_KEY_MAP.values():
+        vals = posture_scores.get(label, [])
+        if vals:
+            ai_security_posture_overview[label] = round(sum(vals) / len(vals), 1)
+        else:
+            ai_security_posture_overview[label] = 0.0
+
+    owasp_top_10_llm_metrics = {k: owasp_llm_counts.get(k, 0) for k in OWASP_LLM_KEYS}
+
+    return {
+        "card_data": card_data,
+        "risk_level_distribution": risk_level_distribution,
+        "attack_vector_test_results": dict(attack_vector_test_results),
+        "model_risk_comparison": model_risk_comparison,
+        "ai_security_posture_overview": ai_security_posture_overview,
+        "owasp_top_10_llm_metrics": owasp_top_10_llm_metrics,
     }

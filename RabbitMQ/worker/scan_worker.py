@@ -179,6 +179,7 @@ try:
 
         
         try:
+            start_time = time.time()
             # STEP [ 1 ] : =========== Validate the context ======================
             repo_context , zip_context , file_context = None, None, None
             if repo_dict_context:
@@ -203,7 +204,12 @@ try:
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "duration_of_scan": duration_of_scan,
+                }
             elif zip_context:
                 agent = SCASBOMAgent(
                     zip_context=zip_context,
@@ -211,7 +217,12 @@ try:
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "duration_of_scan": duration_of_scan,
+                }
             elif file_context:
                 agent = SCASBOMAgent(
                     sbom_json_file_context=file_context,
@@ -219,24 +230,29 @@ try:
                 )
                 result = agent.run_agent()
                 parsed_output = agent.to_dict_list(result)
-                return parsed_output
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "duration_of_scan": duration_of_scan,
+                }
             else:
                 raise Exception("Unable to run sbom_sca scan with the provided context")
 
         except Exception as e:
             console.print(f"Error in sbom_sca task: {str(e)}",style="bold red")
             raise e
-        # finally:
-        #     if zip_context:
-        #         if delete_file(zip_context.bucket_name, zip_context.object_name):
-        #             console.print(f"Deleted zip file from bucket",style="bold green")
-        #         else:
-        #             console.print(f"Error in deleting zip file from bucket",style="bold red")
-        #     if file_context:
-        #         if delete_file(file_context.bucket_name, file_context.object_name):
-        #             console.print(f"Deleted file from bucket",style="bold green")
-        #         else:
-        #             console.print(f"Error in deleting file from bucket",style="bold red")
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket",style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket",style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket",style="bold red")
 
        
     console.print(f"Registered SBOM SCA task",style="bold green")
@@ -331,6 +347,7 @@ try:
         ):
         
         try:
+            start_time = time.time()
             state_update_writer = StateUpdateWriter(self)
             mcp_context = MCPContext.model_validate_json(json.dumps(mcp_dict_context))
             mcp_agent = MCPAgent(
@@ -338,7 +355,12 @@ try:
                 state_update_writer=state_update_writer,
             )
             result = mcp_agent.run_agent()
-            return result
+            end_time = time.time()
+            duration_of_scan = end_time - start_time
+            return {
+                "results": result,
+                "duration_of_scan": duration_of_scan,
+            }
         except Exception as e:
             console.print(f"Error in mcp_scan task: {str(e)}",style="bold red")
             raise e
@@ -349,14 +371,21 @@ try:
         llm_benchmark_dict_context: dict,
         ):
         try:
+            start_time = time.time()
             state_update_writer = StateUpdateWriter(self)
             llm_benchmark_context = LLMBenchmarkingContext.model_validate_json(json.dumps(llm_benchmark_dict_context))
             llm_benchmark_agent = LLMBenchmarkingAgent(
                 llm_benchmarking_context=llm_benchmark_context,
                 state_update_writer=state_update_writer,
             )
-            result = llm_benchmark_agent.run_agent()
-            return result
+            result , metadata = llm_benchmark_agent.run_agent()
+            end_time = time.time()
+            duration_of_scan = end_time - start_time
+            return {
+                "results": result,
+                "metadata": metadata,
+                "duration_of_scan": duration_of_scan,
+            }
         except Exception as e:
             console.print(f"Error in llm_benchmark_scan task: {str(e)}",style="bold red")
             raise e

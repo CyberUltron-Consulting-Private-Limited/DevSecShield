@@ -293,7 +293,10 @@ export interface IACScanDashboardData {
   issues_by_severity?: Record<string, number>
   average_risk_score_per_category?: Record<string, number>
   risk_scores_per_finding?: Record<string, number>
+  /** finding_title -> total number of compliance controls violated */
   compliance_failure_trends?: Record<string, number>
+  /** finding_title -> average resolution time in seconds */
+  average_resolution_time?: Record<string, number>
 }
 
 export interface SastConversationResponse {

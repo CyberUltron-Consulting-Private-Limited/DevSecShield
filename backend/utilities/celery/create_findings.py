@@ -39,7 +39,7 @@ def create_findings_in_mongo_db(
         mongo_db["scan_findings"].insert_many(to_insert)
         
     
-    elif scan_type == "iac":
+    elif scan_type == "iac" or scan_type == "sbom_sca" :
         results = scan_results["results"]
         to_insert = []
         for vulnerability in results:
@@ -55,11 +55,66 @@ def create_findings_in_mongo_db(
             to_insert.append(scan_finding)
         mongo_db["scan_findings"].insert_many(to_insert)
 
-    
 
-    elif scan_type == "sbom_sca":
-        pass
+            
     elif scan_type == "mcp":
-        pass
+        results = scan_results["results"]
+        to_insert = []
+        for tool in results["tools"]:
+            for vulnerability in tool["vulnerabilities"]:
+                vulnerability["type"] = "tool"
+                scan_finding = ScanFindings(
+                    scan_id = scan_id,
+                    finding_data = vulnerability,
+                    created_at = datetime.now(timezone.utc),
+                    finding_status = "not_started",
+                    fixed_at = None,
+                    ignored_at = None,
+                    info = None,
+                )
+                to_insert.append(scan_finding)
+        
+        for prompt in results["prompts"]:
+            for vulnerability in prompt["vulnerabilities"]:
+                vulnerability["type"] = "prompt"
+                scan_finding = ScanFindings(
+                    scan_id = scan_id,
+                    finding_data = vulnerability,
+                    created_at = datetime.now(timezone.utc),
+                    finding_status = "not_started",
+                    fixed_at = None,
+                    ignored_at = None,
+                    info = None,
+                )
+                to_insert.append(scan_finding)
+        
+        for resource in results["resources"]:
+            for vulnerability in resource["vulnerabilities"]:
+                vulnerability["type"] = "resource"
+                scan_finding = ScanFindings(
+                    scan_id = scan_id,
+                    finding_data = vulnerability,
+                    created_at = datetime.now(timezone.utc),
+                    finding_status = "not_started",
+                    fixed_at = None,
+                    ignored_at = None,
+                    info = None,
+                )
+                to_insert.append(scan_finding)
+        
+
+        mongo_db["scan_findings"].insert_many(to_insert)
+
     elif scan_type == "llm":
-        pass
+        results = scan_results["results"]
+        to_insert = []
+        for vulnerability in results["vulnerabilities"]:
+            scan_finding = ScanFindings(
+                scan_id = scan_id,
+                finding_data = vulnerability,
+                created_at = datetime.now(timezone.utc),
+                finding_status = "not_started",
+                fixed_at = None,
+                ignored_at = None,
+                info = None,
+            )

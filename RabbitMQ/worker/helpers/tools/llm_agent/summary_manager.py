@@ -1,5 +1,5 @@
 from helpers.context import  BaseSummaryManager 
-from helpers.context.schema import LLMBenchmarkingVulnerability
+from helpers.context.schema import LLMBenchmarkingVulnerability , LLMModelVulnerability
 from helpers.context.output_model import OutputModelManager
 from pydantic import BaseModel, Field
 from rich.console import Console
@@ -8,6 +8,7 @@ console = Console()
 
 class FinalLLMBenchmarkingVulnerabilities(BaseModel):
     vulnerabilities: list[LLMBenchmarkingVulnerability] = Field(..., description="A list of LLM Benchmarking Vulnerabilities")
+    model_vulnerabilities: LLMModelVulnerability = Field(..., description="LLM Model Vulnerabilities as predicted risk scores ")
 
 RefinePrompt = """
 ## Your Task : \n
@@ -54,11 +55,9 @@ Important : Combine at most 3 LLM Benchmarking Vulnerabilities into a single LLM
 class LLMBenchmarkingSummaryManager(BaseSummaryManager,OutputModelManager):
     def __init__(self):
 
-        output_model = self.get_llm_benchmarking_output_model()
-
 
         super().__init__(
-            summary_output_model=output_model,
+            summary_output_model=FinalLLMBenchmarkingVulnerabilities,
             refine_prompt_string = RefinePrompt,
             map_prompt_string = MapPrompt,
             combine_prompt_string = CombinePrompt,
@@ -86,10 +85,21 @@ class LLMBenchmarkingSummaryManager(BaseSummaryManager,OutputModelManager):
                 Impact: {vulnerability.impact} \n
                 OWASP Top 10: {vulnerability.owasp_top_10_llm} \n
                 Suggested Fix: {vulnerability.suggested_fix} \n
+                Vulnerability Predictions: {vulnerability.vulnerability_predictions.model_dump()} \n
                 =======================================================================================
                 \n\n
                 """
                 output_model_string += temp
+            
+            model_vulnerabilities_string = f"""
+            \n\n
+            =======================================================================================
+            Model Vulnerabilities: {input.model_vulnerabilities.model_dump()} \n
+            =======================================================================================
+            \n\n
+            """
+            output_model_string += model_vulnerabilities_string
+
             
             final_string = self.summary_starting_string + output_model_string
 

@@ -30,7 +30,11 @@ class IACVulnerability(CodebaseVulnerability):
 
 
 class DependencyVulnerability(BaseVulnerability):
-    dependencies : list[str] = Field(description="A list of dependencies that this vulnerability is related to")
+    dependency : str = Field(description="The name of the dependency / package ( with version ) that is vulnerable")
+    reachability : Reachability = Field(description="The reachability of the vulnerability")
+    dependency_type : DependencyType = Field(description="The type of the dependency / package ,whether it is a direct or transitive dependency")
+    license_type : LicenseCategory = Field(description="The license type of the dependency / package , whether it is permissive, weak_copyleft, strong_copyleft, network_copyleft, source_available, commercial, public_domain, creative_commons, unknown")
+
 
 
 class FallbackCVEEnum(Enum):
@@ -57,23 +61,45 @@ class FallbackCVEEnum(Enum):
 
 
 
+class LLMVulnerabilityPredictions(BaseModel):
+    prompt_injection_score : int = Field(description="A score indicating the likelihood of prompt injection vulnerability , score ranges from 0 to 10")
+    jailbreak_score : int = Field(description="A score indicating the likelihood of jailbreak vulnerability , score ranges from 0 to 10")
+    bias_score : int = Field(description="A score indicating the likelihood of bias vulnerability , score ranges from 0 to 10")
+    hallucination_score : int = Field(description="A score indicating the likelihood of hallucination vulnerability , score ranges from 0 to 10")
+
+
 
 class LLMBenchmarkingVulnerability(BaseModel):
     title : str = Field(description="The title of the vulnerability")
     description : str = Field(description="The description of the vulnerability")
     impact : Impact = Field(description="The impact of the vulnerability")
+    vulnerability_predictions : LLMVulnerabilityPredictions = Field(description="The predictions of the vulnerability")
     owasp_top_10_llm : list[OWASPTop10LLM] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
+    mitre_atlas_tactic : MitreAtlasTactic = Field(description="The MITRE ATLAS tactic that this vulnerability is related to")
     compliance_controls : list[ComplianceControls] = Field(description="A list of compliance controls that this vulnerability is related to")
     suggested_fix : str = Field(description="The suggested fix for the vulnerability")
 
 
+class LLMModelVulnerability(BaseModel):
+    jailbreak_resistance_score : int = Field(description="A score indicating the likelihood of jailbreak resistance vulnerability , score ranges from 0 to 10")
+    injection_resistance_score : int = Field(description="A score indicating the likelihood of injection resistance vulnerability , score ranges from 0 to 10")
+    hallucination_resistance_score : int = Field(description="A score indicating the likelihood of hallucination resistance vulnerability , score ranges from 0 to 10")
+    bias_resistance_score : int = Field(description="A score indicating the likelihood of bias resistance vulnerability , score ranges from 0 to 10")
+    content_safety_score : int = Field(description="A score indicating the likelihood of content safety vulnerability , score ranges from 0 to 10")
+    data_privacy_score : int = Field(description="A score indicating the likelihood of data privacy vulnerability , score ranges from 0 to 10")
+
 class MCPVulnerability(BaseModel):
-    title : str = Field(description="The title of the vulnerability for the tool")
-    description : str = Field(description="The description of the vulnerability for the tool")
+    title : str = Field(description="The title of the vulnerability for the tool/resource")
+    description : str = Field(description="The description of the vulnerability for the tool/resource")
     impact : Impact = Field(description="The impact of the vulnerability")
     owasp_top_10 : list[OWASPTop10] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
     owasp_top_10_llm : list[OWASPTop10LLM] = Field(description="A list of OWASP top 10 vulnerabilities that this vulnerability is related to")
     compliance_controls : list[ComplianceControls] = Field(description="A list of compliance controls that this vulnerability is related to")
     suggested_fix : str = Field(description="The suggested fix for the vulnerability")
+
+class MCPResourceResponse(BaseModel):
+    resource_category : MCPResourceCategory = Field(description="The category of the resource")
+    resource_risk_level : Impact = Field(description="The risk level of the resource")
+
 
 
