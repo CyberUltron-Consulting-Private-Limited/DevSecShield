@@ -69,26 +69,26 @@ def test(
 # ------------------------------------------- testing MCP ---------------------------------------------------------------------------
 
 # http_server_url = "https://mcp.brightdata.com/mcp?token=391e10c0-0785-4c46-bfba-4df8d3933968&groups=advanced_scraping,ecommerce"
-# # http_server_url = "https://mcp.deepwiki.com/mcp"
-# sse_server_url = "https://mcp.brightdata.com/sse?token=391e10c0-0785-4c46-bfba-4df8d3933968&groups=advanced_scraping"
-# sse_server_mode = "sse"
-# sse_mcp_dict_context = {
-#     "server_url":sse_server_url,
-#     "server_mode":sse_server_mode
-# }
-# sse_mcp_kwargs = {
-#     "mcp_dict_context":sse_mcp_dict_context
-# }
-# server_mode = "httpstreamable"
-# mcp_dict_context = {
-#     "server_url":http_server_url,
-#     "server_mode":server_mode
-# }   
-# mcp_kwargs = {
-#     "mcp_dict_context":mcp_dict_context
-# }
-# # test(task_name="scan_worker.mcp_scan",kwargs=sse_mcp_kwargs,result_file_name="worker_mcp_agent_results_testing.json")
-# test(task_name="scan_worker.mcp_estimation",kwargs=mcp_kwargs,result_file_name="worker_mcp_agent_results_testing.json")
+http_server_url = "https://mcp.deepwiki.com/mcp"
+sse_server_url = "https://mcp.brightdata.com/sse?token=391e10c0-0785-4c46-bfba-4df8d3933968&groups=advanced_scraping"
+sse_server_mode = "sse"
+sse_mcp_dict_context = {
+    "server_url":sse_server_url,
+    "server_mode":sse_server_mode
+}
+sse_mcp_kwargs = {
+    "mcp_dict_context":sse_mcp_dict_context
+}
+server_mode = "httpstreamable"
+mcp_dict_context = {
+    "server_url":http_server_url,
+    "server_mode":server_mode
+}   
+mcp_kwargs = {
+    "mcp_dict_context":mcp_dict_context
+}
+# test(task_name="scan_worker.mcp_scan",kwargs=sse_mcp_kwargs,result_file_name="worker_mcp_agent_results_testing.json")
+test(task_name="scan_worker.mcp_estimation",kwargs=mcp_kwargs,result_file_name="worker_mcp_agent_results_testing.json")
 
 
 # ------------------------------------------- testing LLM Benchmarking , tested and works ✅ ---------------------------------------------------------------------------

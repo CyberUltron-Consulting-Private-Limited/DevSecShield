@@ -15,11 +15,21 @@ import {
   Wrench,
   MessageSquare,
   FolderOpen,
-  Eye,
   BarChart3,
   TrendingUp,
   Shield,
   Ticket,
+  Pencil,
+  CheckCircle,
+  EyeOff,
+  Loader2,
+  Circle,
+  MoreVertical,
+  Gauge,
+  Bug,
+  Clock,
+  Percent,
+  Crosshair,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -28,13 +38,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { MCPDashboardData, ScanTicketingIntegrationSettings } from "@/utils/backend_api";
-import { updateScan, createTicket } from "@/utils/backend_api";
+import type { MCPDashboardData, MCPFinding, MCPScanMetadata, ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { updateScan, createTicket, toggleFindingState } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
@@ -44,7 +60,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 
 // ----- Agent format -----
 export interface MCPVulnerabilityAgent {
@@ -117,6 +133,9 @@ interface MCPResultsProps {
   conversationId?: number;
   teamId?: string;
   dashboard?: MCPDashboardData | null;
+  findings?: MCPFinding[] | null;
+  scanMetadata?: MCPScanMetadata | Record<string, unknown> | null;
+  onFindingsUpdated?: () => void;
   integrationSettings?: Record<string, unknown> | null;
   onIntegrationSettingsUpdated?: () => void;
   onRefresh?: () => void;
@@ -150,9 +169,42 @@ function renderKeyValue(obj: Record<string, string> | undefined) {
   );
 }
 
-// ----- Dashboard charts (tools_* metrics) -----
-const toolsVulnChartConfig = { name: { label: "Tool" }, count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" } } satisfies ChartConfig;
-const toolsComplianceChartConfig = { name: { label: "Tool" }, count: { label: "Compliance controls", color: "hsl(217 91% 60%)" } } satisfies ChartConfig;
+/** Colored box classes for finding status (fixed, ignored, in_progress, not_started) */
+function getFindingStatusBadgeClass(status: string): string {
+  const s = (status ?? "").toLowerCase().replace(/\s/g, "_");
+  if (s === "fixed") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
+  if (s === "ignored") return "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200";
+  if (s === "in_progress") return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
+  if (s === "not_started") return "bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300";
+  return "bg-zinc-100 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-300";
+}
+
+function countFindingField(val: unknown): number {
+  if (val == null) return 0;
+  if (Array.isArray(val)) return val.length;
+  if (typeof val === "object" && !Array.isArray(val)) return Object.keys(val).length;
+  return 0;
+}
+
+// ----- Scan metadata (colored boxes below title) -----
+function MCPScanMetadataBlock({ scanMetadata }: { scanMetadata: MCPScanMetadata | Record<string, unknown> | null }) {
+  if (!scanMetadata || typeof scanMetadata !== "object") return null;
+  const server_url = (scanMetadata as MCPScanMetadata).server_url ?? (scanMetadata as Record<string, unknown>).server_url;
+  const server_mode = (scanMetadata as MCPScanMetadata).server_mode ?? (scanMetadata as Record<string, unknown>).server_mode;
+  if (server_url == null && server_mode == null) return null;
+  return (
+    <div className="flex flex-wrap gap-3 mt-2">
+      {server_url != null && String(server_url).trim() && (
+        <div className="flex flex-col gap-0.5 rounded-lg bg-violet-500/15 dark:bg-violet-500/20 border border-violet-200/50 dark:border-violet-500/30 px-4 py-2 min-w-0 max-w-full">
+          <span className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">Server URL</span>
+          <span className="font-mono text-sm text-violet-800 dark:text-violet-200 break-all">{String(server_url).trim()}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----- Dashboard charts (tools impact + full dashboard) -----
 const toolsImpactChartConfig = {
   name: { label: "Tool" },
   critical: { label: "Critical", color: "hsl(0 84% 60%)" },
@@ -161,17 +213,36 @@ const toolsImpactChartConfig = {
   low: { label: "Low", color: "hsl(142 71% 45%)" },
 } satisfies ChartConfig;
 
-function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
-  const toolsVuln = dashboard.tools_vulnerability_metrics ?? {};
-  const toolsCompliance = dashboard.tools_compliance_controls_metrics ?? {};
-  const toolsImpact = dashboard.tools_impact_metrics ?? {};
+const SEVERITY_PIE_COLORS = ["hsl(0 84% 60%)", "hsl(25 95% 53%)", "hsl(48 96% 53%)", "hsl(142 71% 45%)"];
+const COMPLIANCE_PIE_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#2563eb", "#7c3aed", "#0d9488", "#0891b2", "#db2777", "#65a30d", "#64748b"];
 
-  const vulnBarData = Object.entries(toolsVuln)
-    .map(([name, count]) => ({ name: name.length > 12 ? `${name.slice(0, 12)}...` : name, count }))
-    .sort((a, b) => b.count - a.count);
-  const complianceBarData = Object.entries(toolsCompliance)
-    .map(([name, count]) => ({ name: name.length > 12 ? `${name.slice(0, 12)}...` : name, count }))
-    .sort((a, b) => b.count - a.count);
+function formatMttr(mttr: number | [number, number, number] | undefined): string {
+  if (mttr == null) return "—";
+  if (Array.isArray(mttr)) {
+    const [days, hours, mins] = mttr;
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (mins > 0 || parts.length === 0) parts.push(`${mins}m`);
+    return parts.join(" ");
+  }
+  return `${Number(mttr)}`;
+}
+
+function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
+  const cardData = dashboard.card_data;
+  const severityDist = dashboard.severity_distribution ?? { critical: 0, high: 0, medium: 0, low: 0 };
+  const categoryCoverage = dashboard.category_coverage ?? {};
+  const categoryThreat = dashboard.category_threat_landscape ?? {};
+  const complianceFrameworks = dashboard.compliance_framework_scores ?? {};
+  const complianceFailureTrends = dashboard.compliance_failure_trends ?? {};
+  const assetAttackSurface = dashboard.asset_attack_surface ?? {};
+  const toolImpactAnalysis = dashboard.tool_impact_analysis ?? dashboard.tools_impact_metrics ?? {};
+  const assetComplianceViolations = dashboard.asset_compliance_violations ?? {};
+  const owaspLlmMetrics = dashboard.owasp_top_10_llm_metrics ?? {};
+
+  const toolsImpact = toolImpactAnalysis;
+
   const impactAreaData = Object.entries(toolsImpact).map(([name, counts]) => ({
     name: name.length > 10 ? `${name.slice(0, 10)}...` : name,
     critical: counts?.critical ?? 0,
@@ -180,63 +251,171 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
     low: counts?.low ?? 0,
   }));
 
-  const hasVuln = vulnBarData.length > 0 && vulnBarData.some((d) => d.count > 0);
-  const hasCompliance = complianceBarData.length > 0 && complianceBarData.some((d) => d.count > 0);
   const hasImpact = impactAreaData.length > 0 && impactAreaData.some((d) => d.critical + d.high + d.medium + d.low > 0);
+
+  const severityPieData = [
+    { name: "Critical", value: severityDist.critical, fill: SEVERITY_PIE_COLORS[0] },
+    { name: "High", value: severityDist.high, fill: SEVERITY_PIE_COLORS[1] },
+    { name: "Medium", value: severityDist.medium, fill: SEVERITY_PIE_COLORS[2] },
+    { name: "Low", value: severityDist.low, fill: SEVERITY_PIE_COLORS[3] },
+  ].filter((d) => d.value > 0);
+  const categoryPieData = Object.entries(categoryCoverage)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([name, value]) => ({ name: name.replace(/_/g, " "), value: Number(value), fill: "hsl(217 91% 60%)" }));
+  const compliancePieData = Object.entries(complianceFrameworks)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([name, value], i) => ({ name, value: Number(value), fill: COMPLIANCE_PIE_COLORS[i % COMPLIANCE_PIE_COLORS.length] }));
+  const categoryThreatBarData = Object.entries(categoryThreat).map(([name, v]) => ({
+    name: name.replace(/_/g, " "),
+    avg_risk_score: typeof v === "object" && v && "avg_risk_score" in v ? Number((v as { avg_risk_score: number }).avg_risk_score) : 0,
+    total_issues: typeof v === "object" && v && "total_issues" in v ? Number((v as { total_issues: number }).total_issues) : 0,
+  }));
+  const complianceFailureData = Object.entries(complianceFailureTrends).map(([name, value]) => ({
+    name: name.length > 20 ? `${name.slice(0, 20)}...` : name,
+    count: Number(value),
+  }));
+  const assetAttackAreaData = Object.entries(assetAttackSurface).map(([name, level]) => {
+    const levelStr = String(level).toLowerCase();
+    const score = levelStr === "critical" ? 4 : levelStr === "high" ? 3 : levelStr === "medium" ? 2 : 1;
+    return {
+      name: name.length > 15 ? `${name.slice(0, 15)}...` : name,
+      score,
+    };
+  });
+  const assetComplianceAreaData = Object.entries(assetComplianceViolations)
+    .map(([name, value]) => ({
+      name: name.length > 12 ? `${name.slice(0, 12)}...` : name,
+      count: Number(value),
+    }))
+    .filter((d) => d.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const owaspLlmData = Object.entries(owaspLlmMetrics)
+    .filter(([, v]) => Number(v) > 0)
+    .map(([name, value]) => ({ name: name.includes(" - ") ? name.split(" - ")[0] : name, count: Number(value) }));
+
+  const hasCardData = cardData && typeof cardData === "object";
+  const hasSeverityPie = severityPieData.length > 0;
+  const hasCategoryPie = categoryPieData.length > 0;
+  const hasCategoryThreat = categoryThreatBarData.length > 0 && categoryThreatBarData.some((d) => d.avg_risk_score > 0 || d.total_issues > 0);
+  const hasCompliancePie = compliancePieData.length > 0;
+  const hasComplianceTrends = complianceFailureData.length > 0;
+  const hasAssetAttack = assetAttackAreaData.length > 0;
+  const hasAssetCompliance = assetComplianceAreaData.length > 0;
+  const hasOwaspLlm = owaspLlmData.length > 0;
+
+  const overallRiskScore = cardData?.overall_risk_score != null ? Number(cardData.overall_risk_score) : null;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Tool vulnerability count
-            </CardTitle>
-            <CardDescription>Findings per tool</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasVuln ? (
-              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
-            ) : (
-              <ChartContainer config={toolsVulnChartConfig} className="aspect-auto h-[260px] w-full pb-8">
-                <BarChart data={vulnBarData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v)} />
-                  <YAxis type="number" tickLine={false} axisLine={false} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="var(--color-count)" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              Tool compliance controls count
-            </CardTitle>
-            <CardDescription>Compliance findings per tool</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!hasCompliance ? (
-              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
-            ) : (
-              <ChartContainer config={toolsComplianceChartConfig} className="aspect-auto h-[260px] w-full pb-8">
-                <BarChart data={complianceBarData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
-                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v)} />
-                  <YAxis type="number" tickLine={false} axisLine={false} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="var(--color-count)" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
+      {hasCardData && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${overallRiskScore != null && overallRiskScore >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : overallRiskScore != null && overallRiskScore >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                  <Gauge className={`h-4 w-4 ${overallRiskScore != null && overallRiskScore >= 7 ? "text-red-500" : overallRiskScore != null && overallRiskScore >= 5 ? "text-amber-500" : "text-green-500"}`} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Risk score</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.overall_risk_score ?? "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total findings</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.total_findings ?? "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                  <TrendingUp className="h-4 w-4 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Exploitability index</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.exploitability_index != null ? `${cardData.exploitability_index}%` : "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                  <Crosshair className="h-4 w-4 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Attack surface</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.attack_surface ?? "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-500/15 dark:bg-zinc-400/10">
+                  <Clock className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">MTTR</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{formatMttr(cardData.mttr)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                  <Bug className="h-4 w-4 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Active vulnerabilities</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.active_vulnerabilities ?? "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/15 dark:bg-green-500/10">
+                  <Shield className="h-4 w-4 text-green-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Compliance score</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.compliance_score != null ? `${cardData.compliance_score}%` : "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+            <CardContent className="p-0">
+              <div className="flex flex-col items-start gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                  <Percent className="h-4 w-4 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Category coverage</p>
+                  <p className="text-xl font-bold text-zinc-900 dark:text-white">{cardData.category_coverage != null ? `${cardData.category_coverage}%` : "—"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {hasImpact && (
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -246,11 +425,8 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
             <CardDescription>Critical / High / Medium / Low per tool</CardDescription>
           </CardHeader>
           <CardContent>
-            {!hasImpact ? (
-              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
-            ) : (
-              <ChartContainer config={toolsImpactChartConfig} className="aspect-auto h-[260px] w-full pb-8">
-                <AreaChart data={impactAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+            <ChartContainer config={toolsImpactChartConfig} className="aspect-auto h-[260px] w-full pb-8">
+              <AreaChart data={impactAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
                   <defs>
                     <linearGradient id="mcpCritical" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} /><stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} /></linearGradient>
                     <linearGradient id="mcpHigh" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(25 95% 53%)" stopOpacity={0.8} /><stop offset="95%" stopColor="hsl(25 95% 53%)" stopOpacity={0.1} /></linearGradient>
@@ -267,10 +443,201 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
                   <Area type="monotone" dataKey="low" fill="url(#mcpLow)" stroke="hsl(142 71% 45%)" strokeWidth={2} />
                 </AreaChart>
               </ChartContainer>
-            )}
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      {(hasSeverityPie || hasCategoryPie) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-base">Severity distribution</CardTitle>
+              <CardDescription>Findings by impact level</CardDescription>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {!hasSeverityPie ? (
+                <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
+              ) : (
+                <ChartContainer config={{ name: { label: "Severity" }, value: { label: "Count" } }} className="aspect-square max-h-[260px] w-full">
+                  <PieChart>
+                    <Pie data={severityPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius="80%" label={({ name, value }) => `${name}: ${value}`}>
+                      {severityPieData.map((_, i) => (
+                        <Cell key={i} fill={SEVERITY_PIE_COLORS[i % SEVERITY_PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                  </PieChart>
+                </ChartContainer>
+              )}
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                Shows the proportion of findings across Critical, High, Medium, and Low severity levels. Helps prioritize remediation efforts.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-base">Coverage by category</CardTitle>
+              <CardDescription>Findings by category</CardDescription>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {!hasCategoryPie ? (
+                <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
+              ) : (
+                <ChartContainer config={{ name: { label: "Category" }, value: { label: "Count" } }} className="aspect-square max-h-[260px] w-full">
+                  <PieChart>
+                    <Pie data={categoryPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius="80%" label={({ name, value }) => `${name}: ${value}`}>
+                      {categoryPieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                  </PieChart>
+                </ChartContainer>
+              )}
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                Breaks down findings by vulnerability category to show which areas need more attention and testing coverage.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {(hasCategoryThreat || hasCompliancePie) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-base">Category threat landscape</CardTitle>
+              <CardDescription>Avg risk score and total issues per category</CardDescription>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {!hasCategoryThreat ? (
+                <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
+              ) : (
+                <ChartContainer config={{ name: { label: "Category" }, avg_risk_score: { label: "Avg risk score", color: "hsl(217 91% 60%)" }, total_issues: { label: "Total issues", color: "hsl(142 71% 45%)" } }} className="aspect-auto h-[240px] w-full pb-8">
+                  <BarChart data={categoryThreatBarData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                    <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis type="number" tickLine={false} axisLine={false} />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                    <Bar dataKey="avg_risk_score" fill="hsl(217 91% 60%)" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="total_issues" fill="hsl(142 71% 45%)" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              )}
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                Displays average risk score and total issue count per category to identify high-threat areas in the MCP attack surface.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-zinc-200 dark:border-zinc-800">
+            <CardHeader>
+              <CardTitle className="text-base">Compliance framework scores</CardTitle>
+              <CardDescription>Violations by framework</CardDescription>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {!hasCompliancePie ? (
+                <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
+              ) : (
+                <ChartContainer config={{ name: { label: "Framework" }, value: { label: "Count" } }} className="aspect-square max-h-[240px] w-full">
+                  <PieChart>
+                    <Pie data={compliancePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius="80%" label={({ name, value }) => `${name}: ${value}`}>
+                      {compliancePieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                  </PieChart>
+                </ChartContainer>
+              )}
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                Summarizes compliance control violations by framework (e.g. SOC2, HIPAA) for audit and governance visibility.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {hasComplianceTrends && (
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base">Compliance failure trends</CardTitle>
+            <CardDescription>Compliance controls violated per finding</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{ name: { label: "Finding" }, count: { label: "Count", color: "hsl(217 91% 60%)" } }} className="aspect-auto h-[260px] w-full pb-8">
+              <BarChart data={complianceFailureData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis type="number" tickLine={false} axisLine={false} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasAssetAttack && (
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base">Asset attack surface</CardTitle>
+            <CardDescription>Risk level per asset (tool / prompt / resource) — Critical=4, High=3, Medium=2, Low=1</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{ name: { label: "Asset" }, score: { label: "Risk score", color: "hsl(0 84% 60%)" } }} className="aspect-auto h-[260px] w-full pb-8">
+              <AreaChart data={assetAttackAreaData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v)} />
+                <YAxis type="number" tickLine={false} axisLine={false} domain={[0, 4]} tickFormatter={(v) => (v === 4 ? "Critical" : v === 3 ? "High" : v === 2 ? "Medium" : v === 1 ? "Low" : "")} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <Area type="monotone" dataKey="score" fill="hsl(0 84% 60% / 0.4)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+              </AreaChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasAssetCompliance && (
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base">Asset compliance violations</CardTitle>
+            <CardDescription>Compliance controls violated per asset</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{ name: { label: "Asset" }, count: { label: "Count", color: "hsl(48 96% 53%)" } }} className="aspect-auto h-[260px] w-full pb-8">
+              <AreaChart data={assetComplianceAreaData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                <YAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <Area type="monotone" dataKey="count" fill="hsl(48 96% 53% / 0.4)" stroke="hsl(48 96% 53%)" strokeWidth={2} />
+              </AreaChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasOwaspLlm && (
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base">OWASP Top 10 for LLM</CardTitle>
+            <CardDescription>Findings by OWASP LLM category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{ name: { label: "Category" }, count: { label: "Count", color: "hsl(270 50% 60%)" } }} className="aspect-auto h-[260px] w-full pb-8">
+              <BarChart data={owaspLlmData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 14 ? `${String(v).slice(0, 14)}...` : v)} />
+                <YAxis type="number" tickLine={false} axisLine={false} />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <Bar dataKey="count" fill="hsl(270 50% 60%)" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -280,6 +647,9 @@ function AgentResultsView({
   conversationId,
   teamId,
   dashboard,
+  findings: apiFindings,
+  scanMetadata,
+  onFindingsUpdated,
   integrationSettings,
   onIntegrationSettingsUpdated,
   onRefresh,
@@ -290,6 +660,9 @@ function AgentResultsView({
   conversationId?: number;
   teamId?: string;
   dashboard?: MCPDashboardData | null;
+  findings?: MCPFinding[] | null;
+  scanMetadata?: MCPScanMetadata | Record<string, unknown> | null;
+  onFindingsUpdated?: () => void;
   integrationSettings?: Record<string, unknown> | null;
   onIntegrationSettingsUpdated?: () => void;
   onRefresh?: () => void;
@@ -303,9 +676,14 @@ function AgentResultsView({
   const [searchQuery, setSearchQuery] = useState("");
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedVuln, setSelectedVuln] = useState<VulnTableRow | null>(null);
+  const [selectedApiFinding, setSelectedApiFinding] = useState<MCPFinding | null>(null);
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(new Set());
   const [jiraProjectId, setJiraProjectId] = useState("");
+
+  const findingsList = Array.isArray(apiFindings) ? apiFindings : [];
+  const useApiFindings = findingsList.length > 0;
 
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
@@ -338,6 +716,71 @@ function AgentResultsView({
   });
 
   const hasTicketingTab = Boolean(teamId && conversationId != null && onIntegrationSettingsUpdated != null);
+
+  const toggleFindingMutation = useMutation({
+    mutationFn: ({ finding_id, state }: { finding_id: string; state: "fixed" | "ignored" | "in_progress" | "not_started" }) => {
+      const tid = parseInt(teamId ?? "0", 10);
+      if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      return toggleFindingState({ team_id: tid, type: "mcp", scan_id: conversationId, finding_id, state });
+    },
+    onSuccess: () => {
+      onFindingsUpdated?.();
+      toast.success("Finding status updated");
+    },
+    onError: (err) => {
+      showErrorToast(err, "Failed to update finding status");
+    },
+  });
+
+  const createJiraFromApiFindingsMutation = useMutation({
+    mutationFn: async () => {
+      const tid = parseInt(teamId ?? "0", 10);
+      if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
+      const selected = findingsList.filter((f) => selectedFindingIds.has(f.id));
+      if (selected.length === 0) throw new Error("No findings selected");
+      const impactCounts: Record<string, number> = {};
+      for (const f of selected) {
+        const impact = (f.impact ?? "Unknown").trim() || "Unknown";
+        impactCounts[impact] = (impactCounts[impact] ?? 0) + 1;
+      }
+      let summary = Object.entries(impactCounts)
+        .sort(([a], [b]) => RISK_ORDER.indexOf(a as (typeof RISK_ORDER)[number]) - RISK_ORDER.indexOf(b as (typeof RISK_ORDER)[number]))
+        .map(([impact, count]) => `${count} ${impact}`)
+        .join(", ") || `${selected.length} finding(s)`;
+      summary = summary + " - Vulnerabilities found in MCP scan";
+      const descSections = selected.map((f, idx) => {
+        const parts = [`--- Finding ${idx + 1} ---`, `Title: ${(f.title ?? "Untitled").trim() || "Untitled"}`];
+        if ((f.description ?? "").trim()) parts.push(`Description: ${f.description!.trim()}`);
+        if ((f.type ?? "").trim()) parts.push(`Type: ${f.type!.trim()}`);
+        if ((f.impact ?? "").trim()) parts.push(`Impact: ${f.impact!.trim()}`);
+        if ((f.suggested_fix ?? "").trim()) parts.push(`Suggested fix: ${f.suggested_fix!.trim()}`);
+        return parts.join("\n");
+      });
+      await createTicket(tid, "mcp", conversationId, { ticket_type: "jira", summary, description: descSections.join("\n\n") });
+    },
+    onMutate: () => ({ toastId: toast.loading("Creating Jira ticket(s)...") }),
+    onSuccess: (_data, _vars, context) => {
+      if (context?.toastId != null) toast.dismiss(context.toastId);
+      toast.success(`Jira ticket(s) created for ${selectedFindingIds.size} finding(s)`);
+      setSelectedFindingIds(new Set());
+    },
+    onError: (err, _vars, context) => {
+      if (context?.toastId != null) toast.dismiss(context.toastId);
+      showErrorToast(err, "Failed to create Jira ticket(s)");
+    },
+  });
+
+  const filteredApiFindings = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return findingsList;
+    return findingsList.filter(
+      (f) =>
+        (f.title ?? "").toLowerCase().includes(q) ||
+        (f.description ?? "").toLowerCase().includes(q) ||
+        (f.impact ?? "").toLowerCase().includes(q) ||
+        (f.type ?? "").toLowerCase().includes(q)
+    );
+  }, [findingsList, searchQuery]);
 
   const tools = Array.isArray(data.tools) ? data.tools : [];
   const prompts = Array.isArray(data.prompts) ? data.prompts : [];
@@ -473,7 +916,7 @@ function AgentResultsView({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
-          <div>
+          <div className="flex flex-col">
             <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">MCP Scan Results</h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
               Model Context Protocol — tools, prompts, and resources in one view
@@ -509,6 +952,8 @@ function AgentResultsView({
           )}
         </div>
       </div>
+
+      {scanMetadata && <MCPScanMetadataBlock scanMetadata={scanMetadata} />}
 
       {hasTicketingTab && (
         <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -559,7 +1004,7 @@ function AgentResultsView({
         />
       ) : (
         <>
-      {dashboard && (dashboard.tools_vulnerability_metrics != null || dashboard.tools_impact_metrics != null || dashboard.tools_compliance_controls_metrics != null) && (
+      {dashboard && (
         <MCPDashboardCharts dashboard={dashboard} />
       )}
 
@@ -567,10 +1012,171 @@ function AgentResultsView({
         <CardHeader>
           <CardTitle>Findings</CardTitle>
           <CardDescription>
-            {tableRows.length} vulnerability findings. Click a title to view details. Select rows to create Jira tickets.
+            {useApiFindings
+              ? `${filteredApiFindings.length} findings. Click a title to view details. Select rows to create Jira tickets; use Action to change finding state.`
+              : `${tableRows.length} vulnerability findings. Click a title to view details. Select rows to create Jira tickets.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {useApiFindings ? (
+            <>
+              <FindingSelectionMenu
+                selectedCount={selectedFindingIds.size}
+                onClearSelection={() => setSelectedFindingIds(new Set())}
+                jiraOnClickHandler={() => createJiraFromApiFindingsMutation.mutate()}
+                ticketType="jira"
+                isJiraCreating={createJiraFromApiFindingsMutation.isPending}
+              />
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                <Input
+                  placeholder="Search by title, description, impact, type..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 max-w-sm"
+                />
+              </div>
+              <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[48px]">
+                        <Checkbox
+                          checked={filteredApiFindings.length > 0 && selectedFindingIds.size === filteredApiFindings.length}
+                          onCheckedChange={() => {
+                            if (selectedFindingIds.size === filteredApiFindings.length) {
+                              setSelectedFindingIds(new Set());
+                            } else {
+                              setSelectedFindingIds(new Set(filteredApiFindings.map((f) => f.id)));
+                            }
+                          }}
+                          aria-label="Select all rows"
+                          className="cursor-pointer"
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[180px]">Title</TableHead>
+                      <TableHead className="min-w-[200px]">Description</TableHead>
+                      <TableHead className="min-w-[90px]">Impact</TableHead>
+                      <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
+                      <TableHead className="min-w-[100px]">Status</TableHead>
+                      <TableHead className="min-w-[90px]">Type</TableHead>
+                      <TableHead className="min-w-[90px] text-center">OWASP</TableHead>
+                      <TableHead className="min-w-[90px] text-center">Compliance</TableHead>
+                      <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredApiFindings.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                          No findings to display.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredApiFindings.map((f) => {
+                        const impact = (f.impact ?? "").trim() || "—";
+                        const desc = (f.description ?? "").trim();
+                        const descTrunc = desc.length > 80 ? `${desc.slice(0, 80)}…` : desc || "—";
+                        const statusLabel = (f.status ?? "not_started").replace(/_/g, " ");
+                        const typeLabelVal = (f.type ?? "—").toString();
+                        return (
+                          <TableRow
+                            key={f.id}
+                            className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedFindingIds.has(f.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
+                          >
+                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                              <Checkbox
+                                checked={selectedFindingIds.has(f.id)}
+                                onCheckedChange={() => {
+                                  setSelectedFindingIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(f.id)) next.delete(f.id);
+                                    else next.add(f.id);
+                                    return next;
+                                  });
+                                }}
+                                aria-label={`Select ${f.title ?? f.id}`}
+                                className="cursor-pointer"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              <button
+                                type="button"
+                                onClick={() => { setSelectedApiFinding(f); setDetailOpen(true); }}
+                                className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium"
+                              >
+                                {(f.title ?? "").trim() || "Untitled"}
+                              </button>
+                            </TableCell>
+                            <TableCell className="text-sm text-zinc-600 dark:text-zinc-400" title={desc || undefined}>
+                              {descTrunc}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={getImpactBadgeClass(impact)}>
+                                {impact}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums bg-zinc-100 dark:bg-zinc-800">
+                                {f.risk_score}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(f.status ?? "not_started")}`}>
+                                {statusLabel}
+                              </span>
+                            </TableCell>
+                            <TableCell className="capitalize text-sm text-zinc-600 dark:text-zinc-400">
+                              {typeLabelVal}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200">
+                                {countFindingField(f.owasp_top_10) + countFindingField(f.owasp_top_10_llm)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">
+                                {countFindingField(f.compliance_controls)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
+                                    <Pencil className="h-3.5 w-3.5 opacity-70" />
+                                    Action
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "fixed" })} disabled={toggleFindingMutation.isPending}>
+                                    <CheckCircle className="h-4 w-4" />
+                                    Mark as Fixed
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "ignored" })} disabled={toggleFindingMutation.isPending}>
+                                    <EyeOff className="h-4 w-4" />
+                                    Mark as Ignored
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "in_progress" })} disabled={toggleFindingMutation.isPending}>
+                                    <Loader2 className="h-4 w-4" />
+                                    Mark as In progress
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => toggleFindingMutation.mutate({ finding_id: f.id, state: "not_started" })} disabled={toggleFindingMutation.isPending}>
+                                    <Circle className="h-4 w-4" />
+                                    Mark as Not started
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </>
+          ) : (
+            <>
           <FindingSelectionMenu
             selectedCount={selectedRows.size}
             onClearSelection={() => setSelectedRows(new Set())}
@@ -658,17 +1264,84 @@ function AgentResultsView({
               </TableBody>
             </Table>
           </ScrollArea>
+            </>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+      <Dialog open={detailOpen} onOpenChange={(open) => { if (!open) { setSelectedVuln(null); setSelectedApiFinding(null); } setDetailOpen(open); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">
-              {selectedVuln?.vuln.title ?? "Vulnerability details"}
+              {selectedApiFinding ? ((selectedApiFinding.title ?? "").trim() || "Finding details") : (selectedVuln?.vuln.title ?? "Vulnerability details")}
             </DialogTitle>
           </DialogHeader>
-          {selectedVuln && (
+          {selectedApiFinding ? (
+            <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
+              <ScrollArea className="h-[70vh]">
+                <div className="space-y-4 pr-4">
+                  {(selectedApiFinding.type ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Type</div>
+                      <span className="capitalize text-sm text-zinc-700 dark:text-zinc-300">{selectedApiFinding.type!.trim()}</span>
+                    </div>
+                  )}
+                  {(selectedApiFinding.impact ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>
+                      <Badge variant="outline" className={getImpactBadgeClass(selectedApiFinding.impact!.trim())}>
+                        {selectedApiFinding.impact!.trim()}
+                      </Badge>
+                    </div>
+                  )}
+                  {(selectedApiFinding.status ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Status</div>
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(selectedApiFinding.status ?? "not_started")}`}>
+                        {(selectedApiFinding.status ?? "").replace(/_/g, " ")}
+                      </span>
+                    </div>
+                  )}
+                  {selectedApiFinding.risk_score != null && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Risk score</div>
+                      <span className="text-sm text-zinc-700 dark:text-zinc-300">{selectedApiFinding.risk_score}</span>
+                    </div>
+                  )}
+                  {(selectedApiFinding.description ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Description</div>
+                      <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{selectedApiFinding.description!.trim()}</p>
+                    </div>
+                  )}
+                  {selectedApiFinding.owasp_top_10 != null && typeof selectedApiFinding.owasp_top_10 === "object" && Object.keys(selectedApiFinding.owasp_top_10 as object).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
+                      {renderKeyValue(selectedApiFinding.owasp_top_10 as Record<string, string>)}
+                    </div>
+                  )}
+                  {selectedApiFinding.owasp_top_10_llm != null && typeof selectedApiFinding.owasp_top_10_llm === "object" && Object.keys(selectedApiFinding.owasp_top_10_llm as object).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10 for LLM</div>
+                      {renderKeyValue(selectedApiFinding.owasp_top_10_llm as Record<string, string>)}
+                    </div>
+                  )}
+                  {selectedApiFinding.compliance_controls != null && typeof selectedApiFinding.compliance_controls === "object" && Object.keys(selectedApiFinding.compliance_controls as object).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
+                      {renderKeyValue(selectedApiFinding.compliance_controls as Record<string, string>)}
+                    </div>
+                  )}
+                  {(selectedApiFinding.suggested_fix ?? "").trim() && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Suggested fix</div>
+                      <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{selectedApiFinding.suggested_fix!.trim()}</p>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : selectedVuln ? (
             <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
               <ScrollArea className="h-[70vh]">
                 <div className="space-y-4 pr-4">
@@ -723,7 +1396,7 @@ function AgentResultsView({
                 </div>
               </ScrollArea>
             </div>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
         </>
@@ -825,16 +1498,20 @@ function LegacyResultsView({ data, conversationId, teamId }: { data: MCPResultsD
   );
 }
 
-export default function MCPResults({ data, conversationId, teamId, dashboard, integrationSettings, onIntegrationSettingsUpdated, onRefresh, onDownloadReport, isExporting }: MCPResultsProps) {
+export default function MCPResults({ data, conversationId, teamId, dashboard, findings, scanMetadata, onFindingsUpdated, integrationSettings, onIntegrationSettingsUpdated, onRefresh, onDownloadReport, isExporting }: MCPResultsProps) {
   const hasAgentFormat = data && typeof data === "object" && (Array.isArray((data as MCPAgentResultsData).tools) || Array.isArray((data as MCPAgentResultsData).prompts) || Array.isArray((data as MCPAgentResultsData).resources));
+  const hasFindings = Array.isArray(findings) && findings.length > 0;
 
-  if (hasAgentFormat) {
+  if (hasAgentFormat || hasFindings) {
     return (
       <AgentResultsView
-        data={data as MCPAgentResultsData}
+        data={(data && typeof data === "object" ? data : {}) as MCPAgentResultsData}
         conversationId={conversationId}
         teamId={teamId}
         dashboard={dashboard}
+        findings={findings}
+        scanMetadata={scanMetadata}
+        onFindingsUpdated={onFindingsUpdated}
         integrationSettings={integrationSettings}
         onIntegrationSettingsUpdated={onIntegrationSettingsUpdated}
         onRefresh={onRefresh}

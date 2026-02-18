@@ -33,7 +33,7 @@ class DependencyVulnerability(BaseVulnerability):
     dependency : str = Field(description="The name of the dependency / package ( with version ) that is vulnerable")
     reachability : Reachability = Field(description="The reachability of the vulnerability")
     dependency_type : DependencyType = Field(description="The type of the dependency / package ,whether it is a direct or transitive dependency")
-    license_type : LicenseCategory = Field(description="The license type of the dependency / package , whether it is permissive, weak_copyleft, strong_copyleft, network_copyleft, source_available, commercial, public_domain, creative_commons, unknown")
+    license_type : LicenseCategory = Field(description="The license type of the dependency / package , whether it is permissive, weak_copyleft, strong_copyleft, network_copyleft, source_available, commercial, public_domain, creative_commons, unknown . You are allowed to guess the license type based on your knowledge of the dependency / package")
 
 
 

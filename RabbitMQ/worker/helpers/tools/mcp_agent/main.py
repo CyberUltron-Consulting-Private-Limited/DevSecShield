@@ -136,8 +136,8 @@ class MCPAgent(BaseAgent):
                         "tool_description": tool.description,
                         "tool_input_schema": tool.input_schema,
                         "tool_output_schema": tool.output_schema,
-                        "tool_risk_level": resource_response.resource_risk_level,
-                        "tool_category": resource_response.resource_category,
+                        "tool_risk_level": resource_response.resource_risk_level.value,
+                        "tool_category": resource_response.resource_category.value,
                         "vulnerabilities": parsed_vulnerabilities
                     })
             
@@ -150,8 +150,8 @@ class MCPAgent(BaseAgent):
                         "prompt_name": prompt.name,
                         "prompt_description": prompt.description,
                         "prompt_input_schema": prompt.arguments,
-                        "prompt_risk_level": resource_response.resource_risk_level,
-                        "prompt_category": resource_response.resource_category,
+                        "prompt_risk_level": resource_response.resource_risk_level.value,
+                        "prompt_category": resource_response.resource_category.value,
                         "vulnerabilities": parsed_vulnerabilities
                     })
             
@@ -165,8 +165,8 @@ class MCPAgent(BaseAgent):
                         "resource_description": resource.description,
                         "resource_size": resource.size,
                         "resource_uri": resource.uri,
-                        "resource_risk_level": resource_response.resource_risk_level,
-                        "resource_category": resource_response.resource_category,
+                        "resource_risk_level": resource_response.resource_risk_level.value,
+                        "resource_category": resource_response.resource_category.value,
                         "vulnerabilities": parsed_vulnerabilities
                     })
             return (tools_findings, prompts_findings, resources_findings)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -140,6 +140,16 @@ function getImpactBadgeClass(impact: string): string {
 }
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
+
+/** Clean repo URL for display: trim, strip trailing slash, collapse repeated slashes */
+function cleanRepoUrlDisplay(url: string | null | undefined): string {
+  if (url == null || typeof url !== "string") return "—";
+  let s = url.trim();
+  if (!s) return "—";
+  s = s.replace(/\/+/g, "/").replace(/\/$/, "");
+  return s || "—";
+}
+
 const riskRadarChartConfig = {
   subject: { label: "Severity" },
   count: { label: "Count", color: "hsl(0 84% 60%)" },
@@ -150,10 +160,19 @@ const complianceAccentColors = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b
 
 
 
-/** Inline dependency diagram section (renders mermaid when diagramCode is set) */
+const DIAGRAM_MIN_SCALE = 0.25;
+const DIAGRAM_MAX_SCALE = 4;
+const DIAGRAM_SCALE_STEP = 0.15;
+
+/** Inline dependency diagram section (renders mermaid when diagramCode is set) with pan and zoom */
 function DependencyDiagramSection({ diagramCode }: { diagramCode: string | null | undefined }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef({ x: 0, y: 0, translateX: 0, translateY: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!diagramCode?.trim()) {
@@ -162,6 +181,8 @@ function DependencyDiagramSection({ diagramCode }: { diagramCode: string | null 
       return;
     }
     setError(null);
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
     let cancelled = false;
     (async () => {
       try {
@@ -177,6 +198,47 @@ function DependencyDiagramSection({ diagramCode }: { diagramCode: string | null 
     return () => { cancelled = true; };
   }, [diagramCode]);
 
+  const handleWheel = useCallback((e: WheelEvent) => {
+    if (!svg || !containerRef.current?.contains(e.target as Node)) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -DIAGRAM_SCALE_STEP : DIAGRAM_SCALE_STEP;
+    setScale((s) => Math.min(DIAGRAM_MAX_SCALE, Math.max(DIAGRAM_MIN_SCALE, s + delta)));
+  }, [svg]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0 || !svg) return;
+    e.preventDefault();
+    setIsPanning(true);
+    panStart.current = { x: e.clientX, y: e.clientY, translateX: translate.x, translateY: translate.y };
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }, [svg, translate.x, translate.y]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanning) return;
+    setTranslate({
+      x: panStart.current.translateX + (e.clientX - panStart.current.x),
+      y: panStart.current.translateY + (e.clientY - panStart.current.y),
+    });
+  }, [isPanning]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    setIsPanning(false);
+    (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
+
   if (!diagramCode?.trim()) return null;
 
   return (
@@ -189,11 +251,32 @@ function DependencyDiagramSection({ diagramCode }: { diagramCode: string | null 
         <CardDescription>Infrastructure and dependency relationships from this scan</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 min-h-[200px] overflow-auto">
+        <div
+          ref={containerRef}
+          className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 min-h-[200px] max-h-[500px] overflow-hidden touch-none select-none cursor-grab active:cursor-grabbing"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onDoubleClick={handleDoubleClick}
+          style={{ userSelect: "none" }}
+        >
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          {svg && !error && <div className="flex justify-center" dangerouslySetInnerHTML={{ __html: svg }} />}
+          {svg && !error && (
+            <div
+              className="flex justify-center origin-center will-change-transform"
+              style={{
+                transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+                minHeight: "200px",
+              }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          )}
           {!svg && !error && <p className="text-sm text-zinc-500">Rendering…</p>}
         </div>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+          Scroll to zoom · Drag to pan · Double-click to reset
+        </p>
       </CardContent>
     </Card>
   );
@@ -505,30 +588,30 @@ function IACResultsAgentView({
         <>
       {/* Top cards: metadata + risk — SAST-style (icon top-left, text bottom-left, uniform padding) */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
-          <CardContent className="p-0">
-            <div className="flex flex-col items-start gap-2">
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3 min-w-0 overflow-hidden">
+          <CardContent className="p-0 min-w-0 overflow-hidden">
+            <div className="flex flex-col items-start gap-2 min-w-0 overflow-hidden">
               <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta?.zip_file_used ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" : "bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400"}`}>
                 {meta?.zip_file_used ? <FileArchive className="h-4 w-4" /> : <Github className="h-4 w-4" />}
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 w-full overflow-hidden">
                 <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate" title={meta?.zip_file_used ? undefined : (meta?.repo_url ?? undefined)}>
-                  {meta?.zip_file_used ? "ZIP upload" : (meta?.repo_url?.trim() || "—")}
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate" title={meta?.zip_file_used ? undefined : (meta?.repo_url?.trim() ?? undefined)}>
+                  {meta?.zip_file_used ? "ZIP upload" : cleanRepoUrlDisplay(meta?.repo_url)}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
-          <CardContent className="p-0">
-            <div className="flex flex-col items-start gap-2">
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3 min-w-0 overflow-hidden">
+          <CardContent className="p-0 min-w-0 overflow-hidden">
+            <div className="flex flex-col items-start gap-2 min-w-0 overflow-hidden">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
                 <GitBranch className="h-4 w-4" />
               </div>
-              <div>
+              <div className="min-w-0 w-full overflow-hidden">
                 <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{meta?.branch?.trim() || "—"}</p>
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate" title={meta?.branch?.trim() || undefined}>{meta?.branch?.trim() || "—"}</p>
               </div>
             </div>
           </CardContent>
@@ -538,15 +621,15 @@ function IACResultsAgentView({
           const order = ["Critical", "High", "Medium", "Low"] as const;
           const riskIconColors = ["bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400", "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400", "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400", "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"];
           return order.map((severity, idx) => (
-            <Card key={severity} className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
-              <CardContent className="p-0">
-                <div className="flex flex-col items-start gap-2">
+            <Card key={severity} className="border-zinc-200 dark:border-zinc-800 py-3 px-3 min-w-0 overflow-hidden">
+              <CardContent className="p-0 min-w-0 overflow-hidden">
+                <div className="flex flex-col items-start gap-2 min-w-0 overflow-hidden">
                   <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${riskIconColors[idx] ?? "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"}`}>
                     <Shield className="h-4 w-4" />
                   </div>
-                  <div>
+                  <div className="min-w-0 overflow-hidden">
                     <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{severity}</p>
-                    <p className="text-xl font-bold text-zinc-900 dark:text-white">{risk[severity] ?? 0}</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white truncate">{risk[severity] ?? 0}</p>
                   </div>
                 </div>
               </CardContent>

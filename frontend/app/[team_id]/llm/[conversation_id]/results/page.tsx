@@ -64,8 +64,10 @@ export default function LLMResultsPage() {
   }
 
   const llmData = query.data?.data;
+  const hasData = llmData != null;
+  const hasFindings = Array.isArray(query.data?.findings) && query.data.findings.length > 0;
 
-  if (!llmData) {
+  if (!hasData && !hasFindings) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
@@ -80,12 +82,15 @@ export default function LLMResultsPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
       <LLMResults
-        data={llmData}
+        data={llmData ?? null}
         dashboard={dashboard}
+        findings={query.data?.findings ?? null}
+        scanMetadata={query.data?.scan_metadata ?? null}
         conversationId={conversation_id}
         teamId={params?.team_id as string}
         integrationSettings={query.data?.integration_settings ?? null}
         onIntegrationSettingsUpdated={() => queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, conversation_id] })}
+        onFindingsUpdated={() => queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, conversation_id] })}
         onRefresh={() => queryClient.invalidateQueries({ queryKey: ['llm-conversation-data', team_id, conversation_id] })}
         onDownloadReport={() => exportMutation.mutate()}
         isExporting={exportMutation.isPending}

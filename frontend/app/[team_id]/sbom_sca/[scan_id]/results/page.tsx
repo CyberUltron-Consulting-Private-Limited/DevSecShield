@@ -48,6 +48,8 @@ export default function SbomResultsPage() {
 
   const scanData = query.data?.data;
   const dashboard = query.data?.dashboard ?? null;
+  const findings = query.data?.findings ?? null;
+  const scanMetadata = query.data?.scan_metadata ?? null;
   const integrationSettings = query.data?.integration_settings ?? undefined;
 
   return (
@@ -55,10 +57,13 @@ export default function SbomResultsPage() {
       <SbomResults
         data={scanData}
         dashboard={dashboard}
+        findings={findings}
+        scanMetadata={scanMetadata}
         conversationId={scan_id}
         teamId={String(team_id)}
         integrationSettings={integrationSettings}
         onIntegrationSettingsUpdated={() => query.refetch()}
+        onFindingsUpdated={() => query.refetch()}
       />
     </div>
   );

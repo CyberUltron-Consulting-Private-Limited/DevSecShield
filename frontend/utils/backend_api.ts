@@ -278,6 +278,68 @@ export interface IACFinding {
   resource?: string | null
 }
 
+/** SBOM/SCA finding from backend get_findings_for_scan_type (sbom_sca branch) */
+export interface SbomFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  suggested_fix?: string | null
+  cves: unknown
+  dependency?: string | null
+  reachability?: string | null
+  dependency_type?: string | null
+  license_type?: string | null
+}
+
+/** SBOM/SCA scan metadata from backend get_scan_metadata (sbom_sca branch) */
+export interface SbomScanMetadata {
+  repo_url?: string | null
+  branch?: string | null
+  zip_file_used?: boolean
+}
+
+/** SBOM/SCA single-scan dashboard from backend generate_scan_dashboard (scan.py sbom_sca branch) */
+export interface SbomScanDashboardData {
+  card_data: {
+    total_vulnerabilities: number
+    total_critical_vulnerabilities: number
+    total_policy_violations: number
+    total_license_risks: number
+    total_high_risk_licenses: number
+    average_risk_score: number
+    total_reachable_issues: number
+  }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  reachability_distribution: {
+    not_reachable: number
+    potentially_reachable: number
+    reachable: number
+    unknown: number
+  }
+  vulnerability_trends_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+  licenses_distribution: Record<string, number>
+  top_vulnerabilities_by_risk_score: Array<{
+    dependency: string
+    reachability: string
+    dependency_type: string
+    license_type: string
+    impact: string
+  }>
+  average_risk_score_per_reachability: Record<string, number>
+}
+
 /** IAC single-scan dashboard from backend generate_scan_dashboard (scan.py IAC branch) */
 export interface IACScanDashboardData {
   risk_metrics?: Record<string, number>
@@ -473,6 +535,34 @@ export {
 
 // -------------------------------------------------------------- LLM API Routes --------------------------------------------------------------
 
+/** LLM-specific card data from generate_llm_dashboard_data */
+export interface LLMCardData {
+    total_scans: number
+    average_risk_score: number
+    total_critical_vulnerabilities: number
+    total_vulnerabilities: number
+    owasp_compliance_score: number
+    passed_rate: number
+    pending_scans?: number
+    started_scans?: number
+    success_scans?: number
+    failure_scans?: number
+    not_started_scans?: number
+    scans_created_today?: number
+    scans_updated_today?: number
+}
+
+/** LLM scan list dashboard data from generate_llm_dashboard_data (list page) */
+export interface LLMListDashboardData {
+    card_data: LLMCardData
+    risk_level_distribution: Record<"critical" | "high" | "medium" | "low", number>
+    attack_vector_test_results: Record<string, { passed: number; failed: number }>
+    model_risk_comparison: Record<string, number>
+    ai_security_posture_overview: Record<string, number>
+    owasp_top_10_llm_metrics: Record<string, number>
+    scans_per_day?: Record<string, number>
+}
+
 export interface LLMConversation {
     id: number
     model_type: string | null
@@ -484,7 +574,7 @@ export interface LLMConversation {
 }
 
 /** Response from GET /{team_id}/llm/scans (backend scans router) */
-/** List item shape from GET /{team_id}/llm/scans (same backend return_scan_list_for_type as SAST) */
+/** List item shape from GET /{team_id}/llm/scans (return_llm_list_item) */
 export interface LLMScanListItem {
     id: number
     title: string
@@ -497,11 +587,18 @@ export interface LLMScanListItem {
     owner_user_full_name?: string | null
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    average_risk_score?: number | null
+    model_type?: string | null
+    model_name?: string | null
+    attack_iterations?: number | null
+    total_attacks_performed?: number | null
+    model_vulnerabilities?: Record<string, number> | null
+    total_mitre_atlas_tactics?: number | null
 }
 
 export interface LLMScansListResponse {
     scans_list_data: LLMScanListItem[]
-    dashboard_data: ScanListDashboardData
+    dashboard_data: LLMListDashboardData
 }
 
 const getLLMConversations = async (team_id: number): Promise<LLMScansListResponse> => {
@@ -559,8 +656,9 @@ export interface LLMConversationResponse {
     scan_status: string
     data: any
     messages: LLMConversationMessage[]
-    scan_metadata?: Record<string, unknown> | null
-    dashboard?: unknown
+    scan_metadata?: LLMScanMetadata | Record<string, unknown> | null
+    dashboard?: LLMDashboardData | null
+    findings?: LLMFinding[] | null
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null
 }
@@ -571,11 +669,12 @@ const getLLMConversationMessages = async ({ queryKey }: { queryKey: ['llm-conver
         const response = await api.get(`/${team_id}/llm/scan/${scan_id}`)
         const raw = response.data as {
             title: string
-            scan_metadata?: Record<string, unknown> | null
+            scan_metadata?: LLMScanMetadata | Record<string, unknown> | null
             scan_status: string
             data: any
-            dashboard?: unknown
+            dashboard?: LLMDashboardData | null
             messages: LLMConversationMessage[]
+            findings?: LLMFinding[] | null
             integration_settings?: Record<string, unknown> | null
             info?: ScanInfoField | null
         }
@@ -588,7 +687,8 @@ const getLLMConversationMessages = async ({ queryKey }: { queryKey: ['llm-conver
             data: raw.data,
             messages: raw.messages ?? [],
             scan_metadata: raw.scan_metadata,
-            dashboard: raw.dashboard,
+            dashboard: raw.dashboard ?? null,
+            findings: raw.findings ?? null,
             integration_settings: raw.integration_settings,
             info: raw.info,
         }
@@ -683,6 +783,27 @@ interface MCPConversationMessage {
     is_streaming: boolean
 }
 
+/** MCP finding from backend get_findings_for_scan_type (MCP branch) */
+export interface MCPFinding {
+    id: string
+    title: string
+    description: string
+    impact: string
+    risk_score: number
+    status: string
+    owasp_top_10?: unknown
+    owasp_top_10_llm?: unknown
+    compliance_controls?: unknown
+    suggested_fix?: string | null
+    type?: "tool" | "prompt" | "resource"
+}
+
+/** MCP scan metadata from backend get_scan_metadata (MCP branch) */
+export interface MCPScanMetadata {
+    server_url?: string | null
+    server_mode?: string | null
+}
+
 /** MCP scan dashboard (from generate_scan_dashboard for type "mcp") */
 export interface MCPDashboardData {
     owasp_top_10_metrics?: Record<string, number>
@@ -692,13 +813,72 @@ export interface MCPDashboardData {
     tools_vulnerability_metrics?: Record<string, number>
     tools_impact_metrics?: Record<string, { critical: number; high: number; medium: number; low: number }>
     tools_compliance_controls_metrics?: Record<string, number>
+    /** Summary cards */
+    card_data?: {
+        overall_risk_score?: number
+        total_findings?: number
+        exploitability_index?: number
+        attack_surface?: number
+        mttr?: number | [number, number, number]
+        active_vulnerabilities?: number
+        compliance_score?: number
+        category_coverage?: number
+    }
+    severity_distribution?: { critical: number; high: number; medium: number; low: number }
+    category_coverage?: Record<string, number>
+    category_threat_landscape?: Record<string, { avg_risk_score: number; total_issues: number }>
+    compliance_framework_scores?: Record<string, number>
+    compliance_failure_trends?: Record<string, number>
+    asset_attack_surface?: Record<string, string>
+    tool_impact_analysis?: Record<string, { critical: number; high: number; medium: number; low: number }>
+    asset_compliance_violations?: Record<string, number>
+    owasp_top_10_llm_metrics?: Record<string, number>
+}
+
+/** LLM finding from backend get_findings_for_scan_type (llm branch) */
+export interface LLMFinding {
+    id: string
+    title: string
+    description: string
+    impact: string
+    status?: string | null
+    vulnerability_predictions?: unknown
+    owasp_top_10_llm: unknown
+    compliance_controls: unknown
+    suggested_fix?: string | null
+}
+
+/** LLM scan metadata from backend get_scan_metadata (llm branch) */
+export interface LLMScanMetadata {
+    model_type?: string | null
+    probes?: unknown
 }
 
 /** LLM scan dashboard (from generate_scan_dashboard for type "llm") */
 export interface LLMDashboardData {
+    card_data?: {
+        attacks_run: number
+        total_vulnerabilities_found: number
+        pass_rate: number
+        risk_score: number
+        scan_duration: number
+        policy_violations: number
+    }
+    security_posture?: {
+        jailbreak_resistance_score: number
+        injection_resistance_score: number
+        hallucination_resistance_score: number
+        bias_resistance_score: number
+        content_safety_score: number
+        data_privacy_score: number
+    }
     owasp_top_10_llm_metrics?: Record<string, number>
     compliance_controls_metrics?: Record<string, number>
     risk_metrics?: { Low?: number; Medium?: number; High?: number; Critical?: number }
+    mitre_atlas_metrics?: Record<string, number>
+    vulnerability_breakdown?: { critical: number; high: number; medium: number; low: number }
+    adversarial_attack_outcomes?: Record<string, { passed: number; total: number }>
+    attack_details?: Record<string, { passed: number; total: number; hit_rate: number; description: string }>
 }
 
 export interface MCPConversationResponse {
@@ -710,6 +890,8 @@ export interface MCPConversationResponse {
     data: any
     messages: MCPConversationMessage[]
     dashboard?: MCPDashboardData | null
+    findings?: MCPFinding[] | null
+    scan_metadata?: MCPScanMetadata | Record<string, unknown> | null
     integration_settings?: Record<string, unknown> | null
 }
 
@@ -719,11 +901,12 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
         const response = await api.get(`/${team_id}/mcp/scan/${scan_id}`)
         const raw = response.data as {
             title: string
-            scan_metadata?: Record<string, unknown> | null
+            scan_metadata?: MCPScanMetadata | Record<string, unknown> | null
             scan_status: string
             data: any
             dashboard?: unknown
             messages: MCPConversationMessage[]
+            findings?: MCPFinding[] | null
             integration_settings?: Record<string, unknown> | null
             info?: ScanInfoField | null
         }
@@ -737,6 +920,8 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
             data: raw.data,
             messages: raw.messages ?? [],
             dashboard: raw.dashboard ?? null,
+            findings: raw.findings ?? null,
+            scan_metadata: raw.scan_metadata ?? null,
             integration_settings: raw.integration_settings ?? null,
         }
     } catch (error) {
@@ -751,12 +936,50 @@ export interface MCPConversation {
     created_at: string
     last_updated: string
     scan_status: string
+    owner_user_email?: string | null
+    owner_user_full_name?: string | null
+    scan_metadata?: Record<string, unknown> | null
+    info?: ScanInfoField | null
+    risk_data?: ScanRiskData | null
+    server?: string | null
+    average_risk_score?: number | null
+    discovery_metrics?: { total_tools: number; total_prompts: number; total_resources: number } | null
+    risky_assets?: number | null
+    estimated_credits?: number | null
+}
+
+/** MCP list dashboard card_data from backend generate_mcp_dashboard_data */
+export interface MCPListCardData {
+    total_scans: number
+    total_critical_issues: number
+    average_risk_score: number
+    total_active_scans: number
+    total_resolved_issues: number
+}
+
+/** MCP list dashboard from backend generate_mcp_dashboard_data (GET /{team_id}/mcp/scans) */
+export interface MCPListDashboardData {
+    card_data: MCPListCardData
+    scan_status_distribution: { not_started: number; started: number; success: number; failure: number }
+    risk_score_trend: Record<string, number>
+    risks_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    environment_risk_analysis: { development: number; production: number; staging: number }
+    compliance_framework_distribution: Record<string, number>
+    remediation_status_tracking: { not_started: number; in_progress: number; fixed: number; ignored: number }
+    asset_category_vulnerabilities: Record<string, number>
+    scan_duration_trends: Record<string, number>
+    security_posture_overview: Record<string, number>
+    mttr_per_day: Record<string, [number, number, number]>
+    scan_effectiveness_trend: Record<string, { false_positive: number; total_findings: number }>
+    compliance_framework_score_trend: Record<string, Record<string, number>>
+    vulnerability_age_distribution: Record<string, number>
 }
 
 /** Response from GET /{team_id}/mcp/scans (backend scans router) */
 export interface MCPScansListResponse {
     scans_list_data: MCPConversation[]
-    dashboard_data: Record<string, unknown>
+    dashboard_data: MCPListDashboardData
 }
 
 const getMCPConversations = async (team_id: number): Promise<MCPScansListResponse> => {
@@ -1393,6 +1616,10 @@ export interface SCASBOMConversation {
     owner_user_full_name?: string
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    repo_url?: string | null
+    zip_file_used?: boolean | null
+    branch?: string | null
+    average_risk_score?: number | null
 }
 
 /** Card counts returned by list SBOM/SCA scans (same shape as SastListCardData) */
@@ -1406,9 +1633,47 @@ export interface SBOMSCAListCardData {
     scans_updated_today: number
 }
 
+/** SBOM/SCA list dashboard from backend generate_sbom_sca_dashboard_data (GET /{team_id}/sbom_sca/scans) */
+export interface SBOMSCADashboardData {
+    remediation_actions_required: {
+        total_findings: number
+        total_fixed: number
+        total_in_progress: number
+        total_not_started: number
+        total_ignored: number
+    }
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    reachability_distribution: {
+        not_reachable: number
+        potentially_reachable: number
+        reachable: number
+        unknown: number
+    }
+    vulnerability_trends_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    licenses_distribution: Record<string, number>
+    top_vulnerabilities_by_risk_score: Array<{
+        dependency: string
+        reachability: string
+        dependency_type: string
+        license_type: string
+        impact: string
+    }>
+    card_data: {
+        total_vulnerabilities: number
+        total_critical_vulnerabilities: number
+        total_policy_violations: number
+        total_license_risks: number
+        total_high_risk_licenses: number
+        average_risk_score: number
+        total_reachable_issues: number
+    }
+    average_risk_score_per_reachability_level: Record<string, number>
+    policy_compliance_data: Record<string, number>
+}
+
 export interface SBOMSCAListResponse {
     scans_list_data: SCASBOMConversation[]
-    dashboard_data: ScanListDashboardData
+    dashboard_data: SBOMSCADashboardData
 }
 
 /** Team-scoped: GET /{team_id}/sbom_sca/scans */
@@ -1476,7 +1741,7 @@ const toggleFindingState = async ({
     state,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm";
     scan_id: number;
     finding_id: string;
     state: "fixed" | "ignored" | "in_progress" | "not_started";
@@ -1575,9 +1840,10 @@ export interface SCASBOMConversationResponse {
     title: string
     repo_url?: string | null
     scan_status: string
-    scan_metadata?: Record<string, unknown> | null
+    scan_metadata?: SbomScanMetadata | Record<string, unknown> | null
     data: any
-    dashboard?: SastDashboardData | null
+    dashboard?: SbomScanDashboardData | null
+    findings?: SbomFinding[] | null
     messages: SCASBOMConversationMessage[]
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null

@@ -339,6 +339,10 @@ async def get_scan(
         
 
         # STEP [ 4 ] : =================== Return the scan data ======================
+        # Expose raw scan result as "data" so frontend can show agent view (e.g. MCP tools/prompts/resources)
+        scan_result = None
+        if SCAN_DATA and isinstance(SCAN_DATA, dict):
+            scan_result = SCAN_DATA.get("results", SCAN_DATA)
         data = {
                 "title": scan.title,
                 "scan_metadata": scan_metadata,
@@ -348,6 +352,7 @@ async def get_scan(
                 "messages": MESSAGES,
                 "integration_settings": scan.integration_settings or {},
                 "info": SCAN_INFO,
+                "data": scan_result,
             }
 
         

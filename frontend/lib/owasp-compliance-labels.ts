@@ -142,6 +142,18 @@ export const COMPLIANCE_KEY_TO_LABEL: Record<string, string> = {
   MITRA_REPORTING: "Mitra Framework - Security Analytics & Reporting",
 };
 
+/** Distinct colors for compliance control badges (used in order) */
+export const COMPLIANCE_COLORS = [
+  "hsl(217 91% 60%)",
+  "hsl(172 66% 50%)",
+  "hsl(38 92% 50%)",
+  "hsl(280 67% 58%)",
+  "hsl(0 84% 60%)",
+  "hsl(142 71% 45%)",
+  "hsl(25 95% 53%)",
+  "hsl(330 81% 60%)",
+];
+
 /** Distinct colors for OWASP Top 10 categories (used in order) */
 export const OWASP_COLORS = [
   "hsl(262 83% 58%)",

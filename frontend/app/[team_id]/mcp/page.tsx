@@ -24,13 +24,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, Search, X, Shield, Activity, AlertTriangle, ChevronDown, ArrowUpDown, Check, CalendarPlus, CalendarCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { MCPConversation, deleteMCPConversation, getMCPConversations, renameMCPConversation, createMCPConversation } from "@/utils/backend_api";
-import type { ScanListDashboardData } from "@/utils/backend_api";
+import type { MCPListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
@@ -45,113 +47,502 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, RadialBar, RadialBarChart } from "recharts";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  RadialBar,
+  RadialBarChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
-/** List item with optional fields from backend */
-type MCPListItem = MCPConversation & {
-  owner_user_email?: string | null;
-  owner_user_full_name?: string | null;
-  scan_metadata?: Record<string, unknown> | null;
-  info?: { current?: number } | null;
-};
+/** List item from backend return_mcp_list_item */
+type MCPListItem = MCPConversation;
 
-// ─── Dashboard (no repos/zip, no risk charts) ───────────────────────────────────
-function ScanListDashboardSimple({ dashboardData }: { dashboardData: ScanListDashboardData }) {
-  const card = dashboardData.card_data;
-  const scansPerDayData = useMemo(() => {
-    return Object.entries(dashboardData.scans_per_day)
-      .map(([date, count]) => ({ date, scans: count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dashboardData.scans_per_day]);
+// ─── MCP Dashboard ──────────────────────────────────────────────────────────────
+const MCP_CATEGORIES = ["web", "file_system", "code_execution", "database", "search", "vector_store", "document_store"];
+const PIE_COLORS = ["hsl(142 71% 45%)", "hsl(217 91% 60%)", "hsl(0 72% 51%)", "hsl(270 50% 60%)", "hsl(25 95% 53%)", "hsl(45 93% 47%)"];
+
+function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboardData }) {
+  const card = dashboardData.card_data ?? { total_scans: 0, total_critical_issues: 0, average_risk_score: 0, total_active_scans: 0, total_resolved_issues: 0 };
+  const scanStatus = dashboardData.scan_status_distribution ?? { not_started: 0, started: 0, success: 0, failure: 0 };
+  const riskScoreTrend = dashboardData.risk_score_trend ?? {};
+  const risksOverTime = dashboardData.risks_over_time ?? {};
+  const severityDist = dashboardData.severity_distribution ?? { critical: 0, high: 0, medium: 0, low: 0 };
+  const envRisk = dashboardData.environment_risk_analysis ?? { development: 0, production: 0, staging: 0 };
+  const complianceDist = dashboardData.compliance_framework_distribution ?? {};
+  const remediation = dashboardData.remediation_status_tracking ?? { not_started: 0, in_progress: 0, fixed: 0, ignored: 0 };
+  const assetCat = dashboardData.asset_category_vulnerabilities ?? {};
+  const scanDuration = dashboardData.scan_duration_trends ?? {};
+  const securityPosture = dashboardData.security_posture_overview ?? {};
+  const mttr = dashboardData.mttr_per_day ?? {};
+  const effectiveness = dashboardData.scan_effectiveness_trend ?? {};
+  const complianceScoreTrend = dashboardData.compliance_framework_score_trend ?? {};
+  const vulnAge = dashboardData.vulnerability_age_distribution ?? {};
+
   const statusData = useMemo(() => [
-    { status: "success", count: card.success_scans, fill: "hsl(142 71% 45%)" },
-    { status: "started", count: card.started_scans, fill: "hsl(217 91% 60%)" },
-    { status: "pending", count: card.pending_scans, fill: "hsl(220 9% 46%)" },
-    { status: "failure", count: card.failure_scans, fill: "hsl(0 72% 51%)" },
-    { status: "not_started", count: card.not_started_scans, fill: "hsl(270 50% 60%)" },
-  ], [card]);
-  const barConfig = { scans: { label: "Scans", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
-  const radialConfig = { count: { label: "Scans" } } satisfies ChartConfig;
+    { status: "success", count: scanStatus.success, fill: "hsl(142 71% 45%)" },
+    { status: "started", count: scanStatus.started, fill: "hsl(217 91% 60%)" },
+    { status: "failure", count: scanStatus.failure, fill: "hsl(0 72% 51%)" },
+    { status: "not_started", count: scanStatus.not_started, fill: "hsl(270 50% 60%)" },
+  ], [scanStatus]);
+
+  const riskScoreTrendData = useMemo(() =>
+    Object.entries(riskScoreTrend)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  [riskScoreTrend]);
+
+  const risksOverTimeData = useMemo(() =>
+    Object.entries(risksOverTime)
+      .map(([date, v]) => ({ date, ...v }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  [risksOverTime]);
+
+  const severityData = useMemo(() => [
+    { severity: "Critical", count: severityDist.critical },
+    { severity: "High", count: severityDist.high },
+    { severity: "Medium", count: severityDist.medium },
+    { severity: "Low", count: severityDist.low },
+  ], [severityDist]);
+
+  const envData = useMemo(() =>
+    Object.entries(envRisk).map(([name, count]) => ({ name, count })),
+  [envRisk]);
+
+  const complianceData = useMemo(() =>
+    Object.entries(complianceDist).map(([name, value]) => ({ name, value })),
+  [complianceDist]);
+
+  const remediationData = useMemo(() => [
+    { status: "Not Started", count: remediation.not_started },
+    { status: "In Progress", count: remediation.in_progress },
+    { status: "Fixed", count: remediation.fixed },
+    { status: "Ignored", count: remediation.ignored },
+  ], [remediation]);
+
+  const assetData = useMemo(() => {
+    const entries = MCP_CATEGORIES.map((c) => ({ name: c.replace(/_/g, " "), count: assetCat[c] ?? 0 }));
+    return entries.filter((e) => e.count > 0).length > 0 ? entries : MCP_CATEGORIES.map((c) => ({ name: c.replace(/_/g, " "), count: 0 }));
+  }, [assetCat]);
+
+  const durationData = useMemo(() =>
+    Object.entries(scanDuration).map(([name, value]) => ({ name, duration: value })),
+  [scanDuration]);
+
+  const radarData = useMemo(() =>
+    MCP_CATEGORIES.map((c) => ({ category: c.replace(/_/g, " "), value: securityPosture[c] ?? 0 })),
+  [securityPosture]);
+
+  const mttrData = useMemo(() =>
+    Object.entries(mttr)
+      .map(([date, [d, h, m]]) => ({ date, totalMinutes: d * 24 * 60 + h * 60 + m }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  [mttr]);
+
+  const effectivenessData = useMemo(() =>
+    Object.entries(effectiveness)
+      .map(([date, v]) => ({ date, false_positive: v.false_positive, total_findings: v.total_findings }))
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  [effectiveness]);
+
+  const complianceScoreData = useMemo(() => {
+    const dates = Object.keys(complianceScoreTrend).sort();
+    const frameworks = new Set<string>();
+    dates.forEach((d) => Object.keys(complianceScoreTrend[d] ?? {}).forEach((f) => frameworks.add(f)));
+    const frameworkList = Array.from(frameworks);
+    return dates.map((date) => {
+      const row: Record<string, string | number> = { date };
+      frameworkList.forEach((f) => { row[f] = (complianceScoreTrend[date] ?? {})[f] ?? 0; });
+      return row;
+    });
+  }, [complianceScoreTrend]);
+
+  const complianceScoreFrameworkKeys = useMemo(() => {
+    if (complianceScoreData.length === 0) return [];
+    return Object.keys(complianceScoreData[0] ?? {}).filter((k) => k !== "date");
+  }, [complianceScoreData]);
+
+  const vulnAgeData = useMemo(() =>
+    Object.entries(vulnAge).map(([name, count]) => ({ name, count })),
+  [vulnAge]);
+
+  const areaConfig = {
+    critical: { label: "Critical", color: "hsl(0 72% 51%)" },
+    high: { label: "High", color: "hsl(25 95% 53%)" },
+    medium: { label: "Medium", color: "hsl(45 93% 47%)" },
+    low: { label: "Low", color: "hsl(217 91% 60%)" },
+  } satisfies ChartConfig;
+
+  const barConfig = { count: { label: "Count", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+      {/* 5 summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                <Activity className="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total Scans</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_scans}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Critical Issues</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_issues}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15" : card.average_risk_score >= 5 ? "bg-amber-500/15" : "bg-green-500/15"}`}>
+                <Shield className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score} / 10</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                <Play className="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Active Scans</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_active_scans}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/15 dark:bg-green-500/10">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Resolved (7d)</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_resolved_issues}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts row 1: Scan Status | Risk Score Trend | Risks Over Time */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Not Started</CardTitle>
-            <Clock className="h-4 w-4 text-zinc-400" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Scan Status Distribution</CardTitle>
+            <CardDescription>Distribution of scan outcomes</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.not_started_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
+            {statusData.every((s) => s.count === 0) ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No scans yet</p>
+            ) : (
+              <ChartContainer config={barConfig} className="mx-auto aspect-square max-h-[220px]">
+                <PieChart>
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Pie data={statusData} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={80} label>
+                    {statusData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-3 mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(142 71% 45%)" }} />Success</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(217 91% 60%)" }} />Started</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(0 72% 51%)" }} />Failure</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(270 50% 60%)" }} />Not Started</span>
+            </div>
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-zinc-500" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Risk Score Trend</CardTitle>
+            <CardDescription>Average risk score per MCP server scan</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.pending_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
+            {riskScoreTrendData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No risk data yet</p>
+            ) : (
+              <ChartContainer config={{ value: { label: "Risk Score", color: "#2563eb" } }} className="h-[220px] w-full">
+                <AreaChart data={riskScoreTrendData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v} />
+                  <YAxis tickLine={false} axisLine={false} domain={[0, 10]} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="value" fill="#2563eb" stroke="#2563eb" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</CardTitle>
-            <Play className="h-4 w-4 text-blue-500" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Risks Over Time</CardTitle>
+            <CardDescription>Vulnerability counts per date</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.started_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
+            {risksOverTimeData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No risk data yet</p>
+            ) : (
+              <ChartContainer config={areaConfig} className="h-[220px] w-full">
+                <AreaChart data={risksOverTimeData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Area type="monotone" dataKey="critical" stackId="a" fill="var(--color-critical)" stroke="var(--color-critical)" fillOpacity={0.4} />
+                  <Area type="monotone" dataKey="high" stackId="a" fill="var(--color-high)" stroke="var(--color-high)" fillOpacity={0.4} />
+                  <Area type="monotone" dataKey="medium" stackId="a" fill="var(--color-medium)" stroke="var(--color-medium)" fillOpacity={0.4} />
+                  <Area type="monotone" dataKey="low" stackId="a" fill="var(--color-low)" stroke="var(--color-low)" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts row 2: Severity | Environment | Compliance | Remediation */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardDescription>Issues by severity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {severityData.every((s) => s.count === 0) ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={barConfig} className="h-[200px] w-full">
+                <BarChart data={severityData} layout="vertical" margin={{ left: 8 }}>
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="severity" width={70} tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Environment Risk Analysis</CardTitle>
+            <CardDescription>Issues by environment</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.success_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
+            {envData.every((e) => e.count === 0) ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={barConfig} className="h-[200px] w-full">
+                <BarChart data={envData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</CardTitle>
-            <XCircle className="h-4 w-4 text-red-500" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Compliance Framework Distribution</CardTitle>
+            <CardDescription>Issues per framework</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.failure_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
+            {complianceData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={barConfig} className="mx-auto aspect-square max-h-[200px]">
+                <PieChart>
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Pie data={complianceData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
+                    {complianceData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</CardTitle>
-            <CalendarPlus className="h-4 w-4 text-zinc-500" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Remediation Status</CardTitle>
+            <CardDescription>Issue resolution status</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_created_today}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
+            {remediationData.every((r) => r.count === 0) ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={barConfig} className="h-[200px] w-full">
+                <BarChart data={remediationData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="status" tickLine={false} axisLine={false} tickFormatter={(v) => String(v).length > 8 ? `${String(v).slice(0, 8)}...` : v} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts row 3: Asset Categories | Scan Duration | Security Posture */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Asset Category Vulnerabilities</CardTitle>
+            <CardDescription>Issues by asset category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {assetData.every((a) => a.count === 0) ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={barConfig} className="h-[220px] w-full">
+                <BarChart data={assetData} layout="vertical" margin={{ left: 8 }}>
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</CardTitle>
-            <CalendarCheck className="h-4 w-4 text-zinc-500" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Scan Duration Trends</CardTitle>
+            <CardDescription>Duration per MCP server scan (seconds)</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_updated_today}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+            {durationData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={{ duration: { label: "Duration (s)", color: "#0d9488" } }} className="h-[220px] w-full">
+                <BarChart data={durationData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickFormatter={(v) => String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="duration" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Security Posture Overview</CardTitle>
+            <CardDescription>Risk score per category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{ value: { label: "Risk Score" } }} className="mx-auto aspect-square max-h-[220px]">
+              <RadarChart data={radarData}>
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <PolarAngleAxis dataKey="category" />
+                <PolarGrid />
+                <Radar dataKey="value" fill="var(--color-value)" fillOpacity={0.6} />
+              </RadarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts row 4: MTTR | Scan Effectiveness | Compliance Score | Vuln Age */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Mean Time to Remediate per Day</CardTitle>
+            <CardDescription>Total remediation time (minutes) per date</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {mttrData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer config={{ totalMinutes: { label: "Minutes", color: "#7c3aed" } }} className="h-[220px] w-full">
+                <AreaChart data={mttrData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="totalMinutes" fill="#7c3aed" stroke="#7c3aed" fillOpacity={0.4} />
+                </AreaChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Scan Effectiveness Trend</CardTitle>
+            <CardDescription>False positives vs total findings per date</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {effectivenessData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
+            ) : (
+              <ChartContainer
+                config={{
+                  false_positive: { label: "False Positives", color: "#dc2626" },
+                  total_findings: { label: "Total Findings", color: "#2563eb" },
+                }}
+                className="h-[220px] w-full"
+              >
+                <BarChart data={effectivenessData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="false_positive" fill="var(--color-false_positive)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total_findings" fill="var(--color-total_findings)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -159,48 +550,50 @@ function ScanListDashboardSimple({ dashboardData }: { dashboardData: ScanListDas
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scans Per Day</CardTitle>
-            <CardDescription>Number of scans created each day</CardDescription>
+            <CardTitle className="text-base">Compliance Framework Score Trend</CardTitle>
+            <CardDescription>Compliance score per framework over time</CardDescription>
           </CardHeader>
           <CardContent>
-            {scansPerDayData.length === 0 ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No scan activity yet</p>
+            {complianceScoreData.length === 0 || complianceScoreFrameworkKeys.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
             ) : (
-              <ChartContainer config={barConfig} className="h-[280px] w-full">
-                <BarChart data={scansPerDayData}>
+              <ChartContainer
+                config={Object.fromEntries(complianceScoreFrameworkKeys.map((f, i) => [f, { label: f, color: PIE_COLORS[i % PIE_COLORS.length] }])) as ChartConfig}
+                className="h-[220px] w-full"
+              >
+                <AreaChart data={complianceScoreData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
-                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Bar dataKey="scans" fill="var(--color-scans)" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <YAxis tickLine={false} axisLine={false} domain={[0, 100]} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  {complianceScoreFrameworkKeys.map((k, i) => (
+                    <Area key={k} type="monotone" dataKey={k} stackId={undefined} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke={PIE_COLORS[i % PIE_COLORS.length]} fillOpacity={0.3} />
+                  ))}
+                </AreaChart>
               </ChartContainer>
             )}
           </CardContent>
         </Card>
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Scan Status Breakdown</CardTitle>
-            <CardDescription>Distribution of scan outcomes</CardDescription>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Vulnerability Age Distribution</CardTitle>
+            <CardDescription>Fixed/ignored issues by resolution time</CardDescription>
           </CardHeader>
           <CardContent>
-            {statusData.every((s) => s.count === 0) ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No scans yet</p>
+            {vulnAgeData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data</p>
             ) : (
-              <ChartContainer config={radialConfig} className="mx-auto aspect-square max-h-[280px]">
-                <RadialBarChart data={statusData} innerRadius={30} outerRadius={110}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="status" hideLabel />} />
-                  <RadialBar dataKey="count" background />
-                </RadialBarChart>
+              <ChartContainer config={barConfig} className="h-[220px] w-full">
+                <BarChart data={vulnAgeData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickFormatter={(v) => String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+                </BarChart>
               </ChartContainer>
             )}
-            <div className="flex flex-wrap items-center justify-center gap-4 mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(142 71% 45%)" }} />Success</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(217 91% 60%)" }} />Started</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(220 9% 46%)" }} />Pending</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(0 72% 51%)" }} />Failure</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(270 50% 60%)" }} />Not Started</span>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -255,7 +648,7 @@ export default function MCPPage() {
       return 0;
     });
   const clearFilters = () => { setSearchQuery(""); setStatusFilter("all"); setCreatedAtSort("none"); };
-  const dashboardData = query.data?.dashboard_data as ScanListDashboardData | undefined;
+  const dashboardData = query.data?.dashboard_data as MCPListDashboardData | undefined;
 
   const deleteMCPConversationMutation = useMutation({
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteMCPConversation(team_id, scan_id),
@@ -401,7 +794,7 @@ export default function MCPPage() {
 
               <TabsContent value="dashboard">
                 {dashboardData ? (
-                  <ScanListDashboardSimple dashboardData={dashboardData} />
+                  <MCPScanListDashboard dashboardData={dashboardData} />
                 ) : (
                   <p className="text-center text-sm text-zinc-500 py-12">No dashboard data available.</p>
                 )}
@@ -426,15 +819,41 @@ export default function MCPPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="text-zinc-600 dark:text-zinc-400 text-sm">Sort by</div>
-                    <Select value={createdAtSort} onValueChange={(v) => setCreatedAtSort(v as "none" | "asc" | "desc")}>
-                      <SelectTrigger className="h-9 min-w-[170px] cursor-pointer"><SelectValue placeholder="Created at" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Default</SelectItem>
-                        <SelectItem value="desc">Newest</SelectItem>
-                        <SelectItem value="asc">Oldest</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            createdAtSort !== "none"
+                              ? "border-violet-500 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:text-violet-300 dark:hover:bg-violet-950/50"
+                              : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <ArrowUpDown className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">
+                            {createdAtSort === "none" ? "Sort" : createdAtSort === "desc" ? "Newest" : "Oldest"}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[180px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setCreatedAtSort("none")}>
+                          {createdAtSort === "none" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          Default
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setCreatedAtSort("desc")}>
+                          {createdAtSort === "desc" ? <Check className="h-4 w-4" /> : <CalendarPlus className="h-4 w-4" />}
+                          Created (newest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setCreatedAtSort("asc")}>
+                          {createdAtSort === "asc" ? <Check className="h-4 w-4" /> : <CalendarCheck className="h-4 w-4" />}
+                          Created (oldest)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     {hasActiveFilters && (
                       <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer" onClick={clearFilters}>
                         <X className="h-4 w-4 mr-1" />Clear filters
@@ -456,41 +875,48 @@ export default function MCPPage() {
                     <Button variant="outline" className="cursor-pointer" onClick={clearFilters}><X className="h-4 w-4 mr-2" />Clear filters</Button>
                   </div>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[220px]">Title</TableHead>
-                          <TableHead>Owner</TableHead>
-                          <TableHead>Created at</TableHead>
-                          <TableHead>Last updated</TableHead>
-                          <TableHead>Scan status</TableHead>
-                          <TableHead className="w-[180px]">View scan metadata</TableHead>
-                          <TableHead className="text-right w-[80px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredConversations.map((conversation) => (
-                          <TableRow
-                            key={conversation.id}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
-                            onClick={(e) => {
-                              const target = e.target as HTMLElement;
-                              if (target.closest("button") || target.closest("[role='menuitem']")) return;
-                              const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
-                                ? `/${team_id}/mcp/${conversation.id}/results`
-                                : `/${team_id}/mcp/${conversation.id}`;
-                              router.push(dest);
-                            }}
-                          >
-                            <TableCell className="font-medium">
-                              <Link
-                                href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/mcp/${conversation.id}/results` : `/${team_id}/mcp/${conversation.id}`}
-                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
-                              >
-                                {conversation.title}
-                              </Link>
-                            </TableCell>
+                  <ScrollArea className="w-full border rounded-lg">
+                    <div className="min-w-max">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[220px]">Title</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead>Server</TableHead>
+                            <TableHead>Risk Score</TableHead>
+                            <TableHead>Discovery</TableHead>
+                            <TableHead>Risky assets</TableHead>
+                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
+                            <TableHead>Created at</TableHead>
+                            <TableHead>Last updated</TableHead>
+                            <TableHead>Scan status</TableHead>
+                            <TableHead className="w-[180px]">View scan metadata</TableHead>
+                            <TableHead className="text-right w-[80px]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredConversations.map((conversation) => (
+                            <TableRow
+                              key={conversation.id}
+                              className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                              onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.closest("button") || target.closest("[role='menuitem']")) return;
+                                const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
+                                  ? `/${team_id}/mcp/${conversation.id}/results`
+                                  : `/${team_id}/mcp/${conversation.id}`;
+                                router.push(dest);
+                              }}
+                            >
+                              <TableCell className="font-medium max-w-[220px] min-w-[160px]">
+                                <Link
+                                  href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/mcp/${conversation.id}/results` : `/${team_id}/mcp/${conversation.id}`}
+                                  className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:underline cursor-pointer truncate block"
+                                  title={conversation.title}
+                                >
+                                  {conversation.title}
+                                </Link>
+                              </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400">
                               {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" || conversation.owner_user_email ? (
                                 <div className="flex items-center gap-2">
@@ -512,6 +938,39 @@ export default function MCPPage() {
                                 </div>
                               ) : ("—")}
                             </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.server ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.average_risk_score != null
+                                ? Number(conversation.average_risk_score).toFixed(1)
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.discovery_metrics
+                                ? `T: ${conversation.discovery_metrics.total_tools} P: ${conversation.discovery_metrics.total_prompts} R: ${conversation.discovery_metrics.total_resources}`
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.risky_assets != null ? conversation.risky_assets : "—"}
+                            </TableCell>
+                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                              {conversation.risk_data ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {[
+                                    { label: "Critical", n: conversation.risk_data.total_critical, dot: "bg-red-500" },
+                                    { label: "High", n: conversation.risk_data.total_high, dot: "bg-orange-500" },
+                                    { label: "Medium", n: conversation.risk_data.total_medium, dot: "bg-amber-500" },
+                                    { label: "Low", n: conversation.risk_data.total_low, dot: "bg-blue-500" },
+                                  ].map(({ label, n, dot }) => (
+                                    <span key={label} className="flex items-center gap-1.5 shrink-0" title={label}>
+                                      <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} aria-hidden />
+                                      <span className="tabular-nums">{typeof n === "number" ? n : 0}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : "—"}
+                            </TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
                             <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
                             <TableCell className="text-sm">
@@ -531,30 +990,32 @@ export default function MCPPage() {
                               </Button>
                             </TableCell>
                             <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreVertical className="h-4 w-4" /></Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/mcp/${conversation.id}/results?origin=list`)}>
-                                      <Eye className="h-4 w-4 mr-2" />View Results
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreVertical className="h-4 w-4" /></Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/mcp/${conversation.id}/results?origin=list`)}>
+                                        <Eye className="h-4 w-4 mr-2" />View Results
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
+                                      <Pencil className="h-4 w-4 mr-2" />Rename
                                     </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                    <Pencil className="h-4 w-4 mr-2" />Rename
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                    <Trash2 className="h-4 w-4 mr-2" />Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
                 )}
               </TabsContent>
             </Tabs>

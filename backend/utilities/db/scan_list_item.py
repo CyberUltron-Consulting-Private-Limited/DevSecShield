@@ -211,7 +211,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for prompt in scan.scan_data["results"]["prompts"]:
+        for prompt in scan.scan_data["results"]["prompts"] and "results" in scan.scan_data and scan.scan_status == "success":
             total_prompts += 1
             for vulnerability in prompt["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -222,7 +222,7 @@ def return_mcp_list_item(scan : Scan) -> dict:
                     total_medium += 1
                 elif vulnerability["impact"].lower() == "low":
                     total_low += 1
-        for resource in scan.scan_data["results"]["resources"]:
+        for resource in scan.scan_data["results"]["resources"] and "results" in scan.scan_data and scan.scan_status == "success":
             total_resources += 1
             for vulnerability in resource["vulnerabilities"]:
                 if vulnerability["impact"].lower() == "critical":
@@ -243,15 +243,16 @@ def return_mcp_list_item(scan : Scan) -> dict:
 
     # calculating risky resources
     risky_resources = 0 
-    for tool in scan.scan_data["results"]["tools"]:
-        if tool["tool_risk_level"].lower() == "high" or tool["tool_risk_level"].lower() == "critical":
-            risky_resources += 1
-    for prompt in scan.scan_data["results"]["prompts"]:
-        if prompt["prompt_risk_level"].lower() == "high" or prompt["prompt_risk_level"].lower() == "critical":
-            risky_resources += 1
-    for resource in scan.scan_data["results"]["resources"]:
-        if resource["resource_risk_level"].lower() == "high" or resource["resource_risk_level"].lower() == "critical":
-            risky_resources += 1
+    if "results" in scan.scan_data and scan.scan_status == "success":
+        for tool in scan.scan_data["results"]["tools"]:
+            if tool["tool_risk_level"].lower() == "high" or tool["tool_risk_level"].lower() == "critical":
+                risky_resources += 1
+        for prompt in scan.scan_data["results"]["prompts"]:
+            if prompt["prompt_risk_level"].lower() == "high" or prompt["prompt_risk_level"].lower() == "critical":
+                risky_resources += 1
+        for resource in scan.scan_data["results"]["resources"]:
+            if resource["resource_risk_level"].lower() == "high" or resource["resource_risk_level"].lower() == "critical":
+                risky_resources += 1
 
 
     # calculating average risk score
@@ -289,16 +290,21 @@ def return_mcp_list_item(scan : Scan) -> dict:
 
 def return_llm_list_item(scan : Scan) -> dict:
     total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
+    vulns: list = []
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
-        for vulnerability in scan.scan_data["results"]:
-            if vulnerability["impact"].lower() == "critical":
-                total_critical += 1
-            elif vulnerability["impact"].lower() == "high":
-                total_high += 1
-            elif vulnerability["impact"].lower() == "medium":
-                total_medium += 1
-            elif vulnerability["impact"].lower() == "low":
-                total_low += 1
+        results = scan.scan_data.get("results") or {}
+        vulns = results.get("vulnerabilities") or []
+        for vulnerability in vulns:
+            if isinstance(vulnerability, dict):
+                imp = (vulnerability.get("impact") or "").lower()
+                if imp == "critical":
+                    total_critical += 1
+                elif imp == "high":
+                    total_high += 1
+                elif imp == "medium":
+                    total_medium += 1
+                elif imp == "low":
+                    total_low += 1
 
     risk_data = {
         "total_critical": total_critical,
@@ -307,9 +313,10 @@ def return_llm_list_item(scan : Scan) -> dict:
         "total_low": total_low,
     }
 
-    model_vulnerabilities = scan.scan_data["results"]["model_vulnerabilities"] 
+    results_safe = (scan.scan_data or {}).get("results") or {}
+    model_vulnerabilities = results_safe.get("model_vulnerabilities") or {}
     """
-    model_vulnerabilities will look like this : 
+    model_vulnerabilities will look like this :
         {
             "jailbreak_resistance_score": 10,
             "injection_resistance_score": 10,
@@ -320,14 +327,27 @@ def return_llm_list_item(scan : Scan) -> dict:
         }
     """
 
+    # calculating average risk score (0-10 scale, same as IAC)
+    total = total_critical + total_high + total_medium + total_low
+    if total > 0:
+        weighted = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / total
+        average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+    else:
+        average_risk_score = 0.0
 
-    # calculating average risk score
-    if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1 / (total_critical + total_high + total_medium + total_low)
-        
-    mitre_atlas_tactics = 0 
-    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
-        mitre_atlas_tactics = len(set([vulnerability["mitre_atlas_tactic"] for vulnerability in scan.scan_data["results"]["vulnerabilities"]]))
+    mitre_atlas_tactics = 0
+    if vulns:
+        tactics = set()
+        for v in vulns:
+            if isinstance(v, dict):
+                t = v.get("mitre_atlas_tactic")
+                if t is not None:
+                    tactics.add(str(t))
+        mitre_atlas_tactics = len(tactics)
+
+    scan_meta = scan.scan_metadata or {}
+    data_meta = (scan.scan_data or {}).get("metadata") or {}
+    model_name = scan_meta.get("model_name") or data_meta.get("model_name")
 
     return {
         "id": scan.id,
@@ -340,13 +360,14 @@ def return_llm_list_item(scan : Scan) -> dict:
         "owner_user_email": scan.owner_user.email,
         "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
 
+        "info": scan.info,
+        "risk_data": risk_data,
+        "average_risk_score": round(average_risk_score * 10) / 10 if total > 0 else 0.0,
+        "model_type": scan_meta.get("model_type"),
+        "model_name": model_name,
+        "attack_iterations": scan_meta.get("generations"),
+        "total_attacks_performed": len(scan_meta.get("probes") or []),
 
-        "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
-        'risk_data': risk_data,
-        "model_type" : scan.scan_metadata["model_type"] if scan.scan_metadata and "model_type" in scan.scan_metadata else None,
-        "attack_iterations" : scan.scan_metadata["generations"] if scan.scan_metadata and "generations" in scan.scan_metadata else None,
-        "total_attacks_performed" : len(scan.scan_metadata["probes"]) if scan.scan_metadata and "probes" in scan.scan_metadata else None,
-
-        "model_vulnerabilities" : model_vulnerabilities,
-        "total_mitre_atlas_tactics" : mitre_atlas_tactics,
+        "model_vulnerabilities": model_vulnerabilities,
+        "total_mitre_atlas_tactics": mitre_atlas_tactics,
     }

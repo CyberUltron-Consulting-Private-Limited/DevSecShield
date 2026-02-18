@@ -110,6 +110,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
+                "status": finding["finding_status"],
                 "vulnerability_predictions": finding["finding_data"]["vulnerability_predictions"],
                 "owasp_top_10_llm": finding["finding_data"]["owasp_top_10_llm"],
                 "compliance_controls": finding["finding_data"]["compliance_controls"],

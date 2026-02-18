@@ -340,7 +340,7 @@ try:
 
 
 
-    @app.task(track_started=True, bind=True)
+    @app.task(track_started=True, bind=True , soft_time_limit=1200 , time_limit=1800)
     def mcp_scan(
         self:Task,
         mcp_dict_context: dict,
@@ -350,6 +350,7 @@ try:
             start_time = time.time()
             state_update_writer = StateUpdateWriter(self)
             mcp_context = MCPContext.model_validate_json(json.dumps(mcp_dict_context))
+            print(mcp_context)
             mcp_agent = MCPAgent(
                 mcp_context=mcp_context,
                 state_update_writer=state_update_writer,
@@ -400,6 +401,7 @@ try:
         ):
         try:
             mcp_context = MCPContext.model_validate_json(json.dumps(mcp_dict_context))
+            print(mcp_context)
             mcp_agent = MCPAgent(
                 mcp_context=mcp_context,
             )

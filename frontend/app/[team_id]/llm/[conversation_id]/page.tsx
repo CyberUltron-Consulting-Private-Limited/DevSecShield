@@ -61,12 +61,19 @@ export default function LLMPage() {
       <Loader2 className="size-10 animate-spin text-blue-600" />
     </div>;
   }
+
+  const scanInfo = query.data?.info;
+  const isInProgress = scan_status === "pending" || scan_status === "started";
+
   return (
     <div className="flex h-screen">
       {/* Main Content Area */}
       <div className="flex-1 bg-white dark:bg-zinc-900  overflow-auto">
         <div className="mx-auto">
-          <ChatWindow query={query}/>
+          <ChatWindow
+            query={query}
+            progress={isInProgress && scanInfo?.current != null ? { current: scanInfo.current } : undefined}
+          />
         </div>
       </div>
 

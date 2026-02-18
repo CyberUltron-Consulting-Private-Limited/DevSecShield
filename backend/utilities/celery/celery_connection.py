@@ -129,6 +129,7 @@ def get_status_and_update_db(
                 info = async_result.info
                 if "current" in info: 
                     scan.info = {"current": info["current"]}  # for progress bar updates
+                    console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
             elif SCAN_STATUS == "success":
                 results = simple_app.AsyncResult(task_id).result 
                 if not results:

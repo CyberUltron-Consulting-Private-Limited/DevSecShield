@@ -58,6 +58,11 @@ MITRE_ATLAS_TACTICS = (
 LICENSE_HIGH_RISK = {"strong_copyleft", "network_copyleft", "source_available"}
 LICENSE_MEDIUM_RISK = {"weak_copyleft", "creative_commons", "commercial"}
 LICENSE_DOCSTRING_KEYS = ("permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial")
+# All license categories for distribution (includes high-risk + unknown; all shown with default 0)
+LICENSE_ALL_CATEGORIES = (
+    "permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial",
+    "strong_copyleft", "network_copyleft", "source_available", "unknown",
+)
 
 console = Console()
 def generate_scan_dashboard(
@@ -625,7 +630,10 @@ def generate_scan_dashboard(
                 "content_safety_score": float(model_vulns.get("content_safety_score") or 0),
                 "data_privacy_score": float(model_vulns.get("data_privacy_score") or 0),
             }
-            owasp_top_10_llm_metrics = {k: owasp_llm_counts.get(k, 0) for k in OWASP_LLM_KEYS}
+            # Ensure all OWASP LLM categories are present as keys with default 0 (frontend needs this)
+            owasp_top_10_llm_metrics = dict.fromkeys(OWASP_LLM_KEYS, 0)
+            for k, v in owasp_llm_counts.items():
+                owasp_top_10_llm_metrics[k] = v
             mitre_atlas_metrics = {t: mitre_counts.get(t, 0) for t in MITRE_ATLAS_TACTICS}
 
             adversarial_attack_outcomes: dict[str, dict[str, int]] = {}
@@ -679,7 +687,7 @@ def generate_scan_dashboard(
                 - average risk score ( based on weighted average of impact class of all vulnerabilities )
                 - total reachable issues
 
-            2. Remediation Actions required :
+            2. Remediation Actions required : ( Card with a list of progress bars and icons )
                 {
                     "total_findings" : total_findings,
                     "total_fixed" : total_fixed,
@@ -687,26 +695,27 @@ def generate_scan_dashboard(
                     "total_not_started" : total_not_started,
                     "total_ignored" : total_ignored,
                 }
-            3. severity distribution :
+            3. severity distribution : ( radar chart )
                 {
                     "critical" : total_critical_issues,
                     "high" : total_high_issues,
                     "medium" : total_medium_issues,
                     "low" : total_low_issues,
                 }
-            4. Reachability Age ( how long a certail finding remained in not_reachable or potentially_reachable status )
+            4. Reachability Age ( how long a certail finding remained in not_reachable or potentially_reachable status ) ( Bar chart )
                 {
                     "not_reachable" : total_not_reachable_issues,
                     "potentially_reachable" : total_potentially_reachable_issues,
                     "reachable" : total_reachable_issues,
                     "unknown" : total_unknown_issues,
                 }
-            5. Vulnerability Trends over time :
+            5. Vulnerability remediation Trends over time : ( area - line chart )
+                note : here the date key is the fixed_at or ignored_at dates for the fixed and ignored findings of this scan 
                 {
                     "2026-01-01" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
                     "2026-01-02" : { "critical" : 15, "high" : 25, "medium" : 35, "low" : 45 },
                 }
-            6. Licenses Distribution :
+            6. Licenses Distribution : ( pie chart )
                 {
                     "permissive" : total_permissive_licenses,
                     "public_domain" : total_public_domain_licenses,
@@ -714,7 +723,7 @@ def generate_scan_dashboard(
                     "creative_commons" : total_creative_commons_licenses,
                     "commercial" : total_commercial_licenses,
                 }
-            7. Top Vulnerabilities by Risk Score :
+            7. Top Vulnerabilities by Risk Score : ( Card with a list of components )
                 ( sorted by impact in descending order )
                 [
                     {
@@ -791,12 +800,29 @@ def generate_scan_dashboard(
             other_reach = sum(v for k, v in reachability_counts.items() if k not in reachability_distribution)
             reachability_distribution["unknown"] = reachability_distribution.get("unknown", 0) + other_reach
 
-            date_key = str(scan.created_at.date()) if (scan and getattr(scan, "created_at", None)) else ""
-            if not date_key:
-                date_key = str(datetime.now(timezone.utc).date())
-            vulnerability_trends_over_time = {date_key: dict(severity_counts)}
+            # Vulnerability remediation trends: date key = fixed_at or ignored_at for fixed/ignored findings
+            vulnerability_trends_over_time: dict[str, dict[str, int]] = {}
+            severity_keys = ("critical", "high", "medium", "low")
+            for f in findings or []:
+                status = (f.get("finding_status") or "").strip().lower()
+                resolved_date: str | None = None
+                if status == "fixed" and f.get("fixed_at"):
+                    resolved_date = str(f["fixed_at"].date()) if hasattr(f["fixed_at"], "date") else None
+                elif status == "ignored" and f.get("ignored_at"):
+                    resolved_date = str(f["ignored_at"].date()) if hasattr(f["ignored_at"], "date") else None
+                if not resolved_date:
+                    continue
+                if resolved_date not in vulnerability_trends_over_time:
+                    vulnerability_trends_over_time[resolved_date] = {k: 0 for k in severity_keys}
+                fd = f.get("finding_data") or {}
+                imp = (fd.get("impact") or "low").lower().strip()
+                if imp in severity_keys:
+                    vulnerability_trends_over_time[resolved_date][imp] += 1
+            # Sort by date for consistent chart ordering
+            if vulnerability_trends_over_time:
+                vulnerability_trends_over_time = dict(sorted(vulnerability_trends_over_time.items()))
 
-            licenses_distribution = {k: license_counts.get(k, 0) for k in LICENSE_DOCSTRING_KEYS}
+            licenses_distribution = {k: license_counts.get(k, 0) for k in LICENSE_ALL_CATEGORIES}
 
             top_vulnerabilities_by_risk_score = [
                 {

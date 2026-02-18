@@ -9,6 +9,16 @@ from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics
 
 console = Console()
 
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    """Normalize datetime to UTC-aware. Handles naive datetimes by assuming UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 # OWASP short label: split enum-style value by " - " (see RabbitMQ/worker/helpers/context/enums.py OWASPTop10).
 # e.g. "A01:2021 - Broken Access Control" -> "Broken Access Control"
 def _short_label_owasp(key: str) -> str:
@@ -658,7 +668,7 @@ def generate_sast_dashboard_data(scans: list[Scan]) -> dict:
 
 def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     """
-    1. Remediation Actions required :
+    1. Remediation Actions required ( card with progress bars and icons ) :
         {
             "total_findings" : total_findings,
             "total_fixed" : total_fixed,
@@ -666,27 +676,27 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
             "total_not_started" : total_not_started,
             "total_ignored" : total_ignored,
         }
-    2. severity distribution :
+    2. severity distribution ( radar chart ) :
         {
             "critical" : total_critical_issues,
             "high" : total_high_issues,
             "medium" : total_medium_issues,
             "low" : total_low_issues,
         }
-    3. Reachability Age ( how long a certail finding remained in not_reachable or potentially_reachable status )
+    3. Reachability Age ( how long a certail finding remained in not_reachable or potentially_reachable status ) ( Bar chart )
         {
             "not_reachable" : total_not_reachable_issues,
             "potentially_reachable" : total_potentially_reachable_issues,
             "reachable" : total_reachable_issues,
             "unknown" : total_unknown_issues,
         }
-    4. Vulnerability Trends over time : 
+    4. Vulnerability Trends over time ( area - line chart ) : 
         {
             "2026-01-01" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
             "2026-01-02" : { "critical" : 15, "high" : 25, "medium" : 35, "low" : 45 },
             "2026-01-03" : { "critical" : 20, "high" : 30, "medium" : 40, "low" : 50 },
         }
-    5. Licenses Distribution :
+    5. Licenses Distribution ( card with progress bars and icons ):
         {
             "permissive" : total_permissive_licenses,
             "public_domain" : total_public_domain_licenses,
@@ -694,7 +704,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
             "creative_commons" : total_creative_commons_licenses,
             "commercial" : total_commercial_licenses,
         }
-    6. Top Vulnerabilities by Risk Score :
+    6. Top Vulnerabilities by Risk Score ( Card with a list of components ):
         ( sorted by impact in descending order )
         [
             {
@@ -718,13 +728,21 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         - average risk score ( based on weighted average of impact class of all vulnerabilities )
         - total reachable issues 
     
-    8. Average risk score per reachability level :
+    8. Average risk score per reachability level : ( radar chart )
         note : calculate average risk score for each reachability level by weighted average of impact class of all vulnerabilities for that reachability level
         {
             "reachable" : average_risk_score_reachable,
             "potentially_reachable" : average_risk_score_potentially_reachable,
             "not_reachable" : average_risk_score_not_reachable,
             "unknown" : average_risk_score_unknown,
+        }
+    9. Policy Compliance Data : ( Card with a list of progress bars and icons )
+        {
+            "PCI DSS" : total_pci_dss_issues,
+            "ISO 27001" : total_iso_27001_issues,
+            "ISO 27002" : total_iso_27002_issues,
+            "ISO 27003" : total_iso_27003_issues,
+            "ISO 27004" : total_iso_27004_issues,
         }
     
     """
@@ -740,6 +758,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     reachability_counts: dict[str, int] = defaultdict(int)
     vulnerability_trends_over_time: dict[str, dict[str, int]] = {}
     license_counts: dict[str, int] = defaultdict(int)
+    policy_compliance_counts: dict[str, int] = defaultdict(int)
     total_policy_violations = 0
     risk_score_weighted_sum = 0.0
     risk_score_count = 0
@@ -749,7 +768,11 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
     license_high_risk = {"strong_copyleft", "network_copyleft", "source_available"}
     license_medium_risk = {"weak_copyleft", "creative_commons", "commercial"}
-    license_docstring_keys = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial"]
+    # All license categories for distribution (all shown with default 0)
+    license_all_categories = [
+        "permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial",
+        "strong_copyleft", "network_copyleft", "source_available", "unknown",
+    ]
 
     for scan in sbom_scans:
         if scan.scan_status != "success":
@@ -779,8 +802,17 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
             cc = item.get("compliance_controls")
             if isinstance(cc, dict):
                 total_policy_violations += len(cc)
+                for val in cc.values():
+                    std = _extract_standard(str(val) if val is not None else "")
+                    if std:
+                        policy_compliance_counts[std] += 1
             elif isinstance(cc, list):
                 total_policy_violations += len(cc)
+                for c in cc:
+                    s = c.get("value", c) if isinstance(c, dict) else c
+                    std = _extract_standard(str(s) if s is not None else "")
+                    if std:
+                        policy_compliance_counts[std] += 1
             w = impact_order.get(imp, 1)
             risk_score_weighted_sum += (w / 4) * 10
             risk_score_count += 1
@@ -814,7 +846,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "unknown": reachability_counts.get("unknown", 0) + other_reach,
     }
     vulnerability_trends_over_time = dict(sorted(vulnerability_trends_over_time.items()))
-    licenses_distribution = {k: license_counts.get(k, 0) for k in license_docstring_keys}
+    licenses_distribution = {k: license_counts.get(k, 0) for k in license_all_categories}
 
     top_vulnerabilities_by_risk_score = []
     for item in all_results:
@@ -851,6 +883,14 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         else:
             average_risk_score_per_reachability_level[r] = 0.0
 
+    policy_compliance_data = {
+        "PCI DSS": policy_compliance_counts.get("PCI DSS", 0),
+        "ISO 27001": policy_compliance_counts.get("ISO 27001", 0),
+        "ISO 27002": policy_compliance_counts.get("ISO 27002", 0),
+        "ISO 27003": policy_compliance_counts.get("ISO 27003", 0),
+        "ISO 27004": policy_compliance_counts.get("ISO 27004", 0),
+    }
+
     return {
         "remediation_actions_required": remediation_actions_required,
         "severity_distribution": severity_distribution,
@@ -860,6 +900,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "top_vulnerabilities_by_risk_score": top_vulnerabilities_by_risk_score,
         "card_data": card_data,
         "average_risk_score_per_reachability_level": average_risk_score_per_reachability_level,
+        "policy_compliance_data": policy_compliance_data,
     }
 
 
@@ -990,7 +1031,7 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
     seven_days_ago = now_utc - timedelta(days=7)
     total_resolved_past_7_days = sum(
         1 for f in all_mcp_findings
-        if f.get("finding_status") == "fixed" and f.get("fixed_at") and f["fixed_at"] >= seven_days_ago
+        if f.get("finding_status") == "fixed" and f.get("fixed_at") and _ensure_utc(f["fixed_at"]) >= seven_days_ago
     )
 
     scan_status_distribution = {"not_started": 0, "started": 0, "success": 0, "failure": 0}
@@ -1156,8 +1197,8 @@ def generate_mcp_dashboard_data(scans: list[Scan]) -> dict:
         status = f.get("finding_status")
         if status not in ("fixed", "ignored"):
             continue
-        resolved_at = f.get("fixed_at") or f.get("ignored_at")
-        created_at = f.get("created_at")
+        resolved_at = _ensure_utc(f.get("fixed_at") or f.get("ignored_at"))
+        created_at = _ensure_utc(f.get("created_at"))
         if not resolved_at or not created_at:
             continue
         delta = resolved_at - created_at
@@ -1204,14 +1245,14 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
             "medium" : total_medium_issues,
             "low" : total_low_issues,
         }
-    3. Attack Vector Test Results ( no of tests passed and failed per probe , across all llm scans )
+    3. Attack Vector Test Results ( no of tests passed and failed per probe , across all llm scans ) ( bar chart )
         note : get this from the metadata field of the scan.scan_data . that has the test results for each probe.
         {
             "probe_name_1" : { "passed" : total_passed_tests, "failed" : total_failed_tests },
             "probe_name_2" : { "passed" : total_passed_tests, "failed" : total_failed_tests },
             "probe_name_3" : { "passed" : total_passed_tests, "failed" : total_failed_tests },
         }
-    4. Model Risk comparison ( area - line chart ) :
+    4. Model Risk comparison ( area - line chart ) 
         note : calculate the average risk score for each model by weighted average of impact class of all vulnerabilities for that model
         {
             "model_name_1" : average_risk_score_model_1,
@@ -1243,6 +1284,27 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
         } 
     """
     llm_scans = [s for s in scans if s.scan_type == "llm"]
+    pending_scans = started_scans = success_scans = failure_scans = not_started_scans = scans_created_today = scans_updated_today = 0
+    scans_per_day: dict[str, int] = {}
+    for scan in llm_scans:
+        if scan.scan_status == "pending":
+            pending_scans += 1
+        elif scan.scan_status == "started":
+            started_scans += 1
+        elif scan.scan_status == "success":
+            success_scans += 1
+        elif scan.scan_status == "failure":
+            failure_scans += 1
+        elif scan.scan_status in ("NOT_STARTED", "not_started"):
+            not_started_scans += 1
+        if scan.created_at and scan.created_at.date() == datetime.now(timezone.utc).date():
+            scans_created_today += 1
+        if scan.last_updated and scan.last_updated.date() == datetime.now(timezone.utc).date():
+            scans_updated_today += 1
+        if scan.created_at:
+            date_key = str(scan.created_at.date())
+            scans_per_day[date_key] = scans_per_day.get(date_key, 0) + 1
+
     all_vulns: list[dict] = []
     risk_level_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
@@ -1360,12 +1422,19 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
         passed_rate = round((total_tests_sum - total_hits_sum) / total_tests_sum * 100, 1)
 
     card_data = {
-        "total_scans": len([s for s in llm_scans if s.scan_status == "success"]),
+        "total_scans": success_scans,
         "average_risk_score": average_risk_score,
         "total_critical_vulnerabilities": total_critical,
         "total_vulnerabilities": total_vulns,
         "owasp_compliance_score": owasp_compliance_score,
         "passed_rate": passed_rate,
+        "pending_scans": pending_scans,
+        "started_scans": started_scans,
+        "success_scans": success_scans,
+        "failure_scans": failure_scans,
+        "not_started_scans": not_started_scans,
+        "scans_created_today": scans_created_today,
+        "scans_updated_today": scans_updated_today,
     }
 
     for model_name in model_risk_count:
@@ -1382,7 +1451,10 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
         else:
             ai_security_posture_overview[label] = 0.0
 
-    owasp_top_10_llm_metrics = {k: owasp_llm_counts.get(k, 0) for k in OWASP_LLM_KEYS}
+    # Ensure all OWASP LLM categories are present as keys with default 0 (frontend needs this)
+    owasp_top_10_llm_metrics = dict.fromkeys(OWASP_LLM_KEYS, 0)
+    for k, v in owasp_llm_counts.items():
+        owasp_top_10_llm_metrics[k] = v
 
     return {
         "card_data": card_data,
@@ -1391,4 +1463,5 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
         "model_risk_comparison": model_risk_comparison,
         "ai_security_posture_overview": ai_security_posture_overview,
         "owasp_top_10_llm_metrics": owasp_top_10_llm_metrics,
+        "scans_per_day": scans_per_day,
     }

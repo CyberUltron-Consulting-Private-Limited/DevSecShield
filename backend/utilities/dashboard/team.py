@@ -55,20 +55,52 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
     
     high_and_critical_vuln_in_past_month : dict[str,int] = { "low" : 0 , "medium" : 0 , "high" : 0 , "critical" : 0 }
     for scan in scans_in_past_month:
-        if scan.scan_type == "iac" or scan.scan_type == "sbom_sca" and "results" in scan.scan_data:
+        if (scan.scan_type == "iac" or scan.scan_type == "sbom_sca") and "results" in scan.scan_data:
             for vulnerability in scan.scan_data["results"]:
                 impact : str = vulnerability.get("impact") or "low"
                 impact = impact.lower()
                 if impact == "high" or impact == "critical":
                     high_and_critical_vuln_in_past_month[impact] += 1
                 
-        elif scan.scan_type == "sast" :
+        elif scan.scan_type == "sast" and "results" in scan.scan_data:
             for item in scan.scan_data["results"]:
                 for vulnerability in item.get("vulnerabilities", []):
                     impact : str = vulnerability.get("impact") or  "low"
                     impact = impact.lower()
                     if impact == "high" or impact == "critical":
                         high_and_critical_vuln_in_past_month[impact] += 1
+        
+        elif scan.scan_type == "llm" and "results" in scan.scan_data:
+            for vulnerability in scan.scan_data["results"]["vulnerabilities"]:
+                impact : str = vulnerability.get("impact") or  "low"
+                impact = impact.lower()
+                if impact == "high" or impact == "critical":
+                    high_and_critical_vuln_in_past_month[impact] += 1
+        
+        elif scan.scan_type == "mcp" and "results" in scan.scan_data : 
+            for tool in scan.scan_data["results"]["tools"]:
+                if "vulnerabilities" in tool :
+                    for vulnerability in tool["vulnerabilities"]:
+                        impact : str = vulnerability.get("impact") or  "low"
+                        impact = impact.lower()
+                        if impact == "high" or impact == "critical":
+                            high_and_critical_vuln_in_past_month[impact] += 1
+            for resource in scan.scan_data["results"]["resources"]:
+                if "vulnerabilities" in resource :
+                    for vulnerability in resource["vulnerabilities"]:
+                        impact : str = vulnerability.get("impact") or  "low"
+                        impact = impact.lower()
+                        if impact == "high" or impact == "critical":
+                            high_and_critical_vuln_in_past_month[impact] += 1
+            for prompt in scan.scan_data["results"]["prompts"]:
+                if "vulnerabilities" in prompt :
+                    for vulnerability in prompt["vulnerabilities"]:
+                        impact : str = vulnerability.get("impact") or  "low"
+                        impact = impact.lower()
+                        if impact == "high" or impact == "critical":
+                            high_and_critical_vuln_in_past_month[impact] += 1
+                
+
     
     # STEP [ 8 ] : ============================= Return the data ================================================
     return {

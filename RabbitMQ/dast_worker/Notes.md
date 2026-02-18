@@ -1,3 +1,9 @@
+command 
+```
+nuclei -u https://demo.testfire.net/login.jsp -headless -t templates/  -j  -o nuclei.json 
+```
+
+
 DAST Agent Workflow :
 
 Step 1 : Security Header Check : 

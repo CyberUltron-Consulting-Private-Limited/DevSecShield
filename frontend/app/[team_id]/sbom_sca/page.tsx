@@ -24,19 +24,21 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  SCASBOMConversation,
   deleteSBOMSCAScan,
   getSBOMSCAScans,
   renameSBOMSCAScan,
   createSBOMSCAScan,
 } from "@/utils/backend_api";
-import type { ScanListDashboardData } from "@/utils/backend_api";
+import type { SCASBOMConversation } from "@/utils/backend_api";
+import type { SBOMSCADashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
@@ -51,7 +53,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   ChartContainer,
   ChartTooltip,
@@ -66,50 +68,94 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   PolarAngleAxis,
   PolarGrid,
   Radar,
   RadarChart,
-  RadialBar,
-  RadialBarChart,
   XAxis,
   YAxis,
 } from "recharts";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
+/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+type TableSortBy =
+  | "none"
+  | "created_asc"
+  | "created_desc"
+  | "risk_desc"
+  | "risk_asc"
+  | "credits_desc"
+  | "credits_asc";
+
+const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+  all: "Risk score",
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const SORT_BY_LABELS: Record<TableSortBy, string> = {
+  none: "Sort by",
+  created_asc: "Created (oldest)",
+  created_desc: "Created (newest)",
+  risk_desc: "Risk score (high first)",
+  risk_asc: "Risk score (low first)",
+  credits_desc: "Credits (high first)",
+  credits_asc: "Credits (low first)",
+};
+
+function getDisplayRiskScore(c: SCASBOMConversation): number | null {
+  if (c.average_risk_score == null) return null;
+  return Math.round(Math.min(10, Math.max(0, c.average_risk_score)) * 10) / 10;
+}
+
+function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+  if (filter === "all") return true;
+  if (score == null) return false;
+  if (filter === "critical") return score >= 9;
+  if (filter === "high") return score >= 7 && score < 9;
+  if (filter === "medium") return score >= 5 && score < 7;
+  if (filter === "low") return score < 5;
+  return true;
+}
+
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
 
-function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboardData }) {
+function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADashboardData }) {
   const card = dashboardData.card_data;
+  const remediation = dashboardData.remediation_actions_required;
+  const totalFindings = remediation.total_findings || 1;
 
-  // ── Radar: risk severity totals across all scans ──
-  const riskTotals = useMemo(() => {
-    let critical = 0, high = 0, medium = 0, low = 0;
-    for (const day of Object.values(dashboardData.risks_per_day)) {
-      critical += day.critical;
-      high += day.high;
-      medium += day.medium;
-      low += day.low;
-    }
-    return [
-      { severity: "Critical", count: critical },
-      { severity: "High", count: high },
-      { severity: "Medium", count: medium },
-      { severity: "Low", count: low },
-    ];
-  }, [dashboardData.risks_per_day]);
+  // Section 2: Severity distribution for radar
+  const severityRadarData = useMemo(() => [
+    { severity: "Critical", count: dashboardData.severity_distribution.critical },
+    { severity: "High", count: dashboardData.severity_distribution.high },
+    { severity: "Medium", count: dashboardData.severity_distribution.medium },
+    { severity: "Low", count: dashboardData.severity_distribution.low },
+  ], [dashboardData.severity_distribution]);
 
-  const radarConfig = {
-    count: { label: "Findings", color: "hsl(220 70% 50%)" },
-  } satisfies ChartConfig;
+  const radarConfig = { count: { label: "Findings", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
 
-  // ── Area: risks per day (stacked) ──
-  const risksPerDayData = useMemo(() => {
-    return Object.entries(dashboardData.risks_per_day)
+  // Section 3: Reachability distribution for bar chart
+  const reachabilityBarData = useMemo(() => [
+    { name: "Reachable", count: dashboardData.reachability_distribution.reachable, fill: "hsl(142 71% 45%)" },
+    { name: "Potentially Reachable", count: dashboardData.reachability_distribution.potentially_reachable, fill: "hsl(45 93% 47%)" },
+    { name: "Not Reachable", count: dashboardData.reachability_distribution.not_reachable, fill: "hsl(25 95% 53%)" },
+    { name: "Unknown", count: dashboardData.reachability_distribution.unknown, fill: "hsl(220 9% 46%)" },
+  ].filter((r) => r.count > 0), [dashboardData.reachability_distribution]);
+
+  const barConfig = { count: { label: "Issues", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
+
+  // Section 4: Vulnerability trends over time (area chart)
+  const vulnerabilityTrendsData = useMemo(() => {
+    return Object.entries(dashboardData.vulnerability_trends_over_time)
       .map(([date, v]) => ({ date, ...v }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dashboardData.risks_per_day]);
+  }, [dashboardData.vulnerability_trends_over_time]);
 
   const areaConfig = {
     critical: { label: "Critical", color: "hsl(0 72% 51%)" },
@@ -118,125 +164,187 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
     low: { label: "Low", color: "hsl(217 91% 60%)" },
   } satisfies ChartConfig;
 
-  // ── Bar: scans per day ──
-  const scansPerDayData = useMemo(() => {
-    return Object.entries(dashboardData.scans_per_day)
-      .map(([date, count]) => ({ date, scans: count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dashboardData.scans_per_day]);
+  // Section 5: Licenses distribution - all categories with default 0
+  const LICENSE_CATEGORIES = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial", "strong_copyleft", "network_copyleft", "source_available", "unknown"] as const;
+  const licenseLabels: Record<string, string> = {
+    permissive: "Permissive",
+    public_domain: "Public Domain",
+    weak_copyleft: "Weak Copyleft",
+    creative_commons: "Creative Commons",
+    commercial: "Commercial",
+    strong_copyleft: "Strong Copyleft",
+    network_copyleft: "Network Copyleft",
+    source_available: "Source Available",
+    unknown: "Unknown",
+  };
+  const licensesTotal = useMemo(() => {
+    const sum = LICENSE_CATEGORIES.reduce((a, k) => a + (dashboardData.licenses_distribution[k] ?? 0), 0);
+    return sum || 1;
+  }, [dashboardData.licenses_distribution]);
 
-  const barConfig = {
-    scans: { label: "Scans", color: "hsl(220 70% 50%)" },
-  } satisfies ChartConfig;
+  // Section 8: Average risk score per reachability (radar)
+  const reachabilityRadarData = useMemo(() => [
+    { level: "Reachable", score: dashboardData.average_risk_score_per_reachability_level.reachable ?? 0 },
+    { level: "Potentially Reachable", score: dashboardData.average_risk_score_per_reachability_level.potentially_reachable ?? 0 },
+    { level: "Not Reachable", score: dashboardData.average_risk_score_per_reachability_level.not_reachable ?? 0 },
+    { level: "Unknown", score: dashboardData.average_risk_score_per_reachability_level.unknown ?? 0 },
+  ], [dashboardData.average_risk_score_per_reachability_level]);
 
-  // ── Radial: scan status distribution ──
-  const statusData = useMemo(() => [
-    { status: "success", count: card.success_scans, fill: "var(--color-success)" },
-    { status: "started", count: card.started_scans, fill: "var(--color-started)" },
-    { status: "pending", count: card.pending_scans, fill: "var(--color-pending)" },
-    { status: "failure", count: card.failure_scans, fill: "var(--color-failure)" },
-    { status: "not_started", count: card.not_started_scans, fill: "var(--color-not_started)" },
-  ], [card]);
+  const reachabilityRadarConfig = { score: { label: "Avg Risk", color: "hsl(217 91% 60%)" } } satisfies ChartConfig;
 
-  const radialConfig = {
-    count: { label: "Scans" },
-    success: { label: "Success", color: "hsl(142 71% 45%)" },
-    started: { label: "Started", color: "hsl(217 91% 60%)" },
-    pending: { label: "Pending", color: "hsl(220 9% 46%)" },
-    failure: { label: "Failure", color: "hsl(0 72% 51%)" },
-    not_started: { label: "Not Started", color: "hsl(270 50% 60%)" },
-  } satisfies ChartConfig;
+  const policyTotal = useMemo(() => {
+    const vals = Object.values(dashboardData.policy_compliance_data);
+    return vals.reduce((a, b) => a + b, 0) || 1;
+  }, [dashboardData.policy_compliance_data]);
 
   return (
     <div className="space-y-6">
-      {/* Summary stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Not Started</CardTitle>
-            <Clock className="h-4 w-4 text-zinc-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.not_started_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
+      {/* Section 7: Card Data - 7 summary stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total Vulnerabilities</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_vulnerabilities}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-zinc-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.pending_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Critical Vulnerabilities</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_vulnerabilities}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</CardTitle>
-            <Play className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.started_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <Shield className="h-4 w-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Policy Violations</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_policy_violations}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.success_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                <BookOpen className="h-4 w-4 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">License Risks</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_license_risks}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</CardTitle>
-            <XCircle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.failure_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <BookOpen className="h-4 w-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">High Risk Licenses</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_high_risk_licenses}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</CardTitle>
-            <CalendarPlus className="h-4 w-4 text-zinc-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_created_today}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : card.average_risk_score >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</CardTitle>
-            <CalendarCheck className="h-4 w-4 text-zinc-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_updated_today}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                <Crosshair className="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Reachable Issues</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_reachable_issues}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts row 1: Radar + Area + Scan Sources */}
+      {/* Section 1: Remediation Actions Required */}
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Remediation Actions Required</CardTitle>
+          <CardDescription>Finding status breakdown (total: {remediation.total_findings})</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><CheckCircle className="h-4 w-4 text-green-500" />Fixed</span>
+              <span className="text-zinc-600 dark:text-zinc-400">{remediation.total_fixed}</span>
+            </div>
+            <Progress value={(remediation.total_fixed / totalFindings) * 100} className="h-2" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 text-blue-500" />In Progress</span>
+              <span className="text-zinc-600 dark:text-zinc-400">{remediation.total_in_progress}</span>
+            </div>
+            <Progress value={(remediation.total_in_progress / totalFindings) * 100} className="h-2" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><Clock className="h-4 w-4 text-amber-500" />Not Started</span>
+              <span className="text-zinc-600 dark:text-zinc-400">{remediation.total_not_started}</span>
+            </div>
+            <Progress value={(remediation.total_not_started / totalFindings) * 100} className="h-2" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><MinusCircle className="h-4 w-4 text-zinc-400" />Ignored</span>
+              <span className="text-zinc-600 dark:text-zinc-400">{remediation.total_ignored}</span>
+            </div>
+            <Progress value={(remediation.total_ignored / totalFindings) * 100} className="h-2" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sections 2–4: Severity radar, Reachability bar, Vulnerability trends */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Radar: Risk severity totals */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Risk Severity Distribution</CardTitle>
-            <CardDescription>Total findings across all successful scans</CardDescription>
+            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
-            {riskTotals.every((r) => r.count === 0) ? (
+            {severityRadarData.every((r) => r.count === 0) ? (
               <p className="text-center text-sm text-zinc-500 py-8">No vulnerability data yet</p>
             ) : (
               <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[280px]">
-                <RadarChart data={riskTotals}>
+                <RadarChart data={severityRadarData}>
                   <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
                   <PolarAngleAxis dataKey="severity" />
                   <PolarGrid />
@@ -247,18 +355,43 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
           </CardContent>
         </Card>
 
-        {/* Area: Risks per day */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Risks Over Time</CardTitle>
-            <CardDescription>Vulnerability counts per scan date</CardDescription>
+            <CardTitle className="text-base">Reachability Distribution</CardTitle>
+            <CardDescription>Issues by reachability status</CardDescription>
           </CardHeader>
           <CardContent>
-            {risksPerDayData.length === 0 ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No vulnerability data yet</p>
+            {reachabilityBarData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No reachability data yet</p>
+            ) : (
+              <ChartContainer config={barConfig} className="h-[280px] w-full">
+                <BarChart data={reachabilityBarData} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <CartesianGrid horizontal={true} vertical={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={140} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                    {reachabilityBarData.map((entry, i) => (
+                      <Cell key={i} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Vulnerability Trends Over Time</CardTitle>
+            <CardDescription>By scan date</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {vulnerabilityTrendsData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No trend data yet</p>
             ) : (
               <ChartContainer config={areaConfig} className="h-[280px] w-full">
-                <AreaChart data={risksPerDayData}>
+                <AreaChart data={vulnerabilityTrendsData}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
@@ -273,109 +406,104 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
             )}
           </CardContent>
         </Card>
+      </div>
 
-        {/* Scan Sources: repos + zip files */}
+      {/* Section 5: Licenses Distribution | Section 6: Top Vulnerabilities | Section 8: Avg Risk per Reachability */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Licenses Distribution</CardTitle>
+            <CardDescription>By license type</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {LICENSE_CATEGORIES.map((key) => {
+              const value = dashboardData.licenses_distribution[key] ?? 0;
+              return (
+                <div key={key} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-zinc-700 dark:text-zinc-300">{licenseLabels[key] ?? key}</span>
+                    <span className="text-zinc-600 dark:text-zinc-400">{value}</span>
+                  </div>
+                  <Progress value={(value / licensesTotal) * 100} className="h-1.5" />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
         <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan Sources</CardTitle>
-            <CardDescription>Repositories and zip uploads scanned</CardDescription>
+            <CardTitle className="text-base">Top Vulnerabilities by Risk Score</CardTitle>
+            <CardDescription>Sorted by impact</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden justify-items-start">
-            {/* Zip files */}
-            <div>
-              <div className="flex items-center gap-2">
-                <FileArchive className="h-4 w-4 text-amber-500" />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Zip Uploads</span>
-              </div>
-              <div className="flex items-center gap-2 pl-6 mt-1">
-                <FileArchive className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                <span className="text-2xl font-bold text-zinc-900 dark:text-white">{dashboardData.zip_files_scanned}</span>
-                <span className="text-xs text-zinc-500">file{dashboardData.zip_files_scanned !== 1 ? "s" : ""} uploaded</span>
-              </div>
-            </div>
-
-            {/* Repos list */}
-            <div className="flex-1 min-h-0">
-              <div className="flex items-center gap-2 mb-2">
-                <GitBranch className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Repositories ({dashboardData.repos_scanned.length})</span>
-              </div>
-              {dashboardData.repos_scanned.length === 0 ? (
-                <p className="text-xs text-zinc-500 pl-6">No repositories scanned yet.</p>
-              ) : (
-                <ScrollArea className="h-[180px] pl-6">
-                  <ul className="space-y-1 pr-3">
-                  {dashboardData.repos_scanned.map((r, i) => {
-                    const url = typeof r === "string" ? r : r.repo_url;
-                    const displayName = url.replace(/^https?:\/\/(www\.)?github\.com\//, "");
-                    return (
-                      <li key={i} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                        <GitBranch className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                        <span className="truncate" title={url}>{displayName}</span>
-                      </li>
-                    );
-                  })}
-                  </ul>
-                </ScrollArea>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar: Scans per day */}
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scans Per Day</CardTitle>
-            <CardDescription>Number of scans created each day</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {scansPerDayData.length === 0 ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No scan activity yet</p>
+          <CardContent className="flex-1 min-h-0">
+            {dashboardData.top_vulnerabilities_by_risk_score.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No vulnerability data yet</p>
             ) : (
-              <ChartContainer config={barConfig} className="h-[280px] w-full">
-                <BarChart data={scansPerDayData}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
-                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Bar dataKey="scans" fill="var(--color-scans)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
+              <ScrollArea className="h-[240px] pr-3">
+                <ul className="space-y-2">
+                  {dashboardData.top_vulnerabilities_by_risk_score.slice(0, 20).map((item, i) => (
+                    <li key={i} className="text-sm border-b border-zinc-100 dark:border-zinc-800 pb-2 last:border-0">
+                      <div className="font-medium text-zinc-900 dark:text-white truncate" title={item.dependency}>{item.dependency}</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        <span>{item.reachability}</span>
+                        <span>{item.dependency_type}</span>
+                        <span>{item.license_type}</span>
+                        <Badge variant={item.impact?.toLowerCase() === "critical" || item.impact?.toLowerCase() === "high" ? "destructive" : "secondary"} className="text-xs">{item.impact}</Badge>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </ScrollArea>
             )}
           </CardContent>
         </Card>
 
-        {/* Radial: Scan status breakdown */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Scan Status Breakdown</CardTitle>
-            <CardDescription>Distribution of scan outcomes</CardDescription>
+            <CardTitle className="text-base">Average Risk Score per Reachability</CardTitle>
+            <CardDescription>Weighted by impact</CardDescription>
           </CardHeader>
           <CardContent>
-            {statusData.every((s) => s.count === 0) ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No scans yet</p>
+            {reachabilityRadarData.every((r) => r.score === 0) ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
             ) : (
-              <ChartContainer config={radialConfig} className="mx-auto aspect-square max-h-[280px]">
-                <RadialBarChart data={statusData} innerRadius={30} outerRadius={110}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="status" hideLabel />} />
-                  <RadialBar dataKey="count" background />
-                </RadialBarChart>
+              <ChartContainer config={reachabilityRadarConfig} className="mx-auto aspect-square max-h-[280px]">
+                <RadarChart data={reachabilityRadarData}>
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <PolarAngleAxis dataKey="level" />
+                  <PolarGrid />
+                  <Radar dataKey="score" fill="var(--color-score)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+                </RadarChart>
               </ChartContainer>
             )}
-            {/* Legend */}
-            <div className="flex flex-wrap items-center justify-center gap-4 mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(142 71% 45%)" }} />Success</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(217 91% 60%)" }} />Started</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(220 9% 46%)" }} />Pending</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(0 72% 51%)" }} />Failure</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(270 50% 60%)" }} />Not Started</span>
-            </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Section 9: Policy Compliance Data */}
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Policy Compliance Data</CardTitle>
+          <CardDescription>Issues by compliance standard</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {Object.entries(dashboardData.policy_compliance_data).map(([name, count]) => (
+              <div key={name} className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{name}</span>
+                  <span className="text-zinc-600 dark:text-zinc-400">{count}</span>
+                </div>
+                <Progress value={(count / policyTotal) * 100} className="h-2" />
+              </div>
+            ))}
+          </div>
+          {policyTotal === 0 && (
+            <p className="text-center text-sm text-zinc-500 py-4">No policy compliance data yet</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -397,7 +525,8 @@ export default function SBOMSCAPage() {
   const [newScanTitle, setNewScanTitle] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
+  const [riskScoreFilter, setRiskScoreFilter] = useState<RiskScoreFilter>("all");
+  const [sortBy, setSortBy] = useState<TableSortBy>("none");
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -486,21 +615,40 @@ export default function SBOMSCAPage() {
     }
   };
 
-  const hasActiveFilters = searchQuery !== "" || statusFilter !== "all" || createdAtSort !== "none";
+  const hasActiveFilters =
+    searchQuery !== "" ||
+    statusFilter !== "all" ||
+    riskScoreFilter !== "all" ||
+    sortBy !== "none";
 
   const filteredConversations = conversations
     .filter((c) => {
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (statusFilter !== "all" && c.scan_status !== statusFilter) return false;
+      const score = getDisplayRiskScore(c);
+      if (!matchesRiskScoreFilter(score, riskScoreFilter)) return false;
       return true;
     })
     .sort((a, b) => {
-      if (createdAtSort === "asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (createdAtSort === "desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const scoreA = getDisplayRiskScore(a) ?? -1;
+      const scoreB = getDisplayRiskScore(b) ?? -1;
+      if (sortBy === "risk_desc") return scoreB - scoreA;
+      if (sortBy === "risk_asc") return scoreA - scoreB;
+      const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
+      const credB = b.estimated_credits != null ? Number(b.estimated_credits) : -1;
+      if (sortBy === "credits_desc") return credB - credA;
+      if (sortBy === "credits_asc") return credA - credB;
       return 0;
     });
 
-  const clearFilters = () => { setSearchQuery(""); setStatusFilter("all"); setCreatedAtSort("none"); };
+  const clearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setRiskScoreFilter("all");
+    setSortBy("none");
+  };
 
   const dashboardData = query.data?.dashboard_data;
 
@@ -544,7 +692,7 @@ export default function SBOMSCAPage() {
               {/* ── Dashboard Tab ── */}
               <TabsContent value="dashboard">
                 {dashboardData ? (
-                  <ScanListDashboard dashboardData={dashboardData} />
+                  <SBOMSCAScanListDashboard dashboardData={dashboardData} />
                 ) : (
                   <p className="text-center text-sm text-zinc-500 py-12">No dashboard data available.</p>
                 )}
@@ -571,15 +719,104 @@ export default function SBOMSCAPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="text-zinc-600 dark:text-zinc-400 text-sm">Sort by</div>
-                    <Select value={createdAtSort} onValueChange={(v) => setCreatedAtSort(v as "none" | "asc" | "desc")}>
-                      <SelectTrigger className="h-9 min-w-[170px] cursor-pointer"><SelectValue placeholder="Created at" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Default</SelectItem>
-                        <SelectItem value="desc">Newest</SelectItem>
-                        <SelectItem value="asc">Oldest</SelectItem>
-                      </SelectContent>
-                    </Select>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            riskScoreFilter === "critical"
+                              ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                              : riskScoreFilter === "high"
+                                ? "border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
+                                : riskScoreFilter === "medium"
+                                  ? "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                                  : riskScoreFilter === "low"
+                                    ? "border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                                    : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{RISK_SCORE_LABELS[riskScoreFilter]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[180px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("all")}>
+                          {riskScoreFilter === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          All
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
+                          {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                          Critical (≥9)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
+                          {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                          High (7–9)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
+                          {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                          Medium (5–7)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
+                          {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                          Low (&lt;5)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            sortBy !== "none"
+                              ? "border-violet-500 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:text-violet-300 dark:hover:bg-violet-950/50"
+                              : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <ArrowUpDown className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{SORT_BY_LABELS[sortBy]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[200px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("none")}>
+                          {sortBy === "none" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          Default
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("created_desc")}>
+                          {sortBy === "created_desc" ? <Check className="h-4 w-4" /> : <CalendarPlus className="h-4 w-4" />}
+                          Created (newest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("created_asc")}>
+                          {sortBy === "created_asc" ? <Check className="h-4 w-4" /> : <CalendarCheck className="h-4 w-4" />}
+                          Created (oldest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("risk_desc")}>
+                          {sortBy === "risk_desc" ? <Check className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                          Risk score (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("risk_asc")}>
+                          {sortBy === "risk_asc" ? <Check className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+                          Risk score (low first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("credits_desc")}>
+                          {sortBy === "credits_desc" ? <Check className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                          Credits (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("credits_asc")}>
+                          {sortBy === "credits_asc" ? <Check className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                          Credits (low first)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     {hasActiveFilters && (
                       <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer" onClick={clearFilters}>
                         <X className="h-4 w-4 mr-1" />Clear filters
@@ -602,105 +839,155 @@ export default function SBOMSCAPage() {
                     <Button variant="outline" className="cursor-pointer" onClick={clearFilters}><X className="h-4 w-4 mr-2" />Clear filters</Button>
                   </div>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[220px]">Title</TableHead>
-                          <TableHead>Owner</TableHead>
-                          <TableHead>Created at</TableHead>
-                          <TableHead>Last updated</TableHead>
-                          <TableHead>Scan status</TableHead>
-                          <TableHead className="w-[180px]">View scan metadata</TableHead>
-                          <TableHead className="text-right w-[80px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredConversations.map((conversation) => (
-                          <TableRow
-                            key={conversation.id}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
-                            onClick={(e) => {
-                              const target = e.target as HTMLElement;
-                              if (target.closest("button") || target.closest("[role='menuitem']")) return;
-                              const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
-                                ? `/${team_id}/sbom_sca/${conversation.id}/results`
-                                : `/${team_id}/sbom_sca/${conversation.id}`;
-                              router.push(dest);
-                            }}
-                          >
-                            <TableCell className="font-medium">
-                              <Link
-                                href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/sbom_sca/${conversation.id}/results` : `/${team_id}/sbom_sca/${conversation.id}`}
-                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
-                              >
-                                {conversation.title}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400">
-                              {(conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "") || conversation.owner_user_email ? (
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-8 w-8 shrink-0">
-                                    <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
-                                      {conversation.owner_user_full_name
-                                        ? conversation.owner_user_full_name.trim().split(/\s+/).map((p) => p.charAt(0)).slice(0, 2).join("").toUpperCase() || (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
-                                        : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="min-w-0">
-                                    {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" && (
-                                      <span className="block truncate max-w-[160px]" title={conversation.owner_user_email ?? ""}>{conversation.owner_user_full_name}</span>
-                                    )}
-                                    {conversation.owner_user_email != null && conversation.owner_user_email !== "" && (
-                                      <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">{conversation.owner_user_email}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : ("—")}
-                            </TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
-                            <TableCell className="text-sm">
-                              <div className="flex flex-col gap-1.5">
-                                {getStatusBadge(conversation.scan_status as ScanStatus)}
-                                {conversation.info?.current != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
-                                  <div className="flex items-center gap-2">
-                                    <Progress value={conversation.info.current} className="h-1.5 flex-1" />
-                                    <span className="text-xs text-zinc-500 tabular-nums">{conversation.info.current}%</span>
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => { setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
-                                <Eye className="h-4 w-4 mr-1.5" />View
-                              </Button>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreVertical className="h-4 w-4" /></Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/sbom_sca/${conversation.id}/results?origin=list`)}>
-                                      <Eye className="h-4 w-4 mr-2" />View Results
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                    <Pencil className="h-4 w-4 mr-2" />Rename
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                    <Trash2 className="h-4 w-4 mr-2" />Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
+                  <ScrollArea className="w-full border rounded-lg">
+                    <div className="min-w-max">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
+                            <TableHead>Created at</TableHead>
+                            <TableHead>Last updated</TableHead>
+                            <TableHead>Scan status</TableHead>
+                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
+                            <TableHead className="w-[90px]">Risk score</TableHead>
+                            <TableHead className="w-[160px]">Repo / Source</TableHead>
+                            <TableHead className="w-[100px]">Branch</TableHead>
+                            <TableHead className="w-[90px]">Credits</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredConversations.map((conversation) => (
+                            <TableRow
+                              key={conversation.id}
+                              className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                              onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.closest("button") || target.closest("[role='menuitem']")) return;
+                                const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
+                                  ? `/${team_id}/sbom_sca/${conversation.id}/results`
+                                  : `/${team_id}/sbom_sca/${conversation.id}`;
+                                router.push(dest);
+                              }}
+                            >
+                              <TableCell className="font-medium max-w-[160px] min-w-[120px]">
+                                <Link
+                                  href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/sbom_sca/${conversation.id}/results` : `/${team_id}/sbom_sca/${conversation.id}`}
+                                  className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer truncate block"
+                                  title={conversation.title}
+                                >
+                                  {conversation.title}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
+                              <TableCell className="text-sm">
+                                <div className="flex flex-col gap-1.5">
+                                  {getStatusBadge(conversation.scan_status as ScanStatus)}
+                                  {conversation.info?.current != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
+                                    <div className="flex items-center gap-2">
+                                      <Progress value={conversation.info.current} className="h-1.5 flex-1" />
+                                      <span className="text-xs text-zinc-500 tabular-nums">{conversation.info.current}%</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                                {conversation.risk_data ? (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {[
+                                      { label: "Critical", n: conversation.risk_data.total_critical, dot: "bg-red-500" },
+                                      { label: "High", n: conversation.risk_data.total_high, dot: "bg-orange-500" },
+                                      { label: "Medium", n: conversation.risk_data.total_medium, dot: "bg-amber-500" },
+                                      { label: "Low", n: conversation.risk_data.total_low, dot: "bg-blue-500" },
+                                    ].map(({ label, n, dot }) => (
+                                      <span key={label} className="flex items-center gap-1.5 shrink-0" title={label}>
+                                        <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} aria-hidden />
+                                        <span className="tabular-nums">{typeof n === "number" ? n : 0}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                                {getDisplayRiskScore(conversation) != null ? getDisplayRiskScore(conversation) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
+                                {conversation.zip_file_used ? (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <FileArchive className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                                    <span className="truncate">Zip file</span>
+                                  </span>
+                                ) : conversation.repo_url ? (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                                    <span className="truncate">{conversation.repo_url.split("/").pop() ?? conversation.repo_url}</span>
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                                {conversation.branch != null && conversation.branch !== "" ? (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                                    <span className="truncate">{conversation.branch}</span>
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                                {conversation.estimated_credits != null ? conversation.estimated_credits : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400">
+                                {(conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "") || conversation.owner_user_email ? (
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-8 w-8 shrink-0">
+                                      <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
+                                        {conversation.owner_user_full_name
+                                          ? conversation.owner_user_full_name.trim().split(/\s+/).map((p) => p.charAt(0)).slice(0, 2).join("").toUpperCase() || (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
+                                          : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" && (
+                                        <span className="block truncate max-w-[160px]" title={conversation.owner_user_email ?? ""}>{conversation.owner_user_full_name}</span>
+                                      )}
+                                      {conversation.owner_user_email != null && conversation.owner_user_email !== "" && (
+                                        <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">{conversation.owner_user_email}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : ("—")}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreVertical className="h-4 w-4" /></Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/sbom_sca/${conversation.id}/results?origin=list`)}>
+                                        <Eye className="h-4 w-4 mr-2" />View Results
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
+                                      <Eye className="h-4 w-4 mr-2" />View metadata
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
+                                      <Pencil className="h-4 w-4 mr-2" />Rename
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
                 )}
               </TabsContent>
             </Tabs>

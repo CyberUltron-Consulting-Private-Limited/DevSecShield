@@ -1,8 +1,18 @@
 from backend.mongo_models import ScanFindings
-from datetime import timedelta , datetime , timezone
+from datetime import timedelta, datetime, timezone
 from rich.console import Console
 
 console = Console()
+
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    """Normalize datetime to UTC-aware. Handles naive datetimes by assuming UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 
 def get_remediation_metrics(findings: list[ScanFindings]) -> dict:
     """
@@ -19,8 +29,12 @@ def get_remediation_metrics(findings: list[ScanFindings]) -> dict:
     array_of_time_deltas : list[timedelta] = []
 
     for finding in findings:
-        if finding["finding_status"] == "fixed" :
-            time_delta = finding["fixed_at"] - finding["created_at"]
+        if finding["finding_status"] == "fixed":
+            fixed_at = _ensure_utc(finding.get("fixed_at"))
+            created_at = _ensure_utc(finding.get("created_at"))
+            time_delta = (fixed_at - created_at) if (fixed_at and created_at) else None
+            if time_delta is None:
+                continue
             
             # critical issues fixed 
             if finding["finding_data"]["impact"].lower() == "critical":
@@ -36,7 +50,7 @@ def get_remediation_metrics(findings: list[ScanFindings]) -> dict:
             
 
             # calculating remediation velocity
-            if finding["finding_status"] in ["fixed","ignored"] and finding["fixed_at"].date() >= (datetime.now(timezone.utc).date() - timedelta(days=7)):
+            if finding["finding_status"] in ["fixed", "ignored"] and fixed_at and fixed_at.date() >= (datetime.now(timezone.utc).date() - timedelta(days=7)):
                 remediation_velocity += 1
     
         
