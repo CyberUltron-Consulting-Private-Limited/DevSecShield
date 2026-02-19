@@ -64,6 +64,29 @@ LICENSE_ALL_CATEGORIES = (
     "strong_copyleft", "network_copyleft", "source_available", "unknown",
 )
 
+# DAST dashboard: OWASP Top 10 2021 (all 10), 5-category chart, compliance standards, confidence
+OWASP_DAST_KEYS = (
+    "A01:2021 - Broken Access Control",
+    "A02:2021 - Cryptographic Failures",
+    "A03:2021 - Injection",
+    "A04:2021 - Insecure Design",
+    "A05:2021 - Security Misconfiguration",
+    "A06:2021 - Vulnerable and Outdated Components",
+    "A07:2021 - Identification and Authentication Failures",
+    "A08:2021 - Software and Data Integrity Failures",
+    "A09:2021 - Security Logging and Monitoring Failures",
+    "A10:2021 - Server-Side Request Forgery (SSRF)",
+)
+DAST_CATEGORIES_FIVE = (
+    "injection",
+    "xss_and_client_side",
+    "authentication",
+    "authorization",
+    "session_and_state",
+)
+DAST_COMPLIANCE_STANDARDS = ("PCI DSS", "ISO 27001", "ISO 27002", "ISO 27003", "ISO 27004")
+DAST_CONFIDENCE_KEYS = ("high", "medium", "low")
+
 console = Console()
 def generate_scan_dashboard(
     scan_type: scan_types,
@@ -861,6 +884,220 @@ def generate_scan_dashboard(
                 "licenses_distribution": licenses_distribution,
                 "top_vulnerabilities_by_risk_score": top_vulnerabilities_by_risk_score,
                 "average_risk_score_per_reachability": average_risk_score_per_reachability,
+            }
+    
+        elif scan_type == "dast":
+            """
+            Need to calculate the following metrics :
+            1. Card Data :
+                - total scans
+                - total critical issues
+                - total high issues
+                - total medium issues
+                - total low issues
+                - average risk score
+                - urls scanned
+                - coverage percentage
+            2. Severity distribution ( pie chart ) :
+                {
+                    "critical" : total_critical_issues,
+                    "high" : total_high_issues,
+                    "medium" : total_medium_issues,
+                    "low" : total_low_issues,
+                }
+            3. Compliance status ( Card with a list of progress bars and icons )
+                {
+                    "PCI DSS" : total_pci_dss_issues,
+                    "ISO 27001" : total_iso_27001_issues,
+                    "ISO 27002" : total_iso_27002_issues,
+                    "ISO 27003" : total_iso_27003_issues,
+                    "ISO 27004" : total_iso_27004_issues,
+                }
+            4. Owasp top 10 issues ( bar chart ) :
+                {
+                    "A01:2021 - Broken Access Control" : total_broken_access_control_issues,
+                    "A02:2021 - Cryptographic Failures" : total_cryptographic_failures_issues,
+                    "A03:2021 - Injection" : total_injection_issues,
+                    "A04:2021 - Insecure Design" : total_insecure_design_issues,
+                    "A05:2021 - Security Misconfiguration" : total_security_misconfiguration_issues,
+                }
+
+            5. Vulnerability category issues distribution ( bar chart ) :
+                {
+                    "injection" : total_injection_issues,
+                    "xss_and_client_side" : total_xss_and_client_side_issues,
+                    "authentication" : total_authentication_issues,
+                    "authorization" : total_authorization_issues,
+                    "session_and_state" : total_session_and_state_issues,
+                }
+
+            6. Risk scores per category ( area - line chart ) :
+                {
+                    "injection" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+                    "xss_and_client_side" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+                    "authentication" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+                    "authorization" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+                    "session_and_state" : { "critical" : 10, "high" : 20, "medium" : 30, "low" : 40 },
+                }
+
+            7. Confidence distribution ( pie chart ) :
+                {
+                    "high" : 10,
+                    "medium" : 20,
+                    "low" : 30,
+                }
+
+            8. Security Category Assessment ( avg risk score per category ) :
+                {
+                    "injection" : 10,
+                    "xss_and_client_side" : 20,
+                    "authentication" : 30,
+                    "authorization" : 40,
+                    "session_and_state" : 50,
+                }
+            9 . Compliance risk assessment ( bar chart ) ( average risk score per compliance control ):
+                {
+                    "PCI DSS" : 10,
+                    "ISO 27001" : 20,
+                    "ISO 27002" : 30,
+                    "ISO 27003" : 40,
+                    "ISO 27004" : 50,
+                }
+
+            10 . Remediation Metrics ( Card with a list of progress bars and icons ) :
+                {
+                    "total_findings" : total_findings,
+                    "total_fixed" : total_fixed,
+                    "total_in_progress" : total_in_progress,
+                    "total_not_started" : total_not_started,
+                    "total_ignored" : total_ignored,
+                }
+            """
+            findings = get_findings_for_scan_id(scan_id)
+            metadata = (scan.scan_data or {}).get("metadata", {}) if scan else {}
+            urls_included = metadata.get("urls_included", []) or []
+            urls_excluded = metadata.get("urls_excluded", []) or []
+            urls_scanned = len(urls_included)
+            total_urls = urls_scanned + len(urls_excluded)
+            coverage_percentage = round((urls_scanned / total_urls) * 100, 1) if total_urls > 0 else 0.0
+
+            severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            compliance_status_counts = defaultdict(int)
+            owasp_counts = defaultdict(int)
+            category_counts = defaultdict(int)
+            risk_scores_per_category: dict[str, dict[str, int]] = {c: {"critical": 0, "high": 0, "medium": 0, "low": 0} for c in DAST_CATEGORIES_FIVE}
+            confidence_counts = defaultdict(int)
+            risk_sum_per_category: dict[str, float] = defaultdict(float)
+            risk_count_per_category: dict[str, int] = defaultdict(int)
+            compliance_risk_sum: dict[str, float] = defaultdict(float)
+            compliance_risk_count: dict[str, int] = defaultdict(int)
+            risk_score_total = 0.0
+            risk_score_n = 0
+
+            def _dast_extract_standard(val: str) -> str:
+                if not val or not isinstance(val, str):
+                    return ""
+                return (val.split(" - ", 1)[0] or "").strip()
+
+            def _dast_owasp_values(cc):  # dict or list
+                if isinstance(cc, dict):
+                    return list(cc.values()) if cc else []
+                if isinstance(cc, list):
+                    return [x.get("value", x) if isinstance(x, dict) else x for x in cc]
+                return []
+
+            def _dast_compliance_values(cc):
+                if isinstance(cc, dict):
+                    return list(cc.values()) if cc else []
+                if isinstance(cc, list):
+                    return [x.get("value", x) if isinstance(x, dict) else x for x in cc]
+                return []
+
+            for finding in findings:
+                fd = finding.get("finding_data") or {}
+                imp = (fd.get("impact") or "low").lower().strip()
+                if imp not in severity_counts:
+                    imp = "low"
+                severity_counts[imp] = severity_counts.get(imp, 0) + 1
+                score = risk_score_for_impact.get(imp, 2.5)
+                risk_score_total += score
+                risk_score_n += 1
+
+                for std_val in _dast_compliance_values(fd.get("compliance_controls")):
+                    std = _dast_extract_standard(str(std_val) if std_val is not None else "")
+                    if std and std in DAST_COMPLIANCE_STANDARDS:
+                        compliance_status_counts[std] += 1
+                        compliance_risk_sum[std] += score
+                        compliance_risk_count[std] += 1
+
+                for owasp_val in _dast_owasp_values(fd.get("owasp_top_10")):
+                    s = (owasp_val if isinstance(owasp_val, str) else str(owasp_val)).strip()
+                    if s in OWASP_DAST_KEYS:
+                        owasp_counts[s] += 1
+
+                cat = (fd.get("category") or "").strip().lower().replace(" ", "_")
+                if not cat:
+                    cat = "injection"
+                if cat in DAST_CATEGORIES_FIVE:
+                    category_counts[cat] += 1
+                    risk_scores_per_category[cat][imp] = risk_scores_per_category[cat].get(imp, 0) + 1
+                    risk_sum_per_category[cat] += score
+                    risk_count_per_category[cat] += 1
+
+                conf = (fd.get("confidence") or "low").lower().strip()
+                if conf not in DAST_CONFIDENCE_KEYS:
+                    conf = "low"
+                confidence_counts[conf] += 1
+
+            total_critical = severity_counts.get("critical", 0)
+            total_high = severity_counts.get("high", 0)
+            total_medium = severity_counts.get("medium", 0)
+            total_low = severity_counts.get("low", 0)
+            average_risk_score = round(risk_score_total / risk_score_n, 1) if risk_score_n > 0 else 0.0
+
+            compliance_status = {std: compliance_status_counts.get(std, 0) for std in DAST_COMPLIANCE_STANDARDS}
+            owasp_top_10_issues = {k: owasp_counts.get(k, 0) for k in OWASP_DAST_KEYS}
+            vulnerability_category_issues_distribution = {c: category_counts.get(c, 0) for c in DAST_CATEGORIES_FIVE}
+            risk_scores_per_category_out = {c: {s: risk_scores_per_category[c].get(s, 0) for s in ("critical", "high", "medium", "low")} for c in DAST_CATEGORIES_FIVE}
+            confidence_distribution = {k: confidence_counts.get(k, 0) for k in DAST_CONFIDENCE_KEYS}
+            security_category_assessment = {
+                c: round(risk_sum_per_category[c] / risk_count_per_category[c], 1) if risk_count_per_category[c] > 0 else 0.0
+                for c in DAST_CATEGORIES_FIVE
+            }
+            compliance_risk_assessment = {
+                std: round(compliance_risk_sum[std] / compliance_risk_count[std], 1) if compliance_risk_count[std] > 0 else 0.0
+                for std in DAST_COMPLIANCE_STANDARDS
+            }
+
+            status_metrics = get_issue_status_metrics(findings) if findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
+            remediation_metrics = {
+                "total_findings": len(findings),
+                "total_fixed": status_metrics.get("fixed", 0),
+                "total_in_progress": status_metrics.get("in_progress", 0),
+                "total_not_started": status_metrics.get("not_started", 0),
+                "total_ignored": status_metrics.get("ignored", 0),
+            }
+
+            return {
+                "card_data": {
+                    "total_scans": 1,
+                    "total_critical_issues": total_critical,
+                    "total_high_issues": total_high,
+                    "total_medium_issues": total_medium,
+                    "total_low_issues": total_low,
+                    "average_risk_score": average_risk_score,
+                    "urls_scanned": urls_scanned,
+                    "coverage_percentage": coverage_percentage,
+                },
+                "severity_distribution": dict(severity_counts),
+                "compliance_status": compliance_status,
+                "owasp_top_10_issues": owasp_top_10_issues,
+                "vulnerability_category_issues_distribution": vulnerability_category_issues_distribution,
+                "risk_scores_per_category": risk_scores_per_category_out,
+                "confidence_distribution": confidence_distribution,
+                "security_category_assessment": security_category_assessment,
+                "compliance_risk_assessment": compliance_risk_assessment,
+                "remediation_metrics": remediation_metrics,
             }
             
 

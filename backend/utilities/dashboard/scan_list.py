@@ -58,6 +58,45 @@ def _extract_standard(s: str) -> str:
     return (parts[0] or s or "").strip()
 
 
+# DAST list dashboard: OWASP Top 10 2021, categories (5 for bar chart, 12 for radial), compliance, confidence
+OWASP_DAST_KEYS = (
+    "A01:2021 - Broken Access Control",
+    "A02:2021 - Cryptographic Failures",
+    "A03:2021 - Injection",
+    "A04:2021 - Insecure Design",
+    "A05:2021 - Security Misconfiguration",
+    "A06:2021 - Vulnerable and Outdated Components",
+    "A07:2021 - Identification and Authentication Failures",
+    "A08:2021 - Software and Data Integrity Failures",
+    "A09:2021 - Security Logging and Monitoring Failures",
+    "A10:2021 - Server-Side Request Forgery (SSRF)",
+)
+DAST_CATEGORIES_FIVE = (
+    "injection",
+    "xss_and_client_side",
+    "authentication",
+    "authorization",
+    "session_and_state",
+)
+DAST_CATEGORIES_ALL = (
+    "injection",
+    "xss_and_client_side",
+    "authentication",
+    "authorization",
+    "session_and_state",
+    "file_and_resource",
+    "server_side_execution",
+    "information_disclosure",
+    "crypto_and_transport",
+    "security_headers_and_hardening",
+    "api_security",
+    "denial_of_service",
+)
+DAST_COMPLIANCE_STANDARDS = ("PCI DSS", "ISO 27001", "ISO 27002", "ISO 27003", "ISO 27004")
+DAST_CONFIDENCE_KEYS = ("high", "medium", "low")
+DAST_RISK_SCORE_FOR_IMPACT = {"critical": 10.0, "high": 7.5, "medium": 5.0, "low": 2.5}
+
+
 def _display_lang(meta: dict | None) -> str:
     if not meta:
         return "Unknown"
@@ -84,6 +123,8 @@ def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_typ
             return generate_mcp_dashboard_data(scans=scans)
         elif scan_type == "llm":
             return generate_llm_dashboard_data(scans=scans)
+        elif scan_type == "dast":
+            return generate_dast_dashboard_data(scans=scans)
     except Exception as e:
         console.print(f"Error in generating dashboard data for scan list: {e}", style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating dashboard data for scan list, please try again later")
@@ -114,6 +155,160 @@ def _mcp_cleaned_server_url(scan: Scan) -> str:
     if len(parts) >= 2:
         return parts[-2]
     return url[:30] if len(url) > 30 else url or f"scan_{scan.id}"
+
+
+def _dast_owasp_values(cc) -> list:
+    """Extract OWASP values from finding_data owasp_top_10 (dict or list)."""
+    if isinstance(cc, dict):
+        return list(cc.values()) if cc else []
+    if isinstance(cc, list):
+        return [x.get("value", x) if isinstance(x, dict) else x for x in cc]
+    return []
+
+
+def _dast_compliance_values(cc) -> list:
+    """Extract compliance values from finding_data compliance_controls (dict or list)."""
+    if isinstance(cc, dict):
+        return list(cc.values()) if cc else []
+    if isinstance(cc, list):
+        return [x.get("value", x) if isinstance(x, dict) else x for x in cc]
+    return []
+
+
+def generate_dast_dashboard_data(scans: list[Scan]) -> dict:
+    """
+    Should generate the following data :
+    1. Card data :
+        - total scans
+        - total critical issues
+        - total high issues
+        - total medium issues
+        - total low issues
+        - average risk score
+
+    2. Severity distribution ( pie chart ) :
+        { critical, high, medium, low } with counts
+
+    3. Issues over time ( area - line chart ) : date -> { critical, high, medium, low }
+
+    4. Security posture overview ( issues per category radial chart ) : 12 categories
+
+    5. Owasp top 10 issues ( bar chart ) : all 10 keys, default 0
+
+    6. Average Risk score per category ( bar chart ) : 5 categories
+
+    7. Average Risk score per confidence ( pie chart ) : high, medium, low
+
+    8. Compliance violations ( bar chart ) : PCI DSS, ISO 27001-27004
+    """
+    dast_scans = [s for s in scans if s.scan_type == "dast"]
+    success_dast = [s for s in dast_scans if s.scan_status == "success"]
+    all_findings: list = []
+    for scan in dast_scans:
+        all_findings.extend(get_findings_for_scan_id(scan_id=scan.id))
+
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    issues_over_time: dict[str, dict[str, int]] = {}
+    category_counts: dict[str, int] = defaultdict(int)
+    owasp_counts: dict[str, int] = defaultdict(int)
+    risk_sum_per_category: dict[str, float] = defaultdict(float)
+    risk_count_per_category: dict[str, int] = defaultdict(int)
+    risk_sum_per_confidence: dict[str, float] = defaultdict(float)
+    risk_count_per_confidence: dict[str, int] = defaultdict(int)
+    compliance_violations: dict[str, int] = defaultdict(int)
+    risk_score_total = 0.0
+    risk_score_n = 0
+
+    # Per-scan: build issues_over_time by scan date
+    for scan in dast_scans:
+        if scan.scan_status != "success":
+            continue
+        scan_findings = get_findings_for_scan_id(scan.id)
+        date_key = str(scan.created_at.date()) if scan.created_at else ""
+        if not date_key:
+            continue
+        if date_key not in issues_over_time:
+            issues_over_time[date_key] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for finding in scan_findings:
+            fd = finding.get("finding_data") or {}
+            imp = (fd.get("impact") or "low").lower().strip()
+            if imp not in issues_over_time[date_key]:
+                imp = "low"
+            issues_over_time[date_key][imp] = issues_over_time[date_key].get(imp, 0) + 1
+
+    # Aggregate over all findings
+    for finding in all_findings:
+        fd = finding.get("finding_data") or {}
+        imp = (fd.get("impact") or "low").lower().strip()
+        if imp not in severity_counts:
+            imp = "low"
+        severity_counts[imp] = severity_counts.get(imp, 0) + 1
+        score = DAST_RISK_SCORE_FOR_IMPACT.get(imp, 2.5)
+        risk_score_total += score
+        risk_score_n += 1
+
+        for std_val in _dast_compliance_values(fd.get("compliance_controls")):
+            std = _extract_standard(str(std_val) if std_val is not None else "")
+            if std and std in DAST_COMPLIANCE_STANDARDS:
+                compliance_violations[std] += 1
+
+        for owasp_val in _dast_owasp_values(fd.get("owasp_top_10")):
+            s = (owasp_val if isinstance(owasp_val, str) else str(owasp_val)).strip()
+            if s in OWASP_DAST_KEYS:
+                owasp_counts[s] += 1
+
+        cat = (fd.get("category") or "").strip().lower().replace(" ", "_")
+        if cat and cat in DAST_CATEGORIES_ALL:
+            category_counts[cat] += 1
+        if cat in DAST_CATEGORIES_FIVE:
+            risk_sum_per_category[cat] += score
+            risk_count_per_category[cat] += 1
+
+        conf = (fd.get("confidence") or "low").lower().strip()
+        if conf not in DAST_CONFIDENCE_KEYS:
+            conf = "low"
+        risk_sum_per_confidence[conf] += score
+        risk_count_per_confidence[conf] += 1
+
+    total_critical = severity_counts.get("critical", 0)
+    total_high = severity_counts.get("high", 0)
+    total_medium = severity_counts.get("medium", 0)
+    total_low = severity_counts.get("low", 0)
+    average_risk_score = round(risk_score_total / risk_score_n, 1) if risk_score_n > 0 else 0.0
+
+    card_data = {
+        "total_scans": len(success_dast),
+        "total_critical_issues": total_critical,
+        "total_high_issues": total_high,
+        "total_medium_issues": total_medium,
+        "total_low_issues": total_low,
+        "average_risk_score": average_risk_score,
+    }
+    SEVERITY_KEYS = ("critical", "high", "medium", "low")
+    severity_distribution = {k: severity_counts.get(k, 0) for k in SEVERITY_KEYS}
+    issues_over_time = dict(sorted(issues_over_time.items()))
+    security_posture_overview = {c: category_counts.get(c, 0) for c in DAST_CATEGORIES_ALL}
+    owasp_top_10_issues = {k: owasp_counts.get(k, 0) for k in OWASP_DAST_KEYS}
+    average_risk_score_per_category = {
+        c: round(risk_sum_per_category[c] / risk_count_per_category[c], 1) if risk_count_per_category[c] > 0 else 0.0
+        for c in DAST_CATEGORIES_FIVE
+    }
+    average_risk_score_per_confidence = {
+        k: round(risk_sum_per_confidence[k] / risk_count_per_confidence[k], 1) if risk_count_per_confidence[k] > 0 else 0.0
+        for k in DAST_CONFIDENCE_KEYS
+    }
+    compliance_violations_out = {std: compliance_violations.get(std, 0) for std in DAST_COMPLIANCE_STANDARDS}
+
+    return {
+        "card_data": card_data,
+        "severity_distribution": severity_distribution,
+        "issues_over_time": issues_over_time,
+        "security_posture_overview": security_posture_overview,
+        "owasp_top_10_issues": owasp_top_10_issues,
+        "average_risk_score_per_category": average_risk_score_per_category,
+        "average_risk_score_per_confidence": average_risk_score_per_confidence,
+        "compliance_violations": compliance_violations_out,
+    } 
 
 
 def generate_iac_dashboard_data(scans: list[Scan]) -> dict:

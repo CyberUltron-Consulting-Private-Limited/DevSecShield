@@ -466,7 +466,7 @@ const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: Fi
 /** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
 const estimateCreditsForScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -483,7 +483,7 @@ const estimateCreditsForScan = async (
 /** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
 const startScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -508,7 +508,7 @@ export interface CreateTicketData {
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
 const createTicket = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast",
   scan_id: number,
   data: CreateTicketData
 ): Promise<{ message: string }> => {
@@ -1724,7 +1724,7 @@ const updateScan = async ({
     data,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast";
     scan_id: number;
     data: UpdateScanPayload;
 }) => {
@@ -1741,7 +1741,7 @@ const toggleFindingState = async ({
     state,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast";
     scan_id: number;
     finding_id: string;
     state: "fixed" | "ignored" | "in_progress" | "not_started";
@@ -2547,6 +2547,140 @@ export {
 
 // -------------------------------------------------------------- DAST API Routes --------------------------------------------------------------
 
+/** List item from return_dast_list_item (GET /{team_id}/dast/scans) */
+export interface DASTListItem {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+    estimated_credits: number | null
+    owner_user_email: string | null
+    owner_user_full_name: string | null
+    info: { current?: number } | null
+    risk_data: { total_critical: number; total_high: number; total_medium: number; total_low: number }
+    target_url: string | null
+    average_risk_score: number
+    urls_scanned: number
+    coverage_percentage: number
+}
+
+/** List dashboard from generate_dast_dashboard_data */
+export interface DASTListDashboardData {
+    card_data: {
+        total_scans: number
+        total_critical_issues: number
+        total_high_issues: number
+        total_medium_issues: number
+        total_low_issues: number
+        average_risk_score: number
+    }
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    issues_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    security_posture_overview: Record<string, number>
+    owasp_top_10_issues: Record<string, number>
+    average_risk_score_per_category: Record<string, number>
+    average_risk_score_per_confidence: { high: number; medium: number; low: number }
+    compliance_violations: Record<string, number>
+}
+
+export interface DASTListResponse {
+    scans_list_data: DASTListItem[]
+    dashboard_data: DASTListDashboardData
+}
+
+/** Single-scan dashboard from generate_scan_dashboard(scan_type="dast") */
+export interface DASTSingleScanDashboard {
+    card_data: {
+        total_scans: number
+        total_critical_issues: number
+        total_high_issues: number
+        total_medium_issues: number
+        total_low_issues: number
+        average_risk_score: number
+        urls_scanned: number
+        coverage_percentage: number
+    }
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    compliance_status: Record<string, number>
+    owasp_top_10_issues: Record<string, number>
+    vulnerability_category_issues_distribution: Record<string, number>
+    risk_scores_per_category: Record<string, { critical: number; high: number; medium: number; low: number }>
+    confidence_distribution: { high: number; medium: number; low: number }
+    security_category_assessment: Record<string, number>
+    compliance_risk_assessment: Record<string, number>
+    remediation_metrics: {
+        total_findings: number
+        total_fixed: number
+        total_in_progress: number
+        total_not_started: number
+        total_ignored: number
+    }
+}
+
+/** Response from GET /{team_id}/dast/scan/{scan_id} (get_scan) */
+export interface DASTScanResponse {
+    title: string
+    scan_metadata: Record<string, unknown> | null
+    scan_status: string
+    findings: unknown[]
+    dashboard: DASTSingleScanDashboard | null
+    messages: unknown[]
+    integration_settings: Record<string, unknown> | null
+    info: { current?: number } | null
+    data: unknown
+}
+
+const getDASTScans = async (team_id: number): Promise<DASTListResponse> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/scans`)
+        return response.data as DASTListResponse
+    } catch (error) {
+        showErrorToast(error, "Error fetching DAST scans")
+        throw error
+    }
+}
+
+const getDASTScan = async (team_id: number, scan_id: number): Promise<DASTScanResponse> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/scan/${scan_id}`)
+        return response.data as DASTScanResponse
+    } catch (error) {
+        showErrorToast(error, "Error fetching DAST scan")
+        throw error
+    }
+}
+
+const deleteDASTScan = async (team_id: number, scan_id: number) => {
+    try {
+        const response = await api.delete(`/${team_id}/dast/scan/${scan_id}`)
+        toast.success("DAST scan deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameDASTScan = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
+    try {
+        const response = await api.put(`/${team_id}/dast/scan/${scan_id}`, { title })
+        toast.success("DAST scan renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createDASTScan = async (team_id: number, title: string): Promise<number> => {
+    try {
+        const response = await api.post(`/${team_id}/dast/scan`, { title })
+        toast.success("DAST scan created successfully")
+        return (response.data as { scan_id: number }).scan_id
+    } catch (error) {
+        throw error
+    }
+}
+
 export interface DASTConversation {
     id: number
     title: string
@@ -2631,91 +2765,62 @@ const getDASTConversationMessages = async ({queryKey}: {queryKey: ['dast-convers
     }
 }
 
-export interface FormBasedDASTScanData {
-    target_url: string
-    login_url: string
-    include_urls?: string[]
-    exclude_urls?: string[]
-    timeout_durations_mins?: number
-    poll_durations_seconds?: number
-    username_value: string
-    password_value: string
-    username_key: string
-    password_key: string
-    logged_in_regex: string
-    logged_out_regex: string
+/** Auth fields for DAST (matches backend AuthRequirements). All required when starting a DAST scan. */
+export interface AuthRequirements {
+    xpath_of_username_field: string
+    xpath_of_password_field: string
+    username: string
+    password: string
+    xpath_of_submit_button: string
 }
 
-export interface HeaderCookieDASTScanData {
+/** DAST start payload (matches backend StartDASTScanData). Include and exclude URL patterns are not used together. Auth is required. */
+export interface StartDASTScanData {
     target_url: string
-    attack_modules?: string[]
-    max_scan_time?: number
-    user_agent?: string
-    headers?: { name: string; value: string }[]
-    cookies?: { name: string; value: string }[]
-    scan_force?: "paranoid" | "sneaky" | "polite" | "normal" | "aggressive" | "insane"
-    exclude_url_patterns?: string[]
-    additional_urls?: string[]
+    auth: AuthRequirements
+    scan_speed?: "fast" | "medium" | "slow"
+    max_urls?: number
+    additional_urls_to_scan?: string[] | null
+    exclude_url_patterns?: string[] | null
+    include_url_patterns?: string[] | null
 }
 
+/** Start DAST scan via team-scoped route POST /{team_id}/dast/scan/{scan_id}/start */
 const startDASTScan = async (
-    {
-        conversation_id,
-        auth_mode,
-        form_based,
-        header_cookie_based
-    }: {   
-        conversation_id: number,
-        auth_mode: "form_based" | "header_cookie_based",
-        form_based?: FormBasedDASTScanData,
-        header_cookie_based?: HeaderCookieDASTScanData
-    }) => {
-    try {
-        const response = await api.post(`/dast/conversation/${conversation_id}/scan`, { 
-            dast_data: {
-                auth_mode,
-                form_based: form_based || null,
-                header_cookie_based: header_cookie_based || null
-            }
-        })
-        toast.success("DAST scan started successfully")
-        return response.data
-    } catch (error) {
-        throw error
-    }
+    { team_id, scan_id, dast }: { team_id: number; scan_id: number; dast: StartDASTScanData }
+) => {
+    const dastPayload = { ...dast, max_urls: dast.max_urls ?? 100 }
+    const payloadString = JSON.stringify({ dast: dastPayload })
+    return startScan(team_id, "dast", scan_id, payloadString, null)
 }
 
-const getDASTExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/dast/conversation/${conversation_id}/export`)
+/** Export DAST scan results via GET /{team_id}/dast/scan/{scan_id}/export */
+const getDASTExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/scan/${scan_id}/export`, {
+            responseType: "blob",
+        })
         toast.success("DAST export results fetched successfully")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching dast export results")
+        showErrorToast(error, "Error fetching DAST export results")
         throw error
     }
 }
 
+/** Reinitialize DAST scan via POST /{team_id}/dast/scan/{scan_id}/reinitialize */
 const reinitializeDASTScan = async (
-    {
-        conversation_id,
-        auth_mode,
-        form_based,
-        header_cookie_based
-    }: {   
-        conversation_id: number,
-        auth_mode: "form_based" | "header_cookie_based",
-        form_based?: FormBasedDASTScanData,
-        header_cookie_based?: HeaderCookieDASTScanData
-    }) => {
+    { team_id, scan_id, dast }: { team_id: number; scan_id: number; dast: StartDASTScanData }
+) => {
     try {
-        const response = await api.post(`/dast/conversation/${conversation_id}/reinitialize`, { 
-            dast_data: {
-                auth_mode,
-                form_based: form_based || null,
-                header_cookie_based: header_cookie_based || null
-            }
-        })
+        const dastPayload = { ...dast, max_urls: dast.max_urls ?? 100 }
+        const payloadString = JSON.stringify({ dast: dastPayload })
+        const form = buildScanFormData(payloadString, null)
+        const response = await api.post(
+            `/${team_id}/dast/scan/${scan_id}/reinitialize`,
+            form,
+            { headers: { "Content-Type": "multipart/form-data" } }
+        )
         toast.success("DAST scan reinitialized successfully")
         return response.data
     } catch (error) {
@@ -2724,10 +2829,15 @@ const reinitializeDASTScan = async (
 }
 
 export { 
-    getDASTConversations, 
-    deleteDASTConversation, 
-    renameDASTConversation, 
-    createDASTConversation, 
+    getDASTScans,
+    getDASTScan,
+    deleteDASTScan,
+    renameDASTScan,
+    createDASTScan,
+    getDASTConversations,
+    deleteDASTConversation,
+    renameDASTConversation,
+    createDASTConversation,
     getDASTConversationMessages,
     startDASTScan,
     getDASTExportResults,

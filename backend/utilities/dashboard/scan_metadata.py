@@ -92,3 +92,20 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "model_type": model_type,
             "probes": probes,
         }
+    
+    elif scan_type == "dast":
+        _meta = scan.scan_metadata or {}
+        _scan_data = scan.scan_data or {}
+        target_url = _meta.get("target_url") if _meta.get("target_url") else None
+        auth = _meta.get("auth") if _meta.get("auth") else None
+        scan_speed = _meta.get("scan_speed") if _meta.get("scan_speed") else None
+        urls_included = _scan_data.get("metadata",{}).get("urls_included",[])
+        urls_excluded = _scan_data.get("metadata",{}).get("urls_excluded",[])
+
+        return {
+            "target_url": target_url,
+            "auth": auth,
+            "scan_speed": scan_speed,
+            "urls_included": urls_included,
+            "urls_excluded": urls_excluded,
+        }

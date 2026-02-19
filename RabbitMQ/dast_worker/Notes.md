@@ -1,8 +1,11 @@
 command 
 ```
-nuclei -u https://demo.testfire.net/login.jsp -headless -t templates/  -j  -o nuclei.json 
+nuclei -u https://demo.testfire.net/login.jsp -headless -t templates,yaml -me markdown_dir
 ```
 
+```
+uv run playwright install
+```
 
 DAST Agent Workflow :
 

@@ -53,5 +53,15 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "generations": start_scan_payload.llm.generations,
                 "probes": start_scan_payload.llm.probes,
             }
+        case "dast":
+            return {
+                "target_url": start_scan_payload.dast.target_url,
+                "auth": start_scan_payload.dast.auth.model_dump(),
+                "scan_speed": start_scan_payload.dast.scan_speed,
+                "max_urls": start_scan_payload.dast.max_urls,
+                "additional_urls_to_scan": start_scan_payload.dast.additional_urls_to_scan,
+                "exclude_url_patterns": start_scan_payload.dast.exclude_url_patterns,
+                "include_url_patterns": start_scan_payload.dast.include_url_patterns,
+            }
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")

@@ -328,7 +328,7 @@ async def get_scan(
         
         # STEP [ 4 ] : =================== Get the dashboard data ======================
         if SCAN_DATA : 
-            dashboard_data = generate_scan_dashboard(scan_type=type, scan_results=SCAN_DATA ,scan_id=scan_id)
+            dashboard_data = generate_scan_dashboard(scan_type=type, scan_results=SCAN_DATA ,scan_id=scan_id) # ✅ done for mcp , sbom_sca , llm , sast , iac
         else:
             dashboard_data = None
 
@@ -492,6 +492,12 @@ async def delete_scan(
         check_if_user_is_in_team(user.id, team_id, engine)
 
         # STEP [ 2 ] : =========== Delete the scan from the main db ======================
+        
+        # deleting scan findings for this scan 
+        scan_findings_collection = mongo_db["scan_findings"]
+        result = scan_findings_collection.delete_many({"scan_id": scan_id})
+        console.print(f"{result.deleted_count} Scan findings with scan_id: {scan_id} deleted from mongo db" ,style="bold orange3")
+        
         with Session(engine) as session:
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
             if scan==None:
@@ -741,6 +747,8 @@ async def estimate_credits_for_scan(
 
         # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
         start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+
+        console.print(f"Start scan payload: {start_scan_payload}",style="bold yellow")
 
 
         # STEP [ 1 ] : =========== Check if user is in team ======================

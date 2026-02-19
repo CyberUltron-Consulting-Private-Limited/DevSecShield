@@ -1,0 +1,110 @@
+{
+  "results": [
+    {
+      "title": "Reflected XSS in Search Parameter",
+      "url": "https://demo.testfire.net/search.jsp",
+      "confidence": "high",
+      "impact": "high",
+      "owasp_top_10": {
+        "INJECTION": "A03:2021 - Injection"
+      },
+      "compliance_controls": {
+        "ISO27001_A12": "ISO 27001 - A.12 Operations Security",
+        "PCI_DSS_6_5_7": "PCI DSS - 6.5.7 Cross-Site Scripting (XSS)"
+      },
+      "description": "The application reflects user input from the search parameter without proper encoding, allowing execution of arbitrary JavaScript in the victim's browser.",
+      "suggested_fix": "Encode all user-controlled data in HTML context (e.g. use context-safe encoding). Implement Content-Security-Policy and consider using a template engine that auto-escapes by default.",
+      "category": "xss_and_client_side"
+    },
+    {
+      "title": "SQL Injection in Login Form",
+      "url": "https://demo.testfire.net/login.jsp",
+      "confidence": "high",
+      "impact": "critical",
+      "owasp_top_10": {
+        "INJECTION": "A03:2021 - Injection"
+      },
+      "compliance_controls": {
+        "PCI_DSS_6_5_1": "PCI DSS - 6.5.1 Injection (including SQLi)",
+        "ISO27002_A14_1_2": "ISO 27002 - A.14.1.2 Securing application services"
+      },
+      "description": "The login form concatenates user input into SQL queries, allowing an attacker to modify query logic and potentially extract or modify database data.",
+      "suggested_fix": "Use parameterized queries or prepared statements for all database access. Never concatenate user input into SQL strings.",
+      "category": "injection"
+    },
+    {
+      "title": "Missing Security Headers",
+      "url": "https://demo.testfire.net/index.jsp",
+      "confidence": "medium",
+      "impact": "medium",
+      "owasp_top_10": {
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "NIST_CSF_PROTECT": "NIST CSF - Protect",
+        "ISO27001_A12": "ISO 27001 - A.12 Operations Security"
+      },
+      "description": "Responses do not include X-Content-Type-Options, X-Frame-Options, or Content-Security-Policy, increasing risk of clickjacking and MIME sniffing attacks.",
+      "suggested_fix": "Add security headers: X-Content-Type-Options: nosniff, X-Frame-Options: DENY or SAMEORIGIN, Content-Security-Policy with a restrictive policy.",
+      "category": "security_headers_and_hardening"
+    },
+    {
+      "title": "Session Cookie Without Secure Flag",
+      "url": "https://demo.testfire.net/account/overview.jsp",
+      "confidence": "high",
+      "impact": "medium",
+      "owasp_top_10": {
+        "AUTHENTICATION_FAILURES": "A07:2021 - Identification and Authentication Failures"
+      },
+      "compliance_controls": {
+        "PCI_DSS_6_5_10": "PCI DSS - 6.5.10 Broken authentication and session management",
+        "ISO27002_A14_1_3": "ISO 27002 - A.14.1.3 Protecting application services transactions"
+      },
+      "description": "Session cookie is set without the Secure attribute, allowing transmission over unencrypted HTTP and increasing risk of session hijacking.",
+      "suggested_fix": "Set Secure and HttpOnly on session cookies. Prefer SameSite=Strict or Lax. Use HTTPS only.",
+      "category": "session_and_state"
+    },
+    {
+      "title": "Sensitive Data Exposure in Error Page",
+      "url": "https://demo.testfire.net/error.jsp",
+      "confidence": "low",
+      "impact": "low",
+      "owasp_top_10": {
+        "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures",
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "ISO27001_A12_4_1": "ISO 27001 - A.12.4.1 Event logging",
+        "NIST_CSF_PROTECT": "NIST CSF - Protect"
+      },
+      "description": "The error page displays stack traces and internal paths to unauthenticated users, which may aid attackers in reconnaissance.",
+      "suggested_fix": "Return generic error messages to users. Log detailed errors server-side only. Disable debug mode in production.",
+      "category": "information_disclosure"
+    }
+  ],
+  "duration_of_scan": 47.3,
+  "metadata": {
+    "urls_included": [
+      "https://demo.testfire.net/",
+      "https://demo.testfire.net/login.jsp",
+      "https://demo.testfire.net/index.jsp",
+      "https://demo.testfire.net/search.jsp",
+      "https://demo.testfire.net/account/overview.jsp",
+      "https://demo.testfire.net/account/transfer.jsp",
+      "https://demo.testfire.net/feedback.jsp",
+      "https://demo.testfire.net/error.jsp",
+      "https://demo.testfire.net/signup.jsp",
+      "https://demo.testfire.net/altoro-rest/api/account"
+    ],
+    "urls_excluded": [
+      "https://demo.testfire.net/logout",
+      "https://demo.testfire.net/static/css/main.css",
+      "https://demo.testfire.net/static/js/app.js",
+      "https://demo.testfire.net/favicon.ico",
+      "https://demo.testfire.net/health",
+      "https://demo.testfire.net/metrics",
+      "https://demo.testfire.net/robots.txt",
+      "https://demo.testfire.net/sitemap.xml"
+    ]
+  }
+}

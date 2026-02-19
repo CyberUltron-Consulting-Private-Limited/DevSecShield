@@ -152,8 +152,7 @@ const toolsItems = [
   { name: "MCP", path: "mcp", icon: Server },
   { name: "LLM", path: "llm", icon: Box },
   { name: "IAC", path: "iac", icon: FileText },
-  // { name: "AI Agent Discovery", path: "agent_discovery", icon: ScanLine },
-  // { name: "DAST ", path: "dast", icon: Globe },
+  { name: "DAST ", path: "dast", icon: Globe },
 ];
 
 const workflowItems = [

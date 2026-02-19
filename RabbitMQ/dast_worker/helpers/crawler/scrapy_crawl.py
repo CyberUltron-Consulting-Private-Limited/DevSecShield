@@ -3,6 +3,7 @@ from scrapy.crawler import CrawlerProcess
 from scrapy.exceptions import CloseSpider
 from urllib.parse import urljoin, urlparse
 from rich.console import Console
+import logging
 
 console = Console()
 
@@ -22,6 +23,11 @@ def get_child_urls(
     Returns:
         A list of unique child URLs.
     """
+
+    for noisy in ("celery", "celery.worker", "celery.app", "celery.utils", "kombu", "amqp"):
+        logging.getLogger(noisy).setLevel(logging.CRITICAL)
+
+    
     found_urls = []
 
     class RecursiveSpider(scrapy.Spider):
@@ -70,6 +76,9 @@ def get_child_urls(
     process.crawl(RecursiveSpider)
     process.start()
 
+
+    process.stop()
+
     return found_urls
 
 
@@ -77,6 +86,7 @@ if __name__ == "__main__":
     import sys
 
     url      = sys.argv[1] if len(sys.argv) > 1 else "https://demo.testfire.net/login.jsp"
-    max_urls = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+    max_urls = int(sys.argv[2]) if len(sys.argv) > 2 else 100
 
     urls = get_child_urls(url, max_urls=max_urls)
+    console.print(f"Number of URLs found: {len(urls)}", style="bold green")

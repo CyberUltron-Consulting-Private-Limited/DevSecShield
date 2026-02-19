@@ -1,0 +1,96 @@
+
+id: login_template
+
+info:
+  name: login_template
+  author: pdteam
+  severity: high
+
+headless:
+
+  - steps:
+      - args:
+          url: "https://demo.testfire.net/login.jsp"
+        action: navigate
+      - action: waitload
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: jsmith
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: demo123
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[3]/td[2]/input
+        action: click
+      - action: waitload
+
+
+
+  - steps:
+      - action: navigate
+        args:
+          url: "https://demo.testfire.net/index.jsp"
+
+      - action: waitload
+
+      - action: script
+        name: extract_html
+        args:
+          code: |
+            () => {
+              return document.documentElement.outerHTML;
+            }
+    extractors:
+      - type: regex
+        part: extract_html
+        regex:
+          - "(?s)(.*)" # This regex captures the entire output of the script action
+
+
+
+  - steps:
+      # Type XSS payload into the input field
+      - args:
+          by: xpath
+          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[1]"
+          value: "<script>alert('XSS-testing')</script>"
+        action: text
+
+      # Click the submit button
+      - args:
+          by: xpath
+          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[2]"
+        action: click
+
+      - action: waitload
+
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<script>alert('XSS-testing')</script>"
+          - "XSS-testing"
+        condition: or
+
+      - type: dsl
+        dsl:
+          - 'contains(body, "alert(") && contains(body, "XSS-testing")'
+        condition: or
+      
+    

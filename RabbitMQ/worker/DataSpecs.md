@@ -281,3 +281,41 @@ example :
     "duration_of_scan": 10.5, // duration in seconds
 }
 ```
+
+
+
+### DAST  : 
+
+example : 
+
+```json
+{
+
+    "results" : [ 
+            {
+                "title": "XSS Vulnerability",
+                "url": "https://www.example.com",
+                "confidence": "high",
+                "impact": "High",
+                "owasp_top_10": {
+                    "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+                },
+                "compliance_controls": {
+                    "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+                    "NIST_CSF_PROTECT": "NIST CSF - Protect"
+                },
+                "description": "The XSS Vulnerability is a vulnerability that allows an attacker to execute arbitrary code in the browser.",
+                "suggested_fix": "Remove or redact prints of the DATABASE_URL. Use a secure logger with redaction. Do not expose credentials in logs or stdout.",
+                "category": "xss_and_client_side",
+            }, // ...( multiple findings )
+        ] , 
+    
+
+    "duration_of_scan": 10.5, // duration in seconds
+    "metadata": { 
+        "urls_included": [ "https://www.example.com" , "https://www.example.com" , ...( multiple urls ) ],
+        "urls_excluded": [ "https://www.example.com" , "https://www.example.com" , ...( multiple urls ) ],
+    }
+}
+
+```

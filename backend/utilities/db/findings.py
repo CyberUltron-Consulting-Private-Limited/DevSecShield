@@ -116,5 +116,23 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "compliance_controls": finding["finding_data"]["compliance_controls"],
                 "suggested_fix": finding["finding_data"]["suggested_fix"],
             })
+    
+    elif scan_type == "dast":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": finding["finding_data"]["title"],
+                "url": finding["finding_data"].get("url","-"),
+                "description": finding["finding_data"]["description"],
+                "impact": finding["finding_data"]["impact"],
+                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
+                "status": finding["finding_status"],
+                "compliance_controls": finding["finding_data"]["compliance_controls"],
+                "owasp_top_10": finding["finding_data"]["owasp_top_10"],
+                "suggested_fix": finding["finding_data"]["suggested_fix"],
+                "category": finding["finding_data"]["category"],
+                "confidence": finding["finding_data"]["confidence"],
+            })
 
     return findings

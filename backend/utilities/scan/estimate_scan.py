@@ -70,6 +70,9 @@ async def estimate_credits(
         elif scan_type == "llm":
             task_result = simple_app.send_task(name="scan_worker.llm_benchmark_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
             console.print(f"Sent llm benchmark estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
+        elif scan_type == "dast":
+            task_result = simple_app.send_task(name="dast_worker.dast_estimation", kwargs=scan_kwargs, queue="dast_worker_queue")
+            console.print(f"Sent dast estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 

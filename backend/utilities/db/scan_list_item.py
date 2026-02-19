@@ -370,4 +370,58 @@ def return_llm_list_item(scan : Scan) -> dict:
 
         "model_vulnerabilities": model_vulnerabilities,
         "total_mitre_atlas_tactics": mitre_atlas_tactics,
+    
+    }
+
+
+
+def return_dast_list_item(scan : Scan) -> dict:
+    total_critical , total_high , total_medium , total_low , average_risk_score , urls_scanned =  0,0,0,0,0,0
+    urls_not_scanned = 0
+    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
+        for vulnerability in scan.scan_data["results"]:
+            if vulnerability["impact"].lower() == "critical":
+                total_critical += 1
+            elif vulnerability["impact"].lower() == "high":
+                total_high += 1
+            elif vulnerability["impact"].lower() == "medium":
+                total_medium += 1
+            elif vulnerability["impact"].lower() == "low":
+                total_low += 1
+        
+        if "metadata" in scan.scan_data and scan.scan_data["metadata"] != {} and "urls_scanned" in scan.scan_data["metadata"]:
+            urls_scanned = len(scan.scan_data["metadata"]["urls_included"])
+            urls_not_scanned = len(scan.scan_data["metadata"]["urls_excluded"])
+
+    risk_data = {
+        "total_critical": total_critical,
+        "total_high": total_high,
+        "total_medium": total_medium,
+        "total_low": total_low,
+    }
+
+
+    # calculating average risk score
+    if sum([total_critical, total_high, total_medium, total_low]) > 0:
+        average_risk_score = total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1 / (total_critical + total_high + total_medium + total_low)
+        
+ 
+    return {
+        "id": scan.id,
+        "title": scan.title,
+        "created_at": scan.created_at,
+        "last_updated": scan.last_updated,
+        "scan_status": scan.scan_status.lower(),
+
+        "estimated_credits": scan.credit_consumed,
+        "owner_user_email": scan.owner_user.email,
+        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+
+
+        "info": scan.info, # sometimes maybe None or sometimes may be { "current" : 20 } where 20 is the progress percentage
+        'risk_data': risk_data,
+        "target_url": scan.scan_metadata["target_url"] if scan.scan_metadata and "target_url" in scan.scan_metadata else None,
+        "average_risk_score" : average_risk_score,
+        "urls_scanned": urls_scanned,
+        "coverage_percentage": (urls_scanned / (urls_scanned + urls_not_scanned)) * 100 if urls_scanned + urls_not_scanned > 0 else 0,
     }

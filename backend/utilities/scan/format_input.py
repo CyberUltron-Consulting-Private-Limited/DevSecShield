@@ -99,6 +99,13 @@ async def format_input_for_scan(
                 console.print(f"LLM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
             
+            case "dast":
+                if not start_scan_payload.dast:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DAST context is required")
+                scan_kwargs["dast_dict_context"] = start_scan_payload.dast.model_dump()
+                console.print(f"DAST kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                return scan_kwargs
+            
             case _:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
                 

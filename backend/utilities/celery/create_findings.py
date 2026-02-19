@@ -40,7 +40,7 @@ def create_findings_in_mongo_db(
                 mongo_db["scan_findings"].insert_many(to_insert)
             
         
-        elif scan_type == "iac" or scan_type == "sbom_sca" :
+        elif scan_type == "iac" or scan_type == "sbom_sca" or scan_type == "dast" :
             results = scan_results["results"]
             to_insert = []
             for vulnerability in results:
@@ -125,6 +125,8 @@ def create_findings_in_mongo_db(
                 to_insert.append(scan_finding)
             if len(to_insert) > 0:
                 mongo_db["scan_findings"].insert_many(to_insert)
+        
+
     
     except Exception as e:
         console.print(f"Error in creating findings in mongo db: {e}",style="bold red")
