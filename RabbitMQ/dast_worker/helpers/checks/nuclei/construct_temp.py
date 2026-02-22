@@ -1,23 +1,31 @@
 from helpers.agent.context import AuthRequirements
-from helpers.checks.nuclei.basic_templates import login_template, navigate_template
+from helpers.checks.nuclei.basic_templates import login_template, navigate_action_template, navigate_template
 from helpers.checks.nuclei.sqli_template import sqli_template
+from helpers.checks.nuclei.xss_template import xss_template
 
 
 
-def construct_login_template(auth_requirements: AuthRequirements,template_name: str,template_severity: str,target_url: str) -> str: # construct a nuclei template from the auth requirements
+def construct_login_template(auth_requirements: AuthRequirements) -> str: # construct a nuclei template from the auth requirements
 
+    if not auth_requirements.login_url:
+        raise ValueError("Login URL is required")
+
+    if not auth_requirements.xpath_of_username_field:
+        raise ValueError("Username XPath is required")
+
+    if not auth_requirements.xpath_of_password_field:
+        raise ValueError("Password XPath is required")
+    
     username_xpath = auth_requirements.xpath_of_username_field
     username_value = auth_requirements.username
+    login_url = auth_requirements.login_url
 
     password_xpath = auth_requirements.xpath_of_password_field
     password_value = auth_requirements.password
 
     submit_xpath = auth_requirements.xpath_of_submit_button
     
-    template = login_template.replace("<TEMPLATE_ID>", template_name)
-    template = template.replace("<TEMPLATE_NAME>", template_name)
-    template = template.replace("<TEMPLATE_SEVERITY>", template_severity)
-    template = template.replace("<TARGET_URL>", target_url)
+    template = login_template.replace("<LOGIN_URL>", login_url)
     template = template.replace("<USERNAME_XPATH>", username_xpath)
     template = template.replace("<USERNAME_VALUE>", username_value)
     template = template.replace("<PASSWORD_XPATH>", password_xpath)
@@ -28,6 +36,15 @@ def construct_login_template(auth_requirements: AuthRequirements,template_name: 
 
 def construct_navigate_template(target_url: str) -> str:
     template = navigate_template.replace("<NAVIGATE_URL>", target_url)
+    return template
+
+def construct_navigate_action(target_url:str) -> str:
+    template = navigate_action_template.replace("<NAVIGATE_URL>", target_url)
+    return template
+
+def construct_xss_template(input_field_xpath : str , submit_button_xpath : str ):
+    template = xss_template.replace("<INPUT_FIELD_XPATH>", input_field_xpath)
+    template = template.replace("<SUBMIT_BUTTON_XPATH>", submit_button_xpath)
     return template
 
 

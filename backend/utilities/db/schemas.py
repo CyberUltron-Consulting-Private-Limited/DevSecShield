@@ -154,6 +154,7 @@ class StartLLMBenchmarkingData(BaseModel):
 
 
 class AuthRequirements(BaseModel):
+    login_url: str 
     xpath_of_username_field: str 
     xpath_of_password_field: str    
     username: str 

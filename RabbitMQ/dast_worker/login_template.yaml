@@ -48,49 +48,47 @@ headless:
 
       - action: waitload
 
-      - action: script
-        name: extract_html
-        args:
-          code: |
-            () => {
-              return document.documentElement.outerHTML;
-            }
-    extractors:
-      - type: regex
-        part: extract_html
-        regex:
-          - "(?s)(.*)" # This regex captures the entire output of the script action
-
-
 
   - steps:
+
+      # click on the input field first before filling 
+      - args:
+          by: xpath
+          xpath: /html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[1]
+        action: click
+      - action: waitload
+
       # Type XSS payload into the input field
       - args:
           by: xpath
-          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[1]"
-          value: "<script>alert('XSS-testing')</script>"
+          xpath: /html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[1]
+          value: <script>alert('XSS-testing')</script>
         action: text
 
       # Click the submit button
       - args:
           by: xpath
-          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[2]"
+          xpath: /html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[2]
         action: click
 
       - action: waitload
 
+      - action: waitdialog
+        name: reflected_text_query
+        args:
+          max-duration: 10s
+      
+          
 
     matchers:
-      - type: word
-        part: body
-        words:
-          - "<script>alert('XSS-testing')</script>"
-          - "XSS-testing"
-        condition: or
-
       - type: dsl
         dsl:
-          - 'contains(body, "alert(") && contains(body, "XSS-testing")'
-        condition: or
+          - reflected_text_query == true
+
+    extractors:
+      - type: dsl
+        dsl:
+          - reflected_text_query_type # Output: "alert"
+          - reflected_text_query_message # Output: "7"
       
     

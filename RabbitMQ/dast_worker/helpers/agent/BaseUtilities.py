@@ -9,22 +9,29 @@ from langchain_openai import ChatOpenAI
 from openai  import OpenAI
 import base64
 from langsmith.wrappers import wrap_openai
+from langchain_core.prompts import PromptTemplate
+from dotenv import load_dotenv
+from langchain_core.documents import Document
+
+load_dotenv()
 console = Console()
 
 
 class BaseUtilities:
     """
     ### Contains utilities like 
-    - get_vector_store
+    - generate_structured_response
+    - generate_map_reduce_summary
     - get_llm
-    - get_embedding_model
     """
     tracing : bool = True 
     llm_timeout: int = 60*10 # 10 minutes
 
-    def __init__(self):
-        self.documents = None 
-        raise NotImplementedError("Subclass must implement this method")
+    def __init__(
+        self,
+        documents: list[Document] = None,
+    ):
+        self.documents = documents
     
 
     

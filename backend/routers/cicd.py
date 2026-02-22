@@ -22,14 +22,13 @@ from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
     UpdateCicdIntegrationData,
 )
-from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_vuln_chart_data
+from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_sast_dashboard_data, get_cicd_vuln_chart_data
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
 from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
 from backend.utilities.cicd.sast_output import create_output_string_for_results
-from backend.utilities.dashboard.scan import generate_scan_dashboard
 from backend.utilities.team.credits import deduct_credits_from_team
 from backend.get_db import dev_environment
 
@@ -481,9 +480,9 @@ async def get_cicd_integration(
         results_list = []
         for log in logs:
             dashboard_data = None
-            if log.get("results") and isinstance(log["results"], list) :
+            if log.get("results") and isinstance(log["results"], list) and scan_type == "sast":
                 try:
-                    dashboard_data = generate_scan_dashboard(scan_type=scan_type, scan_results=log["results"])
+                    dashboard_data = get_cicd_sast_dashboard_data(log["results"])
                 except Exception:
                     dashboard_data = None
             logs_data.append({
@@ -505,7 +504,7 @@ async def get_cicd_integration(
             integration_active = True
         
 
-        vulns_over_time_chart_data = get_cicd_vuln_chart_data(results_list=results_list)
+        dashboard_data = get_cicd_vuln_chart_data(results_list=results_list)
         
         return {
             "cicd_integration_id": integration.id,
@@ -518,7 +517,7 @@ async def get_cicd_integration(
             "integration_settings": integration.integration_settings or {},
             "scan_settings": integration.scan_settings or {},
             "logs": logs_data,
-            "vulns_over_time_chart_data": vulns_over_time_chart_data,
+            "dashboard_data": dashboard_data,
         }
     except Exception as e:
         console.print(f"Error getting cicd integration: {str(e)}", style="bold red")

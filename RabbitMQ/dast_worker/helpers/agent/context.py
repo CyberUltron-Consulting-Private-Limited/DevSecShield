@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import Literal
 
 class AuthRequirements(BaseModel):
+    login_url: str | None = None
     xpath_of_username_field: str | None = None
     xpath_of_password_field: str | None = None
     username: str | None = None

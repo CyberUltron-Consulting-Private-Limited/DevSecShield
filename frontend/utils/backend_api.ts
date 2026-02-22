@@ -2767,6 +2767,7 @@ const getDASTConversationMessages = async ({queryKey}: {queryKey: ['dast-convers
 
 /** Auth fields for DAST (matches backend AuthRequirements). All required when starting a DAST scan. */
 export interface AuthRequirements {
+    login_url: string
     xpath_of_username_field: string
     xpath_of_password_field: string
     username: string
@@ -2919,7 +2920,8 @@ export interface CicdIntegrationDashboard {
     integration_settings?: Record<string, { jira_project_id?: string | null } | null> | null
     scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null } | null> | null
     logs: CicdLog[]
-    vulns_over_time_chart_data?: VulnsOverTimeChartData | null
+    /** Vulns-over-time chart data (date -> severity counts); from get_cicd_vuln_chart_data */
+    dashboard_data?: VulnsOverTimeChartData | null
 }
 
 const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string, string, number, number]}): Promise<CicdIntegrationDashboard> => {

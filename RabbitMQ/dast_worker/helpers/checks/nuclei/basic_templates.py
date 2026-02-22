@@ -1,18 +1,18 @@
 
 
 login_template =  """
-id: <TEMPLATE_ID>
+id: template_template_name
 
 info:
-  name: <TEMPLATE_NAME>
+  name: template_template_name
   author: pdteam
-  severity: <TEMPLATE_SEVERITY>
+  severity: high
 
 headless:
 
   - steps:
       - args:
-          url: "<TARGET_URL>"
+          url: "<LOGIN_URL>"
         action: navigate
       - action: waitload
       - args:
@@ -46,9 +46,9 @@ headless:
 navigate_template =  """
 
   - steps:
-      - action: navigate
-        args:
+      - args:
           url: "<NAVIGATE_URL>"
+        action: navigate
 
       - action: waitload
 
@@ -65,4 +65,13 @@ navigate_template =  """
         regex:
           - "(?s)(.*)" # This regex captures the entire output of the script action
 
+"""
+
+navigate_action_template = """
+
+      - args:
+          url: "<NAVIGATE_URL>"
+        action: navigate
+
+      - action: waitload
 """

@@ -1,6 +1,7 @@
 import re
 from rich.console import Console
-from helpers.crawler.scrapy_crawl import get_child_urls
+# from helpers.crawler.scrapy_crawl import get_child_urls
+from helpers.crawler.native_crawler import crawl as get_child_urls
 
 console = Console()
 
@@ -36,7 +37,7 @@ class Crawler():
 
         self.metadata = {
             "urls_included": [],
-            "urls_excluded": [],
+            "urls_excluded": [], 
         }
 
 
@@ -44,7 +45,7 @@ class Crawler():
     def crawl(self):
         try:
 
-            discovered_urls = get_child_urls(self.url, max_urls=self.max_urls)
+            discovered_urls = get_child_urls(start_url=self.url, max_urls=self.max_urls)
             console.print(f"Discovered {len(discovered_urls)} URLs", style="bold yellow1")
 
             if self.include_url_patterns:

@@ -119,11 +119,23 @@ const cvesAreaChartConfig = {
   count: { label: "Vulnerabilities", color: "hsl(0 84% 60%)" },
 } satisfies ChartConfig;
 
+const policyViolationsBarChartConfig = {
+  name: { label: "Policy / Standard" },
+  count: { label: "Violations", color: "hsl(25 95% 53%)" },
+} satisfies ChartConfig;
+
+const riskScoresBarChartConfig = {
+  name: { label: "Finding" },
+  score: { label: "Risk Score", color: "hsl(262 83% 58%)" },
+} satisfies ChartConfig;
+
 function CicdSastDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
   const riskMetrics = dashboard.risk_metrics ?? {};
   const owaspMetrics = dashboard.owasp_top_10_metrics ?? {};
   const complianceMetrics = dashboard.compliance_controls_metrics ?? {};
   const cvesMetrics = dashboard.cves_per_vulnerability ?? {};
+  const policyViolations = dashboard.policy_violations ?? {};
+  const riskScoresPerFinding = dashboard.risk_scores_per_finding ?? {};
 
   const riskRadarData = RISK_ORDER.map((subject) => ({
     subject,
@@ -156,10 +168,26 @@ function CicdSastDashboardCharts({ dashboard }: { dashboard: SastDashboardData }
     .slice(0, 20);
   const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "—", count: 0 }];
 
+  const policyViolationsBarData = Object.entries(policyViolations)
+    .map(([key, count]) => ({ name: key, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const riskScoresBarData = Object.entries(riskScoresPerFinding)
+    .filter(([, score]) => score != null && !Number.isNaN(score))
+    .map(([title, score]) => ({
+      name: title.length > 30 ? `${title.slice(0, 30)}...` : title,
+      fullName: title,
+      score: Number(score),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20);
+
   const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
   const hasRiskData = riskRadarData.some((d) => d.count > 0);
   const hasCvesData = cvesAreaData.length > 0;
   const hasComplianceData = complianceBarData.length > 0;
+  const hasPolicyViolationsData = policyViolationsBarData.length > 0;
+  const hasRiskScoresData = riskScoresBarData.length > 0;
 
   return (
     <div className="space-y-6">
@@ -322,6 +350,97 @@ function CicdSastDashboardCharts({ dashboard }: { dashboard: SastDashboardData }
           )}
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Policy violations
+            </CardTitle>
+            <CardDescription>Findings by policy / compliance standard violated</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasPolicyViolationsData ? (
+              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+              <ScrollArea className="w-full">
+                <div className="min-w-max pb-2" style={{ minWidth: `${Math.max(300, policyViolationsBarData.length * 80)}px` }}>
+                  <ChartContainer config={policyViolationsBarChartConfig} className="aspect-auto h-[260px] w-full min-w-0 cursor-pointer">
+                    <BarChart data={policyViolationsBarData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis
+                        dataKey="name"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        height={56}
+                        interval={0}
+                        tickFormatter={(v) => (String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v)}
+                      />
+                      <YAxis type="number" tickLine={false} axisLine={false} />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                      <Bar dataKey="count" fill="var(--color-count)" radius={[8, 8, 0, 0]} style={{ cursor: "pointer" }} />
+                    </BarChart>
+                  </ChartContainer>
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+            )}
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Violation count per policy or compliance standard (e.g. PCI DSS, ISO 27001).
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Risk score per finding
+            </CardTitle>
+            <CardDescription>Top 20 findings by risk score (0–10)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!hasRiskScoresData ? (
+              <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
+            ) : (
+              <ScrollArea className="w-full">
+                <div className="min-w-max pb-2" style={{ minWidth: `${Math.max(300, riskScoresBarData.length * 72)}px` }}>
+                  <ChartContainer config={riskScoresBarChartConfig} className="aspect-auto h-[260px] w-full min-w-0 cursor-pointer">
+                    <BarChart data={riskScoresBarData} layout="vertical" margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                      <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis type="number" domain={[0, 10]} tickLine={false} axisLine={false} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        tickLine={false}
+                        axisLine={false}
+                        width={140}
+                        tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 18)}...` : v)}
+                      />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) => [value, "Risk score"]}
+                            labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
+                          />
+                        }
+                      />
+                      <Bar dataKey="score" fill="var(--color-score)" radius={[0, 8, 8, 0]} layout="vertical" />
+                    </BarChart>
+                  </ChartContainer>
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+            )}
+            <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
+              Risk scores derived from impact severity (Critical=10, High=7.5, Medium=5, Low=2.5).
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

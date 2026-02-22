@@ -51,6 +51,7 @@ import {
 type UrlPatternMode = "none" | "include" | "exclude";
 
 function buildAuthRequirements(
+  loginUrl: string,
   xpathUsername: string,
   xpathPassword: string,
   username: string,
@@ -58,6 +59,7 @@ function buildAuthRequirements(
   xpathSubmit: string
 ): AuthRequirements {
   return {
+    login_url: loginUrl.trim(),
     xpath_of_username_field: xpathUsername.trim(),
     xpath_of_password_field: xpathPassword.trim(),
     username: username.trim(),
@@ -67,6 +69,7 @@ function buildAuthRequirements(
 }
 
 function isAuthComplete(
+  loginUrl: string,
   xpathUsername: string,
   xpathPassword: string,
   username: string,
@@ -74,6 +77,7 @@ function isAuthComplete(
   xpathSubmit: string
 ): boolean {
   return (
+    Boolean(loginUrl?.trim()) &&
     Boolean(xpathUsername?.trim()) &&
     Boolean(xpathPassword?.trim()) &&
     Boolean(username?.trim()) &&
@@ -121,6 +125,7 @@ export function DASTOptionsSidebar({
   const [targetUrl, setTargetUrl] = useState("");
   const [scanSpeed, setScanSpeed] = useState<"fast" | "medium" | "slow">("medium");
   const [maxUrls, setMaxUrls] = useState(100);
+  const [loginUrl, setLoginUrl] = useState("");
   const [xpathUsername, setXpathUsername] = useState("");
   const [xpathPassword, setXpathPassword] = useState("");
   const [authUsername, setAuthUsername] = useState("");
@@ -145,10 +150,10 @@ export function DASTOptionsSidebar({
     if (!targetUrl?.trim()) {
       return { valid: false, message: "Target URL is required." };
     }
-    if (!isAuthComplete(xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit)) {
+    if (!isAuthComplete(loginUrl, xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit)) {
       return {
         valid: false,
-        message: "Authentication is required: fill all auth fields (XPaths, username, password, submit button).",
+        message: "Authentication is required: fill login URL and all auth fields (XPaths, username, password, submit button).",
       };
     }
     return { valid: true };
@@ -217,6 +222,7 @@ export function DASTOptionsSidebar({
     targetUrl,
     scanSpeed,
     maxUrls,
+    loginUrl,
     xpathUsername,
     xpathPassword,
     authUsername,
@@ -318,7 +324,7 @@ export function DASTOptionsSidebar({
       targetUrl,
       scanSpeed,
       maxUrls,
-      buildAuthRequirements(xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit),
+      buildAuthRequirements(loginUrl, xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit),
       additionalUrls,
       urlPatternMode,
       urlPatterns
@@ -440,6 +446,19 @@ export function DASTOptionsSidebar({
                     Authentication <span className="text-red-500">*</span>
                   </AccordionTrigger>
                   <AccordionContent className="pt-4 space-y-4 w-full">
+                    <div className="space-y-2">
+                      <Label htmlFor="login-url" className="text-zinc-300">
+                        Login URL <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="login-url"
+                        type="url"
+                        placeholder="https://example.com/login"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                        value={loginUrl}
+                        onChange={(e) => setLoginUrl(e.target.value)}
+                      />
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="xpath-username" className="text-zinc-300">
                         XPath of username field <span className="text-red-500">*</span>

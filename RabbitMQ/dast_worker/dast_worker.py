@@ -5,9 +5,9 @@ import time
 from dotenv import load_dotenv
 import os
 import sys
-from helpers.base_vuln import parse_vuln_list
+from helpers.agent.base_vuln import parse_vuln_list
 from helpers.progress_writer import StateUpdateWriter
-from helpers.agent.dast_agent import DASTAgent
+from helpers.agent.main import DASTAgent
 from helpers.agent.context import StartDASTScanData
 
 console = Console()
@@ -82,33 +82,32 @@ try:
         ):
         try :
 
-            with open("mock_data.json", "r") as f:
-                mock_data = json.load(f)
-                return mock_data
+            # with open("mock_data.json", "r") as f:
+            #     mock_data = json.load(f)
+            #     return mock_data
 
-            # start_time = time.time()
+            start_time = time.time()
             
-            # # STEP [ 1 ] : =========== Validate the context ======================
-            # dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
+            # STEP [ 1 ] : =========== Validate the context ======================
+            dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
 
-            # console.print(f"DAST context: {dast_context}",style="bold green")
+            console.print(f"DAST context: {dast_context}",style="bold green")
             
-            # progress_writer = StateUpdateWriter(self)
+            progress_writer = StateUpdateWriter(self)
 
-            # dast_agent = DASTAgent(
-            #     dast_context=dast_context,
-            #     state_update_writer=progress_writer,
-            # )
+            dast_agent = DASTAgent(
+                dast_context=dast_context,
+                state_update_writer=progress_writer,
+            )
 
-            # vulnerabilities, metadata = dast_agent.run()
-            # parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-            # end_time = time.time()
-            # duration_of_scan = end_time - start_time
-            # return {
-            #     "results": parsed_vulnerabilities,
-            #     "metadata": metadata,
-            #     "duration_of_scan": duration_of_scan,
-            # }
+            parsed_vulnerabilities, metadata = dast_agent.run()
+            end_time = time.time()
+            duration_of_scan = end_time - start_time
+            return {
+                "results": parsed_vulnerabilities,
+                "metadata": metadata,
+                "duration_of_scan": duration_of_scan,
+            }
 
         except Exception as e:
             console.print(f"Error in dast task: {str(e)}",style="bold red")
@@ -127,18 +126,17 @@ try:
         dast_dict_context: dict,
         ):
         try :
-            return 0.02
             
-            # # STEP [ 1 ] : =========== Validate the context ======================
-            # dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
+            # STEP [ 1 ] : =========== Validate the context ======================
+            dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
 
-            # console.print(f"DAST context: {dast_context}",style="bold green")
+            console.print(f"DAST context: {dast_context}",style="bold green")
             
-            # dast_agent = DASTAgent(
-            #     dast_context=dast_context,
-            # )
+            dast_agent = DASTAgent(
+                dast_context=dast_context,
+            )
 
-            # return dast_agent.estimate_credits()
+            return dast_agent.estimate_credits()
 
         except Exception as e:
             console.print(f"Error in dast estimation task: {str(e)}",style="bold red")
