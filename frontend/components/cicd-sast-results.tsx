@@ -99,6 +99,72 @@ function getImpactBadgeClass(impact: string): string {
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
 
+const RISK_SCORE_FOR_IMPACT: Record<string, number> = {
+  critical: 10,
+  high: 7.5,
+  medium: 5,
+  low: 2.5,
+};
+
+/** Build dashboard metrics from components (same shape as backend get_cicd_sast_dashboard_data) so charts always have data. */
+function deriveDashboardFromComponents(components: SastAgentLogicalComponent[]): SastDashboardData {
+  const owasp_top_10_metrics: Record<string, number> = {};
+  const compliance_controls_metrics: Record<string, number> = {};
+  const risk_metrics: Record<string, number> = { Low: 0, Medium: 0, High: 0, Critical: 0 };
+  const cves_per_vulnerability: Record<string, number> = {};
+  const policy_violations: Record<string, number> = {};
+  const risk_scores_per_finding: Record<string, number> = {};
+
+  for (const item of components) {
+    for (const vuln of item.vulnerabilities ?? []) {
+      const impactRaw = (vuln.impact ?? "").trim();
+      const impactKey = impactRaw.charAt(0).toUpperCase() + impactRaw.slice(1).toLowerCase();
+      if (impactKey === "Critical" || impactKey === "High" || impactKey === "Medium" || impactKey === "Low") {
+        risk_metrics[impactKey] = (risk_metrics[impactKey] ?? 0) + 1;
+      }
+      const impactLower = impactRaw.toLowerCase();
+      if (impactLower in RISK_SCORE_FOR_IMPACT) {
+        risk_scores_per_finding[vuln.title ?? ""] = RISK_SCORE_FOR_IMPACT[impactLower];
+      }
+      for (const [, value] of getOwaspComplianceEntries(vuln.owasp_top_10)) {
+        if (value) owasp_top_10_metrics[value] = (owasp_top_10_metrics[value] ?? 0) + 1;
+      }
+      for (const [, value] of getOwaspComplianceEntries(vuln.compliance_controls)) {
+        if (value) compliance_controls_metrics[value] = (compliance_controls_metrics[value] ?? 0) + 1;
+      }
+      const cves = vuln.cves;
+      if (cves && typeof cves === "object") {
+        if (Array.isArray(cves)) {
+          for (const c of cves) {
+            const s = c != null ? String(c).trim() : "";
+            if (s) cves_per_vulnerability[s] = (cves_per_vulnerability[s] ?? 0) + 1;
+          }
+        } else {
+          for (const v of Object.values(cves)) {
+            const s = v != null ? String(v).trim() : "";
+            if (s) cves_per_vulnerability[s] = (cves_per_vulnerability[s] ?? 0) + 1;
+          }
+        }
+      }
+      for (const [, value] of getOwaspComplianceEntries(vuln.compliance_controls)) {
+        if (value && value.includes(" - ")) {
+          const key = value.split(" - ")[0].trim();
+          if (key) policy_violations[key] = (policy_violations[key] ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  return {
+    risk_metrics,
+    owasp_top_10_metrics,
+    compliance_controls_metrics,
+    cves_per_vulnerability,
+    policy_violations,
+    risk_scores_per_finding,
+  };
+}
+
 const riskRadarChartConfig = {
   subject: { label: "Severity" },
   count: { label: "Count", color: "hsl(0 84% 60%)" },
@@ -124,7 +190,7 @@ const policyViolationsBarChartConfig = {
   count: { label: "Violations", color: "hsl(25 95% 53%)" },
 } satisfies ChartConfig;
 
-const riskScoresBarChartConfig = {
+const riskScoresAreaChartConfig = {
   name: { label: "Finding" },
   score: { label: "Risk Score", color: "hsl(262 83% 58%)" },
 } satisfies ChartConfig;
@@ -172,22 +238,22 @@ function CicdSastDashboardCharts({ dashboard }: { dashboard: SastDashboardData }
     .map(([key, count]) => ({ name: key, count }))
     .sort((a, b) => b.count - a.count);
 
-  const riskScoresBarData = Object.entries(riskScoresPerFinding)
+  const riskScoresAreaData = Object.entries(riskScoresPerFinding)
     .filter(([, score]) => score != null && !Number.isNaN(score))
     .map(([title, score]) => ({
-      name: title.length > 30 ? `${title.slice(0, 30)}...` : title,
       fullName: title,
       score: Number(score),
     }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 20);
+    .slice(0, 20)
+    .map((d, i) => ({ ...d, xLabel: `F${i + 1}` }));
 
   const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
   const hasRiskData = riskRadarData.some((d) => d.count > 0);
   const hasCvesData = cvesAreaData.length > 0;
   const hasComplianceData = complianceBarData.length > 0;
   const hasPolicyViolationsData = policyViolationsBarData.length > 0;
-  const hasRiskScoresData = riskScoresBarData.length > 0;
+  const hasRiskScoresData = riskScoresAreaData.length > 0;
 
   return (
     <div className="space-y-6">
@@ -405,35 +471,42 @@ function CicdSastDashboardCharts({ dashboard }: { dashboard: SastDashboardData }
             {!hasRiskScoresData ? (
               <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to be displayed</div>
             ) : (
-              <ScrollArea className="w-full">
-                <div className="min-w-max pb-2" style={{ minWidth: `${Math.max(300, riskScoresBarData.length * 72)}px` }}>
-                  <ChartContainer config={riskScoresBarChartConfig} className="aspect-auto h-[260px] w-full min-w-0 cursor-pointer">
-                    <BarChart data={riskScoresBarData} layout="vertical" margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                      <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                      <XAxis type="number" domain={[0, 10]} tickLine={false} axisLine={false} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tickLine={false}
-                        axisLine={false}
-                        width={140}
-                        tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 18)}...` : v)}
+              <ChartContainer config={riskScoresAreaChartConfig} className="aspect-auto h-[260px] w-full pb-8 cursor-pointer">
+                <AreaChart data={riskScoresAreaData} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
+                  <defs>
+                    <linearGradient id="fillCicdSastRiskScore" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-score)" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="var(--color-score)" stopOpacity={0.1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                  <XAxis
+                    dataKey="xLabel"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={24}
+                  />
+                  <YAxis type="number" domain={[0, 10]} tickLine={false} axisLine={false} width={28} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
+                        formatter={(value) => [value, "Risk score"]}
+                        indicator="dot"
                       />
-                      <ChartTooltip
-                        cursor={false}
-                        content={
-                          <ChartTooltipContent
-                            formatter={(value) => [value, "Risk score"]}
-                            labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
-                          />
-                        }
-                      />
-                      <Bar dataKey="score" fill="var(--color-score)" radius={[0, 8, 8, 0]} layout="vertical" />
-                    </BarChart>
-                  </ChartContainer>
-                </div>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
+                    }
+                  />
+                  <Area
+                    dataKey="score"
+                    type="monotone"
+                    fill="url(#fillCicdSastRiskScore)"
+                    stroke="var(--color-score)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ChartContainer>
             )}
             <p className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 text-center">
               Risk scores derived from impact severity (Critical=10, High=7.5, Medium=5, Low=2.5).
@@ -445,13 +518,30 @@ function CicdSastDashboardCharts({ dashboard }: { dashboard: SastDashboardData }
   );
 }
 
+/** Full SAST result object as returned by the worker (DataSpecs.md): results array + optional metadata/duration */
+export interface SastAgentResultPayload {
+  results?: SastAgentLogicalComponent[] | null;
+  metadata?: { excluded_documents?: string[]; included_documents?: string[] } | null;
+  duration_of_scan?: number | null;
+}
+
 export interface CicdSastResultsProps {
-  /** SAST agent results (list of logical components with vulnerabilities) */
-  data: SastAgentLogicalComponent[] | null | undefined;
+  /** SAST agent data: either the full result object (with .results array) or the components array directly (CICD log stores the full object) */
+  data: SastAgentLogicalComponent[] | SastAgentResultPayload | null | undefined;
   /** Dashboard metrics from backend generate_scan_dashboard (per log) */
   dashboard?: SastDashboardData | null;
   /** Integration ID for back navigation */
   integrationId: string;
+}
+
+/** Normalize CICD SAST data: log.results is the full payload { results: [...] }; accept array or payload. */
+function normalizeSastComponents(
+  data: SastAgentLogicalComponent[] | SastAgentResultPayload | null | undefined
+): SastAgentLogicalComponent[] {
+  if (data == null) return [];
+  if (Array.isArray(data)) return data;
+  const results = (data as SastAgentResultPayload).results;
+  return Array.isArray(results) ? results : [];
 }
 
 export default function CicdSastResults({ data, dashboard, integrationId }: CicdSastResultsProps) {
@@ -462,8 +552,10 @@ export default function CicdSastResults({ data, dashboard, integrationId }: Cicd
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedVuln, setSelectedVuln] = useState<{ vuln: SastAgentVulnerability; componentTitle: string } | null>(null);
 
-  const components = data ?? [];
+  const components = normalizeSastComponents(data);
   const totalFindings = components.reduce((sum, c) => sum + (Array.isArray(c.vulnerabilities) ? c.vulnerabilities.length : 0), 0);
+  // Use API dashboard when present; otherwise derive from components so charts always show
+  const dashboardToShow = dashboard ?? deriveDashboardFromComponents(components);
 
   const tableRows: { componentTitle: string; vuln: SastAgentVulnerability }[] = [];
   components.forEach((comp, compIndex) => {
@@ -513,7 +605,7 @@ export default function CicdSastResults({ data, dashboard, integrationId }: Cicd
         </div>
       </div>
 
-      {dashboard && <CicdSastDashboardCharts dashboard={dashboard} />}
+      <CicdSastDashboardCharts dashboard={dashboardToShow} />
 
       <Card>
         <CardHeader>

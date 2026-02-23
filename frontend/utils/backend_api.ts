@@ -1169,12 +1169,42 @@ export interface CreateTeamData {
     description?: string | null
 }
 
+/** Per-date remediation counts (daily deltas: new/fixed/ignored that day) */
+export interface RemediationsStatusDistribution {
+    not_started: number
+    in_progress: number
+    fixed: number
+    ignored: number
+}
+
+/** Summary card data for team dashboard (top of page) */
+export interface TeamDashboardCardData {
+    total_findings: number
+    total_started_scans: number
+    total_completed_scans: number
+    total_not_started_scans: number
+    total_fixed_findings: number
+    remediation_percentage: number
+}
+
 export interface TeamDashboardData {
     scans_created_at_data: { date: string; count: number }[]
     guardrails_integrations_created_at_data: { date: string; count: number }[]
     cicd_integrations_created_at_data: { date: string; count: number }[]
     scan_type_count: Record<string, number>
     high_and_critical_vuln_in_past_month: Record<string, number>
+    /** Scan status distribution for radial chart */
+    scan_status_distribution?: { not_started: number; running: number; completed: number; failed: number }
+    /** Remediations per day for area/line chart: date -> { not_started, in_progress, fixed, ignored } */
+    remediations_status_distribution?: Record<string, RemediationsStatusDistribution>
+    /** Findings created per day (date -> count) */
+    findings_per_day?: Record<string, number>
+    /** Fixed findings per day (date -> count) */
+    fixes_per_day?: Record<string, number>
+    /** Ignored findings per day (date -> count) */
+    false_positive_trends?: Record<string, number>
+    /** Summary card data (totals) */
+    card_data?: TeamDashboardCardData
 }
 
 /** Utilization item per team (key is string representation of team) */

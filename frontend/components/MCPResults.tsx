@@ -4,6 +4,13 @@ import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertTriangle,
@@ -30,6 +37,10 @@ import {
   Clock,
   Percent,
   Crosshair,
+  Filter,
+  Check,
+  X,
+  ChevronDown,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -43,6 +54,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -243,8 +256,9 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
 
   const toolsImpact = toolImpactAnalysis;
 
-  const impactAreaData = Object.entries(toolsImpact).map(([name, counts]) => ({
-    name: name.length > 10 ? `${name.slice(0, 10)}...` : name,
+  const impactAreaData = Object.entries(toolsImpact).map(([name, counts], i) => ({
+    xLabel: `T${i + 1}`,
+    fullName: name,
     critical: counts?.critical ?? 0,
     high: counts?.high ?? 0,
     medium: counts?.medium ?? 0,
@@ -270,25 +284,31 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
     avg_risk_score: typeof v === "object" && v && "avg_risk_score" in v ? Number((v as { avg_risk_score: number }).avg_risk_score) : 0,
     total_issues: typeof v === "object" && v && "total_issues" in v ? Number((v as { total_issues: number }).total_issues) : 0,
   }));
-  const complianceFailureData = Object.entries(complianceFailureTrends).map(([name, value]) => ({
+  const complianceFailureData = Object.entries(complianceFailureTrends).map(([name, value], i) => ({
+    xLabel: `F${i + 1}`,
+    fullName: name,
     name: name.length > 20 ? `${name.slice(0, 20)}...` : name,
     count: Number(value),
   }));
-  const assetAttackAreaData = Object.entries(assetAttackSurface).map(([name, level]) => {
+  const assetAttackAreaData = Object.entries(assetAttackSurface).map(([name, level], i) => {
     const levelStr = String(level).toLowerCase();
     const score = levelStr === "critical" ? 4 : levelStr === "high" ? 3 : levelStr === "medium" ? 2 : 1;
     return {
+      xLabel: `A${i + 1}`,
+      fullName: name,
       name: name.length > 15 ? `${name.slice(0, 15)}...` : name,
       score,
     };
   });
   const assetComplianceAreaData = Object.entries(assetComplianceViolations)
     .map(([name, value]) => ({
+      fullName: name,
       name: name.length > 12 ? `${name.slice(0, 12)}...` : name,
       count: Number(value),
     }))
     .filter((d) => d.count > 0)
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => b.count - a.count)
+    .map((d, i) => ({ ...d, xLabel: `A${i + 1}` }));
   const owaspLlmData = Object.entries(owaspLlmMetrics)
     .filter(([, v]) => Number(v) > 0)
     .map(([name, value]) => ({ name: name.includes(" - ") ? name.split(" - ")[0] : name, count: Number(value) }));
@@ -434,9 +454,16 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
                     <linearGradient id="mcpLow" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(142 71% 45%)" stopOpacity={0.8} /><stop offset="95%" stopColor="hsl(142 71% 45%)" stopOpacity={0.1} /></linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}...` : v)} />
+                  <XAxis dataKey="xLabel" tickLine={false} axisLine={false} tickMargin={8} />
                   <YAxis hide domain={[0, "auto"]} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
+                      />
+                    }
+                  />
                   <Area type="monotone" dataKey="critical" fill="url(#mcpCritical)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
                   <Area type="monotone" dataKey="high" fill="url(#mcpHigh)" stroke="hsl(25 95% 53%)" strokeWidth={2} />
                   <Area type="monotone" dataKey="medium" fill="url(#mcpMedium)" stroke="hsl(48 96% 53%)" strokeWidth={2} />
@@ -569,9 +596,16 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
             <ChartContainer config={{ name: { label: "Finding" }, count: { label: "Count", color: "hsl(217 91% 60%)" } }} className="aspect-auto h-[260px] w-full pb-8">
               <BarChart data={complianceFailureData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
                 <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                <XAxis dataKey="xLabel" tickLine={false} axisLine={false} tickMargin={8} />
                 <YAxis type="number" tickLine={false} axisLine={false} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
+                    />
+                  }
+                />
                 <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ChartContainer>
@@ -589,9 +623,17 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
             <ChartContainer config={{ name: { label: "Asset" }, score: { label: "Risk score", color: "hsl(0 84% 60%)" } }} className="aspect-auto h-[260px] w-full pb-8">
               <AreaChart data={assetAttackAreaData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
                 <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 12 ? `${String(v).slice(0, 12)}...` : v)} />
+                <XAxis dataKey="xLabel" tickLine={false} axisLine={false} tickMargin={8} />
                 <YAxis type="number" tickLine={false} axisLine={false} domain={[0, 4]} tickFormatter={(v) => (v === 4 ? "Critical" : v === 3 ? "High" : v === 2 ? "Medium" : v === 1 ? "Low" : "")} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
+                      formatter={(value) => [value, "Risk score"]}
+                    />
+                  }
+                />
                 <Area type="monotone" dataKey="score" fill="hsl(0 84% 60% / 0.4)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
               </AreaChart>
             </ChartContainer>
@@ -609,9 +651,16 @@ function MCPDashboardCharts({ dashboard }: { dashboard: MCPDashboardData }) {
             <ChartContainer config={{ name: { label: "Asset" }, count: { label: "Count", color: "hsl(48 96% 53%)" } }} className="aspect-auto h-[260px] w-full pb-8">
               <AreaChart data={assetComplianceAreaData} margin={{ top: 8, right: 8, bottom: 32, left: 0 }}>
                 <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} />
+                <XAxis dataKey="xLabel" tickLine={false} axisLine={false} tickMargin={8} />
                 <YAxis type="number" tickLine={false} axisLine={false} allowDecimals={false} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { fullName?: string })?.fullName ?? "—"}
+                    />
+                  }
+                />
                 <Area type="monotone" dataKey="count" fill="hsl(48 96% 53% / 0.4)" stroke="hsl(48 96% 53%)" strokeWidth={2} />
               </AreaChart>
             </ChartContainer>
@@ -674,6 +723,25 @@ function AgentResultsView({
   const queryClient = useQueryClient();
   const origin = searchParams.get("origin") || "chat";
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterImpact, setFilterImpact] = useState<string>("all");
+  type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+  const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
+  function matchesRiskScoreFilter(score: number | null | undefined, filter: RiskScoreFilter): boolean {
+    if (filter === "all") return true;
+    if (score == null) return false;
+    if (filter === "critical") return score >= 9;
+    if (filter === "high") return score >= 7 && score < 9;
+    if (filter === "medium") return score >= 5 && score < 7;
+    if (filter === "low") return score < 5;
+    return true;
+  }
+  const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+    all: "Risk score",
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  };
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedVuln, setSelectedVuln] = useState<VulnTableRow | null>(null);
   const [selectedApiFinding, setSelectedApiFinding] = useState<MCPFinding | null>(null);
@@ -684,6 +752,13 @@ function AgentResultsView({
 
   const findingsList = Array.isArray(apiFindings) ? apiFindings : [];
   const useApiFindings = findingsList.length > 0;
+  const hasActiveFindingsFilters =
+    searchQuery.trim() !== "" || filterImpact !== "all" || filterRiskScore !== "all";
+  const clearFindingsFilters = () => {
+    setSearchQuery("");
+    setFilterImpact("all");
+    setFilterRiskScore("all");
+  };
 
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
@@ -771,16 +846,23 @@ function AgentResultsView({
   });
 
   const filteredApiFindings = useMemo(() => {
+    let list = findingsList;
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return findingsList;
-    return findingsList.filter(
-      (f) =>
-        (f.title ?? "").toLowerCase().includes(q) ||
-        (f.description ?? "").toLowerCase().includes(q) ||
-        (f.impact ?? "").toLowerCase().includes(q) ||
-        (f.type ?? "").toLowerCase().includes(q)
-    );
-  }, [findingsList, searchQuery]);
+    if (q) {
+      list = list.filter(
+        (f) =>
+          (f.title ?? "").toLowerCase().includes(q) ||
+          (f.description ?? "").toLowerCase().includes(q) ||
+          (f.impact ?? "").toLowerCase().includes(q) ||
+          (f.type ?? "").toLowerCase().includes(q)
+      );
+    }
+    if (filterImpact && filterImpact !== "all") {
+      list = list.filter((f) => (f.impact ?? "").trim().toLowerCase() === filterImpact.toLowerCase());
+    }
+    list = list.filter((f) => matchesRiskScoreFilter(f.risk_score ?? undefined, filterRiskScore));
+    return list;
+  }, [findingsList, searchQuery, filterImpact, filterRiskScore]);
 
   const tools = Array.isArray(data.tools) ? data.tools : [];
   const prompts = Array.isArray(data.prompts) ? data.prompts : [];
@@ -1013,7 +1095,9 @@ function AgentResultsView({
           <CardTitle>Findings</CardTitle>
           <CardDescription>
             {useApiFindings
-              ? `${filteredApiFindings.length} findings. Click a title to view details. Select rows to create Jira tickets; use Action to change finding state.`
+              ? hasActiveFindingsFilters
+                ? `Showing ${filteredApiFindings.length} of ${findingsList.length} findings. Click a title to view details. Select rows to create Jira tickets; use Action to change finding state.`
+                : `${filteredApiFindings.length} findings. Click a title to view details. Select rows to create Jira tickets; use Action to change finding state.`
               : `${tableRows.length} vulnerability findings. Click a title to view details. Select rows to create Jira tickets.`}
           </CardDescription>
         </CardHeader>
@@ -1027,14 +1111,72 @@ function AgentResultsView({
                 ticketType="jira"
                 isJiraCreating={createJiraFromApiFindingsMutation.isPending}
               />
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                <Input
-                  placeholder="Search by title, description, impact, type..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 max-w-sm"
-                />
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                  <Input
+                    placeholder="Search by title, description, impact, type..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+                <Select value={filterImpact} onValueChange={setFilterImpact}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Impact" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All impacts</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`cursor-pointer ${
+                        filterRiskScore === "critical"
+                          ? "border-red-500/50 text-red-600 dark:text-red-400"
+                          : filterRiskScore === "high"
+                            ? "border-orange-500/50 text-orange-600 dark:text-orange-400"
+                            : filterRiskScore === "medium"
+                              ? "border-amber-500/50 text-amber-600 dark:text-amber-400"
+                              : filterRiskScore === "low"
+                                ? "border-blue-500/50 text-blue-600 dark:text-blue-400"
+                                : "border-zinc-300 dark:border-zinc-600"
+                      }`}
+                    >
+                      <Filter className="h-4 w-4 mr-1.5" />
+                      {RISK_SCORE_LABELS[filterRiskScore]}
+                      <ChevronDown className="h-4 w-4 ml-1.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-[200px]">
+                    <DropdownMenuLabel>Risk score</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {(["all", "critical", "high", "medium", "low"] as const).map((level) => (
+                      <DropdownMenuItem
+                        key={level}
+                        className="cursor-pointer"
+                        onClick={() => setFilterRiskScore(level)}
+                      >
+                        {filterRiskScore === level ? <Check className="h-4 w-4 mr-2 text-emerald-600" /> : null}
+                        {level === "all" ? "All" : level === "critical" ? "Critical (≥9)" : level === "high" ? "High (7–9)" : level === "medium" ? "Medium (5–7)" : "Low (<5)"}
+                        {level !== "all" ? <Shield className="h-4 w-4 ml-2 opacity-70" /> : null}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {hasActiveFindingsFilters && (
+                  <Button variant="ghost" size="sm" className="cursor-pointer" onClick={clearFindingsFilters}>
+                    <X className="h-4 w-4 mr-1" />
+                    Clear filters
+                  </Button>
+                )}
               </div>
               <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
                 <Table>
@@ -1270,7 +1412,7 @@ function AgentResultsView({
       </Card>
 
       <Dialog open={detailOpen} onOpenChange={(open) => { if (!open) { setSelectedVuln(null); setSelectedApiFinding(null); } setDetailOpen(open); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">
               {selectedApiFinding ? ((selectedApiFinding.title ?? "").trim() || "Finding details") : (selectedVuln?.vuln.title ?? "Vulnerability details")}

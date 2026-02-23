@@ -415,7 +415,7 @@ export default function HomeLayout({
 
         <SidebarInset className="overflow-auto">{children}</SidebarInset>
     </SidebarProvider>
-    <ReactQueryDevtools initialIsOpen={false} />
+    {/* <ReactQueryDevtools initialIsOpen={false} /> */}
     </QueryClientProvider>
   );
 } 

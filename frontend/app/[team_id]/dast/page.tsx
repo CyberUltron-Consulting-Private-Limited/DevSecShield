@@ -154,7 +154,8 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
 
   const securityPostureData = useMemo(() => {
     const overview = dashboardData.security_posture_overview ?? {};
-    return Object.entries(overview).map(([category, count]) => ({
+    return Object.entries(overview).map(([category, count], i) => ({
+      xLabel: `S${i + 1}`,
       category: category.replace(/_/g, " "),
       count: typeof count === "number" ? count : 0,
     }));
@@ -357,14 +358,37 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
             <CardDescription>By category</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={securityPostureConfig} className="mx-auto aspect-square max-h-[280px]">
-              <RadarChart data={securityPostureData}>
-                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                <PolarAngleAxis dataKey="category" />
-                <PolarGrid />
-                <Radar dataKey="count" fill="var(--color-count)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
-              </RadarChart>
-            </ChartContainer>
+            {securityPostureData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
+            ) : (
+              <>
+                <ChartContainer config={securityPostureConfig} className="mx-auto aspect-square max-h-[280px]">
+                  <RadarChart data={securityPostureData}>
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(_, payload) => (payload?.[0]?.payload as { category?: string })?.category ?? "—"}
+                          formatter={(v) => [v, "Count"]}
+                        />
+                      }
+                    />
+                    <PolarAngleAxis dataKey="xLabel" />
+                    <PolarGrid />
+                    <Radar dataKey="count" fill="var(--color-count)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+                  </RadarChart>
+                </ChartContainer>
+                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                  {securityPostureData.map((d) => (
+                    <span key={d.xLabel}>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                      <span className="mx-1.5">=</span>
+                      <span>{d.category}</span>
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

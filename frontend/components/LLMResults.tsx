@@ -4,8 +4,16 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, MessageCircle, Download, RefreshCcw, BarChart3, Ticket, PieChart as PieChartIcon, Activity, Shield, Target, Swords, Table2, Zap, AlertTriangle, Percent, Clock, Pencil, Wrench, Bot, FlaskConical, CheckCircle, EyeOff, Loader2, Circle, BoxIcon } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, MessageCircle, Download, RefreshCcw, BarChart3, Ticket, PieChart as PieChartIcon, Activity, Shield, Target, Swords, Table2, Zap, AlertTriangle, Percent, Clock, Pencil, Wrench, Bot, FlaskConical, CheckCircle, EyeOff, Loader2, Circle, BoxIcon, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -18,6 +26,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
@@ -253,6 +263,51 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [jiraProjectId, setJiraProjectId] = useState("");
+  const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
+  const [filterImpact, setFilterImpact] = useState<string>("all");
+  type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+  const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
+  function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+    if (filter === "all") return true;
+    if (score == null) return false;
+    if (filter === "critical") return score >= 9;
+    if (filter === "high") return score >= 7 && score < 9;
+    if (filter === "medium") return score >= 5 && score < 7;
+    if (filter === "low") return score < 5;
+    return true;
+  }
+  const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+    all: "Risk score",
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  };
+  const filteredDisplayList = useMemo(() => {
+    let list = displayList;
+    const q = findingsSearchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((f) => {
+        const title = ((f.title ?? "") + "").toLowerCase();
+        const description = ((f.description ?? "") + "").toLowerCase();
+        const impact = ((f.impact ?? "") + "").toLowerCase();
+        const suggestedFix = ((f.suggested_fix ?? "") + "").toLowerCase();
+        return title.includes(q) || description.includes(q) || impact.includes(q) || suggestedFix.includes(q);
+      });
+    }
+    if (filterImpact && filterImpact !== "all") {
+      list = list.filter((f) => (f.impact ?? "").trim().toLowerCase() === filterImpact.toLowerCase());
+    }
+    list = list.filter((f) => matchesRiskScoreFilter(getRiskScoreFromImpact(f.impact ?? "") ?? null, filterRiskScore));
+    return list;
+  }, [displayList, findingsSearchQuery, filterImpact, filterRiskScore]);
+  const hasActiveFindingsFilters =
+    findingsSearchQuery.trim() !== "" || filterImpact !== "all" || filterRiskScore !== "all";
+  const clearFindingsFilters = () => {
+    setFindingsSearchQuery("");
+    setFilterImpact("all");
+    setFilterRiskScore("all");
+  };
 
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
@@ -315,10 +370,10 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
   };
 
   const toggleSelectAll = () => {
-    if (selectedRows.size === displayList.length) {
+    if (selectedRows.size === filteredDisplayList.length) {
       setSelectedRows(new Set());
     } else {
-      setSelectedRows(new Set(displayList.map((r) => r.id)));
+      setSelectedRows(new Set(filteredDisplayList.map((r) => r.id)));
     }
   };
 
@@ -326,7 +381,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
     mutationFn: async () => {
       const tid = parseInt(teamId ?? "0", 10);
       if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      const selectedFindings = displayList.filter((r) => selectedRows.has(r.id));
+      const selectedFindings = displayList.filter((r) => selectedRows.has(r.id)); // full list for Jira
 
       const impactCounts: Record<string, number> = {};
       for (const vuln of selectedFindings) {
@@ -632,21 +687,42 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                   content_safety_score: "Content safety",
                   data_privacy_score: "Data privacy",
                 };
-                const radarData = Object.entries(sp).map(([key, value]) => ({
+                const radarData = Object.entries(sp).map(([key, value], i) => ({
+                  xLabel: `S${i + 1}`,
                   subject: labels[key] ?? key,
                   count: Number(value) ?? 0,
                   fullMark: 10,
                 }));
                 const radarConfig: ChartConfig = { subject: { label: "Category" }, count: { label: "Score", color: "hsl(217 91% 60%)" } };
                 return (
-                  <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[240px]">
-                    <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
-                      <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
-                      <PolarGrid />
-                      <Radar dataKey="count" fill="hsl(217 91% 60%)" fillOpacity={0.6} stroke="hsl(217 91% 60%)" />
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(v) => [v, "Score"]} />} />
-                    </RadarChart>
-                  </ChartContainer>
+                  <>
+                    <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[240px]">
+                      <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
+                        <PolarAngleAxis dataKey="xLabel" tick={{ fontSize: 9 }} />
+                        <PolarGrid />
+                        <Radar dataKey="count" fill="hsl(217 91% 60%)" fillOpacity={0.6} stroke="hsl(217 91% 60%)" />
+                        <ChartTooltip
+                          cursor={false}
+                          content={
+                            <ChartTooltipContent
+                              nameKey="subject"
+                              labelFormatter={(_, payload) => (payload?.[0]?.payload as { subject?: string })?.subject ?? "—"}
+                              formatter={(v) => [v, "Score"]}
+                            />
+                          }
+                        />
+                      </RadarChart>
+                    </ChartContainer>
+                    <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                      {radarData.map((d) => (
+                        <span key={d.xLabel}>
+                          <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                          <span className="mx-1.5">=</span>
+                          <span>{d.subject}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </>
                 );
               })()}
             </CardContent>
@@ -668,17 +744,38 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                 const radarData = Object.entries(owasp)
                   .map(([key, count]) => ({ subject: OWASP_LLM_KEY_TO_LABEL[key] ?? key, count, fullMark: Math.max(...Object.values(owasp), 1) }))
                   .sort((a, b) => b.count - a.count)
-                  .slice(0, 10);
+                  .slice(0, 10)
+                  .map((d, i) => ({ ...d, xLabel: `O${i + 1}` }));
                 const radarConfig: ChartConfig = { subject: { label: "Category" }, count: { label: "Count", color: "hsl(262 83% 58%)" } };
                 return (
-                  <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[240px]">
-                    <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
-                      <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
-                      <PolarGrid />
-                      <Radar dataKey="count" fill="hsl(262 83% 58%)" fillOpacity={0.6} stroke="hsl(262 83% 58%)" />
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="subject" formatter={(v) => [v, "Count"]} />} />
-                    </RadarChart>
-                  </ChartContainer>
+                  <>
+                    <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[240px]">
+                      <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
+                        <PolarAngleAxis dataKey="xLabel" tick={{ fontSize: 9 }} />
+                        <PolarGrid />
+                        <Radar dataKey="count" fill="hsl(262 83% 58%)" fillOpacity={0.6} stroke="hsl(262 83% 58%)" />
+                        <ChartTooltip
+                          cursor={false}
+                          content={
+                            <ChartTooltipContent
+                              nameKey="subject"
+                              labelFormatter={(_, payload) => (payload?.[0]?.payload as { subject?: string })?.subject ?? "—"}
+                              formatter={(v) => [v, "Count"]}
+                            />
+                          }
+                        />
+                      </RadarChart>
+                    </ChartContainer>
+                    <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                      {radarData.map((d) => (
+                        <span key={d.xLabel}>
+                          <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                          <span className="mx-1.5">=</span>
+                          <span>{d.subject}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </>
                 );
               })()
             ) : (
@@ -711,19 +808,42 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                 fill: key === "Critical" ? "hsl(0 84% 60%)" : key === "High" ? "hsl(25 95% 53%)" : key === "Medium" ? "hsl(48 96% 53%)" : "hsl(142 71% 45%)",
               }));
               const radialConfig: ChartConfig = {
-                count: { label: "Share" },
+                count: { label: "Count" },
                 Critical: { label: "Critical", color: "hsl(0 84% 60%)" },
                 High: { label: "High", color: "hsl(25 95% 53%)" },
                 Medium: { label: "Medium", color: "hsl(48 96% 53%)" },
                 Low: { label: "Low", color: "hsl(142 71% 45%)" },
               };
+              const severityLegendItems = order.map((key) => ({
+                name: key,
+                fill: key === "Critical" ? "hsl(0 84% 60%)" : key === "High" ? "hsl(25 95% 53%)" : key === "Medium" ? "hsl(48 96% 53%)" : "hsl(142 71% 45%)",
+              }));
               return (
-                <ChartContainer config={radialConfig} className="mx-auto aspect-square max-h-[240px]">
-                  <RadialBarChart data={radialData} innerRadius={30} outerRadius={90} startAngle={90} endAngle={-270}>
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="name" formatter={(_, __, ___, ____, payload) => [(payload as { actualCount?: number })?.actualCount ?? 0, "Count"]} />} />
-                    <RadialBar dataKey="count" background fill={(entry: { fill?: string }) => entry?.fill ?? "hsl(0 0% 50%)"} />
-                  </RadialBarChart>
-                </ChartContainer>
+                <>
+                  <ChartContainer config={radialConfig} className="mx-auto aspect-square max-h-[240px]">
+                    <RadialBarChart data={radialData} innerRadius={30} outerRadius={90} startAngle={90} endAngle={-270}>
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            nameKey="name"
+                            labelFormatter={(_, payload) => (payload?.[0]?.payload as { name?: string })?.name ?? "—"}
+                            formatter={(_, __, ___, ____, payload) => [(payload as { actualCount?: number })?.actualCount ?? 0, "Count"]}
+                          />
+                        }
+                      />
+                      <RadialBar dataKey="count" background fill={(entry: { fill?: string }) => entry?.fill ?? "hsl(0 0% 50%)"} />
+                    </RadialBarChart>
+                  </ChartContainer>
+                  <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs">
+                    {severityLegendItems.map(({ name, fill }) => (
+                      <div key={name} className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+                        <span className="shrink-0 w-3 h-3 rounded-full" style={{ backgroundColor: fill }} aria-hidden />
+                        <span>{name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
               );
             })()}
           </CardContent>
@@ -919,7 +1039,9 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
         <CardHeader>
           <CardTitle>Findings</CardTitle>
           <CardDescription>
-            {displayList.length} vulnerability findings. Click a title to view details. Select rows to create Jira tickets.
+            {hasActiveFindingsFilters
+              ? `Showing ${filteredDisplayList.length} of ${displayList.length} findings. Click a title to view details. Select rows to create Jira tickets.`
+              : `${displayList.length} vulnerability findings. Click a title to view details. Select rows to create Jira tickets.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -930,6 +1052,73 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
             ticketType="jira"
             isJiraCreating={createJiraTicketsMutation.isPending}
           />
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              <Input
+                placeholder="Search by title, description, impact…"
+                value={findingsSearchQuery}
+                onChange={(e) => setFindingsSearchQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <Select value={filterImpact} onValueChange={setFilterImpact}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Impact" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All impacts</SelectItem>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`cursor-pointer ${
+                    filterRiskScore === "critical"
+                      ? "border-red-500/50 text-red-600 dark:text-red-400"
+                      : filterRiskScore === "high"
+                        ? "border-orange-500/50 text-orange-600 dark:text-orange-400"
+                        : filterRiskScore === "medium"
+                          ? "border-amber-500/50 text-amber-600 dark:text-amber-400"
+                          : filterRiskScore === "low"
+                            ? "border-blue-500/50 text-blue-600 dark:text-blue-400"
+                            : "border-zinc-300 dark:border-zinc-600"
+                  }`}
+                >
+                  <Filter className="h-4 w-4 mr-1.5" />
+                  {RISK_SCORE_LABELS[filterRiskScore]}
+                  <ChevronDown className="h-4 w-4 ml-1.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-[200px]">
+                <DropdownMenuLabel>Risk score</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {(["all", "critical", "high", "medium", "low"] as const).map((level) => (
+                  <DropdownMenuItem
+                    key={level}
+                    className="cursor-pointer"
+                    onClick={() => setFilterRiskScore(level)}
+                  >
+                    {filterRiskScore === level ? <Check className="h-4 w-4 mr-2 text-emerald-600" /> : null}
+                    {level === "all" ? "All" : level === "critical" ? "Critical (≥9)" : level === "high" ? "High (7–9)" : level === "medium" ? "Medium (5–7)" : "Low (<5)"}
+                    {level !== "all" ? <Shield className="h-4 w-4 ml-2 opacity-70" /> : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {hasActiveFindingsFilters && (
+              <Button variant="ghost" size="sm" className="cursor-pointer" onClick={clearFindingsFilters}>
+                <X className="h-4 w-4 mr-1" />
+                Clear filters
+              </Button>
+            )}
+          </div>
           <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800">
             <div className="min-w-max">
               <Table>
@@ -937,7 +1126,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                   <TableRow>
                     <TableHead className="min-w-[48px] w-12">
                       <Checkbox
-                        checked={displayList.length > 0 && selectedRows.size === displayList.length}
+                        checked={filteredDisplayList.length > 0 && selectedRows.size === filteredDisplayList.length}
                         onCheckedChange={toggleSelectAll}
                         aria-label="Select all rows"
                         className="cursor-pointer"
@@ -954,7 +1143,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {findings?.map((row) => {
+                  {filteredDisplayList.map((row) => {
                     const vTitle = (row.title ?? "Untitled finding").trim() || "Untitled finding";
                     const impact = (row.impact ?? "").trim() || "—";
                     const desc = (row.description ?? "").trim();
@@ -1087,7 +1276,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
       )}
 
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">
               {selectedVuln?.title ?? "Vulnerability details"}

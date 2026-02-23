@@ -6,6 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -25,12 +33,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   AlertTriangle,
   ArrowLeft,
   ScanSearch,
+  Search,
   Target,
   Percent,
   Shield,
@@ -48,6 +59,10 @@ import {
   MessageCircle,
   BarChart3,
   Ticket,
+  Filter,
+  ChevronDown,
+  Check,
+  X,
 } from "lucide-react";
 import {
   ChartContainer,
@@ -199,6 +214,74 @@ export default function DASTResults({
   const findingsList = Array.isArray(findings) ? (findings as DASTFinding[]) : [];
   const hasFindings = findingsList.length > 0;
 
+  const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
+  const [filterImpact, setFilterImpact] = useState<string>("all");
+  type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+  const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
+
+  function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+    if (filter === "all") return true;
+    if (score == null) return false;
+    if (filter === "critical") return score >= 9;
+    if (filter === "high") return score >= 7 && score < 9;
+    if (filter === "medium") return score >= 5 && score < 7;
+    if (filter === "low") return score < 5;
+    return true;
+  }
+
+  const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+    all: "Risk score",
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  };
+
+  const filteredFindingsList = useMemo(() => {
+    let list = findingsList;
+
+    const q = findingsSearchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((f) => {
+        const title = ((f.title ?? "") + "").toLowerCase();
+        const url = ((f.url ?? "") + "").toLowerCase();
+        const description = ((f.description ?? "") + "").toLowerCase();
+        const impact = ((f.impact ?? "") + "").toLowerCase();
+        const status = ((f.status ?? "") + "").toLowerCase();
+        const category = ((f.category ?? "") + "").toLowerCase();
+        const confidence = ((f.confidence ?? "") + "").toLowerCase();
+        const suggestedFix = ((f.suggested_fix ?? "") + "").toLowerCase();
+        return (
+          title.includes(q) ||
+          url.includes(q) ||
+          description.includes(q) ||
+          impact.includes(q) ||
+          status.includes(q) ||
+          category.includes(q) ||
+          confidence.includes(q) ||
+          suggestedFix.includes(q)
+        );
+      });
+    }
+
+    if (filterImpact && filterImpact !== "all") {
+      list = list.filter((f) => (f.impact ?? "").trim().toLowerCase() === filterImpact.toLowerCase());
+    }
+
+    list = list.filter((f) => matchesRiskScoreFilter(f.risk_score ?? null, filterRiskScore));
+
+    return list;
+  }, [findingsList, findingsSearchQuery, filterImpact, filterRiskScore]);
+
+  const hasActiveFindingsFilters =
+    findingsSearchQuery.trim() !== "" || filterImpact !== "all" || filterRiskScore !== "all";
+
+  const clearFindingsFilters = () => {
+    setFindingsSearchQuery("");
+    setFilterImpact("all");
+    setFilterRiskScore("all");
+  };
+
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
       ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
@@ -220,11 +303,11 @@ export default function DASTResults({
   };
 
   const toggleSelectAll = () => {
-    if (!findingsList.length) return;
-    if (selectedRowIds.size === findingsList.length) {
+    if (!filteredFindingsList.length) return;
+    if (selectedRowIds.size === filteredFindingsList.length) {
       setSelectedRowIds(new Set());
     } else {
-      setSelectedRowIds(new Set(findingsList.map((f) => f.id)));
+      setSelectedRowIds(new Set(filteredFindingsList.map((f) => f.id)));
     }
   };
 
@@ -326,9 +409,92 @@ export default function DASTResults({
           
           </div>
         </div>
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-6 max-w-7xl mx-auto space-y-4">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+              <Input
+                type="search"
+                placeholder="Search by title, URL, description..."
+                value={findingsSearchQuery}
+                onChange={(e) => setFindingsSearchQuery(e.target.value)}
+                className="pl-9 h-9 cursor-text"
+                aria-label="Search findings table"
+              />
+            </div>
+            <Select value={filterImpact} onValueChange={setFilterImpact}>
+              <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
+                <SelectValue placeholder="Impact" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All impacts</SelectItem>
+                <SelectItem value="Critical">Critical</SelectItem>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Medium">Medium</SelectItem>
+                <SelectItem value="Low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                    filterRiskScore === "critical"
+                      ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300"
+                      : filterRiskScore === "high"
+                        ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                        : filterRiskScore === "medium"
+                          ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                          : filterRiskScore === "low"
+                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                            : "border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                  <span className="capitalize font-normal">{RISK_SCORE_LABELS[filterRiskScore]}</span>
+                  <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[180px]">
+                <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("all")}>
+                  {filterRiskScore === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                  All
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("critical")}>
+                  {filterRiskScore === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                  Critical (≥9)
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("high")}>
+                  {filterRiskScore === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                  High (7–9)
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("medium")}>
+                  {filterRiskScore === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                  Medium (5–7)
+                </DropdownMenuItem>
+                <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("low")}>
+                  {filterRiskScore === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                  Low (&lt;5)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {hasActiveFindingsFilters && (
+              <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 cursor-pointer" onClick={clearFindingsFilters}>
+                <X className="h-4 w-4 mr-1" />
+                Clear filters
+              </Button>
+            )}
+          </div>
+          {hasActiveFindingsFilters && (
+            <span className="text-sm text-zinc-500 dark:text-zinc-400 block mb-4">
+              Showing {filteredFindingsList.length} of {findingsList.length} findings
+            </span>
+          )}
           <FindingsTable
-            findingsList={findingsList}
+            findingsList={filteredFindingsList}
             selectedFinding={selectedFinding}
             setSelectedFinding={setSelectedFinding}
             selectedRowIds={new Set()}
@@ -898,6 +1064,89 @@ export default function DASTResults({
           <CardContent>
             {hasFindings ? (
               <>
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                    <Input
+                      type="search"
+                      placeholder="Search by title, URL, description..."
+                      value={findingsSearchQuery}
+                      onChange={(e) => setFindingsSearchQuery(e.target.value)}
+                      className="pl-9 h-9 cursor-text"
+                      aria-label="Search findings table"
+                    />
+                  </div>
+                  <Select value={filterImpact} onValueChange={setFilterImpact}>
+                    <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
+                      <SelectValue placeholder="Impact" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All impacts</SelectItem>
+                      <SelectItem value="Critical">Critical</SelectItem>
+                      <SelectItem value="High">High</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="Low">Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                          filterRiskScore === "critical"
+                            ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300"
+                            : filterRiskScore === "high"
+                              ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                              : filterRiskScore === "medium"
+                                ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                                : filterRiskScore === "low"
+                                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                                  : "border-zinc-200 dark:border-zinc-700"
+                        }`}
+                      >
+                        <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                        <span className="capitalize font-normal">{RISK_SCORE_LABELS[filterRiskScore]}</span>
+                        <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="min-w-[180px]">
+                      <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("all")}>
+                        {filterRiskScore === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                        All
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("critical")}>
+                        {filterRiskScore === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                        Critical (≥9)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("high")}>
+                        {filterRiskScore === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                        High (7–9)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("medium")}>
+                        {filterRiskScore === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                        Medium (5–7)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("low")}>
+                        {filterRiskScore === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                        Low (&lt;5)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {hasActiveFindingsFilters && (
+                    <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 cursor-pointer" onClick={clearFindingsFilters}>
+                      <X className="h-4 w-4 mr-1" />
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
+                {hasActiveFindingsFilters && (
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400 block mb-4">
+                    Showing {filteredFindingsList.length} of {findingsList.length} findings
+                  </span>
+                )}
                 <FindingSelectionMenu
                   selectedCount={selectedRowIds.size}
                   onClearSelection={() => setSelectedRowIds(new Set())}
@@ -906,7 +1155,7 @@ export default function DASTResults({
                   isJiraCreating={createJiraTicketsMutation.isPending}
                 />
                 <FindingsTable
-                  findingsList={findingsList}
+                  findingsList={filteredFindingsList}
                   selectedFinding={selectedFinding}
                   setSelectedFinding={setSelectedFinding}
                   selectedRowIds={selectedRowIds}
@@ -1127,7 +1376,7 @@ function FindingDetailDialog({
   if (!finding) return null;
   return (
     <Dialog open={!!finding} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0 border-b border-zinc-200 dark:border-zinc-800">
           <DialogTitle className="pr-8 text-zinc-900 dark:text-white">
             {(finding.title ?? "").trim() || "Finding details"}

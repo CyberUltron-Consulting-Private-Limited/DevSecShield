@@ -480,7 +480,8 @@ async def get_cicd_integration(
         results_list = []
         for log in logs:
             dashboard_data = None
-            if log.get("results") and isinstance(log["results"], list) and scan_type == "sast":
+            # SAST results may be list or dict with "results" key (DataSpecs.md); get_cicd_sast_dashboard_data accepts both
+            if log.get("results") and scan_type == "sast":
                 try:
                     dashboard_data = get_cicd_sast_dashboard_data(log["results"])
                 except Exception:

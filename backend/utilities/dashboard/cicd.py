@@ -15,6 +15,24 @@ RISK_SCORE_FOR_IMPACT = {
     "low": 2.5,
 }
 
+# Canonical impact keys for risk_metrics (default 0 for each)
+RISK_METRICS_KEYS = ("Low", "Medium", "High", "Critical")
+
+# Normalize raw impact string to one of RISK_METRICS_KEYS (or None)
+def _normalize_impact(impact: str) -> str | None:
+    if not impact or not isinstance(impact, str):
+        return None
+    key = impact.strip().lower()
+    if key == "critical":
+        return "Critical"
+    if key == "high":
+        return "High"
+    if key == "medium":
+        return "Medium"
+    if key == "low":
+        return "Low"
+    return None
+
 
 def _normalize_results(data: list[dict] | dict) -> list[dict]:
     """Normalize results: accept either a list of findings or a dict with 'results' key."""
@@ -37,34 +55,45 @@ def get_cicd_sast_dashboard_data(results: list[dict] | dict) -> dict:
     items = _normalize_results(results)
     owasp_top_10_metrics = defaultdict(int)
     compliance_controls_metrics = defaultdict(int)
-    risk_metrics = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0}
+    # All keys default to 0
+    risk_metrics = {k: 0 for k in RISK_METRICS_KEYS}
     cves_per_vulnerability = defaultdict(int)
     risk_scores_per_finding = defaultdict(float)
     policy_violations = defaultdict(int)
 
     for item in items:
         for vuln in item.get("vulnerabilities", []):
-            # owasp metrics
+            # owasp metrics (value as key; default 0 for any new key)
             for key, value in (vuln.get("owasp_top_10") or {}).items():
-                owasp_top_10_metrics[value] += 1
-            # compliance controls
+                if value is not None and str(value).strip():
+                    owasp_top_10_metrics[str(value).strip()] += 1
+            # compliance controls (default 0)
             for key, value in (vuln.get("compliance_controls") or {}).items():
-                compliance_controls_metrics[value] += 1
-            # risk metrics
-            impact = (vuln.get("impact") or "").strip()
-            if impact in risk_metrics:
-                risk_metrics[impact] += 1
-            # cves per vulnerability
-            for key, value in (vuln.get("cves") or {}).items():
-                cves_per_vulnerability[value] += 1
-            # risk score per finding
-            impact_lower = impact.lower()
+                if value is not None and str(value).strip():
+                    compliance_controls_metrics[str(value).strip()] += 1
+            # risk metrics: normalize impact so all keys have default 0
+            impact_raw = (vuln.get("impact") or "").strip()
+            impact_key = _normalize_impact(impact_raw)
+            if impact_key is not None:
+                risk_metrics[impact_key] = risk_metrics.get(impact_key, 0) + 1
+            # cves per vulnerability (default 0)
+            cves = vuln.get("cves")
+            if isinstance(cves, dict):
+                for key, value in cves.items():
+                    if value is not None and str(value).strip():
+                        cves_per_vulnerability[str(value).strip()] += 1
+            elif isinstance(cves, list):
+                for c in cves:
+                    if c is not None and str(c).strip():
+                        cves_per_vulnerability[str(c).strip()] += 1
+            # risk score per finding (default 0)
+            impact_lower = (impact_raw or "").lower()
             if impact_lower in RISK_SCORE_FOR_IMPACT:
                 risk_scores_per_finding[vuln.get("title") or ""] = RISK_SCORE_FOR_IMPACT[impact_lower]
-            # policy violations
+            # policy violations (default 0)
             for key, value in (vuln.get("compliance_controls") or {}).items():
                 if value and " - " in str(value):
-                    policy_violations[str(value).split(" - ")[0]] += 1
+                    policy_violations[str(value).split(" - ")[0].strip()] += 1
 
     return {
         "owasp_top_10_metrics": dict(owasp_top_10_metrics),

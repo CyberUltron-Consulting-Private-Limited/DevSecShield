@@ -442,9 +442,41 @@ export function DASTOptionsSidebar({
 
               <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="auth" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
-                    Authentication <span className="text-red-500">*</span>
-                  </AccordionTrigger>
+                  <div className="flex items-center gap-1">
+                    <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm flex-1 [&[data-state=open]>svg]:rotate-180">
+                      Authentication <span className="text-red-500">*</span>
+                    </AccordionTrigger>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                          aria-label="How to get XPath for authentication fields"
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="bg-zinc-900 border-zinc-700 text-zinc-200 max-w-md">
+                        <DialogHeader>
+                          <DialogTitle className="text-white">How to copy the full XPath</DialogTitle>
+                          <DialogDescription className="text-zinc-400">
+                            Use these steps to get the XPath for the username field, password field, and submit button on your login page.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <ol className="list-decimal list-inside space-y-2 text-sm text-zinc-300">
+                          <li>Open your application’s <strong>login page</strong> in the browser.</li>
+                          <li><strong>Right-click</strong> on the element (e.g. username input, password input, or submit button).</li>
+                          <li>Choose <strong>Inspect</strong> (or Inspect Element) to open DevTools.</li>
+                          <li>In the Elements panel, the corresponding HTML node will be highlighted. <strong>Right-click</strong> that node.</li>
+                          <li>Select <strong>Copy</strong> → <strong>Copy full XPath</strong> (or “Copy XPath” depending on the browser).</li>
+                          <li>Paste the copied XPath into the matching field above (username field, password field, or submit button).</li>
+                        </ol>
+                        <p className="text-xs text-zinc-500 mt-2">
+                          You need the full XPath for: username input, password input, and the login/submit button.
+                        </p>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                   <AccordionContent className="pt-4 space-y-4 w-full">
                     <div className="space-y-2">
                       <Label htmlFor="login-url" className="text-zinc-300">

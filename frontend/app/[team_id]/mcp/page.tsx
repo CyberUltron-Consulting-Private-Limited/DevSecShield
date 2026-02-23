@@ -128,7 +128,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
   ], [severityDist]);
 
   const envData = useMemo(() =>
-    Object.entries(envRisk).map(([name, count]) => ({ name, count })),
+    Object.entries(envRisk).map(([name, count], i) => ({ xLabel: `E${i + 1}`, name, count })),
   [envRisk]);
 
   const complianceData = useMemo(() =>
@@ -136,10 +136,10 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
   [complianceDist]);
 
   const remediationData = useMemo(() => [
-    { status: "Not Started", count: remediation.not_started },
-    { status: "In Progress", count: remediation.in_progress },
-    { status: "Fixed", count: remediation.fixed },
-    { status: "Ignored", count: remediation.ignored },
+    { xLabel: "R1", status: "Not Started", count: remediation.not_started },
+    { xLabel: "R2", status: "In Progress", count: remediation.in_progress },
+    { xLabel: "R3", status: "Fixed", count: remediation.fixed },
+    { xLabel: "R4", status: "Ignored", count: remediation.ignored },
   ], [remediation]);
 
   const assetData = useMemo(() => {
@@ -151,9 +151,23 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
     Object.entries(scanDuration).map(([name, value]) => ({ name, duration: value })),
   [scanDuration]);
 
-  const radarData = useMemo(() =>
-    MCP_CATEGORIES.map((c) => ({ category: c.replace(/_/g, " "), value: securityPosture[c] ?? 0 })),
-  [securityPosture]);
+  // Security posture: S1, S2, ... with legend; one Radar per category for distinct colors
+  const SECURITY_POSTURE_COLORS = ["hsl(217 91% 60%)", "hsl(142 71% 45%)", "hsl(48 96% 53%)", "hsl(25 95% 53%)", "hsl(270 50% 60%)", "hsl(0 84% 60%)", "hsl(180 70% 45%)"];
+  const radarData = useMemo(() => {
+    return MCP_CATEGORIES.map((c, i) => {
+      const categoryLabel = c.replace(/_/g, " ");
+      const value = securityPosture[c] ?? 0;
+      const row: Record<string, string | number> = {
+        xLabel: `S${i + 1}`,
+        category: categoryLabel,
+        value,
+      };
+      MCP_CATEGORIES.forEach((k, j) => {
+        row[`s${j + 1}`] = j === i ? value : 0;
+      });
+      return row;
+    });
+  }, [securityPosture]);
 
   const mttrData = useMemo(() =>
     Object.entries(mttr)
@@ -376,15 +390,26 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
             {envData.every((e) => e.count === 0) ? (
               <p className="text-center text-sm text-zinc-500 py-8">No data</p>
             ) : (
-              <ChartContainer config={barConfig} className="h-[200px] w-full">
-                <BarChart data={envData}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
+              <>
+                <ChartContainer config={barConfig} className="h-[200px] w-full">
+                  <BarChart data={envData}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="xLabel" tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                    <ChartTooltip content={<ChartTooltipContent nameKey="name" />} />
+                    <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                  {envData.map((d) => (
+                    <span key={d.xLabel}>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                      <span className="mx-1.5">=</span>
+                      <span>{d.name}</span>
+                    </span>
+                  ))}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -417,15 +442,26 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
             {remediationData.every((r) => r.count === 0) ? (
               <p className="text-center text-sm text-zinc-500 py-8">No data</p>
             ) : (
-              <ChartContainer config={barConfig} className="h-[200px] w-full">
-                <BarChart data={remediationData}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="status" tickLine={false} axisLine={false} tickFormatter={(v) => String(v).length > 8 ? `${String(v).slice(0, 8)}...` : v} />
-                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
+              <>
+                <ChartContainer config={barConfig} className="h-[200px] w-full">
+                  <BarChart data={remediationData}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="xLabel" tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                    <ChartTooltip content={<ChartTooltipContent nameKey="status" />} />
+                    <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                  {remediationData.map((d) => (
+                    <span key={d.xLabel}>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                      <span className="mx-1.5">=</span>
+                      <span>{d.status}</span>
+                    </span>
+                  ))}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -481,14 +517,43 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
             <CardDescription>Risk score per category</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={{ value: { label: "Risk Score" } }} className="mx-auto aspect-square max-h-[220px]">
+            <ChartContainer
+              config={{
+                ...Object.fromEntries(MCP_CATEGORIES.map((_, i) => [`s${i + 1}`, { label: `S${i + 1}`, color: SECURITY_POSTURE_COLORS[i] }])),
+                value: { label: "Risk Score" },
+              }}
+              className="mx-auto aspect-square max-h-[220px]"
+            >
               <RadarChart data={radarData}>
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <PolarAngleAxis dataKey="category" />
+                <ChartTooltip
+                  cursor={false}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const row = payload[0]?.payload as { category?: string; value?: number };
+                    return (
+                      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 shadow-md">
+                        <p className="font-medium text-zinc-900 dark:text-zinc-100">{row?.category ?? "—"}</p>
+                        <p className="text-sm text-zinc-600 dark:text-zinc-400">Risk score: {typeof row?.value === "number" ? row.value : "—"}</p>
+                      </div>
+                    );
+                  }}
+                />
+                <PolarAngleAxis dataKey="xLabel" />
                 <PolarGrid />
-                <Radar dataKey="value" fill="var(--color-value)" fillOpacity={0.6} />
+                {MCP_CATEGORIES.map((_, i) => (
+                  <Radar key={i} dataKey={`s${i + 1}`} fill={SECURITY_POSTURE_COLORS[i]} fillOpacity={0.6} stroke={SECURITY_POSTURE_COLORS[i]} strokeWidth={1} />
+                ))}
               </RadarChart>
             </ChartContainer>
+            <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+              {radarData.map((d) => (
+                <span key={d.xLabel as string}>
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel as string}</span>
+                  <span className="mx-1.5">=</span>
+                  <span>{d.category as string}</span>
+                </span>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>

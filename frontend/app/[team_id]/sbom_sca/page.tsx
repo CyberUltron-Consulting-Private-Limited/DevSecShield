@@ -182,13 +182,22 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
     return sum || 1;
   }, [dashboardData.licenses_distribution]);
 
-  // Section 8: Average risk score per reachability (radar)
-  const reachabilityRadarData = useMemo(() => [
-    { level: "Reachable", score: dashboardData.average_risk_score_per_reachability_level.reachable ?? 0 },
-    { level: "Potentially Reachable", score: dashboardData.average_risk_score_per_reachability_level.potentially_reachable ?? 0 },
-    { level: "Not Reachable", score: dashboardData.average_risk_score_per_reachability_level.not_reachable ?? 0 },
-    { level: "Unknown", score: dashboardData.average_risk_score_per_reachability_level.unknown ?? 0 },
-  ], [dashboardData.average_risk_score_per_reachability_level]);
+  // Section 8: Average risk score per reachability (radar) — R1, R2, R3, R4 with legend
+  const reachabilityRadarData = useMemo(() => {
+    const levels = [
+      "Reachable",
+      "Potentially Reachable",
+      "Not Reachable",
+      "Unknown",
+    ] as const;
+    const keys = ["reachable", "potentially_reachable", "not_reachable", "unknown"] as const;
+    const scores = dashboardData.average_risk_score_per_reachability_level;
+    return levels.map((level, i) => ({
+      xLabel: `R${i + 1}`,
+      level,
+      score: scores[keys[i]] ?? 0,
+    }));
+  }, [dashboardData.average_risk_score_per_reachability_level]);
 
   const reachabilityRadarConfig = { score: { label: "Avg Risk", color: "hsl(217 91% 60%)" } } satisfies ChartConfig;
 
@@ -468,39 +477,97 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
             {reachabilityRadarData.every((r) => r.score === 0) ? (
               <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
             ) : (
-              <ChartContainer config={reachabilityRadarConfig} className="mx-auto aspect-square max-h-[280px]">
-                <RadarChart data={reachabilityRadarData}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                  <PolarAngleAxis dataKey="level" />
-                  <PolarGrid />
-                  <Radar dataKey="score" fill="var(--color-score)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
-                </RadarChart>
-              </ChartContainer>
+              <>
+                <ChartContainer config={reachabilityRadarConfig} className="mx-auto aspect-square max-h-[280px]">
+                  <RadarChart data={reachabilityRadarData}>
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(_, payload) => (payload?.[0]?.payload as { level?: string })?.level ?? "—"}
+                          formatter={(value) => [value, "Avg Risk"]}
+                        />
+                      }
+                    />
+                    <PolarAngleAxis dataKey="xLabel" />
+                    <PolarGrid />
+                    <Radar dataKey="score" fill="var(--color-score)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+                  </RadarChart>
+                </ChartContainer>
+                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-6 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                  {reachabilityRadarData.map(({ xLabel, level }) => (
+                    <span key={xLabel}>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{xLabel}</span>
+                      <span className="mx-1.5">=</span>
+                      <span>{level}</span>
+                    </span>
+                  ))}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
       </div>
 
       {/* Section 9: Policy Compliance Data */}
-      <Card className="border-zinc-200 dark:border-zinc-800">
+      <Card className="border-zinc-200 dark:border-zinc-800 overflow-hidden">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Policy Compliance Data</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <div className="rounded-lg bg-violet-500/10 p-1.5">
+              <Shield className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            </div>
+            Policy Compliance Data
+          </CardTitle>
           <CardDescription>Issues by compliance standard</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {Object.entries(dashboardData.policy_compliance_data).map(([name, count]) => (
-              <div key={name} className="space-y-1.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{name}</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">{count}</span>
-                </div>
-                <Progress value={(count / policyTotal) * 100} className="h-2" />
+          {policyTotal === 0 ? (
+            <p className="text-center text-sm text-zinc-500 py-8">No policy compliance data yet</p>
+          ) : (
+            <ScrollArea className="w-full">
+              <div className="flex gap-4 pb-2 min-w-max">
+                {Object.entries(dashboardData.policy_compliance_data).map(([name, count], index) => {
+                  const policyColors = [
+                    { border: "border-l-blue-500", bg: "bg-blue-500/8", icon: "text-blue-600 dark:text-blue-400", bar: "bg-blue-500", accent: "text-blue-700 dark:text-blue-300" },
+                    { border: "border-l-emerald-500", bg: "bg-emerald-500/8", icon: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500", accent: "text-emerald-700 dark:text-emerald-300" },
+                    { border: "border-l-violet-500", bg: "bg-violet-500/8", icon: "text-violet-600 dark:text-violet-400", bar: "bg-violet-500", accent: "text-violet-700 dark:text-violet-300" },
+                    { border: "border-l-amber-500", bg: "bg-amber-500/8", icon: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500", accent: "text-amber-700 dark:text-amber-300" },
+                    { border: "border-l-rose-500", bg: "bg-rose-500/8", icon: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500", accent: "text-rose-700 dark:text-rose-300" },
+                    { border: "border-l-cyan-500", bg: "bg-cyan-500/8", icon: "text-cyan-600 dark:text-cyan-400", bar: "bg-cyan-500", accent: "text-cyan-700 dark:text-cyan-300" },
+                  ];
+                  const c = policyColors[index % policyColors.length];
+                  const pct = policyTotal > 0 ? (count / policyTotal) * 100 : 0;
+                  return (
+                    <div
+                      key={name}
+                      className={`shrink-0 w-[220px] rounded-xl border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-800/30 bg-zinc-50/80 pl-4 border-l-4 ${c.border} ${c.bg} p-4 transition-shadow hover:shadow-md`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <BookOpen className={`h-4 w-4 shrink-0 ${c.icon}`} />
+                          <span className={`font-semibold text-sm truncate ${c.accent}`} title={name}>
+                            {name}
+                          </span>
+                        </div>
+                        <Badge variant="secondary" className={`shrink-0 font-mono tabular-nums ${c.accent} border-0 bg-white/60 dark:bg-zinc-700/60`}>
+                          {count}
+                        </Badge>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${c.bar} transition-all duration-500 ease-out`}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1.5 font-medium">
+                        {pct.toFixed(1)}% of total
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-          {policyTotal === 0 && (
-            <p className="text-center text-sm text-zinc-500 py-4">No policy compliance data yet</p>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
           )}
         </CardContent>
       </Card>

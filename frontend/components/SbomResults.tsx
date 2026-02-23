@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -40,6 +48,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -67,7 +77,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, TrendingUp } from "lucide-react";
+import { BarChart3, TrendingUp, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -557,6 +567,54 @@ function SbomResultsView({
   const queryClient = useQueryClient();
   const useFindings = Boolean(findings && findings.length > 0);
 
+  const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
+  const [filterImpact, setFilterImpact] = useState<string>("all");
+  type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+  const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
+  function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+    if (filter === "all") return true;
+    if (score == null) return false;
+    if (filter === "critical") return score >= 9;
+    if (filter === "high") return score >= 7 && score < 9;
+    if (filter === "medium") return score >= 5 && score < 7;
+    if (filter === "low") return score < 5;
+    return true;
+  }
+  const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+    all: "Risk score",
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  };
+  const findingsList = findings ?? [];
+  const filteredFindingsList = useMemo(() => {
+    if (!useFindings) return findingsList;
+    let list = findingsList;
+    const q = findingsSearchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((f) => {
+        const title = ((f.title ?? "") + "").toLowerCase();
+        const description = ((f.description ?? "") + "").toLowerCase();
+        const impact = ((f.impact ?? "") + "").toLowerCase();
+        const dependency = ((f.dependency ?? "") + "").toLowerCase();
+        return title.includes(q) || description.includes(q) || impact.includes(q) || dependency.includes(q);
+      });
+    }
+    if (filterImpact && filterImpact !== "all") {
+      list = list.filter((f) => (f.impact ?? "").trim().toLowerCase() === filterImpact.toLowerCase());
+    }
+    list = list.filter((f) => matchesRiskScoreFilter(f.risk_score ?? null, filterRiskScore));
+    return list;
+  }, [findingsList, useFindings, findingsSearchQuery, filterImpact, filterRiskScore]);
+  const hasActiveFindingsFilters =
+    findingsSearchQuery.trim() !== "" || filterImpact !== "all" || filterRiskScore !== "all";
+  const clearFindingsFilters = () => {
+    setFindingsSearchQuery("");
+    setFilterImpact("all");
+    setFilterRiskScore("all");
+  };
+
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
       ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
@@ -627,10 +685,10 @@ function SbomResultsView({
   };
 
   const toggleSelectAll = () => {
-    if (useFindings && findings) {
-      if (selectedRowIds.size === findings.length) setSelectedRowIds(new Set());
-      else setSelectedRowIds(new Set(findings.map((f) => f.id)));
-    } else {
+    if (useFindings && filteredFindingsList.length) {
+      if (selectedRowIds.size === filteredFindingsList.length) setSelectedRowIds(new Set());
+      else setSelectedRowIds(new Set(filteredFindingsList.map((f) => f.id)));
+    } else if (!useFindings) {
       if (selectedRows.size === vulnerabilities.length) setSelectedRows(new Set());
       else setSelectedRows(new Set(vulnerabilities.map((_, i) => i)));
     }
@@ -649,8 +707,8 @@ function SbomResultsView({
     mutationFn: async () => {
       const tid = parseInt(teamId ?? "0", 10);
       if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      const selectedFindingsList = useFindings && findings
-        ? findings.filter((f) => selectedRowIds.has(f.id))
+      const selectedFindingsList = useFindings && findingsList
+        ? findingsList.filter((f) => selectedRowIds.has(f.id))
         : Array.from(selectedRows).map((i) => vulnerabilities[i]);
       if (selectedFindingsList.length === 0) throw new Error("No findings selected");
 
@@ -871,6 +929,93 @@ function SbomResultsView({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {useFindings && findingsList.length > 0 && (
+            <>
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <Input
+                    type="search"
+                    placeholder="Search by title, description..."
+                    value={findingsSearchQuery}
+                    onChange={(e) => setFindingsSearchQuery(e.target.value)}
+                    className="pl-9 h-9 cursor-text"
+                    aria-label="Search findings table"
+                  />
+                </div>
+                <Select value={filterImpact} onValueChange={setFilterImpact}>
+                  <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
+                    <SelectValue placeholder="Impact" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All impacts</SelectItem>
+                    <SelectItem value="Critical">Critical</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="Low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                        filterRiskScore === "critical"
+                          ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300"
+                          : filterRiskScore === "high"
+                            ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                            : filterRiskScore === "medium"
+                              ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                              : filterRiskScore === "low"
+                                ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                                : "border-zinc-200 dark:border-zinc-700"
+                      }`}
+                    >
+                      <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                      <span className="capitalize font-normal">{RISK_SCORE_LABELS[filterRiskScore]}</span>
+                      <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[180px]">
+                    <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("all")}>
+                      {filterRiskScore === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                      All
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("critical")}>
+                      {filterRiskScore === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                      Critical (≥9)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("high")}>
+                      {filterRiskScore === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                      High (7–9)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("medium")}>
+                      {filterRiskScore === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                      Medium (5–7)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("low")}>
+                      {filterRiskScore === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                      Low (&lt;5)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {hasActiveFindingsFilters && (
+                  <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 cursor-pointer" onClick={clearFindingsFilters}>
+                    <X className="h-4 w-4 mr-1" />
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+              {hasActiveFindingsFilters && (
+                <span className="text-sm text-zinc-500 dark:text-zinc-400 block mb-4">
+                  Showing {filteredFindingsList.length} of {findingsList.length} findings
+                </span>
+              )}
+            </>
+          )}
           <FindingSelectionMenu
             selectedCount={useFindings ? selectedRowIds.size : selectedRows.size}
             onClearSelection={() => { setSelectedRows(new Set()); setSelectedRowIds(new Set()); }}
@@ -879,13 +1024,13 @@ function SbomResultsView({
             isJiraCreating={createJiraTicketsMutation.isPending}
           />
           <ScrollArea className="h-[500px] rounded-md border border-zinc-200 dark:border-zinc-800">
-            {useFindings && findings ? (
+            {useFindings && findingsList.length ? (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[48px]">
                       <Checkbox
-                        checked={findings.length > 0 && selectedRowIds.size === findings.length}
+                        checked={filteredFindingsList.length > 0 && selectedRowIds.size === filteredFindingsList.length}
                         onCheckedChange={toggleSelectAll}
                         aria-label="Select all rows"
                         className="cursor-pointer"
@@ -904,7 +1049,7 @@ function SbomResultsView({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {findings.map((f) => {
+                  {filteredFindingsList.map((f) => {
                     const impact = (f.impact ?? "").trim() || "—";
                     const statusLabel = (f.status ?? "not_started").replace(/_/g, " ");
                     return (
@@ -1085,7 +1230,7 @@ function SbomResultsView({
       </Card>
 
       <Dialog open={!!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">{selectedFinding?.title ?? "Finding details"}</DialogTitle>
           </DialogHeader>
@@ -1184,7 +1329,7 @@ function SbomResultsView({
       </Dialog>
 
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">{selectedVuln?.title ?? "Vulnerability details"}</DialogTitle>
           </DialogHeader>

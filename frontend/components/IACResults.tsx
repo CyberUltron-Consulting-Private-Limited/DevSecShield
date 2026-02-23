@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AlertTriangle, ArrowLeft, MessageCircle, Download, Ticket, Shield, CheckCircle, EyeOff, Loader2, Circle, MoreVertical, Waypoints } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -18,6 +26,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -50,7 +60,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { PieChart, BarChart3, TrendingUp, GitBranch, FileArchive, ImageIcon, Github } from "lucide-react";
+import { PieChart, BarChart3, TrendingUp, GitBranch, FileArchive, ImageIcon, Github, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -328,6 +338,56 @@ function IACResultsAgentView({
 
   const useFindingsMode = Boolean(findings && findings.length > 0);
 
+  const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
+  const [filterImpact, setFilterImpact] = useState<string>("all");
+  type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+  const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
+  function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+    if (filter === "all") return true;
+    if (score == null) return false;
+    if (filter === "critical") return score >= 9;
+    if (filter === "high") return score >= 7 && score < 9;
+    if (filter === "medium") return score >= 5 && score < 7;
+    if (filter === "low") return score < 5;
+    return true;
+  }
+  const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+    all: "Risk score",
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+  };
+  const findingsList = findings ?? [];
+  const filteredFindingsList = useMemo(() => {
+    if (!useFindingsMode) return findingsList;
+    let list = findingsList;
+    const q = findingsSearchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((f) => {
+        const title = ((f.title ?? "") + "").toLowerCase();
+        const description = ((f.description ?? "") + "").toLowerCase();
+        const impact = ((f.impact ?? "") + "").toLowerCase();
+        const status = ((f.status ?? "") + "").toLowerCase();
+        const category = ((f.category ?? "") + "").toLowerCase();
+        const resource = ((f.resource ?? "") + "").toLowerCase();
+        return title.includes(q) || description.includes(q) || impact.includes(q) || status.includes(q) || category.includes(q) || resource.includes(q);
+      });
+    }
+    if (filterImpact && filterImpact !== "all") {
+      list = list.filter((f) => (f.impact ?? "").trim().toLowerCase() === filterImpact.toLowerCase());
+    }
+    list = list.filter((f) => matchesRiskScoreFilter(f.risk_score ?? null, filterRiskScore));
+    return list;
+  }, [findingsList, useFindingsMode, findingsSearchQuery, filterImpact, filterRiskScore]);
+  const hasActiveFindingsFilters =
+    findingsSearchQuery.trim() !== "" || filterImpact !== "all" || filterRiskScore !== "all";
+  const clearFindingsFilters = () => {
+    setFindingsSearchQuery("");
+    setFilterImpact("all");
+    setFilterRiskScore("all");
+  };
+
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
       ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
@@ -373,13 +433,13 @@ function IACResultsAgentView({
   };
 
   const toggleSelectAll = () => {
-    if (useFindingsMode && findings?.length) {
-      if (selectedFindingIds.size === findings.length) {
+    if (useFindingsMode && filteredFindingsList.length) {
+      if (selectedFindingIds.size === filteredFindingsList.length) {
         setSelectedFindingIds(new Set());
       } else {
-        setSelectedFindingIds(new Set(findings.map((f) => f.id)));
+        setSelectedFindingIds(new Set(filteredFindingsList.map((f) => f.id)));
       }
-    } else {
+    } else if (!useFindingsMode) {
       if (selectedRows.size === vulnerabilities.length) {
         setSelectedRows(new Set());
       } else {
@@ -420,8 +480,8 @@ function IACResultsAgentView({
     mutationFn: async () => {
       const tid = parseInt(teamId ?? "0", 10);
       if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
-      const selectedFindings = useFindingsMode && findings?.length
-        ? findings.filter((f) => selectedFindingIds.has(f.id))
+      const selectedFindings = useFindingsMode && findingsList?.length
+        ? findingsList.filter((f) => selectedFindingIds.has(f.id))
         : Array.from(selectedRows).map((i) => vulnerabilities[i]);
       if (selectedFindings.length === 0) throw new Error("No findings selected");
 
@@ -697,7 +757,7 @@ function IACResultsAgentView({
             const severityPieData = (["Critical", "High", "Medium", "Low"] as const)
               .filter((s) => (severityData[s] ?? 0) > 0)
               .map((s) => ({ name: s, value: severityData[s] ?? 0 }));
-            const categoryData = Object.entries(iacDash.issues_by_category ?? {}).map(([name, count]) => ({ subject: name.length > 18 ? `${name.slice(0, 18)}…` : name, fullName: name, count }));
+            const categoryData = Object.entries(iacDash.issues_by_category ?? {}).map(([name, count], i) => ({ xLabel: `C${i + 1}`, subject: name.length > 18 ? `${name.slice(0, 18)}…` : name, fullName: name, count }));
             const avgRiskData = Object.entries(iacDash.average_risk_score_per_category ?? {}).map(([name, score]) => ({ name: name.length > 10 ? `${name.slice(0, 10)}…` : name, fullName: name, score }));
             const severityColors = { Critical: "hsl(0 84% 60%)", High: "hsl(25 95% 53%)", Medium: "hsl(48 96% 53%)", Low: "hsl(217 91% 60%)" };
             const issue_status_display_names: Record<string, string> = { "not_started": "Not Started", "in_progress": "In Progress", "fixed": "Fixed", "ignored": "Ignored" };
@@ -735,14 +795,25 @@ function IACResultsAgentView({
                     {categoryData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
                     ) : (
-                      <ChartContainer config={riskRadarChartConfig} className="aspect-square max-h-[280px] min-h-[260px] mx-auto w-full max-w-[320px]">
-                        <RadarChart data={categoryData} margin={{ top: 32, right: 48, bottom: 32, left: 48 }}>
-                          <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="fullName" formatter={(v) => [v, "Count"]} />} />
-                          <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
-                          <PolarGrid />
-                          <Radar dataKey="count" fill="hsl(217 91% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
-                        </RadarChart>
-                      </ChartContainer>
+                      <>
+                        <ChartContainer config={riskRadarChartConfig} className="aspect-square max-h-[280px] min-h-[260px] mx-auto w-full max-w-[320px]">
+                          <RadarChart data={categoryData} margin={{ top: 32, right: 48, bottom: 32, left: 48 }}>
+                            <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="fullName" formatter={(v) => [v, "Count"]} />} />
+                            <PolarAngleAxis dataKey="xLabel" tick={{ fontSize: 11 }} />
+                            <PolarGrid />
+                            <Radar dataKey="count" fill="hsl(217 91% 60%)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+                          </RadarChart>
+                        </ChartContainer>
+                        <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                          {categoryData.map((d) => (
+                            <span key={d.xLabel}>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                              <span className="mx-1.5">=</span>
+                              <span>{d.fullName}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>
@@ -778,7 +849,7 @@ function IACResultsAgentView({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {(() => {
             const iacDash = dashboard as IACScanDashboardData;
-            const avgRiskData = Object.entries(iacDash.average_risk_score_per_category ?? {}).map(([name, score], i) => ({ name: name.length > 10 ? `${name.slice(0, 10)}…` : name, fullName: name, score, index: `F${i + 1}` }));
+            const avgRiskData = Object.entries(iacDash.average_risk_score_per_category ?? {}).map(([name, score], i) => ({ xLabel: `A${i + 1}`, name: name.length > 10 ? `${name.slice(0, 10)}…` : name, fullName: name, score }));
             const addressMetrics = iacDash.issue_address_metrics ?? {};
             const addressData = Object.entries(addressMetrics).map(([finding, arr], i) => {
               const [d = 0, h = 0, m = 0] = Array.isArray(arr) ? arr : [0, 0, 0];
@@ -796,30 +867,41 @@ function IACResultsAgentView({
                     {avgRiskData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data to display</div>
                     ) : (
-                      <ChartContainer config={{ name: { label: "Category" }, score: { label: "Score", color: "hsl(0 84% 60%)" } }} className="h-[260px] w-full">
-                        <AreaChart data={avgRiskData} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
-                          <defs>
-                            <linearGradient id="fillIacRiskScore" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
-                              <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 8 ? `${String(v).slice(0, 8)}…` : v)} />
-                          <YAxis tickLine={false} axisLine={false} allowDecimals domain={[0, "auto"]} />
-                          <ChartTooltip
-                            content={
-                              <ChartTooltipContent
-                                labelFormatter={(_, payload) => {
-                                  const p = payload?.[0]?.payload as { fullName?: string } | undefined;
-                                  return p?.fullName ?? "";
-                                }}
-                              />
-                            }
-                          />
-                          <Area type="monotone" dataKey="score" fill="url(#fillIacRiskScore)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
-                        </AreaChart>
-                      </ChartContainer>
+                      <>
+                        <ChartContainer config={{ name: { label: "Category" }, score: { label: "Score", color: "hsl(0 84% 60%)" } }} className="h-[260px] w-full">
+                          <AreaChart data={avgRiskData} margin={{ top: 8, right: 8, bottom: 24, left: 0 }}>
+                            <defs>
+                              <linearGradient id="fillIacRiskScore" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="hsl(0 84% 60%)" stopOpacity={0.8} />
+                                <stop offset="95%" stopColor="hsl(0 84% 60%)" stopOpacity={0.1} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                            <XAxis dataKey="xLabel" tickLine={false} axisLine={false} tickMargin={8} />
+                            <YAxis tickLine={false} axisLine={false} allowDecimals domain={[0, "auto"]} />
+                            <ChartTooltip
+                              content={
+                                <ChartTooltipContent
+                                  labelFormatter={(_, payload) => {
+                                    const p = payload?.[0]?.payload as { fullName?: string } | undefined;
+                                    return p?.fullName ?? "";
+                                  }}
+                                />
+                              }
+                            />
+                            <Area type="monotone" dataKey="score" fill="url(#fillIacRiskScore)" stroke="hsl(0 84% 60%)" strokeWidth={2} />
+                          </AreaChart>
+                        </ChartContainer>
+                        <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                          {avgRiskData.map((d) => (
+                            <span key={d.xLabel}>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                              <span className="mx-1.5">=</span>
+                              <span>{d.fullName}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>
@@ -859,10 +941,9 @@ function IACResultsAgentView({
         const hasResolutionTime = Object.keys(resolutionTime).length > 0;
         if (!hasFailureTrends && !hasResolutionTime) return null;
         const failureData = Object.entries(failureTrends).map(([name, count], i) => ({
-          name: name.length > 12 ? `${name.slice(0, 12)}…` : name,
+          xLabel: `F${i + 1}`,
           fullName: name,
           count,
-          index: i + 1,
         }));
         const resolutionData = Object.entries(resolutionTime).map(([name, seconds], i) => ({
           name: name.length > 12 ? `${name.slice(0, 12)}…` : name,
@@ -889,7 +970,7 @@ function IACResultsAgentView({
                         </linearGradient>
                       </defs>
                       <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => (String(v).length > 10 ? `${String(v).slice(0, 10)}…` : v)} />
+                      <XAxis dataKey="xLabel" tickLine={false} axisLine={false} tickMargin={8} />
                       <YAxis tickLine={false} axisLine={false} allowDecimals={false} domain={[0, "auto"]} />
                       <ChartTooltip content={<ChartTooltipContent nameKey="fullName" formatter={(v) => [v, "Violations"]} />} />
                       <Area type="monotone" dataKey="count" fill="url(#fillIacComplianceFailure)" stroke="hsl(25 95% 53%)" strokeWidth={2} />
@@ -946,6 +1027,93 @@ function IACResultsAgentView({
           <CardDescription>{totalFindings} vulnerability findings — click a title to view details</CardDescription>
         </CardHeader>
         <CardContent>
+          {useFindingsMode && findingsList.length > 0 && (
+            <>
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <Input
+                    type="search"
+                    placeholder="Search by title, description..."
+                    value={findingsSearchQuery}
+                    onChange={(e) => setFindingsSearchQuery(e.target.value)}
+                    className="pl-9 h-9 cursor-text"
+                    aria-label="Search findings table"
+                  />
+                </div>
+                <Select value={filterImpact} onValueChange={setFilterImpact}>
+                  <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
+                    <SelectValue placeholder="Impact" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All impacts</SelectItem>
+                    <SelectItem value="Critical">Critical</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="Low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                        filterRiskScore === "critical"
+                          ? "border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300"
+                          : filterRiskScore === "high"
+                            ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-300"
+                            : filterRiskScore === "medium"
+                              ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                              : filterRiskScore === "low"
+                                ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                                : "border-zinc-200 dark:border-zinc-700"
+                      }`}
+                    >
+                      <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                      <span className="capitalize font-normal">{RISK_SCORE_LABELS[filterRiskScore]}</span>
+                      <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[180px]">
+                    <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("all")}>
+                      {filterRiskScore === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                      All
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("critical")}>
+                      {filterRiskScore === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                      Critical (≥9)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("high")}>
+                      {filterRiskScore === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                      High (7–9)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("medium")}>
+                      {filterRiskScore === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                      Medium (5–7)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setFilterRiskScore("low")}>
+                      {filterRiskScore === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                      Low (&lt;5)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {hasActiveFindingsFilters && (
+                  <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 cursor-pointer" onClick={clearFindingsFilters}>
+                    <X className="h-4 w-4 mr-1" />
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+              {hasActiveFindingsFilters && (
+                <span className="text-sm text-zinc-500 dark:text-zinc-400 block mb-4">
+                  Showing {filteredFindingsList.length} of {findingsList.length} findings
+                </span>
+              )}
+            </>
+          )}
           <FindingSelectionMenu
             selectedCount={selectedCount}
             onClearSelection={() => {
@@ -965,7 +1133,7 @@ function IACResultsAgentView({
                     <Checkbox
                       checked={
                         useFindingsMode
-                          ? (findings?.length ?? 0) > 0 && selectedFindingIds.size === (findings?.length ?? 0)
+                          ? (filteredFindingsList.length > 0 && selectedFindingIds.size === filteredFindingsList.length)
                           : vulnerabilities.length > 0 && selectedRows.size === vulnerabilities.length
                       }
                       onCheckedChange={toggleSelectAll}
@@ -998,8 +1166,8 @@ function IACResultsAgentView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {useFindingsMode && findings?.length ? (
-                  findings.map((f) => {
+                {useFindingsMode && filteredFindingsList.length ? (
+                  filteredFindingsList.map((f) => {
                     const vTitle = f.title ?? "Untitled finding";
                     const impact = (f.impact ?? "").trim() || "—";
                     const statusLabel = (f.status ?? "not_started").replace(/_/g, " ");
@@ -1182,7 +1350,7 @@ function IACResultsAgentView({
       <DependencyDiagramSection diagramCode={dependencyDiagram} />
 
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-zinc-900">
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">{selectedVuln?.title ?? "Vulnerability details"}</DialogTitle>
           </DialogHeader>

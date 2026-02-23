@@ -2,9 +2,81 @@ from sqlmodel import Session, select
 from sqlalchemy.engine import Engine
 from backend.new_models import Scan, GuardrailsIntegration, CicdIntegration , User , Team
 from sqlalchemy import or_
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+from collections import defaultdict
+from rich.console import Console
+from backend.utilities.db.findings import get_findings_for_scan_id
+console = Console()
+
+
+def _to_date_key(d) -> str | None:
+    """Get YYYY-MM-DD from datetime or date. Returns None if not available."""
+    if d is None:
+        return None
+    if hasattr(d, "date") and callable(getattr(d, "date")):
+        return d.date().isoformat()
+    if hasattr(d, "isoformat") and callable(getattr(d, "isoformat")):
+        return d.isoformat()[:10]
+    return None
 
 def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
+    """
+    metrics to be added : 
+    1. scan status distribution ( radial chart )
+        {
+            "not_started": int,
+            "running": int,
+            "completed": int,
+            "failed": int
+        }
+    2. Remediations Status Distribution ( area - line chart ) 
+        {
+            "2026-01-01": {
+                "not_started": int,
+                "in_progress": int,
+                "fixed": int,
+                "ignored": int
+            },
+            "2026-01-02": {
+                "not_started": int,
+                "in_progress": int,
+                "fixed": int,
+                "ignored": int
+            },
+            ...
+        }
+    3. Findings Per day ( area - line chart )
+    note : number of findings per day ( use created_at field )
+        {
+            "2026-01-01": int,
+            "2026-01-02": int,
+            "2026-01-03": int,
+            ...
+        }
+    4. Fixes Per day ( area - line chart )
+    note : number of fixed findings per day
+        {
+            "2026-01-01": int,
+            "2026-01-02": int,
+            "2026-01-03": int,
+            ...
+        }
+    5. False Positive trends ( area - line chart )
+    note : number of ignored findings per day
+        {
+            "2026-01-01": int,
+            "2026-01-02": int,
+            "2026-01-03": int,
+            ...
+        }
+    6. Card Data :
+        - total findings 
+        - total started scans 
+        - total completed scans 
+        - total not started scans 
+        - total fixed findings
+        - remediation percentage ( total fixed findings / total findings * 100 )
+    """
     
     # STEP [ 1 ] : ==================== Get all the records for this team =================================
     with Session(engine) as session:
@@ -16,7 +88,86 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
 
         # STEP [ 1.3 ] : ==================== Get all Cicd Integration records for this team =================================
         cicd_integrations = session.exec(select(CicdIntegration).where(CicdIntegration.team_id == team_id)).all()
-    
+
+        ## STEP [ 1.4 ] : ==================== Get all Scan Findings records for this team =================================
+        findings_list = [] # use this to calculate the additonal metrics mentioned above 
+        for scan in scans:
+            findings = get_findings_for_scan_id(scan.id)
+            findings_list.extend(findings)
+        console.print(f"{len(findings_list)} findings found")
+
+    # STEP [ 1.5 ] : ==================== Scan status distribution (radial chart) ==========================================
+    scan_status_distribution: dict[str, int] = {
+        "not_started": 0,
+        "running": 0,
+        "completed": 0,
+        "failed": 0,
+    }
+    for scan in scans:
+        status = (scan.scan_status or "NOT_STARTED").strip().upper()
+        if status in ("NOT_STARTED", "PENDING"):
+            scan_status_distribution["not_started"] += 1
+        elif status in ("STARTED", "RETRY"):
+            scan_status_distribution["running"] += 1
+        elif status == "SUCCESS":
+            scan_status_distribution["completed"] += 1
+        elif status == "FAILURE":
+            scan_status_distribution["failed"] += 1
+
+    # STEP [ 1.6 ] : ==================== Findings-based metrics (remediations, findings/fixes/FP per day) ==========================================
+    findings_per_day: dict[str, int] = defaultdict(int)
+    fixes_per_day: dict[str, int] = defaultdict(int)
+    false_positive_trends: dict[str, int] = defaultdict(int)
+    remediations_status_distribution: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"not_started": 0, "in_progress": 0, "fixed": 0, "ignored": 0}
+    )
+
+    for finding in findings_list:
+        created_at = finding.get("created_at")
+        created_key = _to_date_key(created_at)
+        status = (finding.get("finding_status") or "not_started").strip().lower().replace(" ", "_")
+        fixed_at = finding.get("fixed_at")
+        ignored_at = finding.get("ignored_at")
+        fixed_key = _to_date_key(fixed_at)
+        ignored_key = _to_date_key(ignored_at)
+
+        if created_key:
+            findings_per_day[created_key] += 1
+            if status not in ("not_started", "in_progress", "fixed", "ignored"):
+                status = "not_started"
+            remediations_status_distribution[created_key][status] += 1
+        if fixed_key:
+            fixes_per_day[fixed_key] += 1
+            remediations_status_distribution[fixed_key]["fixed"] += 1
+        if ignored_key:
+            false_positive_trends[ignored_key] += 1
+            remediations_status_distribution[ignored_key]["ignored"] += 1
+
+    # Normalize remediations to plain dict with string keys (for JSON)
+    remediations_status_distribution = {
+        k: dict(v) for k, v in sorted(remediations_status_distribution.items())
+    }
+    findings_per_day = dict(findings_per_day)
+    fixes_per_day = dict(fixes_per_day)
+    false_positive_trends = dict(false_positive_trends)
+
+    # STEP [ 1.7 ] : ==================== Card data (totals for summary cards) ==========================================
+    total_findings = len(findings_list)
+    total_fixed_findings = sum(
+        1 for f in findings_list
+        if (f.get("finding_status") or "").strip().lower() == "fixed" or f.get("fixed_at") is not None
+    )
+    remediation_percentage = (
+        round((total_fixed_findings / total_findings * 100.0), 1) if total_findings else 0.0
+    )
+    card_data = {
+        "total_findings": total_findings,
+        "total_started_scans": scan_status_distribution["running"],
+        "total_completed_scans": scan_status_distribution["completed"],
+        "total_not_started_scans": scan_status_distribution["not_started"],
+        "total_fixed_findings": total_fixed_findings,
+        "remediation_percentage": remediation_percentage,
+    }
 
     # STEP [ 2 ] : =============================== calculate scans - created at data ==========================================
     scans_created_at_data = []
@@ -108,7 +259,13 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         "guardrails_integrations_created_at_data": guardrails_integrations_created_at_data,
         "cicd_integrations_created_at_data": cicd_integrations_created_at_data,
         "scan_type_count": scan_type_count,
-        "high_and_critical_vuln_in_past_month": high_and_critical_vuln_in_past_month
+        "high_and_critical_vuln_in_past_month": high_and_critical_vuln_in_past_month,
+        "scan_status_distribution": scan_status_distribution,
+        "remediations_status_distribution": remediations_status_distribution,
+        "findings_per_day": findings_per_day,
+        "fixes_per_day": fixes_per_day,
+        "false_positive_trends": false_positive_trends,
+        "card_data": card_data,
     }
 
 
