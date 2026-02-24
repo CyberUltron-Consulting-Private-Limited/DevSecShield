@@ -20,7 +20,7 @@ def create_dashboard_data_for_guardrails_list(team_id: int):
         with Session(engine) as session:
             integrations = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.team_id == team_id)).all()
             if not integrations:
-                raise HTTPException(status_code=404, detail="No integrations found for this team")
+                return None
             for integration in integrations:
                 # console.print(f"Integration : {integration.title} {integration.id} , team id : {integration.team_id}", style="bold yellow")
                 integration_ids.append(integration.id)

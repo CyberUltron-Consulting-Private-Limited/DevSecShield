@@ -832,7 +832,11 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                           />
                         }
                       />
-                      <RadialBar dataKey="count" background fill={(entry: { fill?: string }) => entry?.fill ?? "hsl(0 0% 50%)"} />
+                      <RadialBar dataKey="count" background>
+                        {radialData.map((entry, index) => (
+                          <Cell key={index} fill={entry.fill ?? "hsl(0 0% 50%)"} />
+                        ))}
+                      </RadialBar>
                     </RadialBarChart>
                   </ChartContainer>
                   <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs">

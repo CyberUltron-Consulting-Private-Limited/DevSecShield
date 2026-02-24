@@ -1308,7 +1308,7 @@ function SbomResultsView({
                       </div>
                     </div>
                   )}
-                  {selectedFinding.cves && typeof selectedFinding.cves === "object" && Object.keys(selectedFinding.cves).length > 0 && (
+                  {Boolean(selectedFinding.cves && typeof selectedFinding.cves === "object" && Object.keys(selectedFinding.cves as object).length > 0) && (
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Related CVEs</div>
                       <ul className="space-y-2 text-sm">

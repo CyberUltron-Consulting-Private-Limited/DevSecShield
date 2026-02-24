@@ -31,6 +31,7 @@ import {
   startScan,
   getMCPExportResults,
   reinitializeMCPScan,
+  type MCPConversationResponse,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
 
@@ -43,18 +44,6 @@ const MCP_ENVIRONMENTS: { value: MCPEnvironment; label: string }[] = [
   { value: "staging", label: "Staging" },
   { value: "production", label: "Production" },
 ];
-
-interface MCPConversationResponse {
-  scan_status: string;
-  messages: unknown[];
-  scan_metadata?: {
-    server_url?: string;
-    server_mode?: string;
-    headers?: Record<string, string>;
-    environment?: string;
-  } | null;
-  title?: string;
-}
 
 function buildPayloadString(
   serverUrl: string,
@@ -220,24 +209,27 @@ export function MCPOptionsSidebar({
       setOptionsSidebarState("ready");
       setErrorMessage(null);
     }
-    if (query.data?.scan_metadata?.server_url) {
-      setServerUrl(query.data.scan_metadata.server_url);
+    const meta = query.data?.scan_metadata as {
+      server_url?: string;
+      server_mode?: string;
+      headers?: Record<string, string>;
+      environment?: string;
+    } | null | undefined;
+    if (meta?.server_url) {
+      setServerUrl(meta.server_url);
+    }
+    if (meta?.server_mode === "httpstreamable" || meta?.server_mode === "sse") {
+      setServerMode(meta.server_mode as ServerMode);
     }
     if (
-      query.data?.scan_metadata?.server_mode === "httpstreamable" ||
-      query.data?.scan_metadata?.server_mode === "sse"
+      meta?.environment === "production" ||
+      meta?.environment === "staging" ||
+      meta?.environment === "development"
     ) {
-      setServerMode(query.data.scan_metadata.server_mode as ServerMode);
+      setEnvironment(meta.environment as MCPEnvironment);
     }
-    if (
-      query.data?.scan_metadata?.environment === "production" ||
-      query.data?.scan_metadata?.environment === "staging" ||
-      query.data?.scan_metadata?.environment === "development"
-    ) {
-      setEnvironment(query.data.scan_metadata.environment as MCPEnvironment);
-    }
-    if (query.data?.scan_metadata?.headers && typeof query.data.scan_metadata.headers === "object") {
-      setHeadersJson(JSON.stringify(query.data.scan_metadata.headers, null, 2));
+    if (meta?.headers && typeof meta.headers === "object") {
+      setHeadersJson(JSON.stringify(meta.headers, null, 2));
     }
   }, [
     query.data?.scan_status,

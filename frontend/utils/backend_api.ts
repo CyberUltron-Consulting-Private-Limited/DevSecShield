@@ -800,8 +800,10 @@ export interface MCPFinding {
 
 /** MCP scan metadata from backend get_scan_metadata (MCP branch) */
 export interface MCPScanMetadata {
-    server_url?: string | null
-    server_mode?: string | null
+    server_url?: string
+    server_mode?: string
+    headers?: Record<string, string>
+    environment?: string
 }
 
 /** MCP scan dashboard (from generate_scan_dashboard for type "mcp") */
@@ -851,6 +853,7 @@ export interface LLMFinding {
 /** LLM scan metadata from backend get_scan_metadata (llm branch) */
 export interface LLMScanMetadata {
     model_type?: string | null
+    model_name?: string | null
     probes?: unknown
 }
 
@@ -893,6 +896,7 @@ export interface MCPConversationResponse {
     findings?: MCPFinding[] | null
     scan_metadata?: MCPScanMetadata | Record<string, unknown> | null
     integration_settings?: Record<string, unknown> | null
+    info?: ScanInfoField | null
 }
 
 const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conversation-data', number, number] }): Promise<MCPConversationResponse> => {
@@ -923,6 +927,7 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
             findings: raw.findings ?? null,
             scan_metadata: raw.scan_metadata ?? null,
             integration_settings: raw.integration_settings ?? null,
+            info: raw.info ?? null,
         }
     } catch (error) {
         showErrorToast(error, "Error fetching MCP conversation messages")
@@ -2622,7 +2627,6 @@ export interface DASTListResponse {
 /** Single-scan dashboard from generate_scan_dashboard(scan_type="dast") */
 export interface DASTSingleScanDashboard {
     card_data: {
-        total_scans: number
         total_critical_issues: number
         total_high_issues: number
         total_medium_issues: number
@@ -2664,6 +2668,7 @@ export interface DASTScanResponse {
 const getDASTScans = async (team_id: number): Promise<DASTListResponse> => {
     try {
         const response = await api.get(`/${team_id}/dast/scans`)
+        toast.success("Refreshed successfully")
         return response.data as DASTListResponse
     } catch (error) {
         showErrorToast(error, "Error fetching DAST scans")

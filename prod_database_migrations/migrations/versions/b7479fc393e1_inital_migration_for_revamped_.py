@@ -1,8 +1,8 @@
-"""Initial migration
+"""Inital Migration for Revamped Production Database
 
-Revision ID: 3e49db7b1fc9
+Revision ID: b7479fc393e1
 Revises: 
-Create Date: 2026-02-09 15:53:48.743767
+Create Date: 2026-02-24 07:50:16.669340
 
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision: str = '3e49db7b1fc9'
+revision: str = 'b7479fc393e1'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,7 +27,7 @@ def upgrade() -> None:
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('description', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.Column('credit_balance', sa.Integer(), nullable=False),
+    sa.Column('credit_balance', sa.Float(), nullable=False),
     sa.Column('integration_settings', sa.JSON(), nullable=True),
     sa.Column('settings', sa.JSON(), nullable=True),
     sa.PrimaryKeyConstraint('id')
@@ -97,6 +97,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('last_updated', sa.DateTime(), nullable=True),
     sa.Column('scan_data', sa.JSON(), nullable=True),
+    sa.Column('info', sa.JSON(), nullable=True),
     sa.Column('integration_settings', sa.JSON(), nullable=True),
     sa.ForeignKeyConstraint(['owner_user_id'], ['user.id'], ),
     sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),

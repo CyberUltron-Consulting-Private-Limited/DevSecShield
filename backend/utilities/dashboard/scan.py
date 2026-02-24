@@ -973,8 +973,18 @@ def generate_scan_dashboard(
                     "total_ignored" : total_ignored,
                 }
             """
-            findings = get_findings_for_scan_id(scan_id)
-            metadata = (scan.scan_data or {}).get("metadata", {}) if scan else {}
+            # Prefer scan.scan_data["results"] when present (DataSpecs format); else use MongoDB findings
+            scan_data = (scan.scan_data or {}) if scan else {}
+            results_from_scan_data = scan_data.get("results", [])
+            if isinstance(results_from_scan_data, list) and len(results_from_scan_data) > 0:
+                # Findings from scan_data have no finding_status; default so remediation/status code does not KeyError
+                findings = [
+                    {"finding_data": r, "finding_status": "not_started", "fixed_at": None, "ignored_at": None}
+                    for r in results_from_scan_data
+                ]
+            else:
+                findings = get_findings_for_scan_id(scan_id)
+            metadata = scan_data.get("metadata", {})
             urls_included = metadata.get("urls_included", []) or []
             urls_excluded = metadata.get("urls_excluded", []) or []
             urls_scanned = len(urls_included)
@@ -1007,10 +1017,25 @@ def generate_scan_dashboard(
                 return []
 
             def _dast_compliance_values(cc):
+                """Get string values from compliance_controls (dict or list). Values are 'Standard - control'."""
                 if isinstance(cc, dict):
-                    return list(cc.values()) if cc else []
+                    return [v for v in (cc.values() if cc else []) if isinstance(v, str)]
                 if isinstance(cc, list):
-                    return [x.get("value", x) if isinstance(x, dict) else x for x in cc]
+                    out = []
+                    for x in cc:
+                        if isinstance(x, str):
+                            out.append(x)
+                        elif isinstance(x, dict):
+                            # prefer 'value' or 'control', else first string value
+                            s = x.get("value") or x.get("control")
+                            if isinstance(s, str):
+                                out.append(s)
+                            else:
+                                for v in x.values():
+                                    if isinstance(v, str):
+                                        out.append(v)
+                                        break
+                    return out
                 return []
 
             for finding in findings:
@@ -1024,8 +1049,8 @@ def generate_scan_dashboard(
                 risk_score_n += 1
 
                 for std_val in _dast_compliance_values(fd.get("compliance_controls")):
-                    std = _dast_extract_standard(str(std_val) if std_val is not None else "")
-                    if std and std in DAST_COMPLIANCE_STANDARDS:
+                    std = _dast_extract_standard(std_val or "")
+                    if std:
                         compliance_status_counts[std] += 1
                         compliance_risk_sum[std] += score
                         compliance_risk_count[std] += 1
@@ -1055,7 +1080,9 @@ def generate_scan_dashboard(
             total_low = severity_counts.get("low", 0)
             average_risk_score = round(risk_score_total / risk_score_n, 1) if risk_score_n > 0 else 0.0
 
-            compliance_status = {std: compliance_status_counts.get(std, 0) for std in DAST_COMPLIANCE_STANDARDS}
+            # Include fixed PCI/ISO keys plus any standard extracted from data (e.g. NIST CSF, NIST 800-53)
+            all_standards = list(DAST_COMPLIANCE_STANDARDS) + [s for s in compliance_status_counts if s not in DAST_COMPLIANCE_STANDARDS]
+            compliance_status = {std: compliance_status_counts.get(std, 0) for std in all_standards}
             owasp_top_10_issues = {k: owasp_counts.get(k, 0) for k in OWASP_DAST_KEYS}
             vulnerability_category_issues_distribution = {c: category_counts.get(c, 0) for c in DAST_CATEGORIES_FIVE}
             risk_scores_per_category_out = {c: {s: risk_scores_per_category[c].get(s, 0) for s in ("critical", "high", "medium", "low")} for c in DAST_CATEGORIES_FIVE}
@@ -1066,7 +1093,7 @@ def generate_scan_dashboard(
             }
             compliance_risk_assessment = {
                 std: round(compliance_risk_sum[std] / compliance_risk_count[std], 1) if compliance_risk_count[std] > 0 else 0.0
-                for std in DAST_COMPLIANCE_STANDARDS
+                for std in all_standards
             }
 
             status_metrics = get_issue_status_metrics(findings) if findings else {"fixed": 0, "in_progress": 0, "not_started": 0, "ignored": 0}
@@ -1080,7 +1107,6 @@ def generate_scan_dashboard(
 
             return {
                 "card_data": {
-                    "total_scans": 1,
                     "total_critical_issues": total_critical,
                     "total_high_issues": total_high,
                     "total_medium_issues": total_medium,

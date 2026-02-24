@@ -1418,11 +1418,11 @@ function IACResultsAgentView({
                       <p className="text-sm text-zinc-700 dark:text-zinc-300">{selectedVuln.suggested_fix!.trim()}</p>
                     </div>
                   )}
-                  {getOwaspComplianceEntries(selectedVuln.owasp_top_10).length > 0 && (
+                  {getOwaspComplianceEntries(selectedVuln.owasp_top_10 as OwaspOrCompliance).length > 0 && (
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
                       <div className="flex flex-wrap gap-1">
-                        {getOwaspComplianceEntries(selectedVuln.owasp_top_10).map(([, description], i) => (
+                        {getOwaspComplianceEntries(selectedVuln.owasp_top_10 as OwaspOrCompliance).map(([, description], i) => (
                           <Badge key={i} variant="secondary" className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
                             {description}
                           </Badge>
@@ -1430,11 +1430,11 @@ function IACResultsAgentView({
                       </div>
                     </div>
                   )}
-                  {getOwaspComplianceEntries(selectedVuln.compliance_controls).length > 0 && (
+                  {getOwaspComplianceEntries(selectedVuln.compliance_controls as OwaspOrCompliance).length > 0 && (
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
                       <div className="flex flex-wrap gap-1">
-                        {getOwaspComplianceEntries(selectedVuln.compliance_controls).map(([, description], i) => (
+                        {getOwaspComplianceEntries(selectedVuln.compliance_controls as OwaspOrCompliance).map(([, description], i) => (
                           <Badge key={i} variant="outline" className="text-xs">
                             {description}
                           </Badge>

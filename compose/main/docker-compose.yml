@@ -11,8 +11,6 @@ services:
   devsecshield-frontend:
     container_name: devsecshield-frontend
     image: ghcr.io/cyberultron-nikhil/devsecshield-frontend:v1
-    environment:
-      IS_DOCKER_CONTAINER: "True"
     ports:
       - 4000:3000 # changed from 3002 to 4000 to avoid conflict with other services
 

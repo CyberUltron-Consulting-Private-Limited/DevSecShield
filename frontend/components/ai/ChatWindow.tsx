@@ -93,13 +93,13 @@ const ChatWindow = ({
   }, [inputValue]);
 
   useEffect(() => {
-    if (query.data) {
-      setMessages(query.data.messages);
+    if (query.data?.messages) {
+      setMessages(query.data.messages as ChatMessage[]);
     }
     if (query.error) {
       showErrorToast(query.error);
     }
-  }, [query.data , query.error]);
+  }, [query.data, query.error]);
 
   // check type of conversation (path format: /team_id/type/scan_id or similar)
   let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | undefined;

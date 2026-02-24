@@ -87,7 +87,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import type { DASTSingleScanDashboard } from "@/utils/backend_api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toggleFindingState, createTicket, updateScan } from "@/utils/backend_api";
+import { toggleFindingState, createTicket, updateScan, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -330,7 +330,7 @@ export default function DASTResults({
   });
 
   const updateIntegrationMutation = useMutation({
-    mutationFn: (payload: { integration_settings: Record<string, unknown> }) => {
+    mutationFn: (payload: { integration_settings: ScanTicketingIntegrationSettings }) => {
       const tid = parseInt(teamId ?? "0", 10);
       if (!scanId || Number.isNaN(tid)) throw new Error("Missing team or scan");
       return updateScan({ team_id: tid, type: "dast", scan_id: scanId, data: payload });
@@ -696,18 +696,7 @@ export default function DASTResults({
           <>
       <div className="space-y-6">
         {/* Card data */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-          <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
-            <CardContent className="p-0">
-              <div className="flex flex-col items-start gap-2">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
-                  <ScanSearch className="h-4 w-4 text-blue-500" />
-                </div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total scans</p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_scans}</p>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
             <CardContent className="p-0">
               <div className="flex flex-col items-start gap-2">

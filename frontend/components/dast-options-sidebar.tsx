@@ -435,8 +435,8 @@ export function DASTOptionsSidebar({
                   min={1}
                   placeholder="100"
                   className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                  value={maxUrls}
-                  onChange={(e) => setMaxUrls(Math.max(1, parseInt(e.target.value, 10) || 100))}
+                  value={maxUrls ? maxUrls : ""}
+                  onChange={(e) => setMaxUrls(Math.max(1, parseInt(e.target.value, 10)))}
                 />
               </div>
 

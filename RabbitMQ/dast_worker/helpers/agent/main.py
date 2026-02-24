@@ -92,51 +92,66 @@ class DASTAgent():
             # STEP [ 3 ] : ----------------------- Cycle through each url and run the checks ----------------------------------------
 
             for url in self.urls:
-                # Step 1 : security headers Chech 
-                security_headers_check = SecurityHeadersCheck(url=url,vulnerability_model=FinalVulnResponse)
-                security_headers_output : type[FinalVulnResponse] = security_headers_check.run()
-                vulnerabilities = security_headers_output.vulnerabilities
-                parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                for parsed_vulnerability in parsed_vulnerabilities:
-                    parsed_vulnerability["url"] = url
-                self.vulnerabilities.extend(parsed_vulnerabilities)
-                console.print(f"Security headers check completed for {url}",style="bold green")
-                console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                try:
+                    # Step 1 : security headers Chech 
+                    security_headers_check = SecurityHeadersCheck(url=url,vulnerability_model=FinalVulnResponse)
+                    security_headers_output : type[FinalVulnResponse] = security_headers_check.run()
+                    vulnerabilities = security_headers_output.vulnerabilities
+                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
+                    for parsed_vulnerability in parsed_vulnerabilities:
+                        parsed_vulnerability["url"] = url
+                    self.vulnerabilities.extend(parsed_vulnerabilities)
+                    console.print(f"Security headers check completed for {url}",style="bold green")
+                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                except Exception as e:
+                    console.print(f"Error in security headers check for {url}: {e}",style="dim red")
+                    pass
 
 
-                # Step 2 : page analysis check 
-                page_analysis_check = PageAnalysisCheck(url=url,auth=self.auth_requirements)
-                vulnerabilities : list[DASTVulnerability] = page_analysis_check.run()
-                parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                for parsed_vulnerability in parsed_vulnerabilities:
-                    parsed_vulnerability["url"] = url
-                self.vulnerabilities.extend(parsed_vulnerabilities)
-                console.print(f"Page analysis check completed for {url}",style="bold green")
-                console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                try:
+                    # Step 2 : page analysis check 
+                    page_analysis_check = PageAnalysisCheck(url=url,auth=self.auth_requirements)
+                    vulnerabilities : list[DASTVulnerability] = page_analysis_check.run()
+                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
+                    for parsed_vulnerability in parsed_vulnerabilities:
+                        parsed_vulnerability["url"] = url
+                    self.vulnerabilities.extend(parsed_vulnerabilities)
+                    console.print(f"Page analysis check completed for {url}",style="bold green")
+                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                except Exception as e:
+                    console.print(f"Error in page analysis check for {url}: {e}",style="dim red")
+                    pass
 
 
-                # Step 3 : XSS check 
-                page_content = get_page_content(url,self.auth_requirements)
-                auth_login_template = get_auth_login_template(url,self.auth_requirements)
-                xss_agent = XSSAgent(target_url=url,page_content=page_content,auth_login_template=auth_login_template)
-                vulnerabilities : list[DASTVulnerability] = xss_agent.run_xss_agent_graph()
-                parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                for parsed_vulnerability in parsed_vulnerabilities:
-                    parsed_vulnerability["url"] = url
-                self.vulnerabilities.extend(parsed_vulnerabilities)
-                console.print(f"XSS check completed for {url}",style="bold green")
-                console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                try:
+                    # Step 3 : XSS check 
+                    page_content = get_page_content(url,self.auth_requirements)
+                    auth_login_template = get_auth_login_template(url,self.auth_requirements)
+                    xss_agent = XSSAgent(target_url=url,page_content=page_content,auth_login_template=auth_login_template)
+                    vulnerabilities : list[DASTVulnerability] = xss_agent.run_xss_agent_graph()
+                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
+                    for parsed_vulnerability in parsed_vulnerabilities:
+                        parsed_vulnerability["url"] = url
+                    self.vulnerabilities.extend(parsed_vulnerabilities)
+                    console.print(f"XSS check completed for {url}",style="bold green")
+                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                except Exception as e:
+                    console.print(f"Error in XSS check for {url}: {e}",style="dim red")
+                    pass
 
-
-                # Step 4 : SQLi check 
-                sqli_agent = SQLiAgent(target_url=url,page_content=page_content,auth_login_template=auth_login_template)
-                vulnerabilities : list[DASTVulnerability] = sqli_agent.run_sqli_agent_graph()
-                parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                for parsed_vulnerability in parsed_vulnerabilities:
-                    parsed_vulnerability["url"] = url
-                self.vulnerabilities.extend(parsed_vulnerabilities)
-                console.print(f"SQLi check completed for {url}",style="bold green")
-                console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                try:
+                    # Step 4 : SQLi check 
+                    sqli_agent = SQLiAgent(target_url=url,page_content=page_content,auth_login_template=auth_login_template)
+                    vulnerabilities : list[DASTVulnerability] = sqli_agent.run_sqli_agent_graph()
+                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
+                    for parsed_vulnerability in parsed_vulnerabilities:
+                        parsed_vulnerability["url"] = url
+                    self.vulnerabilities.extend(parsed_vulnerabilities)
+                    console.print(f"SQLi check completed for {url}",style="bold green")
+                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
+                except Exception as e:
+                    console.print(f"Error in SQLi check for {url}: {e}",style="dim red")
+                    pass
 
                 time.sleep(self.interval_between_requests) # sleep for the interval between requests  
 

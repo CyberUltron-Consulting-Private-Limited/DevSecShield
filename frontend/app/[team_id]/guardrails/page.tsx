@@ -418,14 +418,14 @@ export default function GuardrailsPage() {
             </>
           )}
 
-          {/* Dashboard: radial + radar (below table) */}
-          {query.isLoading && (
+          {/* Dashboard: radial + radar (below table) — only when there are integrations */}
+          {integrations.length > 0 && query.isLoading && (
             <div className="mt-8 flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-sm">Loading dashboard…</span>
             </div>
           )}
-          {dashboardData && (
+          {integrations.length > 0 && dashboardData && (
             <div className="mt-8 space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
                 {/* Log summary — radial chart */}

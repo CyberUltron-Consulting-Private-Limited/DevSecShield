@@ -43,7 +43,7 @@ headless:
 
   - steps:
       - args:
-          url: "https://demo.testfire.net/index.jsp"
+          url: "https://demo.testfire.net"
         action: navigate
 
       - action: waitload

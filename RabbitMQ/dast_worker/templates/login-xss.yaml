@@ -37,11 +37,7 @@ headless:
           xpath: //*[@id="login"]/table/tbody/tr[3]/td[2]/input
         action: click
       - action: waitload
-    # matchers:
-    #   - part: resp
-    #     type: word
-    #     words:
-    #       - "You have been pre-approved for an Altoro Gold Visa with a credit limit of $10000!"
+
 
   - steps:
       - action: navigate

@@ -190,7 +190,7 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                     # -------------------> categorizing high or critical risks in the past 30 days 
                     if created_at > datetime.now(timezone.utc) - timedelta(days=30):
                         for key , value in log["results"].items():
-                            if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
+                            if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ]:
                                 if value["score"] > 0.9: 
                                     high_or_critical_risks_daily_usage[created_at.date()] += 1
                                 elif value["score"] > 0.7 and value["score"] <= 0.9:

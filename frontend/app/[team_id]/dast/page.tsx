@@ -299,9 +299,18 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
             <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={{}} className="mx-auto aspect-square max-h-[280px]">
+            <ChartContainer
+              config={{
+                Critical: { label: "Critical" },
+                High: { label: "High" },
+                Medium: { label: "Medium" },
+                Low: { label: "Low" },
+              }}
+              className="mx-auto aspect-square max-h-[280px]"
+            >
               <PieChart>
                 <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent nameKey="name" />} />
                 <Pie
                   data={severityPieData}
                   dataKey="value"
@@ -311,7 +320,6 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                   innerRadius={50}
                   outerRadius={90}
                   paddingAngle={2}
-                  label={({ name, value }) => `${name}: ${value}`}
                 >
                   {severityPieData.map((entry) => (
                     <Cell key={entry.name} fill={entry.fill} />
@@ -437,9 +445,17 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
             <CardDescription>High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={{}} className="mx-auto aspect-square max-h-[240px]">
+            <ChartContainer
+              config={{
+                High: { label: "High" },
+                Medium: { label: "Medium" },
+                Low: { label: "Low" },
+              }}
+              className="mx-auto aspect-square max-h-[240px]"
+            >
               <PieChart>
                 <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent nameKey="name" />} />
                 <Pie
                   data={confidencePieData}
                   dataKey="value"
@@ -449,7 +465,6 @@ function DASTDashboard({ dashboardData }: { dashboardData: DASTListDashboardData
                   innerRadius={40}
                   outerRadius={80}
                   paddingAngle={2}
-                  label={({ name, value }) => `${name}: ${value}`}
                 >
                   {confidencePieData.map((entry) => (
                     <Cell key={entry.name} fill={entry.fill} />
@@ -664,7 +679,7 @@ export default function DASTPage() {
               </Button>
               <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-                onClick={() => queryClient.invalidateQueries({ queryKey: ["dast-scans", team_id] })}
+                onClick={() => query.refetch()}
               >
                 <RefreshCcw className="h-4 w-4 mr-2" />
                 Refresh
