@@ -21,7 +21,7 @@ from helpers.context.scan_context import validate_dict_with_context, validate_di
 
 console = Console()
 
-# os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 #====================================== Setting credentials to connect to broker ================================================================
 try:

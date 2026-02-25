@@ -205,6 +205,7 @@ class CodebaseContext(BaseContextManager):
         """
         try:
             # --------------------------------------- Initialize the loader and other variables --------------------------------------------
+            console.print(f"Loading documents of extension: {lang_ext}",style="dim yellow1")
             loader = GenericLoader.from_filesystem(
                 self.directory,
                 glob="**/*",
@@ -224,11 +225,11 @@ class CodebaseContext(BaseContextManager):
 
             # ---------------------------------- Setting up document iterator with exclusion or inclusion --------------------------------------------
             if not self.exclude_path_arrays and not self.include_path_arrays:
-                iterator = get_documents(document_loader_object,metadata=self.metadata)
+                iterator = get_documents(document_loader_object,metadata=self.metadata,verbose=True)
             elif self.exclude_path_arrays and not self.include_path_arrays:
-                iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, metadata=self.metadata)
+                iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, metadata=self.metadata,verbose=True)
             elif self.include_path_arrays and not self.exclude_path_arrays:
-                iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, metadata=self.metadata)
+                iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, metadata=self.metadata,verbose=True)
             else:
                 raise ValueError(f"Only one of exclude_path_arrays or include_path_arrays can be provided")
             
@@ -417,31 +418,32 @@ class CodebaseContext(BaseContextManager):
         Only supports languages that match app_lang options: python, javascript, java, php, c, ruby, rust, swift, csharp, kotlin
         """
         try:
-            match file_extension:
-                case ".py":
-                    return Language.PYTHON
-                case ".js":
-                    return Language.JS
-                case ".java":
-                    return Language.JAVA
-                case ".php":
-                    return Language.PHP
-                case ".c":
-                    return Language.C
-                case ".cs":
-                    return Language.CSHARP
-                case ".kt":
-                    return Language.KOTLIN
-                case ".rb":
-                    return Language.RUBY
-                case ".rs":
-                    return Language.RUST
-                case ".swift":
-                    return Language.SWIFT
-                # Unsupported extensions that don't match app_lang options
-                # These will be handled without language-specific parsing
-                case _:
-                    return None # when None , the document will be split without language
+            return None 
+            # match file_extension:
+            #     case ".py":
+            #         return Language.PYTHON
+            #     case ".js":
+            #         return Language.JS
+            #     case ".java":
+            #         return Language.JAVA
+            #     case ".php":
+            #         return Language.PHP
+            #     case ".c":
+            #         return Language.C
+            #     case ".cs":
+            #         return Language.CSHARP
+            #     case ".kt":
+            #         return Language.KOTLIN
+            #     case ".rb":
+            #         return Language.RUBY
+            #     case ".rs":
+            #         return Language.RUST
+            #     case ".swift":
+            #         return Language.SWIFT
+            #     # Unsupported extensions that don't match app_lang options
+            #     # These will be handled without language-specific parsing
+            #     case _:
+            #         return None # when None , the document will be split without language
         except Exception as e:
             raise ValueError(f"Error in getting language from file extension: {e}")
     

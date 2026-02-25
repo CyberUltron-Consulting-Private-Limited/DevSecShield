@@ -197,11 +197,15 @@ class LanguageParser(BaseBlobParser):
         try:
             code = blob.as_string()
 
-            language = self.language or (
-                LANGUAGE_EXTENSIONS.get(blob.source.rsplit(".", 1)[-1])
-                if isinstance(blob.source, str)
-                else None
-            )
+            # print(f"Code length: {len(code)} , code source : {blob.source}")
+
+            # language = self.language or (
+            #     LANGUAGE_EXTENSIONS.get(blob.source.rsplit(".", 1)[-1])
+            #     if isinstance(blob.source, str)
+            #     else None
+            # )
+
+            language = None 
 
             if language is None:
                 yield Document(
@@ -251,6 +255,7 @@ class LanguageParser(BaseBlobParser):
                 },
             )
         except Exception as e:
+            print(f"Error in parsing code: {e}")
             yield Document(
                 page_content="Error in parsing code",
                 metadata={
