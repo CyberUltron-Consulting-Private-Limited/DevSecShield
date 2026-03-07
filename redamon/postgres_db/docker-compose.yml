@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: redamon-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-redamon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-redamon_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-redamon}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redamon} -d ${POSTGRES_DB:-redamon}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

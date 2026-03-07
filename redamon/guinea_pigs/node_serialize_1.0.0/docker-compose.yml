@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  vulnerable-node:
+    build: .
+    container_name: vulnerable-node-serialize
+    ports:
+      - "8080:3000"
+      - "4444:4444"   # Bind shell port for exploitation testing
+    restart: unless-stopped
+    # Run as root to allow RCE to access entire system
+    # This is intentionally insecure for testing purposes

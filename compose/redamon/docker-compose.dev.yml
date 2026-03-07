@@ -1,0 +1,26 @@
+# =============================================================================
+# RedAmon - Development Overrides
+# =============================================================================
+# Usage: docker compose -f compose/redamon/docker-compose.yml -f compose/redamon/docker-compose.dev.yml up -d
+# =============================================================================
+# Swaps the production webapp build for a dev container with Next.js fast
+# refresh. Source code is volume-mounted so every save is reflected instantly.
+# =============================================================================
+
+services:
+  webapp:
+    build: !reset null
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npx prisma db push && npm run dev"
+    volumes:
+      - ../../redamon/webapp:/app
+      - webapp_node_modules:/app/node_modules
+      - webapp_next_cache:/app/.next
+      - ../../redamon/recon/output:/data/recon-output:ro
+      - ../../redamon/gvm_scan/output:/data/gvm-output:ro
+      - ../../redamon/github_secret_hunt/output:/data/github-hunt-output:ro
+
+volumes:
+  webapp_node_modules:
+  webapp_next_cache:

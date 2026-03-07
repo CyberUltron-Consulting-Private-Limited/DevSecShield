@@ -1,0 +1,469 @@
+# =============================================================================
+# RedAmon - Unified Docker Compose
+# =============================================================================
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f
+# Build:  docker compose --profile tools build
+# GVM:    Starts automatically with `docker compose up -d`
+#         (first run takes ~10-15 min for feed sync)
+#         Default credentials: admin / admin (auto-created by gvmd)
+#         Change password: docker compose exec -u gvmd gvmd gvmd --user=admin --new-password='<password>'
+# =============================================================================
+
+services:
+
+  # ===========================================================================
+  # Databases
+  # ===========================================================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: redamon-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-redamon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-redamon_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-redamon}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redamon} -d ${POSTGRES_DB:-redamon}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - redamon
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: redamon-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-changeme123}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7474"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - redamon
+
+  # ===========================================================================
+  # GVM / OpenVAS — Vulnerability Scanner Stack
+  # Starts automatically with the rest of the stack
+  # ===========================================================================
+
+  # --- Data containers (init-only, exit after populating volumes) ---
+
+  gvm-vt:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    container_name: redamon-gvm-vt
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - vt_data:/mnt
+
+  gvm-notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    container_name: redamon-gvm-notus-data
+    volumes:
+      - notus_data:/mnt
+
+  gvm-scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    container_name: redamon-gvm-scap-data
+    volumes:
+      - scap_data:/mnt
+
+  gvm-cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    container_name: redamon-gvm-cert-data
+    volumes:
+      - cert_data:/mnt
+
+  gvm-dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    container_name: redamon-gvm-dfn-cert
+    volumes:
+      - cert_data:/mnt
+    depends_on:
+      - gvm-cert-bund-data
+
+  gvm-data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    container_name: redamon-gvm-data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - data_objects:/mnt
+
+  gvm-report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    container_name: redamon-gvm-report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - data_objects:/mnt
+    depends_on:
+      - gvm-data-objects
+
+  gvm-gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    container_name: redamon-gvm-gpg-data
+    volumes:
+      - gpg_data:/mnt
+
+  # --- GVM runtime services ---
+
+  gvm-redis:
+    image: registry.community.greenbone.net/community/redis-server
+    container_name: redamon-gvm-redis
+    restart: on-failure
+    volumes:
+      - gvm_redis_socket:/run/redis/
+
+  gvm-postgres:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    container_name: redamon-gvm-postgres
+    restart: on-failure
+    volumes:
+      - gvm_psql_data:/var/lib/postgresql
+      - gvm_psql_socket:/var/run/postgresql
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    container_name: redamon-gvm-gvmd
+    restart: on-failure
+    volumes:
+      - gvmd_data:/var/lib/gvm
+      - scap_data:/var/lib/gvm/scap-data/
+      - cert_data:/var/lib/gvm/cert-data
+      - data_objects:/var/lib/gvm/data-objects/gvmd
+      - vt_data:/var/lib/openvas/plugins
+      - gvm_psql_data:/var/lib/postgresql
+      - gvmd_socket:/run/gvmd
+      - ospd_socket:/run/ospd
+      - gvm_psql_socket:/var/run/postgresql
+    depends_on:
+      gvm-postgres:
+        condition: service_started
+      gvm-scap-data:
+        condition: service_completed_successfully
+      gvm-cert-bund-data:
+        condition: service_completed_successfully
+      gvm-dfn-cert-data:
+        condition: service_completed_successfully
+      gvm-data-objects:
+        condition: service_completed_successfully
+      gvm-report-formats:
+        condition: service_completed_successfully
+
+  gvm-ospd:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    container_name: redamon-gvm-ospd
+    restart: on-failure
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      - gpg_data:/etc/openvas/gnupg
+      - vt_data:/var/lib/openvas/plugins
+      - notus_data:/var/lib/notus
+      - ospd_socket:/run/ospd
+      - gvm_redis_socket:/run/redis/
+    depends_on:
+      gvm-redis:
+        condition: service_started
+      gvm-gpg-data:
+        condition: service_completed_successfully
+      gvm-vt:
+        condition: service_completed_successfully
+
+  # ===========================================================================
+  # Recon Scanner Image (build only — not a running service)
+  # Build with: docker compose --profile tools build
+  # ===========================================================================
+
+  recon:
+    build:
+      context: .
+      dockerfile: recon/Dockerfile
+      network: host
+    image: redamon-recon:latest
+    profiles: ["tools"]
+
+  vuln-scanner:
+    build:
+      context: .
+      dockerfile: gvm_scan/Dockerfile
+    image: redamon-vuln-scanner:latest
+    profiles: ["tools"]
+
+  github-secret-hunter:
+    build:
+      context: .
+      dockerfile: github_secret_hunt/Dockerfile
+    image: redamon-github-hunter:latest
+    profiles: ["tools"]
+
+  # ===========================================================================
+  # Backend Services
+  # ===========================================================================
+
+  recon-orchestrator:
+    build: ./recon_orchestrator
+    container_name: redamon-recon-orchestrator
+    ports:
+      - "${RECON_ORCH_PORT:-8010}:8010"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./recon_orchestrator:/app
+      - ./recon:/app/recon:ro
+      - ./recon/output:/app/recon/output:rw
+      - ./gvm_scan:/app/gvm_scan:ro
+      - ./gvm_scan/output:/app/gvm_scan/output:rw
+      - ./github_secret_hunt:/app/github_secret_hunt:ro
+      - ./github_secret_hunt/output:/app/github_secret_hunt/output:rw
+    environment:
+      # Host paths are auto-detected from container mounts (no hardcoded paths needed)
+      RECON_IMAGE: redamon-recon:latest
+      GVM_IMAGE: redamon-vuln-scanner:latest
+      GITHUB_HUNT_IMAGE: redamon-github-hunter:latest
+      # Forwarded to spawned recon containers (host network, so localhost)
+      NVD_API_KEY: ${NVD_API_KEY:-}
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme123}
+      # GVM connection settings (forwarded to spawned vuln-scanner containers)
+      GVM_SOCKET_PATH: /run/gvmd/gvmd.sock
+      GVM_USERNAME: admin
+      GVM_PASSWORD: ${GVM_PASSWORD:-admin}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - redamon
+
+  kali-sandbox:
+    build:
+      context: ./mcp
+      dockerfile: kali-sandbox/Dockerfile
+      network: host
+    container_name: redamon-kali
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    hostname: kali-sandbox
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "${MCP_NETWORK_RECON_PORT:-8000}:8000"
+      - "${MCP_NUCLEI_PORT:-8002}:8002"
+      - "${MCP_METASPLOIT_PORT:-8003}:8003"
+      - "${MCP_NMAP_PORT:-8004}:8004"
+      - "8013:8013"
+      - "8014:8014"
+      - "4444:4444"
+      - "4040:4040"
+    volumes:
+      - ./mcp/servers:/opt/mcp_servers
+      - ./mcp/output:/opt/output
+      - ./mcp/nuclei-templates:/opt/nuclei-templates:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MCP_TRANSPORT: sse
+      MCP_HOST: 0.0.0.0
+      NETWORK_RECON_PORT: "8000"
+      NUCLEI_PORT: "8002"
+      METASPLOIT_PORT: "8003"
+      NMAP_PORT: "8004"
+      MSF_PROGRESS_PORT: "8013"
+      HYDRA_PROGRESS_PORT: "8014"
+      MSF_AUTO_UPDATE: "${MSF_AUTO_UPDATE:-true}"
+      NUCLEI_AUTO_UPDATE: "${NUCLEI_AUTO_UPDATE:-true}"
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    networks:
+      redamon:
+      pentest-net:
+
+  agent:
+    build: ./agentic
+    container_name: redamon-agent
+    ports:
+      - "${AGENT_PORT:-8090}:8080"
+    environment:
+      # Neo4j (internal docker network)
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme123}
+      # AI provider keys (from root .env)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
+      OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      # WebSocket config
+      WS_HEARTBEAT_INTERVAL: "30"
+      WS_TIMEOUT: "300"
+      WS_MAX_MESSAGE_SIZE: "10485760"
+      # MCP tool servers (internal docker network)
+      MCP_NETWORK_RECON_URL: http://kali-sandbox:8000/sse
+      MCP_NMAP_URL: http://kali-sandbox:8004/sse
+      MCP_METASPLOIT_URL: http://kali-sandbox:8003/sse
+      MCP_METASPLOIT_PROGRESS_URL: http://kali-sandbox:8013/progress
+      MCP_HYDRA_PROGRESS_URL: http://kali-sandbox:8014/progress
+      # Webapp API (internal docker network)
+      WEBAPP_API_URL: http://webapp:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./agentic:/app
+      - ./agentic/logs:/app/logs
+      - cypherfix-repos:/tmp/cypherfix-repos
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      kali-sandbox:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 60s
+      timeout: 60s
+      retries: 3
+      start_period: 30s
+    networks:
+      - redamon
+
+  # ===========================================================================
+  # Frontend
+  # ===========================================================================
+
+  webapp:
+    build: ./webapp
+    container_name: redamon-webapp
+    ports:
+      - "${WEBAPP_PORT:-3000}:3000"
+    environment:
+      # PostgreSQL (Prisma)
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-redamon}:${POSTGRES_PASSWORD:-redamon_secret}@postgres:5432/${POSTGRES_DB:-redamon}"
+      # Neo4j (server-side graph queries)
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme123}
+      # Backend services (server-side API routes → internal docker network)
+      RECON_ORCHESTRATOR_URL: http://recon-orchestrator:8010
+      AGENT_API_URL: http://agent:8080
+      AGENT_WS_URL: ws://agent:8080/ws/agent
+      # Recon container connects via host network, needs host-accessible webapp URL
+      WEBAPP_URL: http://localhost:${WEBAPP_PORT:-3000}
+      # Output paths (must match volume mounts below)
+      RECON_OUTPUT_PATH: /data/recon-output
+      GVM_OUTPUT_PATH: /data/gvm-output
+      GITHUB_HUNT_OUTPUT_PATH: /data/github-hunt-output
+    volumes:
+      - ./recon/output:/data/recon-output:ro
+      - ./gvm_scan/output:/data/gvm-output:ro
+      - ./github_secret_hunt/output:/data/github-hunt-output:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - redamon
+
+# =============================================================================
+# Networks
+# =============================================================================
+
+networks:
+  redamon:
+    name: redamon-network
+    driver: bridge
+  pentest-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  # GVM volumes (names must match container_manager.py references)
+  vt_data:
+    name: redamon_vt_data
+  notus_data:
+    name: redamon_notus_data
+  scap_data:
+    name: redamon_scap_data
+  cert_data:
+    name: redamon_cert_data
+  data_objects:
+    name: redamon_data_objects
+  gpg_data:
+    name: redamon_gpg_data
+  gvm_redis_socket:
+    name: redamon_gvm_redis_socket
+  gvm_psql_data:
+    name: redamon_gvm_psql_data
+  gvm_psql_socket:
+    name: redamon_gvm_psql_socket
+  gvmd_data:
+    name: redamon_gvmd_data
+  gvmd_socket:
+    name: redamon_gvmd_socket
+  ospd_socket:
+    name: redamon_ospd_socket
+  cypherfix-repos:  # Temp storage for cloned GitHub repos (CodeFix agent)

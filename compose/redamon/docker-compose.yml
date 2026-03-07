@@ -1,0 +1,296 @@
+# =============================================================================
+# RedAmon Services — Integrated into DevSecShield
+# =============================================================================
+# Start:  docker compose -f compose/redamon/docker-compose.yml up -d postgres neo4j recon-orchestrator kali-sandbox agent webapp
+# Stop:   docker compose -f compose/redamon/docker-compose.yml down
+# Build tools: docker compose -f compose/redamon/docker-compose.yml --profile tools build
+# =============================================================================
+# Paths reference ../../redamon/ which is a directory junction to d:\redteaming\redamon
+# =============================================================================
+
+name: redamon
+
+services:
+
+  # ===========================================================================
+  # Databases
+  # ===========================================================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: redamon-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-redamon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-redamon_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-redamon}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redamon} -d ${POSTGRES_DB:-redamon}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - redamon
+
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: redamon-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-changeme123}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7474"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - redamon
+
+  # ===========================================================================
+  # Tool Images (build only — not running services)
+  # Build with: docker compose -f compose/redamon/docker-compose.yml --profile tools build
+  # ===========================================================================
+
+  recon:
+    build:
+      context: ../../redamon
+      dockerfile: recon/Dockerfile
+      network: host
+    image: redamon-recon:latest
+    profiles: ["tools"]
+
+  vuln-scanner:
+    build:
+      context: ../../redamon
+      dockerfile: gvm_scan/Dockerfile
+    image: redamon-vuln-scanner:latest
+    profiles: ["tools"]
+
+  github-secret-hunter:
+    build:
+      context: ../../redamon
+      dockerfile: github_secret_hunt/Dockerfile
+    image: redamon-github-hunter:latest
+    profiles: ["tools"]
+
+  # ===========================================================================
+  # Backend Services
+  # ===========================================================================
+
+  recon-orchestrator:
+    build: ../../redamon/recon_orchestrator
+    container_name: redamon-recon-orchestrator
+    ports:
+      - "${RECON_ORCH_PORT:-8010}:8010"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../redamon/recon_orchestrator:/app
+      - ../../redamon/recon:/app/recon:ro
+      - ../../redamon/recon/output:/app/recon/output:rw
+      - ../../redamon/gvm_scan:/app/gvm_scan:ro
+      - ../../redamon/gvm_scan/output:/app/gvm_scan/output:rw
+      - ../../redamon/github_secret_hunt:/app/github_secret_hunt:ro
+      - ../../redamon/github_secret_hunt/output:/app/github_secret_hunt/output:rw
+    environment:
+      RECON_IMAGE: redamon-recon:latest
+      GVM_IMAGE: redamon-vuln-scanner:latest
+      GITHUB_HUNT_IMAGE: redamon-github-hunter:latest
+      NVD_API_KEY: ${NVD_API_KEY:-}
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme123}
+      GVM_SOCKET_PATH: /run/gvmd/gvmd.sock
+      GVM_USERNAME: admin
+      GVM_PASSWORD: ${GVM_PASSWORD:-admin}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - redamon
+
+  kali-sandbox:
+    build:
+      context: ../../redamon/mcp
+      dockerfile: kali-sandbox/Dockerfile
+      network: host
+    container_name: redamon-kali
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    hostname: kali-sandbox
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "${MCP_NETWORK_RECON_PORT:-8000}:8000"
+      - "${MCP_NUCLEI_PORT:-8002}:8002"
+      - "${MCP_METASPLOIT_PORT:-8003}:8003"
+      - "${MCP_NMAP_PORT:-8004}:8004"
+      - "8013:8013"
+      - "8014:8014"
+      - "4444:4444"
+      - "4040:4040"
+    volumes:
+      - ../../redamon/mcp/servers:/opt/mcp_servers
+      - ../../redamon/mcp/output:/opt/output
+      - ../../redamon/mcp/nuclei-templates:/opt/nuclei-templates:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MCP_TRANSPORT: sse
+      MCP_HOST: 0.0.0.0
+      NETWORK_RECON_PORT: "8000"
+      NUCLEI_PORT: "8002"
+      METASPLOIT_PORT: "8003"
+      NMAP_PORT: "8004"
+      MSF_PROGRESS_PORT: "8013"
+      HYDRA_PROGRESS_PORT: "8014"
+      MSF_AUTO_UPDATE: "${MSF_AUTO_UPDATE:-true}"
+      NUCLEI_AUTO_UPDATE: "${NUCLEI_AUTO_UPDATE:-true}"
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    networks:
+      redamon:
+      pentest-net:
+
+  agent:
+    build: ../../redamon/agentic
+    container_name: redamon-agent
+    ports:
+      - "${AGENT_PORT:-8090}:8080"
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme123}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
+      OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      WS_HEARTBEAT_INTERVAL: "30"
+      WS_TIMEOUT: "300"
+      WS_MAX_MESSAGE_SIZE: "10485760"
+      MCP_NETWORK_RECON_URL: http://kali-sandbox:8000/sse
+      MCP_NMAP_URL: http://kali-sandbox:8004/sse
+      MCP_METASPLOIT_URL: http://kali-sandbox:8003/sse
+      MCP_METASPLOIT_PROGRESS_URL: http://kali-sandbox:8013/progress
+      MCP_HYDRA_PROGRESS_URL: http://kali-sandbox:8014/progress
+      WEBAPP_API_URL: http://webapp:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../../redamon/agentic:/app
+      - ../../redamon/agentic/logs:/app/logs
+      - cypherfix-repos:/tmp/cypherfix-repos
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      kali-sandbox:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 60s
+      timeout: 60s
+      retries: 3
+      start_period: 30s
+    networks:
+      - redamon
+
+  # ===========================================================================
+  # Frontend (RedAmon webapp — served at port 3000)
+  # ===========================================================================
+
+  webapp:
+    build: ../../redamon/webapp
+    container_name: redamon-webapp
+    ports:
+      - "${WEBAPP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-redamon}:${POSTGRES_PASSWORD:-redamon_secret}@postgres:5432/${POSTGRES_DB:-redamon}"
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-changeme123}
+      RECON_ORCHESTRATOR_URL: http://recon-orchestrator:8010
+      AGENT_API_URL: http://agent:8080
+      AGENT_WS_URL: ws://agent:8080/ws/agent
+      WEBAPP_URL: http://localhost:${WEBAPP_PORT:-3000}
+      RECON_OUTPUT_PATH: /data/recon-output
+      GVM_OUTPUT_PATH: /data/gvm-output
+      GITHUB_HUNT_OUTPUT_PATH: /data/github-hunt-output
+    volumes:
+      - ../../redamon/recon/output:/data/recon-output:ro
+      - ../../redamon/gvm_scan/output:/data/gvm-output:ro
+      - ../../redamon/github_secret_hunt/output:/data/github-hunt-output:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - redamon
+
+# =============================================================================
+# Networks
+# =============================================================================
+
+networks:
+  redamon:
+    name: redamon-network
+    driver: bridge
+  pentest-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  cypherfix-repos:

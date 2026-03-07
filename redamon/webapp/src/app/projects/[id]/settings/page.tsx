@@ -1,0 +1,77 @@
+'use client'
+
+import { useParams, useRouter } from 'next/navigation'
+import { ProjectForm } from '@/components/projects'
+import { useProjectById, useUpdateProject } from '@/hooks/useProjects'
+import { useProject } from '@/providers/ProjectProvider'
+import styles from './page.module.css'
+
+export default function ProjectSettingsPage() {
+  const params = useParams()
+  const router = useRouter()
+  const projectId = params.id as string
+  const { setCurrentProject } = useProject()
+
+  const { data: project, isLoading, error } = useProjectById(projectId)
+  const updateProjectMutation = useUpdateProject()
+
+  const handleSubmit = async (data: Record<string, unknown>) => {
+    try {
+      const updated = await updateProjectMutation.mutateAsync({
+        projectId,
+        data
+      })
+
+      setCurrentProject({
+        id: updated.id,
+        name: updated.name,
+        targetDomain: updated.targetDomain,
+        subdomainList: updated.subdomainList,
+        description: updated.description || undefined,
+        createdAt: updated.createdAt.toString(),
+        updatedAt: updated.updatedAt.toString()
+      })
+
+      router.push(`/graph?project=${projectId}`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to update project')
+    }
+  }
+
+  const handleCancel = () => {
+    router.back()
+  }
+
+  if (isLoading) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.loading}>Loading project settings...</div>
+      </div>
+    )
+  }
+
+  if (error || !project) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.error}>
+          <p>Failed to load project settings.</p>
+          <button className="primaryButton" onClick={() => router.push('/projects')}>
+            Go to Projects
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.container}>
+      <ProjectForm
+        mode="edit"
+        initialData={project}
+        onSubmit={handleSubmit}
+        onCancel={handleCancel}
+        isSubmitting={updateProjectMutation.isPending}
+      />
+    </div>
+  )
+}

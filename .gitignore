@@ -13,3 +13,23 @@ __pycache__/
 *.pyzwzwzwz
 node_modules/
 .venv/
+.next/
+
+# Environment files (contain secrets)
+.env
+!.env.example
+backend/.env
+compose/.env
+compose/redamon/.env
+
+# RedAmon runtime outputs (generated at runtime, not source code)
+redamon/recon/output/
+redamon/gvm_scan/output/
+redamon/github_secret_hunt/output/
+redamon/mcp/output/
+redamon/agentic/logs/
+
+# Docker / OS
+*.log
+.DS_Store
+Thumbs.db

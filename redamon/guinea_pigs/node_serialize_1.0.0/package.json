@@ -1,0 +1,11 @@
+{
+  "name": "guinea-pig-node-serialize",
+  "version": "1.0.0",
+  "description": "Intentionally vulnerable Node.js server for CVE-2017-5941 testing",
+  "main": "server.js",
+  "dependencies": {
+    "express": "4.17.1",
+    "cookie-parser": "1.4.5",
+    "node-serialize": "0.0.4"
+  }
+}

@@ -1,0 +1,83 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-default);
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.logoImg {
+  object-fit: contain;
+}
+
+.logoText {
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.logoAccent {
+  color: var(--accent-primary);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* Navigation tabs */
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-0-5);
+  height: 100%;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  height: 100%;
+  white-space: nowrap;
+}
+
+.navItem:hover {
+  color: var(--text-primary);
+}
+
+.navItemActive {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+/* Right actions */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-default);
+  margin: 0 var(--space-1);
+}
+

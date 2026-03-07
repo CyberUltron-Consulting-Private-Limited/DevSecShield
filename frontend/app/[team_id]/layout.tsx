@@ -21,6 +21,7 @@ import {
   Infinity,
   ShieldCheck,
   Settings,
+  Crosshair,
 } from "lucide-react";
 import {
   Sidebar,
@@ -158,6 +159,10 @@ const toolsItems = [
 const workflowItems = [
   { name: "CI / CD", path: "ci_cd", icon: Link2 },
   { name: "Guardrails", path: "guardrails", icon: Shield },
+];
+
+const redTeamItems = [
+  { name: "Red Team", path: "redteam", icon: Crosshair },
 ];
 
 function UserFooter() {
@@ -358,6 +363,39 @@ export default function HomeLayout({
                               isActive
                                 ? "bg-blue-600 text-white hover:bg-blue-600 data-[active=true]:bg-blue-600 cursor-pointer"
                                 : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-blue-800 active:text-white cursor-pointer"
+                            }
+                          >
+                            <Link href={href}>
+                              <Icon className="h-5 w-5" />
+                              <span>{item.name}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+
+              <SidebarGroup>
+                <SidebarGroupLabel className="text-zinc-400 text-xs font-semibold px-2 py-2">
+                  Offensive Security
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {redTeamItems.map((item) => {
+                      const Icon = item.icon;
+                      const href = getItemHref(item.path);
+                      const isActive = isItemActive(item.path);
+                      return (
+                        <SidebarMenuItem key={item.path}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={isActive}
+                            className={
+                              isActive
+                                ? "bg-red-600 text-white hover:bg-red-600 data-[active=true]:bg-red-600 cursor-pointer"
+                                : "text-zinc-300 hover:bg-zinc-800 hover:text-white active:bg-red-800 active:text-white cursor-pointer"
                             }
                           >
                             <Link href={href}>
