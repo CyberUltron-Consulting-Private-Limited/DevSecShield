@@ -7,8 +7,8 @@ import { ToastProvider } from '@/components/ui'
 import { AppLayout } from '@/components/layout'
 
 export const metadata: Metadata = {
-  title: 'RedAmon',
-  description: 'Security reconnaissance and vulnerability assessment dashboard',
+  title: 'DevSecShield - Red Team',
+  description: 'Red team operations - reconnaissance, exploitation, and remediation',
   icons: {
     icon: '/favicon.ico',
     apple: '/favicon.png',
@@ -23,7 +23,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Prevent flash of wrong theme */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -39,6 +38,9 @@ export default function RootLayout({
                   }
                 } catch (e) {
                   document.documentElement.setAttribute('data-theme', 'dark');
+                }
+                if (window.location.search.indexOf('embed=true') !== -1) {
+                  document.documentElement.setAttribute('data-embed', 'true');
                 }
               })();
             `,

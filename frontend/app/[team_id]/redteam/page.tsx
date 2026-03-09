@@ -1,60 +1,316 @@
 "use client";
 
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Loader2, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
+import {
+  Plus,
+  Crosshair,
+  Globe,
+  Trash2,
+  Loader2,
+  RefreshCcw,
+  ExternalLink,
+  MoreVertical,
+  Settings,
+  FolderOpen,
+  Calendar,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
-const REDAMON_URL = process.env.NEXT_PUBLIC_REDAMON_URL || "http://localhost:3000";
+interface RedamonProject {
+  id: string;
+  name: string;
+  targetDomain: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface RedamonUser {
+  id: string;
+  name: string;
+  email: string;
+  _count?: { projects: number };
+}
+
+async function fetchRedamonUsers(): Promise<RedamonUser[]> {
+  const res = await fetch("/api/redteam/users");
+  if (!res.ok) throw new Error("Failed to fetch users");
+  return res.json();
+}
+
+async function fetchRedamonProjects(userId: string): Promise<RedamonProject[]> {
+  const res = await fetch(`/api/redteam/projects?userId=${userId}`);
+  if (!res.ok) throw new Error("Failed to fetch projects");
+  return res.json();
+}
+
+async function deleteRedamonProject(projectId: string): Promise<void> {
+  const res = await fetch(`/api/redteam/projects/${projectId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete project");
+}
+
+async function ensureDefaultUser(): Promise<RedamonUser> {
+  const users = await fetchRedamonUsers();
+  if (users.length > 0) return users[0];
+
+  const res = await fetch("/api/redteam/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "DevSecShield User", email: "user@devsecshield.local" }),
+  });
+  if (!res.ok) throw new Error("Failed to create default user");
+  return res.json();
+}
 
 export default function RedTeamPage() {
-  const [loading, setLoading] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const params = useParams();
+  const router = useRouter();
+  const teamId = params?.team_id as string;
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<RedamonProject | null>(null);
+
+  const { data: user, isLoading: userLoading } = useQuery({
+    queryKey: ["redamon-user"],
+    queryFn: ensureDefaultUser,
+  });
+
+  const {
+    data: projects,
+    isLoading: projectsLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["redamon-projects", user?.id],
+    queryFn: () => fetchRedamonProjects(user!.id),
+    enabled: !!user?.id,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteRedamonProject,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["redamon-projects"] });
+      toast.success("Project deleted");
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Failed to delete project"),
+  });
+
+  const isLoading = userLoading || projectsLoading;
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
 
   return (
-    <div className={`flex flex-col h-full ${isFullscreen ? "fixed inset-0 z-50 bg-zinc-950" : ""}`}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            <h1 className="text-lg font-semibold text-white">Red Team Console</h1>
-          </div>
-          <span className="text-xs text-zinc-500 font-mono">RedAmon</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
-          <a
-            href={REDAMON_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            Open in new tab
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        </div>
-      </div>
-
-      <div className="relative flex-1">
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-10">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="h-8 w-8 animate-spin text-red-500" />
-              <p className="text-sm text-zinc-400">Loading Red Team Console...</p>
+    <div className="min-h-screen bg-white dark:bg-zinc-950">
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-red-600/10">
+              <Crosshair className="h-5 w-5 text-red-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
+                Red Team Operations
+              </h1>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                Autonomous reconnaissance, exploitation, and remediation
+              </p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isLoading}
+              className="gap-1.5"
+            >
+              <RefreshCcw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => router.push(`/${teamId}/redteam/new`)}
+              disabled={!user}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Project
+            </Button>
+          </div>
+        </div>
+
+        {/* Content */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-red-500" />
+          </div>
+        ) : projects && projects.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {projects.map((project) => (
+              <Card
+                key={project.id}
+                className="group border-zinc-200 dark:border-zinc-800 hover:border-red-500/40 dark:hover:border-red-500/40 transition-colors cursor-pointer"
+                onClick={() =>
+                  router.push(`/${teamId}/redteam/${project.id}`)
+                }
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base font-semibold text-zinc-900 dark:text-white truncate">
+                        {project.name}
+                      </CardTitle>
+                      <CardDescription className="flex items-center gap-1.5 mt-1">
+                        <Globe className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{project.targetDomain}</span>
+                      </CardDescription>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/${teamId}/redteam/${project.id}`);
+                          }}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/${teamId}/redteam/${project.id}/settings`);
+                          }}
+                        >
+                          <Settings className="h-4 w-4 mr-2" />
+                          Settings
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-red-600 focus:text-red-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(project);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {project.description && (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3 line-clamp-2">
+                      {project.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <Calendar className="h-3 w-3" />
+                    <span>{formatDate(project.createdAt)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="flex items-center justify-center h-16 w-16 rounded-full bg-zinc-100 dark:bg-zinc-800 mb-4">
+              <FolderOpen className="h-8 w-8 text-zinc-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
+              No Projects Yet
+            </h2>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6 max-w-sm">
+              Create your first red team project to start autonomous reconnaissance and exploitation.
+            </p>
+            <Button
+              className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => router.push(`/${teamId}/redteam/new`)}
+              disabled={!user}
+            >
+              <Plus className="h-4 w-4" />
+              Create Project
+            </Button>
+          </div>
         )}
-        <iframe
-          src={REDAMON_URL}
-          className="w-full h-full border-0"
-          onLoad={() => setLoading(false)}
-          allow="clipboard-read; clipboard-write"
-        />
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-semibold text-zinc-900 dark:text-white">
+                {deleteTarget?.name}
+              </span>
+              ? This will remove all scan data, graph nodes, and conversations. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1.5" />
+              )}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

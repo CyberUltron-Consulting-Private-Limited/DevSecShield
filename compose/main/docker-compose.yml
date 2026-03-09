@@ -13,6 +13,15 @@ services:
     image: devsec_front
     ports:
       - 4000:3000 # changed from 3002 to 4000 to avoid conflict with other services
+    environment:
+      # Server-side: API proxy route forwards to RedAmon webapp
+      REDAMON_API_URL: http://redamon-webapp:3000
+    networks:
+      - redamon-network
+
+networks:
+  redamon-network:
+    external: true
 
 
 volumes:

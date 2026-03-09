@@ -9,9 +9,9 @@ export function Footer() {
     <footer className={styles.footer}>
       <div className={styles.content}>
         <span className={styles.copyright}>
-          © {currentYear} RedAmon. All rights reserved.
+          © {currentYear} DevSecShield. All rights reserved.
         </span>
-        <span className={styles.version}>v2.1.0</span>
+        <span className={styles.version}>Red Team</span>
       </div>
     </footer>
   )

@@ -127,3 +127,19 @@ hr {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* =============================================================================
+   Embed Mode — hides all RedAmon branding when loaded inside DevSecShield
+   Activated by ?embed=true in the URL (sets data-embed="true" on <html>)
+   ============================================================================= */
+
+/* Hide the entire GlobalHeader and Footer */
+html[data-embed="true"] header,
+html[data-embed="true"] footer {
+  display: none !important;
+}
+
+/* Reclaim the space the header/footer used */
+html[data-embed="true"] body {
+  overflow: hidden;
+}

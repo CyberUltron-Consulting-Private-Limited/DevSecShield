@@ -11,8 +11,8 @@ import styles from './GlobalHeader.module.css'
 
 const navItems = [
   { label: 'Projects', href: '/projects', icon: <FolderOpen size={14} /> },
-  { label: 'Red Zone', href: '/graph', icon: <Crosshair size={14} /> },
-  { label: 'CypherFix', href: '/cypherfix', icon: <Shield size={14} /> },
+  { label: 'Attack Surface', href: '/graph', icon: <Crosshair size={14} /> },
+  { label: 'Remediation', href: '/cypherfix', icon: <Shield size={14} /> },
 ]
 
 export function GlobalHeader() {
@@ -21,9 +21,9 @@ export function GlobalHeader() {
   return (
     <header className={styles.header}>
       <div className={styles.logo}>
-        <Image src="/logo.png" alt="RedAmon" width={28} height={28} className={styles.logoImg} />
+        <Image src="/logo.png" alt="DevSecShield" width={28} height={28} className={styles.logoImg} />
         <span className={styles.logoText}>
-          <span className={styles.logoAccent}>Red</span>Amon
+          <span className={styles.logoAccent}>Red</span> Team
         </span>
       </div>
 

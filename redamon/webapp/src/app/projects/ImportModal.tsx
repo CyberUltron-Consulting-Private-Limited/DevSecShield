@@ -111,7 +111,7 @@ export function ImportModal({ isOpen, userId, onClose, onSuccess }: ImportModalP
                 ) : (
                   <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
                     <Upload size={24} style={{ margin: '0 auto var(--space-2)', display: 'block' }} />
-                    Click to select a RedAmon export ZIP file
+                    Click to select a project export ZIP file
                   </div>
                 )}
                 <input
