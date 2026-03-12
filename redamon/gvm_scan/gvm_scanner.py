@@ -111,23 +111,25 @@ class GVMScanner:
         self.xml_format_id: Optional[str] = None
         self.port_list_id: Optional[str] = None
     
-    def connect(self, max_retries: int = 60, retry_interval: int = 30) -> bool:
+    def connect(self, max_retries: int = 150, retry_interval: int = 30) -> bool:
         """
         Establish connection to GVMD with retry logic.
 
         Waits for gvmd to be fully ready (feeds imported, scan configs loaded).
-        On first boot this can take 20-30 minutes.
+        First boot requires downloading and importing ~200K+ CVE records,
+        SCAP/CERT data, and scan configs — this can take 30-120 minutes.
 
         Args:
-            max_retries: Maximum number of connection attempts (default: 30)
+            max_retries: Maximum number of connection attempts (default: 150 = ~75 min)
             retry_interval: Seconds between retries (default: 30)
 
         Returns:
             True if connected successfully
         """
+        feed_sync_detected = False
+
         for attempt in range(1, max_retries + 1):
             try:
-                # Clean up any previous failed connection
                 if self._connection:
                     try:
                         self._connection.disconnect()
@@ -136,18 +138,14 @@ class GVMScanner:
                     self._connection = None
                     self.gmp = None
 
-                # Create and establish connection
                 self._connection = UnixSocketConnection(path=self.socket_path)
                 self._connection.connect()
 
-                # Create GMP protocol handler (use version-specific class with authenticate)
                 transform = EtreeTransform()
                 self.gmp = GMPv227(connection=self._connection, transform=transform)
 
-                # Authenticate with GVM
                 self.gmp.authenticate(self.username, self.password)
 
-                # Cache commonly needed IDs
                 self._cache_scanner_id()
                 self._cache_config_id()
                 self._cache_report_format_id()
@@ -161,11 +159,14 @@ class GVMScanner:
                 error_msg = str(e)
 
                 if attempt < max_retries:
-                    # Determine a user-friendly reason
                     if "Connection refused" in error_msg or "No such file" in error_msg:
                         reason = "gvmd socket not available yet"
+                    elif "Connection reset" in error_msg:
+                        reason = "gvmd busy (feed sync may be locking the database)"
+                        feed_sync_detected = True
                     elif "not found" in error_msg.lower() and "config" in error_msg.lower():
                         reason = "scan configs not loaded yet (feed sync in progress)"
+                        feed_sync_detected = True
                     elif "not found" in error_msg.lower() and "scanner" in error_msg.lower():
                         reason = "OpenVAS scanner not registered yet"
                     elif "Authentication failed" in error_msg:
@@ -173,17 +174,28 @@ class GVMScanner:
                     else:
                         reason = error_msg
 
+                    elapsed_min = (attempt * retry_interval) / 60
+                    eta_note = (
+                        "first boot can take 30-120 min for full feed sync"
+                        if feed_sync_detected
+                        else "first boot takes ~10-15 min for feed sync"
+                    )
+
                     print(
                         f"[*] Waiting for GVM to be ready... "
                         f"(attempt {attempt}/{max_retries}, {reason})"
                     )
                     print(
                         f"    Retrying in {retry_interval}s... "
-                        f"(first boot takes ~10-15 min for feed sync)"
+                        f"({eta_note}, elapsed: {elapsed_min:.0f}m)"
                     )
                     time.sleep(retry_interval)
                 else:
                     print(f"[!] Failed to connect to GVM after {max_retries} attempts: {error_msg}")
+                    if feed_sync_detected:
+                        print("[!] Feed sync was detected but did not complete in time.")
+                        print("[!] Check: docker logs redamon-gvm-gvmd --tail 20")
+                        print("[!] Wait for gvmd to finish syncing, then retry.")
                     self.connected = False
                     return False
 

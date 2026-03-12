@@ -95,6 +95,14 @@ services:
       - gvm_psql_data:/var/lib/postgresql
       - gvm_psql_socket:/var/run/postgresql
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: redamon-gvm-mosquitto
+    restart: on-failure
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - gvm_mqtt_data:/mosquitto/data
+
   gvmd:
     image: registry.community.greenbone.net/community/gvmd:stable
     container_name: redamon-gvm-gvmd
@@ -123,15 +131,19 @@ services:
       report-formats:
         condition: service_completed_successfully
 
-  # OSPD-OpenVAS scanner (creates the socket gvmd expects)
-  # NOTE: The pcap errors for callback-based detection (Log4Shell, etc.) are
-  # expected in Docker bridge networking. Most vulnerability detection still
-  # works via version checks and response analysis. Using network_mode: host
-  # would break socket communication with other containers.
   ospd-openvas:
     image: registry.community.greenbone.net/community/ospd-openvas:stable
     container_name: redamon-gvm-ospd
     restart: on-failure
+    command:
+      - ospd-openvas
+      - --config
+      - /etc/gvm/ospd-openvas.conf
+      - -f
+      - -m
+      - "666"
+      - --mqtt-broker-address
+      - mosquitto
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -146,6 +158,8 @@ services:
       - gvm_redis_socket:/run/redis/
     depends_on:
       redis-server:
+        condition: service_started
+      mosquitto:
         condition: service_started
       gpg-data:
         condition: service_completed_successfully
@@ -199,3 +213,5 @@ volumes:
     name: redamon_gvmd_socket
   ospd_socket:
     name: redamon_ospd_socket
+  gvm_mqtt_data:
+    name: redamon_gvm_mqtt_data

@@ -2,31 +2,40 @@ services:
 
   worker:
     container_name: devsecshield-scan-worker
-    image: ghcr.io/cyberultron-nikhil/scan-worker:v1
+    build:
+      context: ../../RabbitMQ/worker
+      dockerfile: Dockerfile
+    image: devsecshield/scan-worker:local
     environment:
       IS_DOCKER_CONTAINER: "True"
     command: uv run celery -A scan_worker worker -P threads --loglevel=info -Q scan_worker_queue
-  
+
   cicd_worker:
     container_name: devsecshield-cicd-worker
-    image: ghcr.io/cyberultron-nikhil/scan-worker:v1
+    build:
+      context: ../../RabbitMQ/worker
+      dockerfile: Dockerfile
+    image: devsecshield/scan-worker:local
     environment:
       IS_DOCKER_CONTAINER: "True"
     command: uv run celery -A scan_worker worker -P threads --loglevel=info -Q cicd_worker_queue
-  
+
   guardrail_worker:
     container_name: devsecshield-guardrail-worker
-    image: ghcr.io/cyberultron-nikhil/guardrail-worker:v1
+    build:
+      context: ../../RabbitMQ/guardrail_worker
+      dockerfile: Dockerfile
+    image: devsecshield/guardrail-worker:local
     environment:
       IS_DOCKER_CONTAINER: "True"
     command: uv run celery -A guardrail_worker worker -P prefork --concurrency=4 --loglevel=info -Q guardrail_worker_queue
-  
+
   dast_worker:
     container_name: devsecshield-dast-worker
-    image: ghcr.io/cyberultron-nikhil/dast-worker:v0
+    build:
+      context: ../../RabbitMQ/dast_worker
+      dockerfile: Dockerfile
+    image: devsecshield/dast-worker:local
     environment:
       IS_DOCKER_CONTAINER: "True"
     command: uv run celery -A dast_worker worker -P threads --loglevel=info -Q dast_worker_queue
-
-
-  

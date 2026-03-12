@@ -145,6 +145,14 @@ services:
       - gvm_psql_data:/var/lib/postgresql
       - gvm_psql_socket:/var/run/postgresql
 
+  gvm-mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: redamon-gvm-mosquitto
+    restart: on-failure
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - gvm_mqtt_data:/mosquitto/data
+
   gvmd:
     image: registry.community.greenbone.net/community/gvmd:stable
     container_name: redamon-gvm-gvmd
@@ -177,6 +185,15 @@ services:
     image: registry.community.greenbone.net/community/ospd-openvas:stable
     container_name: redamon-gvm-ospd
     restart: on-failure
+    command:
+      - ospd-openvas
+      - --config
+      - /etc/gvm/ospd-openvas.conf
+      - -f
+      - -m
+      - "666"
+      - --mqtt-broker-address
+      - gvm-mosquitto
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -191,6 +208,8 @@ services:
       - gvm_redis_socket:/run/redis/
     depends_on:
       gvm-redis:
+        condition: service_started
+      gvm-mosquitto:
         condition: service_started
       gvm-gpg-data:
         condition: service_completed_successfully
@@ -466,4 +485,6 @@ volumes:
     name: redamon_gvmd_socket
   ospd_socket:
     name: redamon_ospd_socket
+  gvm_mqtt_data:
+    name: redamon_gvm_mqtt_data
   cypherfix-repos:  # Temp storage for cloned GitHub repos (CodeFix agent)

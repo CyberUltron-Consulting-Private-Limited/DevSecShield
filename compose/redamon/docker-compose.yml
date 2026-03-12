@@ -90,6 +90,159 @@ services:
     profiles: ["tools"]
 
   # ===========================================================================
+  # GVM / OpenVAS — Vulnerability Scanner Stack
+  # First boot takes 30-120 min for feed sync (CVE/SCAP data download)
+  # ===========================================================================
+
+  # --- Data init containers (run once, exit after populating volumes) ---
+
+  gvm-vt:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    container_name: redamon-gvm-vt
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - vt_data:/mnt
+
+  gvm-notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    container_name: redamon-gvm-notus-data
+    volumes:
+      - notus_data:/mnt
+
+  gvm-scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    container_name: redamon-gvm-scap-data
+    volumes:
+      - scap_data:/mnt
+
+  gvm-cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    container_name: redamon-gvm-cert-data
+    volumes:
+      - cert_data:/mnt
+
+  gvm-dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    container_name: redamon-gvm-dfn-cert
+    volumes:
+      - cert_data:/mnt
+    depends_on:
+      - gvm-cert-bund-data
+
+  gvm-data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    container_name: redamon-gvm-data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - data_objects:/mnt
+
+  gvm-report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    container_name: redamon-gvm-report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+    volumes:
+      - data_objects:/mnt
+    depends_on:
+      - gvm-data-objects
+
+  gvm-gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    container_name: redamon-gvm-gpg-data
+    volumes:
+      - gpg_data:/mnt
+
+  # --- GVM runtime services ---
+
+  gvm-redis:
+    image: registry.community.greenbone.net/community/redis-server
+    container_name: redamon-gvm-redis
+    restart: on-failure
+    volumes:
+      - gvm_redis_socket:/run/redis/
+
+  gvm-postgres:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    container_name: redamon-gvm-postgres
+    restart: on-failure
+    volumes:
+      - gvm_psql_data:/var/lib/postgresql
+      - gvm_psql_socket:/var/run/postgresql
+
+  gvm-mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: redamon-gvm-mosquitto
+    restart: on-failure
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - gvm_mqtt_data:/mosquitto/data
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    container_name: redamon-gvm-gvmd
+    restart: on-failure
+    volumes:
+      - gvmd_data:/var/lib/gvm
+      - scap_data:/var/lib/gvm/scap-data/
+      - cert_data:/var/lib/gvm/cert-data
+      - data_objects:/var/lib/gvm/data-objects/gvmd
+      - vt_data:/var/lib/openvas/plugins
+      - gvm_psql_data:/var/lib/postgresql
+      - gvmd_socket:/run/gvmd
+      - ospd_socket:/run/ospd
+      - gvm_psql_socket:/var/run/postgresql
+    depends_on:
+      gvm-postgres:
+        condition: service_started
+      gvm-scap-data:
+        condition: service_completed_successfully
+      gvm-cert-bund-data:
+        condition: service_completed_successfully
+      gvm-dfn-cert-data:
+        condition: service_completed_successfully
+      gvm-data-objects:
+        condition: service_completed_successfully
+      gvm-report-formats:
+        condition: service_completed_successfully
+
+  gvm-ospd:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    container_name: redamon-gvm-ospd
+    restart: on-failure
+    command:
+      - ospd-openvas
+      - --config
+      - /etc/gvm/ospd-openvas.conf
+      - -f
+      - -m
+      - "666"
+      - --mqtt-broker-address
+      - gvm-mosquitto
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      - gpg_data:/etc/openvas/gnupg
+      - vt_data:/var/lib/openvas/plugins
+      - notus_data:/var/lib/notus
+      - ospd_socket:/run/ospd
+      - gvm_redis_socket:/run/redis/
+    depends_on:
+      gvm-redis:
+        condition: service_started
+      gvm-mosquitto:
+        condition: service_started
+      gvm-gpg-data:
+        condition: service_completed_successfully
+      gvm-vt:
+        condition: service_completed_successfully
+
+  # ===========================================================================
   # Backend Services
   # ===========================================================================
 
@@ -294,3 +447,30 @@ volumes:
   neo4j_import:
   neo4j_plugins:
   cypherfix-repos:
+  # GVM volumes (names must match container_manager.py references)
+  vt_data:
+    name: redamon_vt_data
+  notus_data:
+    name: redamon_notus_data
+  scap_data:
+    name: redamon_scap_data
+  cert_data:
+    name: redamon_cert_data
+  data_objects:
+    name: redamon_data_objects
+  gpg_data:
+    name: redamon_gpg_data
+  gvm_redis_socket:
+    name: redamon_gvm_redis_socket
+  gvm_psql_data:
+    name: redamon_gvm_psql_data
+  gvm_psql_socket:
+    name: redamon_gvm_psql_socket
+  gvmd_data:
+    name: redamon_gvmd_data
+  gvmd_socket:
+    name: redamon_gvmd_socket
+  ospd_socket:
+    name: redamon_ospd_socket
+  gvm_mqtt_data:
+    name: redamon_gvm_mqtt_data
