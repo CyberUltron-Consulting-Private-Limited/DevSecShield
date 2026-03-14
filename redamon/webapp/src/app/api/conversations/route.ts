@@ -15,8 +15,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Return conversations for this user plus any sessions that were auto-created
+    // under the 'default_user' fallback (used by the agent backend before auth was set up).
+    // Both sets belong to the same project and should be visible to the project owner.
     const conversations = await prisma.conversation.findMany({
-      where: { projectId, userId },
+      where: {
+        projectId,
+        OR: [{ userId }, { userId: 'default_user' }],
+      },
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,

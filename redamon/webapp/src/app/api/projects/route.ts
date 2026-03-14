@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { resolveTeamUserId } from '@/lib/team-auth'
 
-// GET /api/projects - List projects (optional user_id filter)
+// GET /api/projects - List projects scoped to the requesting team
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
+    const userIdOrError = await resolveTeamUserId(request)
+    if (userIdOrError instanceof NextResponse) return userIdOrError
 
     const projects = await prisma.project.findMany({
-      where: userId ? { userId } : undefined,
+      where: { userId: userIdOrError },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -38,32 +39,25 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/projects - Create a new project
+// POST /api/projects - Create a new project under the requesting team
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, name, targetDomain, ...optionalParams } = body
+    const userIdOrError = await resolveTeamUserId(request)
+    if (userIdOrError instanceof NextResponse) return userIdOrError
 
-    if (!userId || !name || !targetDomain) {
+    const body = await request.json()
+    const { userId: _ignored, name, targetDomain, ...optionalParams } = body
+
+    if (!name || !targetDomain) {
       return NextResponse.json(
-        { error: 'userId, name, and targetDomain are required' },
+        { error: 'name and targetDomain are required' },
         { status: 400 }
       )
     }
 
-    // Verify user exists
-    const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      )
-    }
-
-    // Create project with required fields and any optional params
     const project = await prisma.project.create({
       data: {
-        userId,
+        userId: userIdOrError,
         name,
         targetDomain,
         ...optionalParams

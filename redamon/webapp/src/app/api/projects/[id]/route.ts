@@ -4,23 +4,24 @@ import { unlink } from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
 import { getSession } from '@/app/api/graph/neo4j'
+import { verifyProjectOwnership } from '@/lib/team-auth'
 
-// Path to output directories (fallback for local deletion)
 const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/recon/output'
 const GVM_OUTPUT_PATH = process.env.GVM_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/gvm_scan/output'
 const GITHUB_HUNT_OUTPUT_PATH = process.env.GITHUB_HUNT_OUTPUT_PATH || '/home/samuele/Progetti didattici/RedAmon/github_secret_hunt/output'
 
-// Recon orchestrator URL for file deletion
 const RECON_ORCHESTRATOR_URL = process.env.RECON_ORCHESTRATOR_URL || 'http://localhost:8010'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
-// GET /api/projects/[id] - Get project with all params
+// GET /api/projects/[id] - Get project (team-scoped)
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
+    const ownership = await verifyProjectOwnership(request, id)
+    if (ownership.error) return ownership.error
 
     const project = await prisma.project.findUnique({
       where: { id },
@@ -52,13 +53,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT /api/projects/[id] - Update project params
+// PUT /api/projects/[id] - Update project (team-scoped)
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
-    const body = await request.json()
+    const ownership = await verifyProjectOwnership(request, id)
+    if (ownership.error) return ownership.error
 
-    // Remove fields that shouldn't be updated directly
+    const body = await request.json()
     const { userId, createdAt, updatedAt, user, ...updateData } = body
 
     const project = await prisma.project.update({
@@ -84,10 +86,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/projects/[id] - Delete project and all associated data
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+// DELETE /api/projects/[id] - Delete project and all associated data (team-scoped)
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
+    const ownership = await verifyProjectOwnership(request, id)
+    if (ownership.error) return ownership.error
 
     // 1. Delete project from PostgreSQL
     await prisma.project.delete({

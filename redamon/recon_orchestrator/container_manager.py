@@ -178,24 +178,23 @@ class ContainerManager:
                     rm=True,
                 )
 
-            # Start container with environment variables
+            # Use Docker network so recon can reach webapp:3000 and neo4j:7687 reliably.
+            docker_network = os.environ.get("DOCKER_NETWORK", "redamon-network")
             container = self.client.containers.run(
                 self.recon_image,
                 name=container_name,
                 detach=True,
-                network_mode="host",
+                network=docker_network,
                 privileged=True,
                 environment={
                     "PROJECT_ID": project_id,
                     "USER_ID": user_id,
                     "WEBAPP_API_URL": webapp_api_url,
+                    "INTERNAL_SERVICE_KEY": os.environ.get("INTERNAL_SERVICE_KEY", "redamon-internal-service"),
                     "UPDATE_GRAPH_DB": "true",
-                    # HOST_RECON_OUTPUT_PATH: Required for nested Docker containers (naabu, httpx, etc.)
-                    # These run as sibling containers and need host paths for volume mounts
                     "HOST_RECON_OUTPUT_PATH": f"{recon_path}/output",
-                    # Forward credentials from orchestrator environment
                     "NVD_API_KEY": os.environ.get("NVD_API_KEY", ""),
-                    "NEO4J_URI": os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+                    "NEO4J_URI": "bolt://neo4j:7687",
                     "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
                     "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
                 },
@@ -582,22 +581,25 @@ class ContainerManager:
                     rm=True,
                 )
 
-            # Start container with environment variables
+            # Use Docker network so GVM can reach webapp:3000 and neo4j:7687 reliably.
+            # Host network caused timeouts on some setups (Windows Docker Desktop).
+            docker_network = os.environ.get("DOCKER_NETWORK", "redamon-network")
+            neo4j_uri = "bolt://neo4j:7687"  # Use service name when on Docker network
+
             container = self.client.containers.run(
                 self.gvm_image,
                 name=container_name,
                 detach=True,
-                network_mode="host",
+                network=docker_network,
                 environment={
                     "PROJECT_ID": project_id,
                     "USER_ID": user_id,
                     "WEBAPP_API_URL": webapp_api_url,
+                    "INTERNAL_SERVICE_KEY": os.environ.get("INTERNAL_SERVICE_KEY", "redamon-internal-service"),
                     "PYTHONUNBUFFERED": "1",
-                    # Forward Neo4j credentials from orchestrator environment
-                    "NEO4J_URI": os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+                    "NEO4J_URI": neo4j_uri,
                     "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
                     "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
-                    # GVM connection settings
                     "GVM_SOCKET_PATH": os.environ.get("GVM_SOCKET_PATH", "/run/gvmd/gvmd.sock"),
                     "GVM_USERNAME": os.environ.get("GVM_USERNAME", "admin"),
                     "GVM_PASSWORD": os.environ.get("GVM_PASSWORD", "admin"),
@@ -911,19 +913,18 @@ class ContainerManager:
                 self.github_hunt_image,
                 name=container_name,
                 detach=True,
-                network_mode="host",
+                network=os.environ.get("DOCKER_NETWORK", "redamon-network"),
                 environment={
                     "PROJECT_ID": project_id,
                     "USER_ID": user_id,
                     "WEBAPP_API_URL": webapp_api_url,
+                    "INTERNAL_SERVICE_KEY": os.environ.get("INTERNAL_SERVICE_KEY", "redamon-internal-service"),
                     "PYTHONUNBUFFERED": "1",
-                    # Forward Neo4j credentials from orchestrator environment
-                    "NEO4J_URI": os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+                    "NEO4J_URI": "bolt://neo4j:7687",
                     "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
                     "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
                 },
                 volumes={
-                    # GitHub hunt output (read-write, for saving results)
                     f"{github_hunt_path}/output": {"bind": "/app/github_secret_hunt/output", "mode": "rw"},
                     # Mount github_secret_hunt source for development (no rebuild needed)
                     f"{github_hunt_path}": {"bind": "/app/github_secret_hunt", "mode": "rw"},

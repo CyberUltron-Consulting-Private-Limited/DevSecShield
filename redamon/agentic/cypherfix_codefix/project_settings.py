@@ -7,13 +7,17 @@ import os
 logger = logging.getLogger(__name__)
 
 WEBAPP_API_URL = os.environ.get("WEBAPP_API_URL", "http://webapp:3000")
+INTERNAL_KEY = os.environ.get("INTERNAL_SERVICE_KEY", "redamon-internal-service")
 
 
 async def load_cypherfix_settings(project_id: str) -> dict:
     """Fetch cypherfix settings from webapp API."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{WEBAPP_API_URL}/api/projects/{project_id}")
+            resp = await client.get(
+                f"{WEBAPP_API_URL}/api/projects/{project_id}",
+                headers={"X-Internal-Key": INTERNAL_KEY},
+            )
             resp.raise_for_status()
             project = resp.json()
             return {

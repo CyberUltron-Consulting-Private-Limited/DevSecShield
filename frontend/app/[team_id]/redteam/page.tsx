@@ -51,43 +51,24 @@ interface RedamonProject {
   updatedAt: string;
 }
 
-interface RedamonUser {
-  id: string;
-  name: string;
-  email: string;
-  _count?: { projects: number };
+function teamHeaders(teamId: string): HeadersInit {
+  return { "X-Team-Id": teamId };
 }
 
-async function fetchRedamonUsers(): Promise<RedamonUser[]> {
-  const res = await fetch("/api/redteam/users");
-  if (!res.ok) throw new Error("Failed to fetch users");
-  return res.json();
-}
-
-async function fetchRedamonProjects(userId: string): Promise<RedamonProject[]> {
-  const res = await fetch(`/api/redteam/projects?userId=${userId}`);
+async function fetchRedamonProjects(teamId: string): Promise<RedamonProject[]> {
+  const res = await fetch("/api/redteam/projects", {
+    headers: teamHeaders(teamId),
+  });
   if (!res.ok) throw new Error("Failed to fetch projects");
   return res.json();
 }
 
-async function deleteRedamonProject(projectId: string): Promise<void> {
+async function deleteRedamonProject(teamId: string, projectId: string): Promise<void> {
   const res = await fetch(`/api/redteam/projects/${projectId}`, {
     method: "DELETE",
+    headers: teamHeaders(teamId),
   });
   if (!res.ok) throw new Error("Failed to delete project");
-}
-
-async function ensureDefaultUser(): Promise<RedamonUser> {
-  const users = await fetchRedamonUsers();
-  if (users.length > 0) return users[0];
-
-  const res = await fetch("/api/redteam/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "DevSecShield User", email: "user@devsecshield.local" }),
-  });
-  if (!res.ok) throw new Error("Failed to create default user");
-  return res.json();
 }
 
 export default function RedTeamPage() {
@@ -97,23 +78,18 @@ export default function RedTeamPage() {
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<RedamonProject | null>(null);
 
-  const { data: user, isLoading: userLoading } = useQuery({
-    queryKey: ["redamon-user"],
-    queryFn: ensureDefaultUser,
-  });
-
   const {
     data: projects,
-    isLoading: projectsLoading,
+    isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["redamon-projects", user?.id],
-    queryFn: () => fetchRedamonProjects(user!.id),
-    enabled: !!user?.id,
+    queryKey: ["redamon-projects", teamId],
+    queryFn: () => fetchRedamonProjects(teamId),
+    enabled: !!teamId,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteRedamonProject,
+    mutationFn: (projectId: string) => deleteRedamonProject(teamId, projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["redamon-projects"] });
       toast.success("Project deleted");
@@ -121,8 +97,6 @@ export default function RedTeamPage() {
     },
     onError: () => toast.error("Failed to delete project"),
   });
-
-  const isLoading = userLoading || projectsLoading;
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-US", {
@@ -165,7 +139,7 @@ export default function RedTeamPage() {
               size="sm"
               className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
               onClick={() => router.push(`/${teamId}/redteam/new`)}
-              disabled={!user}
+              disabled={!teamId}
             >
               <Plus className="h-3.5 w-3.5" />
               New Project
@@ -270,7 +244,7 @@ export default function RedTeamPage() {
             <Button
               className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
               onClick={() => router.push(`/${teamId}/redteam/new`)}
-              disabled={!user}
+              disabled={!teamId}
             >
               <Plus className="h-4 w-4" />
               Create Project

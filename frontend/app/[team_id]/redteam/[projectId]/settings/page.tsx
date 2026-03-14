@@ -14,7 +14,7 @@ export default function RedTeamProjectSettingsPage() {
   const projectId = params?.projectId as string;
   const [loaded, setLoaded] = useState(false);
 
-  const settingsUrl = `${REDAMON_URL}/projects/${projectId}/settings?embed=true`;
+  const settingsUrl = `${REDAMON_URL}/projects/${projectId}/settings?embed=true&teamId=${teamId}`;
 
   return (
     <div className="flex flex-col h-screen">

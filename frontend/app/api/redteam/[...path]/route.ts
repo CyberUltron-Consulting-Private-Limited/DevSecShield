@@ -5,12 +5,20 @@ const REDAMON_API_URL =
 
 /**
  * Catch-all proxy: forwards /api/redteam/* → RedAmon webapp /api/*
- * Handles GET, POST, PUT, PATCH, DELETE and SSE streaming.
+ * Passes X-DSS-Team-Id header so RedAmon can scope data per team.
  */
 async function proxyRequest(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  const teamId = req.headers.get("x-team-id");
+  if (!teamId) {
+    return NextResponse.json(
+      { error: "Missing X-Team-Id header" },
+      { status: 401 }
+    );
+  }
+
   const { path } = await params;
   const targetPath = `/api/${path.join("/")}`;
   const url = new URL(targetPath, REDAMON_API_URL);
@@ -22,6 +30,7 @@ async function proxyRequest(
   const contentType = req.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
   headers.set("accept", req.headers.get("accept") || "application/json");
+  headers.set("x-dss-team-id", teamId);
 
   const isSSE = req.headers.get("accept") === "text/event-stream";
 

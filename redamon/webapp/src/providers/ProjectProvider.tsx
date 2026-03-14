@@ -5,6 +5,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 
 export interface ProjectSummary {
   id: string
+  userId?: string
   name: string
   targetDomain: string
   subdomainList?: string[]
@@ -45,7 +46,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const savedUserId = localStorage.getItem(STORAGE_KEY_USER)
     const projectIdToLoad = urlProjectId || savedProjectId
 
-    // Load user ID
+    // Load user ID from localStorage first
     if (savedUserId) {
       setUserIdState(savedUserId)
     }
@@ -71,6 +72,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
               updatedAt: project.updatedAt
             })
             localStorage.setItem(STORAGE_KEY_PROJECT, project.id)
+
+            // Always align userId with the selected project's owner.
+            // If localStorage carries a stale user from a previous account/session,
+            // Agent mode can authenticate with the wrong user_id + right project_id,
+            // and tenant-filtered graph queries return empty results.
+            const projectUserId = project.userId || project.user?.id
+            if (projectUserId && savedUserId !== projectUserId) {
+              setUserIdState(projectUserId)
+              localStorage.setItem(STORAGE_KEY_USER, projectUserId)
+            }
           } else {
             // Remove stale project ID from localStorage if project no longer exists
             localStorage.removeItem(STORAGE_KEY_PROJECT)
@@ -87,6 +98,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setCurrentProjectState(project)
     if (project) {
       localStorage.setItem(STORAGE_KEY_PROJECT, project.id)
+      if (project.userId && project.userId !== userId) {
+        setUserIdState(project.userId)
+        localStorage.setItem(STORAGE_KEY_USER, project.userId)
+      }
       // Update URL without navigation if we're on a page that uses project context
       if (pathname.startsWith('/graph') || pathname.startsWith('/projects')) {
         const params = new URLSearchParams(searchParams.toString())
@@ -101,7 +116,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname
       router.replace(newUrl, { scroll: false })
     }
-  }, [searchParams, router, pathname])
+  }, [searchParams, router, pathname, userId])
 
   const setUserId = useCallback((id: string | null) => {
     setUserIdState(id)

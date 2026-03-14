@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { getSession } from '@/app/api/graph/neo4j'
 import JSZip from 'jszip'
 import { randomUUID } from 'crypto'
+import { resolveTeamUserId } from '@/lib/team-auth'
 
 export const maxDuration = 300
 
@@ -60,16 +61,9 @@ interface ExportedRelationship {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.nextUrl.searchParams.get('userId')
-    if (!userId) {
-      return NextResponse.json({ error: 'userId query parameter is required' }, { status: 400 })
-    }
-
-    // Verify user exists
-    const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
+    const userIdOrError = await resolveTeamUserId(request)
+    if (userIdOrError instanceof NextResponse) return userIdOrError
+    const userId = userIdOrError
 
     // Parse uploaded ZIP
     const formData = await request.formData()

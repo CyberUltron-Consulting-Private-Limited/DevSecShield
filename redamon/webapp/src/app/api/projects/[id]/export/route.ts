@@ -6,6 +6,7 @@ import path from 'path'
 import archiver from 'archiver'
 import { Readable } from 'stream'
 import { randomUUID } from 'crypto'
+import { verifyProjectOwnership } from '@/lib/team-auth'
 
 const RECON_OUTPUT_PATH = process.env.RECON_OUTPUT_PATH || '/data/recon-output'
 const GVM_OUTPUT_PATH = process.env.GVM_OUTPUT_PATH || '/data/gvm-output'
@@ -56,11 +57,12 @@ function serializeProperties(props: Record<string, unknown>): Record<string, unk
   return serialized
 }
 
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
+    const ownership = await verifyProjectOwnership(request, id)
+    if (ownership.error) return ownership.error
 
-    // 1. Fetch project from PostgreSQL
     const project = await prisma.project.findUnique({ where: { id } })
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 })

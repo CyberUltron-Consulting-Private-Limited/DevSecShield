@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { resolveTeamUserId } from '@/lib/team-auth'
 
 interface ConflictCheckRequest {
   targetDomain: string
@@ -20,9 +21,12 @@ interface ConflictResult {
   message: string | null
 }
 
-// POST /api/projects/check-conflict - Check if a project would conflict with existing ones
+// POST /api/projects/check-conflict - Check if a project would conflict (team-scoped)
 export async function POST(request: NextRequest): Promise<NextResponse<ConflictResult>> {
   try {
+    const userIdOrError = await resolveTeamUserId(request)
+    if (userIdOrError instanceof NextResponse) return userIdOrError as NextResponse<ConflictResult>
+
     const body: ConflictCheckRequest = await request.json()
     const { targetDomain, subdomainList, excludeProjectId } = body
 
@@ -36,12 +40,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ConflictR
       })
     }
 
-    // Normalize domain (lowercase, trim)
     const normalizedDomain = targetDomain.toLowerCase().trim()
 
-    // Find all projects with the same target domain
     const existingProjects = await prisma.project.findMany({
       where: {
+        userId: userIdOrError,
         targetDomain: {
           equals: normalizedDomain,
           mode: 'insensitive',

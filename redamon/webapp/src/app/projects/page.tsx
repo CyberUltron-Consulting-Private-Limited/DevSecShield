@@ -41,6 +41,7 @@ export default function ProjectsPage() {
   const handleSelectProject = (project: { id: string; name: string; targetDomain: string }) => {
     setCurrentProject({
       id: project.id,
+      userId: userId || undefined,
       name: project.name,
       targetDomain: project.targetDomain,
       createdAt: '',

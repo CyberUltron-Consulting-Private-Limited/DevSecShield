@@ -24,39 +24,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import Link from "next/link";
 
-async function fetchDefaults(): Promise<Record<string, unknown>> {
-  const res = await fetch("/api/redteam/projects/defaults");
-  if (!res.ok) return {};
-  return res.json();
-}
-
-async function ensureUser() {
-  const res = await fetch("/api/redteam/users");
-  if (!res.ok) throw new Error("Failed to fetch users");
-  const users = await res.json();
-  if (users.length > 0) return users[0];
-
-  const createRes = await fetch("/api/redteam/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "DevSecShield User", email: "user@devsecshield.local" }),
-  });
-  if (!createRes.ok) throw new Error("Failed to create user");
-  return createRes.json();
-}
-
 interface CreateProjectPayload {
   name: string;
   targetDomain: string;
   description?: string;
-  userId: string;
   [key: string]: unknown;
 }
 
-async function createProject(payload: CreateProjectPayload) {
+function teamHeaders(teamId: string): Record<string, string> {
+  return { "X-Team-Id": teamId };
+}
+
+async function fetchDefaults(teamId: string): Promise<Record<string, unknown>> {
+  const res = await fetch("/api/redteam/projects/defaults", {
+    headers: teamHeaders(teamId),
+  });
+  if (!res.ok) return {};
+  return res.json();
+}
+
+async function createProject(teamId: string, payload: CreateProjectPayload) {
   const res = await fetch("/api/redteam/projects", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...teamHeaders(teamId) },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -76,18 +66,14 @@ export default function NewRedTeamProjectPage() {
   const [targetDomain, setTargetDomain] = useState("");
   const [description, setDescription] = useState("");
 
-  const { data: user } = useQuery({
-    queryKey: ["redamon-user"],
-    queryFn: ensureUser,
-  });
-
   const { data: defaults } = useQuery({
-    queryKey: ["redamon-defaults"],
-    queryFn: fetchDefaults,
+    queryKey: ["redamon-defaults", teamId],
+    queryFn: () => fetchDefaults(teamId),
+    enabled: !!teamId,
   });
 
   const createMutation = useMutation({
-    mutationFn: createProject,
+    mutationFn: (payload: CreateProjectPayload) => createProject(teamId, payload),
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["redamon-projects"] });
       toast.success("Project created successfully");
@@ -98,10 +84,6 @@ export default function NewRedTeamProjectPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      toast.error("User not initialized");
-      return;
-    }
     if (!name.trim() || !targetDomain.trim()) {
       toast.error("Name and target domain are required");
       return;
@@ -112,7 +94,6 @@ export default function NewRedTeamProjectPage() {
       name: name.trim(),
       targetDomain: targetDomain.trim(),
       description: description.trim() || undefined,
-      userId: user.id,
     });
   };
 

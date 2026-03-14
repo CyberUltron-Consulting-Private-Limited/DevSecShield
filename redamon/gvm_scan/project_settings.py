@@ -9,6 +9,7 @@ Mirrors the pattern from agentic/project_settings.py.
 """
 import os
 import logging
+import time
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -62,9 +63,22 @@ def fetch_gvm_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     url = f"{webapp_url.rstrip('/')}/api/projects/{project_id}"
     logger.info(f"Fetching GVM settings from {url}")
 
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
-    project = response.json()
+    headers = {"X-Internal-Key": os.environ.get("INTERNAL_SERVICE_KEY", "redamon-internal-service")}
+    timeout = 90
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            project = response.json()
+            break
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_error = e
+            logger.warning(f"Attempt {attempt}/3 failed: {e}")
+            if attempt < 3:
+                time.sleep(5)
+    else:
+        raise last_error
 
     # Start with defaults, then override with API values
     settings = DEFAULT_GVM_SETTINGS.copy()

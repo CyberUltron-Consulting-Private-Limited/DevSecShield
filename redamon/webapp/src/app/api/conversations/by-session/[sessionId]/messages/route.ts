@@ -18,15 +18,29 @@ export async function POST(
     })
 
     if (!conversation) {
-      const { projectId, userId } = body
-      if (!projectId || !userId) {
+      const { projectId, userId: rawUserId } = body
+      if (!projectId || !rawUserId) {
         return NextResponse.json(
           { error: 'Conversation not found. Provide projectId and userId to auto-create.' },
           { status: 404 }
         )
       }
+
+      // Resolve valid userId: if the provided userId doesn't exist as a User,
+      // fall back to the project owner's userId. This handles the case when
+      // the agent backend sends 'default_user' (which isn't a real User record).
+      let resolvedUserId = rawUserId
+      const userExists = await prisma.user.findUnique({ where: { id: rawUserId }, select: { id: true } })
+      if (!userExists) {
+        const project = await prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
+        if (!project) {
+          return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+        }
+        resolvedUserId = project.userId
+      }
+
       conversation = await prisma.conversation.create({
-        data: { projectId, userId, sessionId },
+        data: { projectId, userId: resolvedUserId, sessionId },
       })
     }
 

@@ -58,7 +58,13 @@ export async function PATCH(
     })
 
     return NextResponse.json(conversation)
-  } catch (error) {
+  } catch (error: any) {
+    // P2025 = "Record to update not found" — happens when the agent sends
+    // a metadata update (e.g. agentRunning) before the first message
+    // auto-creates the conversation. This is non-critical.
+    if (error?.code === 'P2025') {
+      return NextResponse.json({ ignored: true, reason: 'conversation not yet created' })
+    }
     console.error('Failed to update conversation by session:', error)
     return NextResponse.json(
       { error: 'Failed to update conversation' },

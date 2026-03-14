@@ -223,6 +223,10 @@ export function AIAssistantDrawer({
   const awaitingQuestionRef = useRef(false)
   const shouldAutoScroll = useRef(true)
   const itemIdCounter = useRef(0)
+  // Guards for conversation restore: flag + the exact sessionId we're switching to,
+  // so the sessionId useEffect never clears chat when restoring a historical session.
+  const isRestoringConversation = useRef(false)
+  const restoringToSessionId = useRef<string | null>(null)
 
   const scrollToBottom = useCallback((force = false) => {
     if (force || shouldAutoScroll.current) {
@@ -266,11 +270,20 @@ export function AIAssistantDrawer({
     }
   }, [showHistory, projectId, userId, fetchConversations])
 
-  // Reset state when session changes (skip if switching to a loaded conversation)
-  const isRestoringConversation = useRef(false)
+  // Reset state when session changes (skip if switching to a loaded conversation).
+  // Uses two guards:
+  //   isRestoringConversation — set true before onSwitchSession is called
+  //   restoringToSessionId   — the exact sessionId being restored, so even if the
+  //                            effect fires a second time (React 18 concurrent re-render)
+  //                            we still skip the clear as long as the incoming session
+  //                            matches the restoration target.
   useEffect(() => {
-    if (isRestoringConversation.current) {
+    if (isRestoringConversation.current || sessionId === restoringToSessionId.current) {
       isRestoringConversation.current = false
+      // Keep restoringToSessionId until a *different* session change arrives
+      if (sessionId === restoringToSessionId.current) {
+        restoringToSessionId.current = null
+      }
       return
     }
     setChatItems([])
@@ -1025,8 +1038,12 @@ export function AIAssistantDrawer({
       setQuestionRequest(null)
     }
 
-    // Switch WebSocket session — flag to prevent the sessionId useEffect from clearing state
+    // Switch WebSocket session.
+    // Set the flag AND record which sessionId we're switching TO so the
+    // useEffect can guard against clearing state even if it fires more than once
+    // (e.g. due to React 18 concurrent-mode double-firing or a rapid re-render).
     isRestoringConversation.current = true
+    restoringToSessionId.current = conv.sessionId
     onSwitchSession?.(conv.sessionId)
   }, [loadConversation, onSwitchSession])
 

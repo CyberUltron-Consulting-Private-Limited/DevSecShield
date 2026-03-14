@@ -26,8 +26,10 @@ interface RedamonProject {
   description: string | null;
 }
 
-async function fetchProject(projectId: string): Promise<RedamonProject> {
-  const res = await fetch(`/api/redteam/projects/${projectId}`);
+async function fetchProject(teamId: string, projectId: string): Promise<RedamonProject> {
+  const res = await fetch(`/api/redteam/projects/${projectId}`, {
+    headers: { "X-Team-Id": teamId },
+  });
   if (!res.ok) throw new Error("Failed to fetch project");
   return res.json();
 }
@@ -43,11 +45,11 @@ export default function RedTeamProjectPage() {
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["redamon-project", projectId],
-    queryFn: () => fetchProject(projectId),
-    enabled: !!projectId,
+    queryFn: () => fetchProject(teamId, projectId),
+    enabled: !!projectId && !!teamId,
   });
 
-  const graphUrl = `${REDAMON_URL}/graph?project=${projectId}&embed=true`;
+  const graphUrl = `${REDAMON_URL}/graph?project=${projectId}&embed=true&teamId=${teamId}`;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
