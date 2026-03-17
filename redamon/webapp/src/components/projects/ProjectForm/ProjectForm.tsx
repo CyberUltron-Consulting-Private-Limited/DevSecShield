@@ -196,14 +196,24 @@ export function ProjectForm({
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>
-          {mode === 'create' ? 'Create New Project' : 'Project Settings'}
-        </h1>
+      <div role="banner" className={styles.header}>
+        <div className={styles.headerLeft}>
+          <button
+            type="button"
+            className={styles.closeBtn}
+            onClick={onCancel}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+          <h1 className={styles.title}>
+            {mode === 'create' ? 'Create New Project' : 'Project Settings'}
+          </h1>
+        </div>
         <div className={styles.actions}>
           <button
             type="button"
-            className="secondaryButton"
+            className={styles.secondaryBtn}
             onClick={onCancel}
             disabled={isSubmitting}
           >
@@ -213,7 +223,7 @@ export function ProjectForm({
           {mode === 'edit' && projectId && (
             <button
               type="button"
-              className="secondaryButton"
+              className={styles.secondaryBtn}
               onClick={() => window.open(`/api/projects/${projectId}/export`)}
             >
               <Download size={14} />
@@ -222,7 +232,7 @@ export function ProjectForm({
           )}
           <button
             type="submit"
-            className="primaryButton"
+            className={styles.primaryBtn}
             disabled={!canSubmit}
           >
             {isLoadingDefaults ? (
@@ -270,19 +280,19 @@ export function ProjectForm({
           <p>Loading configuration defaults...</p>
         </div>
       ) : (
-        <>
-          <div className={styles.tabs}>
+        <div className={styles.layout}>
+          <nav className={styles.sidebar}>
             {TABS.map(tab => (
               <button
                 key={tab.id}
                 type="button"
-                className={`tab ${activeTab === tab.id ? 'tabActive' : ''}`}
+                className={`${styles.navItem} ${activeTab === tab.id ? styles.navItemActive : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
                 {tab.label}
               </button>
             ))}
-          </div>
+          </nav>
 
           <div className={styles.content}>
             {activeTab === 'target' && (
@@ -347,7 +357,7 @@ export function ProjectForm({
           <CypherFixSettingsSection data={formData} updateField={updateField} />
         )}
           </div>
-        </>
+        </div>
       )}
     </form>
   )

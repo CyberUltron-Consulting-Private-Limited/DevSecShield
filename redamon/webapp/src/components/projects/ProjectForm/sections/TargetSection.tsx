@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { ChevronDown, Target } from 'lucide-react'
+import { useMemo } from 'react'
+import { Target } from 'lucide-react'
 import { Toggle } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
@@ -39,7 +39,6 @@ function toStoredPrefixes(displayValue: string, includeRoot: boolean): string[] 
 
 export function TargetSection({ data, updateField, mode = 'create' }: TargetSectionProps) {
   const isLocked = mode === 'edit'
-  const [isOpen, setIsOpen] = useState(true)
 
   // Check if root domain is included in the list
   const includesRootDomain = useMemo(() => data.subdomainList.includes('.'), [data.subdomainList])
@@ -58,22 +57,14 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
 
   return (
     <div className={styles.section}>
-      <div className={styles.sectionHeader} onClick={() => setIsOpen(!isOpen)}>
+      <div className={styles.sectionContent}>
         <h2 className={styles.sectionTitle}>
           <Target size={16} />
           Target Configuration
         </h2>
-        <ChevronDown
-          size={16}
-          className={`${styles.sectionIcon} ${isOpen ? styles.sectionIconOpen : ''}`}
-        />
-      </div>
-
-      {isOpen && (
-        <div className={styles.sectionContent}>
-          <p className={styles.sectionDescription}>
-            Define the primary target for your security assessment. The target domain serves as the starting point for all reconnaissance activities, from subdomain enumeration to vulnerability scanning.
-          </p>
+        <p className={styles.sectionDescription}>
+          Define the primary target for your security assessment. The target domain serves as the starting point for all reconnaissance activities, from subdomain enumeration to vulnerability scanning.
+        </p>
           <div className={styles.fieldRow}>
             <div className={styles.fieldGroup}>
               <label className={`${styles.fieldLabel} ${styles.fieldLabelRequired}`}>
@@ -205,7 +196,6 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
             </div>
           </div>
         </div>
-      )}
     </div>
   )
 }

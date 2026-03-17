@@ -129,11 +129,12 @@ hr {
 }
 
 /* =============================================================================
-   Embed Mode — hides all RedAmon branding when loaded inside DevSecShield
+   Embed Mode — hides RedAmon layout header/footer when loaded inside DevSecShield
    Activated by ?embed=true in the URL (sets data-embed="true" on <html>)
    ============================================================================= */
 
-/* Hide the entire GlobalHeader and Footer */
+/* Hide the layout's GlobalHeader and Footer. ProjectForm toolbar uses a div
+   (not <header>) so Cancel/Export/Save Project stay visible in settings embed. */
 html[data-embed="true"] header,
 html[data-embed="true"] footer {
   display: none !important;
