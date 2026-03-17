@@ -569,6 +569,35 @@ export default function GraphPage() {
     setActiveLogsDrawer(prev => prev === 'githubHunt' ? null : 'githubHunt')
   }, [])
 
+  useEffect(() => {
+    const handleHostAction = (event: MessageEvent) => {
+      const payload = event.data
+      if (!payload || typeof payload !== 'object' || payload.source !== 'devsecshield-redteam') {
+        return
+      }
+
+      switch (payload.action) {
+        case 'start-recon':
+          handleStartRecon()
+          break
+        case 'start-gvm':
+          handleStartGvm()
+          break
+        case 'start-github-hunt':
+          handleStartGithubHunt()
+          break
+        case 'toggle-ai':
+          handleToggleAI()
+          break
+        default:
+          break
+      }
+    }
+
+    window.addEventListener('message', handleHostAction)
+    return () => window.removeEventListener('message', handleHostAction)
+  }, [handleStartGithubHunt, handleStartGvm, handleStartRecon, handleToggleAI])
+
   // Show message if no project is selected
   if (!projectLoading && !projectId) {
     return (

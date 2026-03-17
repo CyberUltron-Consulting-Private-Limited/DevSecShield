@@ -1201,12 +1201,17 @@ export function AIAssistantDrawer({
             <Bot size={16} />
           </div>
           <div className={styles.headerText}>
-            <h2 className={styles.title}>AI Agent</h2>
+            <h2 className={styles.title}>AI Assistant</h2>
             <div className={styles.connectionStatus}>
               {getConnectionStatusIcon()}
               <span className={styles.subtitle} style={{ color: getConnectionStatusColor() }}>
                 {getConnectionStatusText()}
               </span>
+              {modelName && (
+                <span className={styles.headerModel}>
+                  {formatModelDisplay(modelName)}
+                </span>
+              )}
               <span className={styles.sessionCode} title={sessionId}>
                 Session: {sessionId.slice(-8)}
               </span>
@@ -1365,7 +1370,7 @@ export function AIAssistantDrawer({
         {chatItems.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
-              <img src="/logo.png" alt="AI Agent" width={72} height={72} style={{ objectFit: 'contain' }} />
+              <Bot size={34} />
             </div>
             <h3 className={styles.emptyTitle}>How can I help you?</h3>
             <p className={styles.emptyDescription}>
