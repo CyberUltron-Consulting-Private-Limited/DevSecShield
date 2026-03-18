@@ -4,14 +4,14 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Link2 } from 'lucide-react'
 import { NODE_COLORS } from '../../config'
 import { GraphData } from '../../types'
-import type { ViewMode } from '../ViewTabs'
+import type { PageView } from '../PageSidebar'
 import styles from './PageBottomBar.module.css'
 
 interface PageBottomBarProps {
   data: GraphData | undefined
   is3D: boolean
   showLabels: boolean
-  activeView: ViewMode
+  activeView: PageView
   // Table view filter props
   activeNodeTypes?: Set<string>
   nodeTypeCounts?: Record<string, number>

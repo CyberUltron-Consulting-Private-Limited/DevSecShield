@@ -10,7 +10,8 @@ import { PageBottomBar } from './components/PageBottomBar'
 import { ReconConfirmModal } from './components/ReconConfirmModal'
 import { GvmConfirmModal } from './components/GvmConfirmModal'
 import { ReconLogsDrawer } from './components/ReconLogsDrawer'
-import { ViewTabs, type ViewMode } from './components/ViewTabs'
+import { PageSidebar, type PageView } from './components/PageSidebar'
+import { OverviewPage } from './components/OverviewPage'
 import { DataTable } from './components/DataTable'
 import { ActiveSessions } from './components/ActiveSessions'
 import { useGraphData, useDimensions, useNodeSelection, useTableData } from './hooks'
@@ -24,7 +25,7 @@ export default function GraphPage() {
   const router = useRouter()
   const { projectId, userId, currentProject, setCurrentProject, isLoading: projectLoading } = useProject()
 
-  const [activeView, setActiveView] = useState<ViewMode>('graph')
+  const [activeView, setActiveView] = useState<PageView>('overview')
   const [is3D, setIs3D] = useState(true)
   const [showLabels, setShowLabels] = useState(true)
   const [isAIOpen, setIsAIOpen] = useState(false)
@@ -654,18 +655,19 @@ export default function GraphPage() {
         agentConversations={agentSummary.conversations}
       />
 
-      <ViewTabs
-        activeView={activeView}
-        onViewChange={setActiveView}
-        globalFilter={globalFilter}
-        onGlobalFilterChange={setGlobalFilter}
-        onExport={handleExportExcel}
-        totalRows={filteredByType.length}
-        filteredRows={textFilteredCount}
-        sessionCount={activeSessions.totalCount}
-      />
-
       <div ref={bodyRef} className={styles.body}>
+        <PageSidebar
+          activeView={activeView}
+          onViewChange={setActiveView}
+          globalFilter={globalFilter}
+          onGlobalFilterChange={setGlobalFilter}
+          onExport={handleExportExcel}
+          totalRows={filteredByType.length}
+          filteredRows={textFilteredCount}
+          sessionCount={activeSessions.totalCount}
+        />
+
+        <div className={styles.mainContent}>
         {activeView === 'graph' && (
           <NodeDrawer
             node={selectedNode}
@@ -676,7 +678,9 @@ export default function GraphPage() {
         )}
 
         <div ref={contentRef} className={styles.content}>
-          {activeView === 'graph' ? (
+          {activeView === 'overview' ? (
+            <OverviewPage />
+          ) : activeView === 'graph' ? (
             <GraphCanvas
               data={filteredGraphData}
               isLoading={isLoading}
@@ -700,7 +704,7 @@ export default function GraphPage() {
               globalFilter={globalFilter}
               onGlobalFilterChange={setGlobalFilter}
             />
-          ) : (
+          ) : activeView === 'sessions' ? (
             <ActiveSessions
               sessions={activeSessions.sessions}
               jobs={activeSessions.jobs}
@@ -713,9 +717,9 @@ export default function GraphPage() {
               onUpgradeSession={activeSessions.upgradeSession}
               onKillJob={activeSessions.killJob}
             />
-          )}
+          ) : null}
         </div>
-
+        </div>
       </div>
 
       <ReconLogsDrawer
