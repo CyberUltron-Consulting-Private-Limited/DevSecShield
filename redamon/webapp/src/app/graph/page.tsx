@@ -631,7 +631,27 @@ export default function GraphPage() {
 
         <div ref={contentRef} className={styles.content}>
           {activeView === 'overview' ? (
-            <OverviewPage />
+            <OverviewPage
+              projectName={currentProject?.name}
+              targetDomain={currentProject?.targetDomain}
+              stealthMode={currentProject?.stealthMode}
+              rows={tableRows}
+              nodeTypeCounts={nodeTypeCounts}
+              reconStatus={reconState?.status || 'idle'}
+              gvmStatus={gvmState?.status || 'idle'}
+              githubHuntStatus={githubHuntState?.status || 'idle'}
+              hasReconData={hasReconData}
+              hasGvmData={hasGvmData}
+              hasGithubHuntData={hasGithubHuntData}
+              agentActiveCount={agentSummary.activeCount}
+              agentConversations={agentSummary.conversations}
+              sessionCount={activeSessions.totalCount}
+              attackChainCount={sessionChainIds.length}
+              onOpenGraph={() => setActiveView('graph')}
+              onOpenAssets={() => setActiveView('table')}
+              onOpenAssessments={() => setActiveView('sessions')}
+              onRefresh={() => { void refetchGraph() }}
+            />
           ) : activeView === 'graph' ? (
             <AttackSurfaceView
               data={filteredGraphData}
