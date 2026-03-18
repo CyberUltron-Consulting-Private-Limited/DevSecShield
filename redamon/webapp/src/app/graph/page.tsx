@@ -334,15 +334,6 @@ export default function GraphPage() {
     return { ...data, nodes: filteredNodes, links: filteredLinks }
   }, [data, activeNodeTypes, nodeTypes.length, hiddenSessions, CHAIN_NODE_TYPES, globalFilter])
 
-  const textFilteredCount = useMemo(() => {
-    if (!globalFilter) return filteredByType.length
-    const search = globalFilter.toLowerCase()
-    return filteredByType.filter(r =>
-      r.node.name?.toLowerCase().includes(search) ||
-      r.node.type?.toLowerCase().includes(search)
-    ).length
-  }, [filteredByType, globalFilter])
-
   const handleToggleNodeType = useCallback((type: string) => {
     setActiveNodeTypes(prev => {
       const next = new Set(prev)
@@ -623,11 +614,6 @@ export default function GraphPage() {
         <PageSidebar
           activeView={activeView}
           onViewChange={setActiveView}
-          globalFilter={globalFilter}
-          onGlobalFilterChange={setGlobalFilter}
-          onExport={handleExportExcel}
-          totalRows={filteredByType.length}
-          filteredRows={textFilteredCount}
           sessionCount={activeSessions.totalCount}
         />
 
@@ -702,6 +688,16 @@ export default function GraphPage() {
               rows={filteredByType}
               globalFilter={globalFilter}
               onGlobalFilterChange={setGlobalFilter}
+              nodeTypeCounts={nodeTypeCounts}
+              activeNodeTypes={activeNodeTypes}
+              onToggleNodeType={handleToggleNodeType}
+              onSelectAllTypes={handleSelectAllTypes}
+              onExport={handleExportExcel}
+              onRefresh={() => { void refetchGraph() }}
+              onViewInGraph={(node) => {
+                selectNode(node)
+                setActiveView('graph')
+              }}
             />
           ) : activeView === 'sessions' ? (
             <ActiveSessions

@@ -5,7 +5,6 @@ import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
-  getFilteredRowModel,
   getPaginationRowModel,
   getExpandedRowModel,
   flexRender,
@@ -14,19 +13,21 @@ import {
   type ExpandedState,
 } from '@tanstack/react-table'
 import {
+  Search,
+  RefreshCw,
+  Download,
+  Filter,
   ChevronDown,
   ChevronRight,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  ChevronLeft,
-  ChevronsLeft,
-  ChevronsRight,
+  ChevronRight as ChevronRightPage,
   Loader2,
   AlertCircle,
   Database,
 } from 'lucide-react'
-import type { GraphData } from '../../types'
+import type { GraphData, GraphNode } from '../../types'
 import { NODE_COLORS } from '../../config'
 import type { TableRow } from '../../hooks/useTableData'
 import { ExpandedRowDetail } from './ExpandedRowDetail'
@@ -39,9 +40,62 @@ interface DataTableProps {
   rows: TableRow[]
   globalFilter: string
   onGlobalFilterChange: (value: string) => void
+  nodeTypeCounts: Record<string, number>
+  activeNodeTypes: Set<string>
+  onToggleNodeType: (type: string) => void
+  onSelectAllTypes: () => void
+  onExport: () => void
+  onRefresh: () => void
+  onViewInGraph: (node: GraphNode) => void
 }
 
 const columnHelper = createColumnHelper<TableRow>()
+const HIDDEN_KEYS = new Set(['project_id', 'user_id', 'created_at', 'updated_at'])
+const PRIORITY_TYPES = ['Subdomain', 'Domain', 'IP', 'Port', 'Vulnerability', 'Service']
+
+type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
+
+function getRowRiskLevel(row: TableRow): RiskLevel {
+  const severity = String(row.node.properties?.severity || '').toLowerCase()
+  if (severity === 'critical') return 'critical'
+  if (severity === 'high') return 'high'
+  if (severity === 'medium') return 'medium'
+  if (severity === 'low' || severity === 'info') return 'low'
+
+  const hasDirectVuln = [...row.connectionsIn, ...row.connectionsOut].some(
+    conn => conn.nodeType === 'Vulnerability' || conn.nodeType === 'CVE'
+  )
+  if (hasDirectVuln) return 'medium'
+  return 'low'
+}
+
+function getRiskToneClass(risk: RiskLevel) {
+  if (risk === 'critical') return styles.riskCritical
+  if (risk === 'high') return styles.riskHigh
+  if (risk === 'medium') return styles.riskMedium
+  return styles.riskLow
+}
+
+function getConnectionToneClass(count: number, kind: 'in' | 'out' | 'l1' | 'l2') {
+  if (count <= 0) return styles.metricLow
+  if (kind === 'out' && count >= 10) return styles.metricCritical
+  if (count >= 7) return styles.metricHigh
+  if (count >= 4) return styles.metricMedium
+  return styles.metricLow
+}
+
+function getNodeDetails(row: TableRow) {
+  const entry = Object.entries(row.node.properties || {}).find(([key, value]) => {
+    if (HIDDEN_KEYS.has(key)) return false
+    if (key === 'severity') return false
+    return typeof value === 'string' || typeof value === 'number'
+  })
+
+  if (!entry) return '---'
+  const [, value] = entry
+  const text = String(value)
+  return text.length > 28 ? `${text.slice(0, 28)}...` : text
+}
 
 export const DataTable = memo(function DataTable({
   data,
@@ -50,9 +104,43 @@ export const DataTable = memo(function DataTable({
   rows,
   globalFilter,
   onGlobalFilterChange,
+  nodeTypeCounts,
+  activeNodeTypes,
+  onToggleNodeType,
+  onSelectAllTypes,
+  onExport,
+  onRefresh,
+  onViewInGraph,
 }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [expanded, setExpanded] = useState<ExpandedState>({})
+
+  const searchableRows = useMemo(() => {
+    const search = globalFilter.trim().toLowerCase()
+    if (!search) return rows
+    return rows.filter(row =>
+      row.node.name?.toLowerCase().includes(search) ||
+      row.node.type?.toLowerCase().includes(search)
+    )
+  }, [rows, globalFilter])
+
+  const visibleTypes = useMemo(() => {
+    const remaining = Object.keys(nodeTypeCounts)
+      .filter(type => !PRIORITY_TYPES.includes(type))
+      .sort()
+    return [...PRIORITY_TYPES.filter(type => nodeTypeCounts[type]), ...remaining].slice(0, 8)
+  }, [nodeTypeCounts])
+
+  const riskStats = useMemo(() => {
+    return searchableRows.reduce(
+      (acc, row) => {
+        const risk = getRowRiskLevel(row)
+        acc[risk] += 1
+        return acc
+      },
+      { critical: 0, high: 0, medium: 0, low: 0 }
+    )
+  }, [searchableRows])
 
   const columns = useMemo(() => [
     columnHelper.display({
@@ -73,7 +161,7 @@ export const DataTable = memo(function DataTable({
     columnHelper.accessor(row => row.node.type, {
       id: 'type',
       header: 'Type',
-      size: 160,
+      size: 120,
       cell: info => {
         const type = info.getValue()
         const color = NODE_COLORS[type] || NODE_COLORS.Default
@@ -87,102 +175,131 @@ export const DataTable = memo(function DataTable({
     columnHelper.accessor(row => row.node.name, {
       id: 'name',
       header: 'Name',
-      size: 400,
+      size: 230,
       cell: info => (
         <span className={styles.nameCell} title={info.getValue()}>
           {info.getValue()}
         </span>
       ),
     }),
-    columnHelper.accessor(row => Object.keys(row.node.properties).filter(k => k !== 'project_id' && k !== 'user_id').length, {
-      id: 'properties',
-      header: 'Props',
-      size: 70,
-      cell: info => (
-        <span className={styles.connBadge}>{info.getValue()}</span>
+    columnHelper.display({
+      id: 'details',
+      header: 'Details',
+      size: 180,
+      cell: ({ row }) => (
+        <span className={styles.detailsCell}>{getNodeDetails(row.original)}</span>
       ),
     }),
     columnHelper.accessor(row => row.connectionsIn.length, {
       id: 'connectionsIn',
       header: 'In',
-      size: 70,
+      size: 72,
       cell: info => {
         const count = info.getValue()
-        return count > 0 ? (
-          <span className={styles.connBadge}>{count}</span>
-        ) : (
-          <span className={styles.connEmpty}>0</span>
+        return (
+          <span className={`${styles.metricBadge} ${getConnectionToneClass(count, 'in')}`}>
+            {count}
+          </span>
         )
       },
     }),
     columnHelper.accessor(row => row.connectionsOut.length, {
       id: 'connectionsOut',
       header: 'Out',
-      size: 70,
+      size: 72,
       cell: info => {
         const count = info.getValue()
-        return count > 0 ? (
-          <span className={styles.connBadge}>{count}</span>
-        ) : (
-          <span className={styles.connEmpty}>0</span>
+        return (
+          <span className={`${styles.metricBadge} ${getConnectionToneClass(count, 'out')}`}>
+            {count}
+          </span>
+        )
+      },
+    }),
+    columnHelper.display({
+      id: 'level1',
+      header: 'L1',
+      size: 72,
+      cell: ({ row }) => {
+        const count = row.original.connectionsIn.length + row.original.connectionsOut.length
+        return (
+          <span className={`${styles.metricBadge} ${getConnectionToneClass(count, 'l1')}`}>
+            {count}
+          </span>
         )
       },
     }),
     columnHelper.accessor(row => row.level2.length, {
       id: 'level2',
       header: 'L2',
-      size: 60,
+      size: 72,
       cell: info => {
         const count = info.getValue()
-        return count > 0 ? (
-          <span className={styles.connBadge}>{count}</span>
-        ) : (
-          <span className={styles.connEmpty}>0</span>
+        return (
+          <span className={`${styles.metricBadge} ${getConnectionToneClass(count, 'l2')}`}>
+            {count}
+          </span>
         )
       },
     }),
-    columnHelper.accessor(row => row.level3.length, {
-      id: 'level3',
-      header: 'L3',
-      size: 60,
-      cell: info => {
-        const count = info.getValue()
-        return count > 0 ? (
-          <span className={styles.connBadge}>{count}</span>
-        ) : (
-          <span className={styles.connEmpty}>0</span>
+    columnHelper.display({
+      id: 'status',
+      header: 'Status',
+      size: 110,
+      cell: () => <span className={styles.statusBadge}>Active</span>,
+    }),
+    columnHelper.display({
+      id: 'risk',
+      header: 'Risk Level',
+      size: 120,
+      cell: ({ row }) => {
+        const risk = getRowRiskLevel(row.original)
+        return (
+          <span className={`${styles.riskBadge} ${getRiskToneClass(risk)}`}>
+            {risk}
+          </span>
         )
       },
     }),
-  ], [])
+    columnHelper.display({
+      id: 'actions',
+      header: 'Actions',
+      size: 130,
+      cell: ({ row }) => (
+        <button
+          type="button"
+          className={styles.actionBtn}
+          onClick={() => onViewInGraph(row.original.node)}
+        >
+          Investigate
+        </button>
+      ),
+    }),
+  ], [onViewInGraph])
 
   const table = useReactTable({
-    data: rows,
+    data: searchableRows,
     columns,
-    state: { sorting, globalFilter, expanded },
+    state: { sorting, expanded },
     onSortingChange: setSorting,
-    onGlobalFilterChange: onGlobalFilterChange,
     onExpandedChange: setExpanded,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
-    globalFilterFn: (row, _columnId, filterValue) => {
-      const search = filterValue.toLowerCase()
-      const name = row.original.node.name?.toLowerCase() || ''
-      const type = row.original.node.type?.toLowerCase() || ''
-      return name.includes(search) || type.includes(search)
-    },
     initialState: {
-      pagination: { pageSize: 50 },
+      pagination: { pageSize: 20 },
     },
     getRowCanExpand: () => true,
   })
 
-  const filteredRowCount = table.getFilteredRowModel().rows.length
+  const pageCount = table.getPageCount() || 1
+  const pageIndex = table.getState().pagination.pageIndex
+  const pageNumbers = Array.from({ length: Math.min(pageCount, 3) }, (_, i) => {
+    const start = Math.max(0, Math.min(pageIndex - 1, pageCount - 3))
+    return start + i
+  })
 
-  // Loading state
   if (isLoading) {
     return (
       <div className={styles.stateContainer}>
@@ -192,7 +309,6 @@ export const DataTable = memo(function DataTable({
     )
   }
 
-  // Error state
   if (error) {
     return (
       <div className={styles.stateContainer}>
@@ -203,7 +319,6 @@ export const DataTable = memo(function DataTable({
     )
   }
 
-  // Empty state
   if (!data || data.nodes.length === 0) {
     return (
       <div className={styles.stateContainer}>
@@ -216,6 +331,76 @@ export const DataTable = memo(function DataTable({
 
   return (
     <div className={styles.container}>
+      <header className={styles.header}>
+        <div>
+          <h1 className={styles.title}>Asset Intelligence</h1>
+          <p className={styles.subtitle}>{searchableRows.length} of {rows.length} assets discovered</p>
+        </div>
+        <div className={styles.headerActions}>
+          <button type="button" className={styles.headerBtn} onClick={onRefresh}>
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+          <button type="button" className={styles.headerBtn} onClick={onExport}>
+            <Download size={14} />
+            Export
+          </button>
+        </div>
+      </header>
+
+      <div className={styles.riskCards}>
+        <div className={`${styles.riskCard} ${styles.cardCritical}`}>
+          <span className={styles.cardLabel}>Critical Risk</span>
+          <span className={styles.cardValue}>{riskStats.critical}</span>
+        </div>
+        <div className={`${styles.riskCard} ${styles.cardHigh}`}>
+          <span className={styles.cardLabel}>High Risk</span>
+          <span className={styles.cardValue}>{riskStats.high}</span>
+        </div>
+        <div className={`${styles.riskCard} ${styles.cardMedium}`}>
+          <span className={styles.cardLabel}>Medium Risk</span>
+          <span className={styles.cardValue}>{riskStats.medium}</span>
+        </div>
+        <div className={`${styles.riskCard} ${styles.cardLow}`}>
+          <span className={styles.cardLabel}>Low Risk</span>
+          <span className={styles.cardValue}>{riskStats.low}</span>
+        </div>
+      </div>
+
+      <div className={styles.filterBar}>
+        <div className={styles.searchWrapper}>
+          <Search size={14} className={styles.searchIcon} />
+          <input
+            type="text"
+            className={styles.searchInput}
+            placeholder="Search assets..."
+            value={globalFilter}
+            onChange={e => onGlobalFilterChange(e.target.value)}
+            aria-label="Search assets"
+          />
+        </div>
+        <div className={styles.filterPills}>
+          <Filter size={12} className={styles.filterIcon} />
+          <button
+            type="button"
+            className={`${styles.filterPill} ${activeNodeTypes.size === Object.keys(nodeTypeCounts).length ? styles.filterPillActive : ''}`}
+            onClick={onSelectAllTypes}
+          >
+            All
+          </button>
+          {visibleTypes.map(type => (
+            <button
+              key={type}
+              type="button"
+              className={`${styles.filterPill} ${activeNodeTypes.has(type) ? styles.filterPillActive : ''}`}
+              onClick={() => onToggleNodeType(type)}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className={styles.tableWrapper}>
         <table className={styles.table}>
           <thead>
@@ -236,18 +421,14 @@ export const DataTable = memo(function DataTable({
                     }
                   >
                     <div className={styles.thContent}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanSort() && (
                         <span className={styles.sortIcon}>
-                          {header.column.getIsSorted() === 'asc' ? (
-                            <ArrowUp size={12} />
-                          ) : header.column.getIsSorted() === 'desc' ? (
-                            <ArrowDown size={12} />
-                          ) : (
-                            <ArrowUpDown size={12} />
-                          )}
+                          {header.column.getIsSorted() === 'asc'
+                            ? <ArrowUp size={12} />
+                            : header.column.getIsSorted() === 'desc'
+                              ? <ArrowDown size={12} />
+                              : <ArrowUpDown size={12} />}
                         </span>
                       )}
                     </div>
@@ -259,9 +440,7 @@ export const DataTable = memo(function DataTable({
           <tbody>
             {table.getRowModel().rows.map(row => (
               <Fragment key={row.id}>
-                <tr
-                  className={`${styles.tr} ${row.getIsExpanded() ? styles.trExpanded : ''}`}
-                >
+                <tr className={`${styles.tr} ${row.getIsExpanded() ? styles.trExpanded : ''}`}>
                   {row.getVisibleCells().map(cell => (
                     <td key={cell.id} className={styles.td}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -271,7 +450,10 @@ export const DataTable = memo(function DataTable({
                 {row.getIsExpanded() && (
                   <tr className={styles.trExpandedDetail}>
                     <td colSpan={columns.length} className={styles.tdExpanded}>
-                      <ExpandedRowDetail row={row.original} />
+                      <ExpandedRowDetail
+                        row={row.original}
+                        onViewInGraph={() => onViewInGraph(row.original.node)}
+                      />
                     </td>
                   </tr>
                 )}
@@ -281,64 +463,40 @@ export const DataTable = memo(function DataTable({
         </table>
       </div>
 
-      {/* Pagination */}
       <div className={styles.pagination}>
-        <div className={styles.paginationInfo}>
-          Page {table.getState().pagination.pageIndex + 1} of{' '}
-          {table.getPageCount() || 1}
-          <span className={styles.paginationRows}>
-            ({filteredRowCount} rows)
-          </span>
-        </div>
-
+        <div className={styles.paginationInfo}>Showing {searchableRows.length} of {rows.length} assets</div>
         <div className={styles.paginationControls}>
-          <button
-            className={styles.pageBtn}
-            onClick={() => table.setPageIndex(0)}
-            disabled={!table.getCanPreviousPage()}
-            aria-label="First page"
-          >
-            <ChevronsLeft size={14} />
-          </button>
           <button
             className={styles.pageBtn}
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
-            aria-label="Previous page"
           >
-            <ChevronLeft size={14} />
+            Previous
           </button>
+          {pageNumbers.map(page => (
+            <button
+              key={page}
+              className={`${styles.pageNumberBtn} ${page === pageIndex ? styles.pageNumberBtnActive : ''}`}
+              onClick={() => table.setPageIndex(page)}
+            >
+              {page + 1}
+            </button>
+          ))}
           <button
             className={styles.pageBtn}
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
-            aria-label="Next page"
           >
-            <ChevronRight size={14} />
+            Next
           </button>
           <button
-            className={styles.pageBtn}
-            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+            className={styles.pageIconBtn}
+            onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
-            aria-label="Last page"
+            aria-label="Next page"
           >
-            <ChevronsRight size={14} />
+            <ChevronRightPage size={14} />
           </button>
-        </div>
-
-        <div className={styles.pageSizeSelect}>
-          <select
-            value={table.getState().pagination.pageSize}
-            onChange={e => table.setPageSize(Number(e.target.value))}
-            className={styles.select}
-            aria-label="Rows per page"
-          >
-            {[10, 25, 50, 100].map(size => (
-              <option key={size} value={size}>
-                {size} rows
-              </option>
-            ))}
-          </select>
         </div>
       </div>
     </div>

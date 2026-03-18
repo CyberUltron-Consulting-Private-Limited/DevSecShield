@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { NODE_COLORS } from '../../config'
 import { formatPropertyValue } from '../../utils/formatters'
 import type { TableRow } from '../../hooks/useTableData'
@@ -8,19 +8,67 @@ import styles from './ExpandedRowDetail.module.css'
 
 interface ExpandedRowDetailProps {
   row: TableRow
+  onViewInGraph: () => void
 }
 
 const HIDDEN_KEYS = new Set(['project_id', 'user_id'])
 
-export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: ExpandedRowDetailProps) {
+export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row, onViewInGraph }: ExpandedRowDetailProps) {
   const properties = Object.entries(row.node.properties)
     .filter(([key]) => !HIDDEN_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
 
+  const lastActivity = String(row.node.properties.updated_at || row.node.properties.created_at || '--')
+  const severity = String(row.node.properties.severity || '').toLowerCase()
+  const tags = useMemo(() => {
+    const values = [row.node.type.toLowerCase()]
+    if (severity && severity !== 'unknown') values.push(severity)
+    values.push('verified')
+    return values
+  }, [row.node.type, severity])
+
+  const securityNote = severity === 'critical' || severity === 'high'
+    ? 'Critical findings present'
+    : severity === 'medium'
+      ? 'Medium-priority findings detected'
+      : 'No critical findings'
+
   return (
     <div className={styles.detail}>
+      <div className={styles.summaryGrid}>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>Discovery Source</span>
+          <span className={styles.summaryValue}>{row.node.type}</span>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>Associated Nodes</span>
+          <span className={styles.summaryValue}>{row.connectionsIn.length + row.connectionsOut.length} connected nodes</span>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>Last Activity</span>
+          <span className={styles.summaryValue}>{lastActivity}</span>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>Tags</span>
+          <div className={styles.tags}>
+            {tags.map(tag => (
+              <span key={tag} className={styles.tag}>{tag}</span>
+            ))}
+          </div>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>Attack Vector</span>
+          <button type="button" className={styles.inlineAction} onClick={onViewInGraph}>
+            View in Graph
+          </button>
+        </div>
+        <div className={styles.summaryItem}>
+          <span className={styles.summaryLabel}>Security Notes</span>
+          <span className={styles.summaryValue}>{securityNote}</span>
+        </div>
+      </div>
+
       <div className={styles.sections}>
-        {/* Properties */}
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}>Properties</h4>
           {properties.length === 0 ? (
@@ -37,7 +85,6 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
           )}
         </div>
 
-        {/* Connections In */}
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}>
             Connections In
@@ -49,10 +96,7 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
             <div className={styles.connList}>
               {row.connectionsIn.map((conn, i) => (
                 <div key={`${conn.nodeId}-${conn.relationType}-${i}`} className={styles.connItem}>
-                  <span
-                    className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
-                  />
+                  <span className={styles.connDot} style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }} />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{conn.nodeName}</span>
                   <span className={styles.connRel}>{conn.relationType}</span>
@@ -62,7 +106,6 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
           )}
         </div>
 
-        {/* Connections Out */}
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}>
             Connections Out
@@ -74,10 +117,7 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
             <div className={styles.connList}>
               {row.connectionsOut.map((conn, i) => (
                 <div key={`${conn.nodeId}-${conn.relationType}-${i}`} className={styles.connItem}>
-                  <span
-                    className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
-                  />
+                  <span className={styles.connDot} style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }} />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{conn.nodeName}</span>
                   <span className={styles.connRel}>{conn.relationType}</span>
@@ -87,46 +127,18 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
           )}
         </div>
 
-        {/* Level 2 */}
         <div className={styles.section}>
           <h4 className={styles.sectionTitle}>
-            Level 2 (2 hops)
-            <span className={styles.connCount}>{row.level2.length}</span>
+            Nearby Assets
+            <span className={styles.connCount}>{row.level2.length + row.level3.length}</span>
           </h4>
-          {row.level2.length === 0 ? (
-            <p className={styles.empty}>No 2nd-level connections</p>
+          {row.level2.length === 0 && row.level3.length === 0 ? (
+            <p className={styles.empty}>No nearby assets</p>
           ) : (
             <div className={styles.connList}>
-              {row.level2.map((conn, i) => (
-                <div key={`l2-${conn.nodeId}-${i}`} className={styles.connItem}>
-                  <span
-                    className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
-                  />
-                  <span className={styles.connType}>{conn.nodeType}</span>
-                  <span className={styles.connName}>{conn.nodeName}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Level 3 */}
-        <div className={styles.section}>
-          <h4 className={styles.sectionTitle}>
-            Level 3 (3 hops)
-            <span className={styles.connCount}>{row.level3.length}</span>
-          </h4>
-          {row.level3.length === 0 ? (
-            <p className={styles.empty}>No 3rd-level connections</p>
-          ) : (
-            <div className={styles.connList}>
-              {row.level3.map((conn, i) => (
-                <div key={`l3-${conn.nodeId}-${i}`} className={styles.connItem}>
-                  <span
-                    className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
-                  />
+              {[...row.level2, ...row.level3].map((conn, i) => (
+                <div key={`nearby-${conn.nodeId}-${i}`} className={styles.connItem}>
+                  <span className={styles.connDot} style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }} />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{conn.nodeName}</span>
                 </div>
