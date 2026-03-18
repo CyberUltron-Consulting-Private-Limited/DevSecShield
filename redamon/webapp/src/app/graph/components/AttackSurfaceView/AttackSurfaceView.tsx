@@ -28,41 +28,12 @@ interface AttackSurfaceViewProps {
   selectedNode: GraphNode | null
   isDark?: boolean
   sessionId?: string
-  // GraphToolbar / Assessment Workspace props
+  // GraphToolbar / Assessment Workspace props (Graph + Labels only)
   onToggle3D: (value: boolean) => void
   onToggleLabels: (value: boolean) => void
-  onToggleAI?: () => void
-  isAIOpen?: boolean
   targetDomain?: string
   subdomainList?: string[]
-  onStartRecon?: () => void
-  onDownloadJSON?: () => void
-  onToggleLogs?: () => void
-  reconStatus?: string
-  hasReconData?: boolean
-  isLogsOpen?: boolean
-  onStartGvm?: () => void
-  onDownloadGvmJSON?: () => void
-  onToggleGvmLogs?: () => void
-  gvmStatus?: string
-  hasGvmData?: boolean
-  isGvmLogsOpen?: boolean
-  onStartGithubHunt?: () => void
-  onDownloadGithubHuntJSON?: () => void
-  onToggleGithubHuntLogs?: () => void
-  githubHuntStatus?: string
-  hasGithubHuntData?: boolean
-  isGithubHuntLogsOpen?: boolean
   stealthMode?: boolean
-  agentActiveCount?: number
-  agentConversations?: Array<{
-    id: string
-    title: string
-    currentPhase: string
-    iterationCount: number
-    agentRunning: boolean
-    sessionId: string
-  }>
   // Filter props
   activeNodeTypes: Set<string>
   nodeTypeCounts: Record<string, number>
@@ -88,31 +59,9 @@ export function AttackSurfaceView({
   sessionId,
   onToggle3D,
   onToggleLabels,
-  onToggleAI,
-  isAIOpen,
   targetDomain,
   subdomainList = [],
-  onStartRecon,
-  onDownloadJSON,
-  onToggleLogs,
-  reconStatus = 'idle',
-  hasReconData = false,
-  isLogsOpen = false,
-  onStartGvm,
-  onDownloadGvmJSON,
-  onToggleGvmLogs,
-  gvmStatus = 'idle',
-  hasGvmData = false,
-  isGvmLogsOpen = false,
-  onStartGithubHunt,
-  onDownloadGithubHuntJSON,
-  onToggleGithubHuntLogs,
-  githubHuntStatus = 'idle',
-  hasGithubHuntData = false,
-  isGithubHuntLogsOpen = false,
   stealthMode = false,
-  agentActiveCount = 0,
-  agentConversations = [],
   activeNodeTypes,
   nodeTypeCounts,
   onToggleNodeType,
@@ -263,36 +212,13 @@ export function AttackSurfaceView({
         </div>
         <div className={styles.viewControls}>
           <GraphToolbar
-            projectId={projectId}
             is3D={is3D}
             showLabels={showLabels}
             onToggle3D={onToggle3D}
             onToggleLabels={onToggleLabels}
-            onToggleAI={onToggleAI}
-            isAIOpen={isAIOpen}
             targetDomain={targetDomain}
             subdomainList={subdomainList}
-            onStartRecon={onStartRecon}
-            onDownloadJSON={onDownloadJSON}
-            onToggleLogs={onToggleLogs}
-            reconStatus={reconStatus as any}
-            hasReconData={hasReconData}
-            isLogsOpen={isLogsOpen}
-            onStartGvm={onStartGvm}
-            onDownloadGvmJSON={onDownloadGvmJSON}
-            onToggleGvmLogs={onToggleGvmLogs}
-            gvmStatus={gvmStatus as any}
-            hasGvmData={hasGvmData}
-            isGvmLogsOpen={isGvmLogsOpen}
-            onStartGithubHunt={onStartGithubHunt}
-            onDownloadGithubHuntJSON={onDownloadGithubHuntJSON}
-            onToggleGithubHuntLogs={onToggleGithubHuntLogs}
-            githubHuntStatus={githubHuntStatus as any}
-            hasGithubHuntData={hasGithubHuntData}
-            isGithubHuntLogsOpen={isGithubHuntLogsOpen}
             stealthMode={stealthMode}
-            agentActiveCount={agentActiveCount}
-            agentConversations={agentConversations}
           />
         </div>
       </div>

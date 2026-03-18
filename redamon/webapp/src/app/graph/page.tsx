@@ -615,6 +615,7 @@ export default function GraphPage() {
           activeView={activeView}
           onViewChange={setActiveView}
           sessionCount={activeSessions.totalCount}
+          onOpenConsole={(type) => setActiveLogsDrawer(type)}
         />
 
         <div className={styles.mainContent}>
@@ -651,6 +652,18 @@ export default function GraphPage() {
               onOpenAssets={() => setActiveView('table')}
               onOpenAssessments={() => setActiveView('sessions')}
               onRefresh={() => { void refetchGraph() }}
+              onStartRecon={handleStartRecon}
+              onStartGvm={handleStartGvm}
+              onStartGithubHunt={handleStartGithubHunt}
+              onToggleReconLogs={handleToggleLogs}
+              onToggleGvmLogs={handleToggleGvmLogs}
+              onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
+              onDownloadRecon={handleDownloadJSON}
+              onDownloadGvm={handleDownloadGvmJSON}
+              onDownloadGithubHunt={handleDownloadGithubHuntJSON}
+              isReconLogsOpen={activeLogsDrawer === 'recon'}
+              isGvmLogsOpen={activeLogsDrawer === 'gvm'}
+              isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
             />
           ) : activeView === 'graph' ? (
             <AttackSurfaceView
@@ -665,31 +678,9 @@ export default function GraphPage() {
               sessionId={sessionId}
               onToggle3D={setIs3D}
               onToggleLabels={setShowLabels}
-              onToggleAI={handleToggleAI}
-              isAIOpen={isAIOpen}
               targetDomain={currentProject?.targetDomain}
               subdomainList={currentProject?.subdomainList}
-              onStartRecon={handleStartRecon}
-              onDownloadJSON={handleDownloadJSON}
-              onToggleLogs={handleToggleLogs}
-              reconStatus={reconState?.status || 'idle'}
-              hasReconData={hasReconData}
-              isLogsOpen={activeLogsDrawer === 'recon'}
-              onStartGvm={handleStartGvm}
-              onDownloadGvmJSON={handleDownloadGvmJSON}
-              onToggleGvmLogs={handleToggleGvmLogs}
-              gvmStatus={gvmState?.status || 'idle'}
-              hasGvmData={hasGvmData}
-              isGvmLogsOpen={activeLogsDrawer === 'gvm'}
-              onStartGithubHunt={handleStartGithubHunt}
-              onDownloadGithubHuntJSON={handleDownloadGithubHuntJSON}
-              onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
-              githubHuntStatus={githubHuntState?.status || 'idle'}
-              hasGithubHuntData={hasGithubHuntData}
-              isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
               stealthMode={currentProject?.stealthMode}
-              agentActiveCount={agentSummary.activeCount}
-              agentConversations={agentSummary.conversations}
               activeNodeTypes={activeNodeTypes}
               nodeTypeCounts={nodeTypeCounts}
               onToggleNodeType={handleToggleNodeType}

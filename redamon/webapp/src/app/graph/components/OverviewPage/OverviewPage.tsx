@@ -7,12 +7,16 @@ import {
   Bot,
   Bug,
   Crosshair,
+  Download,
   Github,
   Globe,
+  Loader2,
   Network,
+  Play,
   Radar,
   RefreshCw,
   ShieldAlert,
+  Terminal,
   TerminalSquare,
 } from 'lucide-react'
 import type { TableRow } from '../../hooks/useTableData'
@@ -47,6 +51,19 @@ interface OverviewPageProps {
   onOpenAssets: () => void
   onOpenAssessments: () => void
   onRefresh: () => void
+  // Scan controls (Recon, GVM, GitHub)
+  onStartRecon?: () => void
+  onStartGvm?: () => void
+  onStartGithubHunt?: () => void
+  onToggleReconLogs?: () => void
+  onToggleGvmLogs?: () => void
+  onToggleGithubHuntLogs?: () => void
+  onDownloadRecon?: () => void
+  onDownloadGvm?: () => void
+  onDownloadGithubHunt?: () => void
+  isReconLogsOpen?: boolean
+  isGvmLogsOpen?: boolean
+  isGithubHuntLogsOpen?: boolean
 }
 
 type RiskLevel = 'critical' | 'high' | 'medium' | 'low'
@@ -130,6 +147,18 @@ export function OverviewPage({
   onOpenGraph,
   onOpenAssets,
   onOpenAssessments,
+  onStartRecon,
+  onStartGvm,
+  onStartGithubHunt,
+  onToggleReconLogs,
+  onToggleGvmLogs,
+  onToggleGithubHuntLogs,
+  onDownloadRecon,
+  onDownloadGvm,
+  onDownloadGithubHunt,
+  isReconLogsOpen = false,
+  isGvmLogsOpen = false,
+  isGithubHuntLogsOpen = false,
   onRefresh,
 }: OverviewPageProps) {
   const assetRows = useMemo(
@@ -210,30 +239,55 @@ export function OverviewPage({
   const activeExposure = exposureSeries[hoveredExposureIndex ?? 0] || null
   const activeMix = mixSeries[hoveredMixIndex ?? 0] || null
 
+  const isReconRunning = reconStatus === 'running' || reconStatus === 'starting'
+  const isGvmRunning = gvmStatus === 'running' || gvmStatus === 'starting'
+  const isGithubHuntRunning = githubHuntStatus === 'running' || githubHuntStatus === 'starting'
+
   const operationCards = [
     {
       id: 'recon',
-      label: 'Recon Coverage',
+      label: 'Recon',
       value: nodeTypeCounts.Subdomain || nodeTypeCounts.Domain || 0,
       helper: `${formatStatus(reconStatus)}${hasReconData ? ' · data ready' : ''}`,
       icon: Radar,
       tone: getStatusTone(reconStatus, hasReconData),
+      running: isReconRunning,
+      status: reconStatus,
+      hasData: hasReconData,
+      onStart: onStartRecon,
+      onToggleLogs: onToggleReconLogs,
+      isLogsOpen: isReconLogsOpen,
+      onDownload: onDownloadRecon,
     },
     {
       id: 'gvm',
-      label: 'Validated Findings',
+      label: 'GVM',
       value: (nodeTypeCounts.Vulnerability || 0) + (nodeTypeCounts.CVE || 0),
       helper: `${formatStatus(gvmStatus)}${hasGvmData ? ' · results ready' : ''}`,
       icon: ShieldAlert,
       tone: getStatusTone(gvmStatus, hasGvmData),
+      running: isGvmRunning,
+      status: gvmStatus,
+      hasData: hasGvmData,
+      onStart: onStartGvm,
+      onToggleLogs: onToggleGvmLogs,
+      isLogsOpen: isGvmLogsOpen,
+      onDownload: onDownloadGvm,
     },
     {
       id: 'github',
-      label: 'GitHub Exposure',
+      label: 'GitHub',
       value: (nodeTypeCounts.GithubRepository || 0) + (nodeTypeCounts.GithubSecret || 0) + (nodeTypeCounts.GithubSensitiveFile || 0),
       helper: `${formatStatus(githubHuntStatus)}${hasGithubHuntData ? ' · results ready' : ''}`,
       icon: Github,
       tone: getStatusTone(githubHuntStatus, hasGithubHuntData),
+      running: isGithubHuntRunning,
+      status: githubHuntStatus,
+      hasData: hasGithubHuntData,
+      onStart: onStartGithubHunt,
+      onToggleLogs: onToggleGithubHuntLogs,
+      isLogsOpen: isGithubHuntLogsOpen,
+      onDownload: onDownloadGithubHunt,
     },
   ]
 
@@ -423,6 +477,43 @@ export function OverviewPage({
                     </div>
                     <div className={styles.operationValue}>{card.value}</div>
                     <div className={styles.operationHelper}>{card.helper}</div>
+                    <div className={styles.operationActions}>
+                      {card.onStart && (
+                        <button
+                          type="button"
+                          className={styles.operationBtn}
+                          onClick={card.onStart}
+                          disabled={card.running}
+                          title={card.running ? 'Scan in progress' : `Start ${card.label}`}
+                        >
+                          {card.running ? <Loader2 size={12} className={styles.spinner} /> : <Play size={12} />}
+                          <span>{card.running ? 'Running' : 'Start'}</span>
+                        </button>
+                      )}
+                      {card.onToggleLogs && (
+                        <button
+                          type="button"
+                          className={`${styles.operationBtn} ${card.isLogsOpen ? styles.operationBtnActive : ''}`}
+                          onClick={card.onToggleLogs}
+                          title={`View ${card.label} logs`}
+                        >
+                          <Terminal size={12} />
+                          <span>Logs</span>
+                        </button>
+                      )}
+                      {card.onDownload && (
+                        <button
+                          type="button"
+                          className={styles.operationBtn}
+                          onClick={card.onDownload}
+                          disabled={!card.hasData || card.running}
+                          title={card.hasData ? `Download ${card.label} output` : `No ${card.label} data yet`}
+                        >
+                          <Download size={12} />
+                          <span>Download</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })}

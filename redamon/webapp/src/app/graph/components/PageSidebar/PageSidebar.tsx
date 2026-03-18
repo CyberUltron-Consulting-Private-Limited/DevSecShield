@@ -1,10 +1,12 @@
 'use client'
 
-import { memo } from 'react'
-import { LayoutDashboard, Crosshair, Database, Terminal, Search, Download } from 'lucide-react'
+import { memo, useState, useRef, useEffect } from 'react'
+import { LayoutDashboard, Crosshair, Database, Terminal, Search, Download, TerminalSquare, ChevronDown } from 'lucide-react'
 import styles from './PageSidebar.module.css'
 
 export type PageView = 'overview' | 'graph' | 'table' | 'sessions'
+
+export type ConsoleType = 'recon' | 'gvm' | 'githubHunt'
 
 interface PageSidebarProps {
   activeView: PageView
@@ -17,6 +19,8 @@ interface PageSidebarProps {
   filteredRows?: number
   // Sessions badge
   sessionCount?: number
+  // Console - open scan logs anytime
+  onOpenConsole?: (type: ConsoleType) => void
 }
 
 const MENU_ITEMS: { id: PageView; label: string; icon: typeof LayoutDashboard }[] = [
@@ -24,6 +28,12 @@ const MENU_ITEMS: { id: PageView; label: string; icon: typeof LayoutDashboard }[
   { id: 'graph', label: 'Attack Surface', icon: Crosshair },
   { id: 'table', label: 'Assets', icon: Database },
   { id: 'sessions', label: 'Assessments', icon: Terminal },
+]
+
+const CONSOLE_OPTIONS: { id: ConsoleType; label: string }[] = [
+  { id: 'recon', label: 'Recon Logs' },
+  { id: 'gvm', label: 'GVM Logs' },
+  { id: 'githubHunt', label: 'GitHub Hunt Logs' },
 ]
 
 export const PageSidebar = memo(function PageSidebar({
@@ -35,7 +45,22 @@ export const PageSidebar = memo(function PageSidebar({
   totalRows,
   filteredRows,
   sessionCount,
+  onOpenConsole,
 }: PageSidebarProps) {
+  const [consoleOpen, setConsoleOpen] = useState(false)
+  const consoleRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!consoleOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (consoleRef.current && !consoleRef.current.contains(e.target as Node)) {
+        setConsoleOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [consoleOpen])
+
   return (
     <aside className={styles.sidebar}>
       <nav className={styles.nav} aria-label="Page navigation">
@@ -55,6 +80,39 @@ export const PageSidebar = memo(function PageSidebar({
           </button>
         ))}
       </nav>
+
+      {onOpenConsole && (
+        <div className={styles.consoleWrap} ref={consoleRef}>
+          <button
+            type="button"
+            className={styles.consoleBtn}
+            onClick={() => setConsoleOpen(prev => !prev)}
+            aria-expanded={consoleOpen}
+            aria-haspopup="true"
+          >
+            <TerminalSquare size={18} className={styles.navIcon} />
+            <span className={styles.navLabel}>Console</span>
+            <ChevronDown size={14} className={styles.consoleChevron} />
+          </button>
+          {consoleOpen && (
+            <div className={styles.consoleDropdown}>
+              {CONSOLE_OPTIONS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={styles.consoleOption}
+                  onClick={() => {
+                    onOpenConsole(id)
+                    setConsoleOpen(false)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {activeView === 'table' && onGlobalFilterChange && (
         <div className={styles.tableControls}>
