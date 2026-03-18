@@ -1,3 +1,20 @@
+.dropdownBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: transparent;
+}
+
+.dropdownContentPortal {
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(2, 6, 23, 0.4);
+}
+
+.dropdownContentPortal.workspaceCard {
+  padding: 0;
+}
+
 .toolbar {
   padding: var(--space-2) var(--space-3);
   background:

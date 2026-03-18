@@ -1,10 +1,15 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, forwardRef } from 'react'
 import { GraphData, GraphNode } from '../../types'
 import { GraphCanvas2D } from './GraphCanvas2D'
 import { GraphCanvas3D } from './GraphCanvas3D'
 import styles from './GraphCanvas.module.css'
+
+export interface GraphCanvasRef {
+  zoomToFit: (duration?: number, padding?: number) => void
+  reset?: () => void
+}
 
 interface GraphCanvasProps {
   data: GraphData | undefined
@@ -21,7 +26,7 @@ interface GraphCanvasProps {
   activeChainId?: string
 }
 
-export const GraphCanvas = memo(function GraphCanvas({
+export const GraphCanvas = memo(forwardRef<GraphCanvasRef, GraphCanvasProps>(function GraphCanvas({
   data,
   isLoading,
   error,
@@ -34,7 +39,7 @@ export const GraphCanvas = memo(function GraphCanvas({
   onNodeClick,
   isDark = true,
   activeChainId,
-}: GraphCanvasProps) {
+}, ref) {
   if (isLoading) {
     return <div className={styles.loading}>Loading graph data...</div>
   }
@@ -62,6 +67,7 @@ export const GraphCanvas = memo(function GraphCanvas({
     return (
       <div className={styles.wrapper}>
         <GraphCanvas3D
+          ref={ref}
           key={themeKey}
           data={data}
           width={width}
@@ -78,8 +84,9 @@ export const GraphCanvas = memo(function GraphCanvas({
 
   return (
     <div className={styles.wrapper}>
-      <GraphCanvas2D
-        key={themeKey}
+        <GraphCanvas2D
+          ref={ref}
+          key={themeKey}
         data={data}
         width={width}
         height={height}
@@ -91,4 +98,4 @@ export const GraphCanvas = memo(function GraphCanvas({
       />
     </div>
   )
-})
+}))

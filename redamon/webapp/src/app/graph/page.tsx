@@ -2,8 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { GraphToolbar } from './components/GraphToolbar'
-import { GraphCanvas } from './components/GraphCanvas'
+import { AttackSurfaceView } from './components/AttackSurfaceView'
 import { NodeDrawer } from './components/NodeDrawer'
 import { AIAssistantDrawer } from './components/AIAssistantDrawer'
 import { PageBottomBar } from './components/PageBottomBar'
@@ -14,7 +13,7 @@ import { PageSidebar, type PageView } from './components/PageSidebar'
 import { OverviewPage } from './components/OverviewPage'
 import { DataTable } from './components/DataTable'
 import { ActiveSessions } from './components/ActiveSessions'
-import { useGraphData, useDimensions, useNodeSelection, useTableData } from './hooks'
+import { useGraphData, useNodeSelection, useTableData } from './hooks'
 import { exportToExcel } from './utils/exportExcel'
 import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE, useActiveSessions } from '@/hooks'
 import { useProject } from '@/providers/ProjectProvider'
@@ -26,7 +25,7 @@ export default function GraphPage() {
   const { projectId, userId, currentProject, setCurrentProject, isLoading: projectLoading } = useProject()
 
   const [activeView, setActiveView] = useState<PageView>('overview')
-  const [is3D, setIs3D] = useState(true)
+  const [is3D, setIs3D] = useState(false)
   const [showLabels, setShowLabels] = useState(true)
   const [isAIOpen, setIsAIOpen] = useState(false)
   const [isReconModalOpen, setIsReconModalOpen] = useState(false)
@@ -39,9 +38,9 @@ export default function GraphPage() {
   const [isGvmModalOpen, setIsGvmModalOpen] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const graphRef = useRef<{ zoomToFit: (d?: number, p?: number) => void } | null>(null)
 
   const { selectedNode, drawerOpen, selectNode, clearSelection } = useNodeSelection()
-  const dimensions = useDimensions(contentRef)
 
   // Track .body position for fixed-position log drawers
   useEffect(() => {
@@ -307,18 +306,22 @@ export default function GraphPage() {
     })
   }, [filteredByTypeOnly, hiddenSessions, CHAIN_NODE_TYPES])
 
-  // Filtered graph data for GraphCanvas (filter nodes by type + hidden sessions, then prune links)
+  // Filtered graph data for GraphCanvas (filter nodes by type + hidden sessions + search, then prune links)
   const filteredGraphData = useMemo(() => {
     if (!data) return undefined
-    const allTypesActive = activeNodeTypes.size === nodeTypes.length
-    const noSessionsHidden = hiddenSessions.size === 0
-    if (allTypesActive && noSessionsHidden) return data // nothing filtered
+    const search = globalFilter?.toLowerCase().trim()
     const filteredNodes = data.nodes.filter(n => {
       if (!activeNodeTypes.has(n.type)) return false
       // Hide chain nodes belonging to hidden sessions
       if (hiddenSessions.size > 0 && CHAIN_NODE_TYPES.has(n.type)) {
         const chainId = n.properties?.chain_id as string | undefined
         if (chainId && hiddenSessions.has(chainId)) return false
+      }
+      // Search filter: match name or type
+      if (search) {
+        const nameMatch = n.name?.toLowerCase().includes(search)
+        const typeMatch = n.type?.toLowerCase().includes(search)
+        if (!nameMatch && !typeMatch) return false
       }
       return true
     })
@@ -329,7 +332,7 @@ export default function GraphPage() {
       return visibleIds.has(srcId) && visibleIds.has(tgtId)
     })
     return { ...data, nodes: filteredNodes, links: filteredLinks }
-  }, [data, activeNodeTypes, nodeTypes.length, hiddenSessions, CHAIN_NODE_TYPES])
+  }, [data, activeNodeTypes, nodeTypes.length, hiddenSessions, CHAIN_NODE_TYPES, globalFilter])
 
   const textFilteredCount = useMemo(() => {
     if (!globalFilter) return filteredByType.length
@@ -616,45 +619,6 @@ export default function GraphPage() {
 
   return (
     <div className={styles.page}>
-      <GraphToolbar
-        projectId={projectId || ''}
-        is3D={is3D}
-        showLabels={showLabels}
-        onToggle3D={setIs3D}
-        onToggleLabels={setShowLabels}
-        onToggleAI={handleToggleAI}
-        isAIOpen={isAIOpen}
-        // Target info
-        targetDomain={currentProject?.targetDomain}
-        subdomainList={currentProject?.subdomainList}
-        // Recon props
-        onStartRecon={handleStartRecon}
-        onDownloadJSON={handleDownloadJSON}
-        onToggleLogs={handleToggleLogs}
-        reconStatus={reconState?.status || 'idle'}
-        hasReconData={hasReconData}
-        isLogsOpen={activeLogsDrawer === 'recon'}
-        // GVM props
-        onStartGvm={handleStartGvm}
-        onDownloadGvmJSON={handleDownloadGvmJSON}
-        onToggleGvmLogs={handleToggleGvmLogs}
-        gvmStatus={gvmState?.status || 'idle'}
-        hasGvmData={hasGvmData}
-        isGvmLogsOpen={activeLogsDrawer === 'gvm'}
-        // GitHub Hunt props
-        onStartGithubHunt={handleStartGithubHunt}
-        onDownloadGithubHuntJSON={handleDownloadGithubHuntJSON}
-        onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
-        githubHuntStatus={githubHuntState?.status || 'idle'}
-        hasGithubHuntData={hasGithubHuntData}
-        isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
-        // Stealth mode
-        stealthMode={currentProject?.stealthMode}
-        // Agent status
-        agentActiveCount={agentSummary.activeCount}
-        agentConversations={agentSummary.conversations}
-      />
-
       <div ref={bodyRef} className={styles.body}>
         <PageSidebar
           activeView={activeView}
@@ -674,6 +638,8 @@ export default function GraphPage() {
             isOpen={drawerOpen}
             onClose={clearSelection}
             onDeleteNode={handleDeleteNode}
+            onInvestigate={handleToggleAI}
+            graphData={filteredGraphData}
           />
         )}
 
@@ -681,19 +647,52 @@ export default function GraphPage() {
           {activeView === 'overview' ? (
             <OverviewPage />
           ) : activeView === 'graph' ? (
-            <GraphCanvas
+            <AttackSurfaceView
               data={filteredGraphData}
               isLoading={isLoading}
               error={error}
               projectId={projectId || ''}
               is3D={is3D}
-              width={dimensions.width}
-              height={dimensions.height}
               showLabels={showLabels}
               selectedNode={selectedNode}
-              onNodeClick={selectNode}
               isDark={isDark}
-              activeChainId={sessionId}
+              sessionId={sessionId}
+              onToggle3D={setIs3D}
+              onToggleLabels={setShowLabels}
+              onToggleAI={handleToggleAI}
+              isAIOpen={isAIOpen}
+              targetDomain={currentProject?.targetDomain}
+              subdomainList={currentProject?.subdomainList}
+              onStartRecon={handleStartRecon}
+              onDownloadJSON={handleDownloadJSON}
+              onToggleLogs={handleToggleLogs}
+              reconStatus={reconState?.status || 'idle'}
+              hasReconData={hasReconData}
+              isLogsOpen={activeLogsDrawer === 'recon'}
+              onStartGvm={handleStartGvm}
+              onDownloadGvmJSON={handleDownloadGvmJSON}
+              onToggleGvmLogs={handleToggleGvmLogs}
+              gvmStatus={gvmState?.status || 'idle'}
+              hasGvmData={hasGvmData}
+              isGvmLogsOpen={activeLogsDrawer === 'gvm'}
+              onStartGithubHunt={handleStartGithubHunt}
+              onDownloadGithubHuntJSON={handleDownloadGithubHuntJSON}
+              onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
+              githubHuntStatus={githubHuntState?.status || 'idle'}
+              hasGithubHuntData={hasGithubHuntData}
+              isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
+              stealthMode={currentProject?.stealthMode}
+              agentActiveCount={agentSummary.activeCount}
+              agentConversations={agentSummary.conversations}
+              activeNodeTypes={activeNodeTypes}
+              nodeTypeCounts={nodeTypeCounts}
+              onToggleNodeType={handleToggleNodeType}
+              onSelectAllTypes={handleSelectAllTypes}
+              onClearAllTypes={handleClearAllTypes}
+              globalFilter={globalFilter}
+              onGlobalFilterChange={setGlobalFilter}
+              onNodeClick={selectNode}
+              graphRef={graphRef}
             />
           ) : activeView === 'table' ? (
             <DataTable
@@ -796,6 +795,7 @@ export default function GraphPage() {
         isLoading={isGvmLoading}
       />
 
+      {activeView === 'graph' && (
       <PageBottomBar
         data={data}
         is3D={is3D}
@@ -813,6 +813,7 @@ export default function GraphPage() {
         onShowAllSessions={handleShowAllSessions}
         onHideAllSessions={handleHideAllSessions}
       />
+      )}
     </div>
   )
 }

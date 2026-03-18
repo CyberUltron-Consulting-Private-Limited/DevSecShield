@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import dynamic from 'next/dynamic'
 import { GraphData, GraphNode, GraphLink } from '../../types'
 import { getNodeColor, getNodeSize, getGlowLevel } from '../../utils'
@@ -22,6 +22,10 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
 })
 
+export interface GraphCanvas2DRef {
+  zoomToFit: (duration?: number, padding?: number) => void
+}
+
 interface GraphCanvas2DProps {
   data: GraphData
   width: number
@@ -33,7 +37,7 @@ interface GraphCanvas2DProps {
   activeChainId?: string
 }
 
-export function GraphCanvas2D({
+export const GraphCanvas2D = forwardRef<GraphCanvas2DRef, GraphCanvas2DProps>(function GraphCanvas2D({
   data,
   width,
   height,
@@ -42,9 +46,15 @@ export function GraphCanvas2D({
   onNodeClick,
   isDark = true,
   activeChainId,
-}: GraphCanvas2DProps) {
+}, ref) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null)
+
+  useImperativeHandle(ref, () => ({
+    zoomToFit: (duration = 800, padding = 50) => {
+      graphRef.current?.zoomToFit?.(duration, padding)
+    },
+  }))
   const animationTimeRef = useRef<number>(0)
   const lastDataFingerprintRef = useRef<string>('')
 
@@ -131,7 +141,11 @@ export function GraphCanvas2D({
       onNodeClick={(node) => onNodeClick(node as GraphNode)}
       nodeCanvasObject={(node, ctx, globalScale) => {
         const graphNode = node as GraphNode & { x: number; y: number }
+        const x = Number(graphNode.x)
+        const y = Number(graphNode.y)
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return
         const nodeSize = BASE_SIZES.node2D * getNodeSize(graphNode)
+        if (!Number.isFinite(nodeSize) || nodeSize <= 0) return
         const color = getNodeColor(graphNode)
         const isSelected = selectedNodeId === graphNode.id
 
@@ -164,23 +178,23 @@ export function GraphCanvas2D({
             // Diamond selection ring
             const sd = nodeSize * 1.2 + 6
             ctx.beginPath()
-            ctx.moveTo(graphNode.x, graphNode.y - sd)
-            ctx.lineTo(graphNode.x + sd, graphNode.y)
-            ctx.lineTo(graphNode.x, graphNode.y + sd)
-            ctx.lineTo(graphNode.x - sd, graphNode.y)
+            ctx.moveTo(x, y - sd)
+            ctx.lineTo(x + sd, y)
+            ctx.lineTo(x, y + sd)
+            ctx.lineTo(x - sd, y)
             ctx.closePath()
             ctx.strokeStyle = SELECTION_COLORS.ring
             ctx.lineWidth = 3
             ctx.stroke()
           } else if (isChainNode) {
             // Hexagon selection ring
-            drawHexagon(graphNode.x, graphNode.y, nodeSize * 1.2 + 6)
+            drawHexagon(x, y, nodeSize * 1.2 + 6)
             ctx.strokeStyle = SELECTION_COLORS.ring
             ctx.lineWidth = 3
             ctx.stroke()
           } else {
             ctx.beginPath()
-            ctx.arc(graphNode.x, graphNode.y, nodeSize + 6, 0, 2 * Math.PI)
+            ctx.arc(x, y, nodeSize + 6, 0, 2 * Math.PI)
             ctx.strokeStyle = SELECTION_COLORS.ring
             ctx.lineWidth = 3
             ctx.stroke()
@@ -195,7 +209,7 @@ export function GraphCanvas2D({
           ctx.save()
           ctx.setLineDash([4, 4])
           ctx.lineDashOffset = -time * 20 // rotating dash
-          drawHexagon(graphNode.x, graphNode.y, ringRadius)
+          drawHexagon(x, y, ringRadius)
           ctx.strokeStyle = `rgba(250, 204, 21, ${0.7 + pulse * 0.3})` // yellow
           ctx.lineWidth = 2
           ctx.stroke()
@@ -214,13 +228,14 @@ export function GraphCanvas2D({
           const speed = glowLevel === 'critical' ? ANIMATION_CONFIG.criticalSpeed : ANIMATION_CONFIG.highSpeed
           const pulse = Math.sin(time * speed) * 0.5 + 0.5
           const glowRadius = nodeSize + ANIMATION_CONFIG.glow2DRadiusExtra.base + pulse * ANIMATION_CONFIG.glow2DRadiusExtra.pulse
+          if (!Number.isFinite(glowRadius)) return
 
           const gradient = ctx.createRadialGradient(
-            graphNode.x,
-            graphNode.y,
+            x,
+            y,
             nodeSize,
-            graphNode.x,
-            graphNode.y,
+            x,
+            y,
             glowRadius
           )
           gradient.addColorStop(0, glowColor)
@@ -228,7 +243,7 @@ export function GraphCanvas2D({
           gradient.addColorStop(1, `${glowColor}00`)
 
           ctx.beginPath()
-          ctx.arc(graphNode.x, graphNode.y, glowRadius, 0, 2 * Math.PI)
+          ctx.arc(x, y, glowRadius, 0, 2 * Math.PI)
           ctx.fillStyle = gradient
           ctx.fill()
         }
@@ -238,10 +253,10 @@ export function GraphCanvas2D({
           // Diamond shape for Exploit nodes (rotated square)
           const d = nodeSize * 1.2 // diamond half-diagonal
           ctx.beginPath()
-          ctx.moveTo(graphNode.x, graphNode.y - d)       // top
-          ctx.lineTo(graphNode.x + d, graphNode.y)       // right
-          ctx.lineTo(graphNode.x, graphNode.y + d)       // bottom
-          ctx.lineTo(graphNode.x - d, graphNode.y)       // left
+          ctx.moveTo(x, y - d)       // top
+          ctx.lineTo(x + d, y)       // right
+          ctx.lineTo(x, y + d)       // bottom
+          ctx.lineTo(x - d, y)       // left
           ctx.closePath()
           ctx.fillStyle = effectiveColor.replace(')', ', 0.12)').replace('rgb(', 'rgba(')
           ctx.fill()
@@ -255,11 +270,11 @@ export function GraphCanvas2D({
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
           ctx.fillStyle = effectiveColor
-          ctx.fillText('\u26A1', graphNode.x, graphNode.y)
+          ctx.fillText('\u26A1', x, y)
         } else if (isChainNode) {
           // Hexagon shape for attack chain nodes
           const r = nodeSize * 1.1
-          drawHexagon(graphNode.x, graphNode.y, r)
+          drawHexagon(x, y, r)
           ctx.fillStyle = effectiveColor.replace(')', ', 0.15)').replace('rgb(', 'rgba(')
           ctx.fill()
           ctx.strokeStyle = effectiveColor
@@ -268,7 +283,7 @@ export function GraphCanvas2D({
         } else {
           // Standard circle for all other nodes
           ctx.beginPath()
-          ctx.arc(graphNode.x, graphNode.y, nodeSize, 0, 2 * Math.PI)
+          ctx.arc(x, y, nodeSize, 0, 2 * Math.PI)
           ctx.fillStyle = color
           ctx.fill()
         }
@@ -281,16 +296,19 @@ export function GraphCanvas2D({
           ctx.textAlign = 'center'
           ctx.textBaseline = 'top'
           ctx.fillStyle = isDark ? BACKGROUND_COLORS.dark.label : BACKGROUND_COLORS.light.label
-          ctx.fillText(label, graphNode.x, graphNode.y + nodeSize + 2)
+          ctx.fillText(label, x, y + nodeSize + 2)
         }
       }}
       nodePointerAreaPaint={(node, color, ctx) => {
-        const graphNode = node as GraphNode & { x: number; y: number }
+        const n = node as GraphNode & { x: number; y: number }
+        const px = Number(n.x)
+        const py = Number(n.y)
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return
         ctx.beginPath()
-        ctx.arc(graphNode.x, graphNode.y, 10, 0, 2 * Math.PI)
+        ctx.arc(px, py, 10, 0, 2 * Math.PI)
         ctx.fillStyle = color
         ctx.fill()
       }}
     />
   )
-}
+})

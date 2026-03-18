@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Activity, ChevronDown, Download, Loader2, MessageSquare, Shield, Target, Terminal, Zap } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import { Toggle } from '@/components/ui'
@@ -100,6 +101,28 @@ export function GraphToolbar({
   }
 
   const [isOpen, setIsOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  useEffect(() => {
+    if (!isOpen || !triggerRef.current) {
+      setDropdownRect(null)
+      return
+    }
+    const updateRect = () => {
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect()
+        setDropdownRect({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 320) })
+      }
+    }
+    updateRect()
+    window.addEventListener('scroll', updateRect, true)
+    window.addEventListener('resize', updateRect)
+    return () => {
+      window.removeEventListener('scroll', updateRect, true)
+      window.removeEventListener('resize', updateRect)
+    }
+  }, [isOpen])
 
   const scanCards = [
     {
@@ -140,26 +163,24 @@ export function GraphToolbar({
     },
   ]
 
-  return (
-    <div className={styles.toolbar}>
-      <div className={styles.workspaceCard}>
-        <button
-          type="button"
-          className={`${styles.dropdownHeader} ${isOpen ? styles.dropdownHeaderOpen : ''}`}
-          onClick={() => setIsOpen(!isOpen)}
-        >
-          <Activity size={14} />
-          <span>Assessment Workspace</span>
-          {targetDomain && (
-            <span className={styles.headerTarget}>{targetDomain}</span>
-          )}
-          <span className={styles.headerMeta}>
-            {totalConversations} chat{totalConversations !== 1 ? 's' : ''}
-          </span>
-          <ChevronDown size={14} className={styles.dropdownChevron} />
-        </button>
-        {isOpen && (
-          <div className={styles.dropdownContent}>
+  const dropdownPortal = isOpen && dropdownRect && typeof document !== 'undefined' && createPortal(
+    <>
+      <div
+        className={styles.dropdownBackdrop}
+        onClick={() => setIsOpen(false)}
+        aria-hidden="true"
+      />
+      <div
+        className={`${styles.dropdownContentPortal} ${styles.workspaceCard}`}
+        style={{
+          position: 'fixed',
+          top: dropdownRect.top,
+          left: dropdownRect.left,
+          width: dropdownRect.width,
+          zIndex: 9999,
+        }}
+      >
+        <div className={styles.dropdownContent}>
             <div className={styles.workspaceMeta}>
               {targetDomain ? (
                 <span className={styles.targetDomain}>{targetDomain}</span>
@@ -263,9 +284,33 @@ export function GraphToolbar({
                 )
               })()}
             </div>
-          </div>
-        )}
+        </div>
       </div>
+    </>,
+    document.body
+  )
+
+  return (
+    <div className={styles.toolbar}>
+      <div className={styles.workspaceCard}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={`${styles.dropdownHeader} ${isOpen ? styles.dropdownHeaderOpen : ''}`}
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          <Activity size={14} />
+          <span>Assessment Workspace</span>
+          {targetDomain && (
+            <span className={styles.headerTarget}>{targetDomain}</span>
+          )}
+          <span className={styles.headerMeta}>
+            {totalConversations} chat{totalConversations !== 1 ? 's' : ''}
+          </span>
+          <ChevronDown size={14} className={styles.dropdownChevron} />
+        </button>
+      </div>
+      {dropdownPortal}
     </div>
   )
 }

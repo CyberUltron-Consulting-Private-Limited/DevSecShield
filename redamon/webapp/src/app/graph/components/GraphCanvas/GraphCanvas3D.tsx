@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import dynamic from 'next/dynamic'
 import { GraphData, GraphNode, GraphLink } from '../../types'
 import { getNodeColor, getNodeSize, getGlowLevel } from '../../utils'
@@ -21,6 +21,10 @@ const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
   ssr: false,
 })
 
+export interface GraphCanvas3DRef {
+  zoomToFit: (duration?: number, padding?: number) => void
+}
+
 interface GraphCanvas3DProps {
   data: GraphData
   width: number
@@ -32,7 +36,7 @@ interface GraphCanvas3DProps {
   activeChainId?: string
 }
 
-export function GraphCanvas3D({
+export const GraphCanvas3D = forwardRef<GraphCanvas3DRef, GraphCanvas3DProps>(function GraphCanvas3D({
   data,
   width,
   height,
@@ -41,9 +45,15 @@ export function GraphCanvas3D({
   onNodeClick,
   isDark = true,
   activeChainId,
-}: GraphCanvas3DProps) {
+}, ref) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graph3DRef = useRef<any>(null)
+
+  useImperativeHandle(ref, () => ({
+    zoomToFit: (duration = 800, padding = 50) => {
+      graph3DRef.current?.zoomToFit?.(duration, padding)
+    },
+  }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const glowRingsRef = useRef<any[]>([])
 
@@ -253,4 +263,4 @@ export function GraphCanvas3D({
       }}
     />
   )
-}
+})
