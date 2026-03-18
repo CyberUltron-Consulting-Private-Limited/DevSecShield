@@ -54,7 +54,7 @@ export function ReconLogsDrawer({
     switch (status) {
       case 'running':
       case 'starting':
-        return <div className={styles.runningIndicator} />
+        return <div className={styles.runningIndicator} aria-hidden />
       case 'completed':
         return <CheckCircle size={14} className={styles.successIcon} />
       case 'error':
