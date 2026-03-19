@@ -11,6 +11,47 @@
   border-right: 1px solid rgba(148, 163, 184, 0.12);
   padding: var(--space-2);
   gap: var(--space-2);
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+
+.sidebarCollapsed {
+  width: 72px;
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sidebarTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.collapseBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.collapseBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
 }
 
 .nav {
@@ -34,6 +75,11 @@
   text-align: left;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
+}
+
+.sidebarCollapsed .navItem {
+  justify-content: center;
+  padding: var(--space-2);
 }
 
 .navItem:hover {
@@ -174,6 +220,11 @@
   transition: background 0.15s, color 0.15s;
 }
 
+.sidebarCollapsed .consoleBtn {
+  justify-content: center;
+  padding: var(--space-2);
+}
+
 .consoleBtn:hover {
   background: rgba(45, 212, 191, 0.08);
   border-color: rgba(45, 212, 191, 0.25);
@@ -198,6 +249,14 @@
   padding: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 100;
+}
+
+.sidebarCollapsed .consoleDropdown {
+  left: calc(100% + 8px);
+  right: auto;
+  bottom: 0;
+  min-width: 180px;
+  margin-bottom: 0;
 }
 
 .consoleOption {

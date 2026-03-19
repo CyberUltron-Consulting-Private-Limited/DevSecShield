@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Crosshair, Database, Terminal, Search, Download, TerminalSquare, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, Crosshair, Database, Terminal, Search, Download, TerminalSquare, ChevronDown, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import styles from './PageSidebar.module.css'
 
 export type PageView = 'overview' | 'graph' | 'table' | 'sessions'
@@ -48,6 +48,7 @@ export const PageSidebar = memo(function PageSidebar({
   onOpenConsole,
 }: PageSidebarProps) {
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const consoleRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -62,7 +63,23 @@ export const PageSidebar = memo(function PageSidebar({
   }, [consoleOpen])
 
   return (
-    <aside className={styles.sidebar}>
+    <aside className={`${styles.sidebar} ${isCollapsed ? styles.sidebarCollapsed : ''}`}>
+      <div className={styles.sidebarHeader}>
+        {!isCollapsed && <span className={styles.sidebarTitle}>Navigation</span>}
+        <button
+          type="button"
+          className={styles.collapseBtn}
+          onClick={() => {
+            setIsCollapsed(prev => !prev)
+            setConsoleOpen(false)
+          }}
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
+      </div>
+
       <nav className={styles.nav} aria-label="Page navigation">
         {MENU_ITEMS.map(({ id, label, icon: Icon }) => (
           <button
@@ -71,10 +88,11 @@ export const PageSidebar = memo(function PageSidebar({
             aria-selected={activeView === id}
             className={`${styles.navItem} ${activeView === id ? styles.navItemActive : ''}`}
             onClick={() => onViewChange(id)}
+            title={isCollapsed ? label : undefined}
           >
             <Icon size={18} className={styles.navIcon} />
-            <span className={styles.navLabel}>{label}</span>
-            {id === 'sessions' && sessionCount != null && sessionCount > 0 && (
+            {!isCollapsed && <span className={styles.navLabel}>{label}</span>}
+            {id === 'sessions' && !isCollapsed && sessionCount != null && sessionCount > 0 && (
               <span className={styles.badge}>{sessionCount}</span>
             )}
           </button>
@@ -89,10 +107,11 @@ export const PageSidebar = memo(function PageSidebar({
             onClick={() => setConsoleOpen(prev => !prev)}
             aria-expanded={consoleOpen}
             aria-haspopup="true"
+            title={isCollapsed ? 'Console' : undefined}
           >
             <TerminalSquare size={18} className={styles.navIcon} />
-            <span className={styles.navLabel}>Console</span>
-            <ChevronDown size={14} className={styles.consoleChevron} />
+            {!isCollapsed && <span className={styles.navLabel}>Console</span>}
+            {!isCollapsed && <ChevronDown size={14} className={styles.consoleChevron} />}
           </button>
           {consoleOpen && (
             <div className={styles.consoleDropdown}>
@@ -114,7 +133,7 @@ export const PageSidebar = memo(function PageSidebar({
         </div>
       )}
 
-      {activeView === 'table' && onGlobalFilterChange && (
+      {!isCollapsed && activeView === 'table' && onGlobalFilterChange && (
         <div className={styles.tableControls}>
           <div className={styles.searchWrapper}>
             <Search size={12} className={styles.searchIcon} />
