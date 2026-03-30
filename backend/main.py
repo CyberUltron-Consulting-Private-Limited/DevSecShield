@@ -6,9 +6,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from backend.routers.auth import router as auth_router
 from backend.routers.scans import router as scans_router
-from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
-from backend.routers.guardrails_public import router as guardrails_public_router
 from backend.routers.admin import router as admin_router
 from backend.routers.team import router as team_router
 from fastapi.exceptions import RequestValidationError
@@ -38,8 +36,6 @@ BASE_MEDIA_PATH = "uploads\\"
 app.include_router(cicd_router)
 app.include_router(auth_router)
 app.include_router(scans_router)
-app.include_router(guardrails_router)
-app.include_router(guardrails_public_router)
 app.include_router(admin_router)
 app.include_router(team_router)
 

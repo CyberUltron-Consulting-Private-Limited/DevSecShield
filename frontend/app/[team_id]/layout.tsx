@@ -158,7 +158,6 @@ const toolsItems = [
 
 const workflowItems = [
   { name: "CI / CD", path: "ci_cd", icon: Link2 },
-  { name: "Guardrails", path: "guardrails", icon: Shield },
 ];
 
 const redTeamItems = [
