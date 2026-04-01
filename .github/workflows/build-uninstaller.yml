@@ -1,0 +1,410 @@
+name: Build & Test Advanced Uninstaller
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, development]
+    paths:
+      - "endpoint_agent/scripts/advanced_uninstaller.py"
+      - "endpoint_agent/scripts/build_uninstaller.sh"
+      - ".github/workflows/build-uninstaller.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: aiguardx-uninstaller-windows
+            exe_name: aiguardx-uninstaller.exe
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: aiguardx-uninstaller-linux
+            exe_name: aiguardx-uninstaller
+          - os: macos-14
+            platform: macos
+            artifact_name: aiguardx-uninstaller-macos
+            exe_name: aiguardx-uninstaller
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.platform }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Embed build commit in source
+        shell: bash
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          # Use -i'.bak' for macOS BSD sed compatibility (GNU sed ignores the suffix)
+          sed -i'.bak' "s/BUILD_COMMIT = \"dev\"/BUILD_COMMIT = \"${COMMIT_SHA}\"/" \
+            endpoint_agent/scripts/advanced_uninstaller.py
+          rm -f endpoint_agent/scripts/advanced_uninstaller.py.bak
+          echo "Embedded commit: ${COMMIT_SHA}"
+          grep BUILD_COMMIT endpoint_agent/scripts/advanced_uninstaller.py
+
+      - name: Build uninstaller (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          python -m PyInstaller --onefile --uac-admin --console --name aiguardx-uninstaller `
+            --distpath dist/uninstaller --workpath build/uninstaller `
+            --specpath build/uninstaller --clean --noconfirm `
+            endpoint_agent/scripts/advanced_uninstaller.py
+
+      - name: Build uninstaller (Linux/macOS)
+        if: matrix.platform != 'windows'
+        run: |
+          python -m PyInstaller --onefile --name aiguardx-uninstaller \
+            --distpath dist/uninstaller --workpath build/uninstaller \
+            --specpath build/uninstaller --clean --noconfirm \
+            endpoint_agent/scripts/advanced_uninstaller.py
+
+      - name: Verify binary exists
+        run: |
+          ls -la dist/uninstaller/
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/uninstaller/${{ matrix.exe_name }}
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: aiguardx-uninstaller-windows
+            exe_name: aiguardx-uninstaller.exe
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: aiguardx-uninstaller-linux
+            exe_name: aiguardx-uninstaller
+          - os: macos-14
+            platform: macos
+            artifact_name: aiguardx-uninstaller-macos
+            exe_name: aiguardx-uninstaller
+
+    runs-on: ${{ matrix.os }}
+    name: Test (${{ matrix.platform }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download uninstaller artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/uninstaller/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ---------------------------------------------------------------
+      # Simulate installation (create all agent artifacts + proxy state)
+      # ---------------------------------------------------------------
+      - name: Simulate agent installation (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $dirs = @(
+            "$env:USERPROFILE\.aiguardx\venv\Scripts",
+            "$env:USERPROFILE\.aiguardx\ca",
+            "$env:USERPROFILE\.aiguardx\universal_extractor",
+            "$env:USERPROFILE\.mitmproxy",
+            "$env:USERPROFILE\.aiguardx-agent"
+          )
+          foreach ($d in $dirs) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+
+          '{"listen_port": 8080, "api_key": "ci-test"}' | Out-File "$env:USERPROFILE\.aiguardx\config.json"
+          'proxy log' | Out-File "$env:USERPROFILE\.aiguardx\proxy.out.log"
+          'agent log' | Out-File "$env:USERPROFILE\.aiguardx\agent.log"
+          '{"event":"test"}' | Out-File "$env:USERPROFILE\.aiguardx\event_queue.jsonl"
+          'CA CERT' | Out-File "$env:USERPROFILE\.mitmproxy\mitmproxy-ca-cert.pem"
+          '{"state":"active"}' | Out-File "$env:USERPROFILE\.aiguardx-agent\state.json"
+
+          # Registry: Run key
+          New-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' `
+            -Name 'AIGuardX Agent' -Value 'test' -PropertyType String -Force | Out-Null
+          New-Item -Path 'HKCU:\SOFTWARE\AIGuardX' -Force | Out-Null
+
+          # Simulate proxy state: ProxyEnable, ProxyServer, AutoConfigURL (PAC)
+          $inetSettings = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+          Set-ItemProperty -Path $inetSettings -Name ProxyEnable -Value 1 -Type DWord -Force
+          Set-ItemProperty -Path $inetSettings -Name ProxyServer -Value '127.0.0.1:8080' -Type String -Force
+          Set-ItemProperty -Path $inetSettings -Name AutoConfigURL -Value 'http://127.0.0.1:8080/proxy.pac' -Type String -Force
+          Set-ItemProperty -Path $inetSettings -Name ProxyOverride -Value '<local>;*.aiguardx.local' -Type String -Force
+
+          Write-Host "Installation simulated (including proxy state)."
+          Write-Host "ProxyEnable: $(Get-ItemProperty $inetSettings -Name ProxyEnable | Select-Object -ExpandProperty ProxyEnable)"
+          Write-Host "AutoConfigURL: $(Get-ItemProperty $inetSettings -Name AutoConfigURL | Select-Object -ExpandProperty AutoConfigURL)"
+
+      - name: Simulate agent installation (Linux/macOS)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          mkdir -p ~/.aiguardx/venv/bin ~/.aiguardx/ca ~/.mitmproxy ~/.aiguardx-agent
+          echo '{"listen_port": 8080}' > ~/.aiguardx/config.json
+          echo 'proxy log' > ~/.aiguardx/proxy.out.log
+          echo 'agent log' > ~/.aiguardx/agent.log
+          echo '{"event":"test"}' > ~/.aiguardx/event_queue.jsonl
+          echo 'CA CERT' > ~/.mitmproxy/mitmproxy-ca-cert.pem
+          echo '{"state":"active"}' > ~/.aiguardx-agent/state.json
+          echo "Installation simulated."
+
+      # ---------------------------------------------------------------
+      # Run uninstaller (use built EXE on Windows to catch packaging bugs)
+      # ---------------------------------------------------------------
+      - name: Run uninstaller (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $exe = "dist/uninstaller/aiguardx-uninstaller.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Host "EXE not found; falling back to Python script for CI."
+            python endpoint_agent/scripts/advanced_uninstaller.py --silent
+          } else {
+            Write-Host "Running built uninstaller EXE..."
+            & (Resolve-Path $exe).Path --silent
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Run uninstaller (Linux/macOS)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          chmod +x dist/uninstaller/aiguardx-uninstaller
+          python3 endpoint_agent/scripts/advanced_uninstaller.py --silent
+
+      # ---------------------------------------------------------------
+      # Stringent verify — fail CI if ANY trace remains
+      # ---------------------------------------------------------------
+      - name: Stringent verification (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+
+          # Directory checks
+          $dirs = @(
+            "$env:USERPROFILE\.aiguardx",
+            "$env:USERPROFILE\.mitmproxy",
+            "$env:USERPROFILE\.aiguardx-agent",
+            "$env:ProgramFiles\AIGuardX-Agent",
+            "$env:ProgramFiles\AIGuardX",
+            "$env:ProgramFiles\AISecShield",
+            "$env:ProgramData\AIGuardX",
+            "$env:ProgramData\AISecShield"
+          )
+          foreach ($d in $dirs) {
+            if (Test-Path $d) {
+              Write-Host "FAIL: $d still exists"
+              $failed = $true
+            } else {
+              Write-Host "PASS: $d removed"
+            }
+          }
+
+          # Registry checks
+          $regKeys = @(
+            @{Path='HKCU:\SOFTWARE\AIGuardX'; Desc='HKCU\SOFTWARE\AIGuardX'},
+            @{Path='HKCU:\SOFTWARE\AISecShield'; Desc='HKCU\SOFTWARE\AISecShield'}
+          )
+          foreach ($rk in $regKeys) {
+            if (Test-Path $rk.Path) {
+              Write-Host "FAIL: $($rk.Desc) still exists"
+              $failed = $true
+            } else {
+              Write-Host "PASS: $($rk.Desc) removed"
+            }
+          }
+
+          # Run key check
+          try {
+            Get-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' `
+              -Name 'AIGuardX Agent' -ErrorAction Stop | Out-Null
+            Write-Host "FAIL: Run key AIGuardX Agent still exists"
+            $failed = $true
+          } catch {
+            Write-Host "PASS: Run key AIGuardX Agent removed"
+          }
+
+          # Certificate check
+          $certs = Get-ChildItem -Path Cert:\CurrentUser\Root -ErrorAction SilentlyContinue |
+            Where-Object { $_.Subject -match "AIGuardX" }
+          if ($certs) {
+            Write-Host "FAIL: AIGuardX certificates in user root store"
+            $failed = $true
+          } else {
+            Write-Host "PASS: No AIGuardX certificates in trust store"
+          }
+
+          # Proxy check: ProxyEnable
+          $inetSettings = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+          $proxy = Get-ItemProperty -Path $inetSettings
+          if ($proxy.ProxyEnable -eq 1) {
+            Write-Host "FAIL: Proxy still enabled"
+            $failed = $true
+          } else {
+            Write-Host "PASS: Proxy disabled"
+          }
+
+          # Proxy check: AutoConfigURL (PAC URL) must be removed
+          try {
+            $pacUrl = Get-ItemProperty -Path $inetSettings -Name AutoConfigURL -ErrorAction Stop
+            $pacVal = $pacUrl.AutoConfigURL
+            if ($pacVal -match '127\.0\.0\.1|proxy\.pac|aiguardx|localhost') {
+              Write-Host "FAIL: AutoConfigURL still set to AIGuardX PAC: $pacVal"
+              $failed = $true
+            } else {
+              Write-Host "PASS: AutoConfigURL is non-AIGuardX value: $pacVal"
+            }
+          } catch {
+            Write-Host "PASS: AutoConfigURL not set (clean)"
+          }
+
+          # Proxy check: ProxyServer must be removed
+          try {
+            $proxyServer = Get-ItemProperty -Path $inetSettings -Name ProxyServer -ErrorAction Stop
+            $psVal = $proxyServer.ProxyServer
+            if ($psVal -match '127\.0\.0\.1|aiguardx|localhost') {
+              Write-Host "FAIL: ProxyServer still set: $psVal"
+              $failed = $true
+            } else {
+              Write-Host "PASS: ProxyServer is non-AIGuardX value: $psVal"
+            }
+          } catch {
+            Write-Host "PASS: ProxyServer not set (clean)"
+          }
+
+          # Proxy check: ProxyOverride must be removed
+          try {
+            $proxyOverride = Get-ItemProperty -Path $inetSettings -Name ProxyOverride -ErrorAction Stop
+            $poVal = $proxyOverride.ProxyOverride
+            if ($poVal -match 'aiguardx') {
+              Write-Host "FAIL: ProxyOverride still contains AIGuardX: $poVal"
+              $failed = $true
+            } else {
+              Write-Host "PASS: ProxyOverride is clean: $poVal"
+            }
+          } catch {
+            Write-Host "PASS: ProxyOverride not set (clean)"
+          }
+
+          if ($failed) {
+            Write-Host ""
+            Write-Host "VERIFICATION FAILED: Leftover artifacts detected!"
+            exit 1
+          }
+          Write-Host ""
+          Write-Host "ALL CHECKS PASSED - System is clean."
+
+      - name: Stringent verification (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          FAILED=0
+          for d in ~/.aiguardx ~/.mitmproxy ~/.aiguardx-agent \
+                   /opt/aiguardx-agent /opt/aiguardx /opt/AIGuardX; do
+            if [ -d "$d" ]; then
+              echo "FAIL: $d still exists"
+              FAILED=1
+            else
+              echo "PASS: $d removed"
+            fi
+          done
+
+          if [ -f /usr/local/share/ca-certificates/aiguardx-mitmproxy-ca.crt ]; then
+            echo "FAIL: System CA still present"
+            FAILED=1
+          else
+            echo "PASS: System CA removed"
+          fi
+
+          if [ -f /usr/local/bin/aisecshield ]; then
+            echo "FAIL: /usr/local/bin/aisecshield still exists"
+            FAILED=1
+          else
+            echo "PASS: aisecshield binary removed"
+          fi
+
+          if [ $FAILED -ne 0 ]; then
+            echo "VERIFICATION FAILED"
+            exit 1
+          fi
+          echo "ALL CHECKS PASSED"
+
+      - name: Stringent verification (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          FAILED=0
+          for d in ~/.aiguardx ~/.mitmproxy ~/.aiguardx-agent \
+                   /opt/aiguardx-agent /opt/aiguardx /opt/AIGuardX; do
+            if [ -d "$d" ]; then
+              echo "FAIL: $d still exists"
+              FAILED=1
+            else
+              echo "PASS: $d removed"
+            fi
+          done
+
+          for plist in /Library/LaunchDaemons/ai.zeroshield.aiguardx.mitm.plist \
+                       /Library/LaunchDaemons/com.aiguardx.agent.plist \
+                       /Library/LaunchDaemons/com.zeroshield.aisecshield.plist; do
+            if [ -f "$plist" ]; then
+              echo "FAIL: $plist still exists"
+              FAILED=1
+            else
+              echo "PASS: $plist removed"
+            fi
+          done
+
+          if [ $FAILED -ne 0 ]; then
+            echo "VERIFICATION FAILED"
+            exit 1
+          fi
+          echo "ALL CHECKS PASSED"
+
+  release-assets:
+    if: github.event_name == 'release'
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    name: Attach to Release
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/aiguardx-uninstaller-windows/aiguardx-uninstaller.exe
+            artifacts/aiguardx-uninstaller-linux/aiguardx-uninstaller
+            artifacts/aiguardx-uninstaller-macos/aiguardx-uninstaller

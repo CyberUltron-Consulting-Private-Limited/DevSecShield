@@ -1,0 +1,26 @@
+name: Module 1 E2E
+
+on:
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch:
+
+jobs:
+  module1-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Make smoke script executable
+        run: chmod +x scripts/module1_e2e_smoke.sh
+
+      - name: Run Module 1 smoke checks
+        run: scripts/module1_e2e_smoke.sh
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs --tail=200

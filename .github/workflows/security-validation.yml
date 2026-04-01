@@ -1,0 +1,53 @@
+name: Security Validation Harness
+
+on:
+  pull_request:
+    branches: ["*"]
+  workflow_dispatch:
+
+jobs:
+  security-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Start stack
+        run: docker compose up -d --build
+
+      - name: Run security validation harness
+        env:
+          GATEWAY_URL: http://127.0.0.1:8300
+          BACKEND_URL: http://127.0.0.1:8100
+          GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+        run: bash scripts/run_security_validation.sh
+
+      - name: Upload security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-validation-reports
+          path: |
+            tests/security/reports/*.json
+            tests/security/reports/*.md
+            tests/security/reports/*.xml
+            tests/security/reports/*.jsonl
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs --tail=300
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v

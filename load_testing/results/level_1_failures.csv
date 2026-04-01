@@ -1,0 +1,6 @@
+Method,Name,Error,Occurrences
+POST,/login (attempt),HTTPError('429 Client Error: Too Many Requests for url: /login (attempt)'),3
+POST,/signup (attempt),HTTPError('400 Client Error: Bad Request for url: /signup (attempt)'),6
+POST,/signup (attempt),HTTPError('429 Client Error: Too Many Requests for url: /signup (attempt)'),2
+POST,/login (attempt),HTTPError('400 Client Error: Bad Request for url: /login (attempt)'),5
+POST,/login (invalid),CatchResponseError('Unexpected status: 400'),28
