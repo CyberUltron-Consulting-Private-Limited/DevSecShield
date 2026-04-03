@@ -1,6 +1,7 @@
 Method,Name,Error,Occurrences
-POST,/login (attempt),HTTPError('429 Client Error: Too Many Requests for url: /login (attempt)'),40
-POST,/signup (attempt),HTTPError('400 Client Error: Bad Request for url: /signup (attempt)'),3
-POST,/signup (attempt),HTTPError('429 Client Error: Too Many Requests for url: /signup (attempt)'),6
-POST,/send_code (setup),HTTPError('429 Client Error: Too Many Requests for url: /send_code (setup)'),31
-POST,/login (invalid),CatchResponseError('Unexpected status: 400'),29
+POST,/login (attempt),HTTPError('429 Client Error: Too Many Requests for url: /login (attempt)'),17
+POST,/signup (attempt),HTTPError('400 Client Error: Bad Request for url: /signup (attempt)'),18
+POST,/signup (attempt),HTTPError('429 Client Error: Too Many Requests for url: /signup (attempt)'),4
+POST,/login (attempt),HTTPError('400 Client Error: Bad Request for url: /login (attempt)'),23
+POST,/send_code (setup),HTTPError('429 Client Error: Too Many Requests for url: /send_code (setup)'),18
+POST,/login (invalid),CatchResponseError('Unexpected status: 400'),90

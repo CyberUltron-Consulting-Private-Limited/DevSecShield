@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from typing import Annotated
 from fastapi import Depends, HTTPException, status , Header
 from rich.console import Console
 from sqlmodel import Session, delete, select, update
+from starlette.concurrency import run_in_threadpool
 from backend.new_models import Team
 from backend.utilities.auth.auth_utils import (
     create_access_token,
@@ -12,7 +13,9 @@ from backend.utilities.auth.auth_utils import (
     verify_password,
     get_current_user_from_refresh_token,
     get_current_user_from_access_token,
-    get_user_from_header_or_raise_exception
+    get_user_from_header_or_raise_exception,
+    create_and_store_verification_code,
+    send_verification_email,
 )
 from backend.new_models import *
 from backend.utilities.auth.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
@@ -20,6 +23,7 @@ from fastapi_throttle import RateLimiter
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
 from rich.console import Console
+from starlette.concurrency import run_in_threadpool
 from backend.get_db import dev_environment
 console = Console()
 
@@ -77,9 +81,10 @@ async def create_user(data: UserSignup):
             session.add(new_team)
             session.commit()
             session.refresh(new_team)
+            hashed_password = await run_in_threadpool(get_hashed_password, data.password)
             new_user = User(
                 email=data.email, 
-                password=get_hashed_password(data.password),
+                password=hashed_password,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 session_active=True, # activating session for new user
@@ -143,7 +148,8 @@ async def login(form_data: UserLogin):
             )
 
         hashed_pass = user.password
-        if not verify_password(form_data.password, hashed_pass):
+        is_valid = await run_in_threadpool(verify_password, form_data.password, hashed_pass)
+        if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
@@ -234,21 +240,27 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
         raise HTTPException(status_code=403, detail="Could not get user details, please try again later")
 
 @router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(limiter)])
-async def send_verification_code(data: CodeSend):
+async def send_verification_code(data: CodeSend, background_tasks: BackgroundTasks):
     """
     Request Fields:
     - email: str
+    
+    This endpoint returns immediately after storing the code in DB.
+    Email sending happens in background, so response is <50ms.
     """
     try:
         engine = get_db(dev_environment=dev_environment)
         mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
 
-
-
-        await send_verification_code_and_save_to_db(data.email, engine)
+        # STEP 1: Fast DB insert - returns immediately
+        code = create_and_store_verification_code(data.email, engine)
+        
+        # STEP 2: Queue email sending to background task (runs after response sent)
+        background_tasks.add_task(send_verification_email, data.email, code)
+        
         return {
             "message": "Verification code sent to user"
-        }, 200
+        }
     except Exception as e:
         Console().print(f"error in send_verification_code: {e} 🔴", style="bold red")
         if isinstance(e,psycopg2.Error):
@@ -281,7 +293,8 @@ async def reset_password(data: ResetPassword):
 
         # STEP 2-------------updating password
         with Session(engine) as session:
-            session.exec(update(User).where(User.email == data.email).values(password=get_hashed_password(data.password)))
+            hashed_pwd = await run_in_threadpool(get_hashed_password, data.password)
+            session.exec(update(User).where(User.email == data.email).values(password=hashed_pwd))
             session.commit()
             user = session.exec(select(User).where(User.email == data.email)).first()
         return {

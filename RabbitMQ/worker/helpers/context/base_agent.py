@@ -7,6 +7,7 @@ from helpers.context.schema import BaseVulnerability
 from helpers.context.output_model import OutputModelManager
 from openai import OpenAI
 import base64
+import json
 from dotenv import load_dotenv
 import os
 from langchain_aws import ChatBedrock
@@ -37,6 +38,8 @@ class BaseAgent(OutputModelManager,BaseUtilities):
             parsed_output = []
             for item in output:
                 parsed_output.append(parse_vuln(item))
+            # Keep a stable order so repeated scans with same findings produce deterministic payload ordering.
+            parsed_output.sort(key=lambda row: json.dumps(row, sort_keys=True, ensure_ascii=True))
             return parsed_output
         except Exception as e:
             console.print(f"Error while parsing output: {e}",style="bold red")
@@ -131,7 +134,7 @@ class BaseAgent(OutputModelManager,BaseUtilities):
                             ],
                         }
                     ],
-                    timeout=self.llm_timeout,
+                        timeout=self.llm_timeout,
                     )
             
             else:
@@ -172,6 +175,7 @@ class BaseAgent(OutputModelManager,BaseUtilities):
                 aws_access_key_id=AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
                 max_tokens=max_output_tokens,
+                temperature=0,
             )
 
             result = model.invoke({"messages":[SystemMessage(system_prompt), HumanMessage(prompt)]})

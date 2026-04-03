@@ -7,8 +7,7 @@ COPY . .
 
 
 # installing  curl + git
-RUN apt-get -y update; apt-get -y install curl
-RUN apt-get update && apt-get install -y git
+RUN apt-get update && apt-get install -y build-essential pkg-config libssl-dev curl git
 
 
 # for sbom ( grype )
@@ -32,7 +31,10 @@ ENV SEMGREP_APP_TOKEN="896b59e81d3e4d0484f91a6b648804dd9f372389b32c42f2756e901b0
 #installing npm
 # RUN  apt install -y npm 
 
-
+# for scan worker related dependencies rust and cargo for grype sbom scanning
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustc --version && cargo --version
 
 
 # for gitleaks scanning 

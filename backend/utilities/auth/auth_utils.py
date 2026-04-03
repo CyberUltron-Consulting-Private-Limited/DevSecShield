@@ -259,6 +259,40 @@ def generate_verification_code():
     code = ''.join(random.choices('0123456789', k=6))
     return code
 
+def create_and_store_verification_code(recipient_email: str, engine: Engine) -> str:
+    """Fast DB-only insert. Returns 6-digit code."""
+    code = generate_verification_code()
+    with Session(engine) as session:
+        verification_code = VerificationCode(email=recipient_email, code=code)
+        session.add(verification_code)
+        session.commit()
+    return code
+
+def send_verification_email(recipient_email: str, code: str):
+    """Synchronous wrapper for background task. Sends email without blocking request."""
+    body = create_verification_email_html(code)
+    try:
+        # Using asyncio.run to wrap the async call in sync context
+        import asyncio
+        asyncio.run(send_outlook_email(
+            recipient_email=recipient_email,
+            subject="Verification code",
+            html_body=body))
+    except Exception as e:
+        print(f"Background email send failed for {recipient_email}: {e} 🔴")
+
+async def send_verification_email_async(recipient_email: str, code: str):
+    """Async email sender for truly non-blocking background execution."""
+    body = create_verification_email_html(code)
+    try:
+        await send_outlook_email(
+            recipient_email=recipient_email,
+            subject="Verification code",
+            html_body=body)
+        print(f"✓ Verification email sent to {recipient_email} in background")
+    except Exception as e:
+        print(f"Background email send failed for {recipient_email}: {e} 🔴")
+
 async def send_verification_code_and_save_to_db( recipient_email: str , engine: Engine):
     code = generate_verification_code()
     body = create_verification_email_html(code)

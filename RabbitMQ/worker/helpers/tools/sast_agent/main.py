@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 from langchain_core.documents import Document
 from helpers.context.codebase_context import CodebaseContext
 from helpers.context.open_source_context import OpenSourceContext
@@ -449,7 +450,15 @@ class SASTAgent(BaseAgent):
             for item in output:
                 logical_component_title = item["logical_component_title"]
                 vulnerabilities = item["vulnerabilities"]
-                parsed_output.append({"logical_component_title":logical_component_title,"vulnerabilities":super().to_dict_list(vulnerabilities)})
+                parsed_vulnerabilities = super().to_dict_list(vulnerabilities)
+                parsed_output.append({"logical_component_title":logical_component_title,"vulnerabilities":parsed_vulnerabilities})
+
+            parsed_output.sort(
+                key=lambda row: (
+                    row.get("logical_component_title", ""),
+                    json.dumps(row.get("vulnerabilities", []), sort_keys=True, ensure_ascii=True),
+                )
+            )
             return parsed_output
         except Exception as e:
             raise e

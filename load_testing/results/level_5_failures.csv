@@ -1,5 +1,24 @@
 Method,Name,Error,Occurrences
-POST,/login (attempt),HTTPError('429 Client Error: Too Many Requests for url: /login (attempt)'),800
-POST,/signup (attempt),HTTPError('429 Client Error: Too Many Requests for url: /signup (attempt)'),20
-POST,/send_code (setup),HTTPError('429 Client Error: Too Many Requests for url: /send_code (setup)'),780
-POST,/login (invalid),CatchResponseError('Unexpected status: 400'),24
+GET,/docs (health),CatchResponseError('Health check failed: 0'),2
+GET,/{team_id}/{type}/scans,CatchResponseError('list scans failed: 0'),3
+GET,/guardrails/{team_id}/integrations,CatchResponseError('guardrails list failed: 0'),4
+GET,/{team_id}/{type}/scan/{scan_id},CatchResponseError('scan detail failed: 0'),1
+POST,/login (attempt),HTTPError('429 Client Error: Too Many Requests for url: /login (attempt)'),799
+POST,/signup (attempt),HTTPError('400 Client Error: Bad Request for url: /signup (attempt)'),24
+GET,/teams/dashboard,CatchResponseError('all teams dashboard failed: 0'),1
+GET,/get_user,CatchResponseError('get_user unexpected: 0'),5
+POST,/{team_id}/{type}/scan (create),CatchResponseError('create scan failed: 0'),1
+POST,/signup (attempt),HTTPError('429 Client Error: Too Many Requests for url: /signup (attempt)'),26
+GET,/team/{team_id},CatchResponseError('team detail failed: 0'),5
+POST,/signup,CatchResponseError('Unexpected signup status: 0'),1
+POST,/login (attempt),HTTPError('400 Client Error: Bad Request for url: /login (attempt)'),1
+GET,/team/{team_id}/dashboard,CatchResponseError('dashboard failed: 0'),1
+GET,/openapi.json,CatchResponseError('OpenAPI failed: 0'),2
+POST,/send_code,CatchResponseError('send_code failed: 0 - '),1
+GET,/teams,CatchResponseError('teams list failed: 0'),3
+POST,/reset_password,CatchResponseError('Unexpected: 0'),1
+POST,/login,CatchResponseError('Unexpected login status: 0'),1
+POST,/send_code (setup),HTTPError('429 Client Error: Too Many Requests for url: /send_code (setup)'),750
+POST,/login (invalid),CatchResponseError('Unexpected status: 400'),116
+POST,/team (create),CatchResponseError('team create failed: 0'),1
+POST,/refresh,CatchResponseError('Unexpected refresh status: 0'),1

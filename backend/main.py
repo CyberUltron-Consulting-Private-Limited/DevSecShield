@@ -1,5 +1,6 @@
 
 import os
+import contextlib
 from rich.console import Console
 from fastapi import FastAPI
 from starlette.middleware import Middleware
@@ -16,10 +17,27 @@ from pydantic import ValidationError
 import json
 from starlette.responses import JSONResponse
 
+console = Console()
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager to tune threadpool concurrency on startup."""
+    # Startup: increase threadpool token limit for bcrypt and other sync I/O under load
+    try:
+        import anyio.to_thread
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        limiter.total_tokens = 100  # Increase from default ~40 to allow more concurrent sync ops
+        console.print(f"[bold green]✓ Threadpool tokens increased to {limiter.total_tokens}[/bold green]")
+    except Exception as e:
+        console.print(f"[bold yellow]⚠ Could not tune threadpool: {e}[/bold yellow]")
+    
+    yield
+    
+    # Shutdown: no cleanup needed
+    console.print("[bold yellow]Shutting down...[/bold yellow]")
 
 
-
-app = FastAPI(middleware=[
+app = FastAPI(lifespan=lifespan, middleware=[
     Middleware(
         CORSMiddleware,
         allow_origins=["*"],  # consider restricting to ["http://localhost:3000"] in dev
