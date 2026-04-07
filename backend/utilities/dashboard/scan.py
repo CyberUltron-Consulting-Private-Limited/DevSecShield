@@ -5,7 +5,6 @@ from fastapi import HTTPException
 from backend.get_db import get_db
 from collections import defaultdict
 from datetime import datetime, timezone
-from backend.get_db import dev_environment
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_average_resolution_time, get_issue_address_metrics, get_issue_status_metrics
@@ -106,7 +105,7 @@ def generate_scan_dashboard(
         # STEP [ 0 ] : =========== Get the Scan Object and get results ===========================
         scan = None 
         if scan_id:
-            engine = get_db(dev_environment=dev_environment)
+            engine = get_db()
             with Session(engine) as session:
                 scan = session.exec(select(Scan).where(Scan.id == scan_id)).first()
                 if not scan:

@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 from backend.new_models import GuardrailsIntegration
 from sqlmodel import select , Session
-from backend.get_db import dev_environment
 
 console = Console()
 
@@ -53,8 +52,8 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         guardrails_logs_collection = mongo_db["guardrails_logs"]
 
         # STEP [ 2 ] : ============================= Fetch all guardrail logs for integration ====================================

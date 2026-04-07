@@ -24,7 +24,6 @@ import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
 from rich.console import Console
 from starlette.concurrency import run_in_threadpool
-from backend.get_db import dev_environment
 console = Console()
 
 
@@ -47,8 +46,8 @@ async def create_user(data: UserSignup):
     """
     try:
 
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
@@ -119,8 +118,8 @@ async def login(form_data: UserLogin):
     """
 
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
 
         # STEP 1-------------verifying verification code
@@ -184,8 +183,8 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
     - refresh_token: str
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
 
         refresh_token = data.refresh_token
@@ -213,8 +212,8 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
 @router.get('/get_user', summary="Get user details", dependencies=[Depends(limiter)])
 async def get_user(Authorization: Annotated[str | None, Header()] = None):
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
         
         if Authorization is None:
             raise HTTPException(
@@ -249,8 +248,8 @@ async def send_verification_code(data: CodeSend, background_tasks: BackgroundTas
     Email sending happens in background, so response is <50ms.
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         # STEP 1: Fast DB insert - returns immediately
         code = create_and_store_verification_code(data.email, engine)
@@ -278,8 +277,8 @@ async def reset_password(data: ResetPassword):
     - password: str
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
@@ -314,8 +313,8 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
     - Authorization: str
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization, ignore_session_active=True)
         with Session(engine) as session:

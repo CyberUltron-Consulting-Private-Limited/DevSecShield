@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -58,6 +59,7 @@ def run_sast_scan_on_directory(
         with open(json_temp.name, "r", encoding="utf-8") as f:
             sast_json = json.load(f)
             
+            # Extract snippets using absolute paths (needed for file I/O)
             for i in range(len(sast_json["results"])):
                 result = sast_json["results"][i]
                 path = result["path"]
@@ -65,7 +67,35 @@ def run_sast_scan_on_directory(
                 end = result["end"]["line"]
                 snippet = snippet_with_numbers(Path(path), start, end)
                 sast_json["results"][i]["snippet"] = snippet
-            
+
+            # Normalize all paths to relative (strip temp directory) for determinism
+            dir_str = str(directory)
+            for i in range(len(sast_json["results"])):
+                sast_json["results"][i]["path"] = os.path.relpath(
+                    sast_json["results"][i]["path"], dir_str
+                )
+            if "paths" in sast_json:
+                if "scanned" in sast_json["paths"]:
+                    sast_json["paths"]["scanned"] = sorted(
+                        os.path.relpath(p, dir_str) for p in sast_json["paths"]["scanned"]
+                    )
+                if "skipped" in sast_json["paths"]:
+                    for entry in sast_json["paths"]["skipped"]:
+                        if isinstance(entry, dict) and "path" in entry:
+                            entry["path"] = os.path.relpath(entry["path"], dir_str)
+            # Normalize paths in errors
+            for err in sast_json.get("errors", []):
+                if isinstance(err, dict) and "message" in err:
+                    err["message"] = err["message"].replace(dir_str + "/", "").replace(dir_str, "")
+                if isinstance(err, dict) and "spans" in err:
+                    for span in err.get("spans", []):
+                        if isinstance(span, dict) and "file" in span:
+                            span["file"] = os.path.relpath(span["file"], dir_str)
+
+            # Sort results deterministically by (path, start_line, start_col)
+            sast_json["results"].sort(
+                key=lambda r: (r["path"], r["start"]["line"], r["start"].get("col", 0))
+            )
 
         json_temp.close()
         

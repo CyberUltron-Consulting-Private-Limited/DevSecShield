@@ -8,10 +8,9 @@ from sqlalchemy import or_
 console = Console()
 
 
-DEV_ENVIRONMENT = True
 def migrate_findings_to_mongo_db():
-    engine = get_db(dev_environment=DEV_ENVIRONMENT)
-    mongo_db = get_mongo_db(dev_environment=DEV_ENVIRONMENT)
+    engine = get_db()
+    mongo_db = get_mongo_db()
 
     # SAST scans 
     with Session(engine) as session:

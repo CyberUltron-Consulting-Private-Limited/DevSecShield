@@ -5,12 +5,11 @@ from backend.new_models import CicdIntegration
 from sqlmodel import Session, select
 from backend.get_db import get_db
 from rich.console import Console
-from backend.get_db import dev_environment
 console = Console()
 
 def get_user_integration_team_from_api_key(api_key: str) -> tuple[int, int, int]:
     try:
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         with Session(engine) as session:
             integration = session.exec(select(CicdIntegration).where(CicdIntegration.api_key == api_key)).first()
             if not integration:

@@ -1,15 +1,1 @@
 Method,Name,Error,Occurrences
-POST,/send_code (setup),"SSLEOFError(8, 'EOF occurred in violation of protocol (_ssl.c:1129)')",1
-POST,/send_code (setup),"ConnectionResetError(54, 'Connection reset by peer')",137
-POST,/login (attempt),"ConnectionResetError(54, 'Connection reset by peer')",25
-GET,/docs (health),CatchResponseError('Health check failed: 0'),21
-POST,/login (invalid),CatchResponseError('Unexpected status: 0'),2
-POST,/login (attempt),HTTPError('429 Client Error: Too Many Requests for url: /login (attempt)'),342
-POST,/signup (attempt),HTTPError('400 Client Error: Bad Request for url: /signup (attempt)'),19
-POST,/signup (attempt),HTTPError('429 Client Error: Too Many Requests for url: /signup (attempt)'),8
-POST,/login (attempt),HTTPError('400 Client Error: Bad Request for url: /login (attempt)'),33
-GET,/openapi.json,CatchResponseError('OpenAPI failed: 0'),7
-POST,/refresh (invalid),CatchResponseError('Unexpected: 0'),3
-POST,/send_code (setup),HTTPError('429 Client Error: Too Many Requests for url: /send_code (setup)'),235
-POST,/login (invalid),CatchResponseError('Unexpected status: 400'),100
-GET,/get_user (no auth),CatchResponseError('Expected 401/403 got: 0'),5

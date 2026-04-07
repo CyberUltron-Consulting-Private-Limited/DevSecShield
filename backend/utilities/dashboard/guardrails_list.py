@@ -7,13 +7,12 @@ from rich.console import Console
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from typing import Optional
-from backend.get_db import dev_environment
 console = Console()
 
 def create_dashboard_data_for_guardrails_list(team_id: int):
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         guardrails_logs_collection = mongo_db["guardrails_logs"]
 
         integration_ids = []

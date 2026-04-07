@@ -115,6 +115,8 @@ def testing_chain_aws_bedrock(documents:list[Document]):
         region=AWS_REGION or "ap-south-1",
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        temperature=0,
+        model_kwargs={"top_p": 1},
     )
 
 

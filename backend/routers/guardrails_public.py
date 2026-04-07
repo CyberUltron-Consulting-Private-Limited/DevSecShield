@@ -13,7 +13,6 @@ from sqlmodel import Session, select
 from rich.console import Console
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
-from backend.get_db import dev_environment
 
 class StartScanData(BaseModel):
     input_prompt: str
@@ -38,8 +37,8 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
     
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         # STEP [ 1 ] : ======================================== Get the integration from the main database ====================================
         user_id = user_and_integration["user_id"]
@@ -136,8 +135,8 @@ async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get
     5. return scan status and results . ( results will be None if scan status is anything but "success")
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         user_id = user_and_integration["user_id"]
         integration_id = user_and_integration["integration_id"]

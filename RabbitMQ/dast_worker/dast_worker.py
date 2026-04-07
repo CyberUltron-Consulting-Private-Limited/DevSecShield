@@ -12,52 +12,38 @@ from helpers.agent.context import StartDASTScanData
 
 console = Console()
 
-# os.environ["IS_DOCKER_CONTAINER"] = "True"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
-    is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
-    if is_docker_container and is_docker_container == "True":
-        console.print(f"Docker container detected",style="bold green")
+    is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
+    
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "13.203.233.15" if is_docker_container else "localhost")
+    RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "4672")
+    MONGO_HOST = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker_container else "localhost")
+    MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 
-        #broker url
-        username = os.getenv("RABBIT_ADMIN_USERNAME")
-        password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@13.203.233.15:4672"
+    env_label = "Docker" if is_docker_container else "Local"
+    console.print(f"{env_label} environment detected", style="bold green")
 
-        #mongo url
+    # broker url
+    username = os.getenv("RABBIT_ADMIN_USERNAME")
+    password = os.getenv("RABBIT_ADMIN_PASSWORD")
+    if not username or not password:
+        raise Exception("RABBIT_ADMIN_USERNAME or RABBIT_ADMIN_PASSWORD not set")
+    broker_url = f"amqp://{username}:{password}@{RABBITMQ_HOST}:{RABBITMQ_PORT}"
+
+    # mongo url
+    mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
+    if not mongo_url:
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
         mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
-        mongo_host = "13.203.233.15"
-        mongo_port = "27017"
-        mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        if mongo_username and mongo_password:
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
+        else:
+            mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
-        #check if credentials are set
-        if not username or not password  or not mongo_username or not mongo_password: 
-            raise Exception("Username, password or mongo username or password not set")
-        
-        console.print(f"Broker URL: {broker_url}",style="bold green")
-        console.print(f"Mongo URL: {mongo_url}",style="bold green")
-    else:
-        console.print(f"Local container detected",style="bold green")
-
-        #broker url
-        username = os.getenv("RABBIT_ADMIN_USERNAME")
-        password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@localhost:4672"
-
-        #mongo url
-        mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
-        if not username or not password or not mongo_url: 
-            raise Exception("Username, password or mongo url not set")
-        
-        #check if credentials are set
-        if not username or not password or not mongo_url: 
-            raise Exception("Username, password or mongo url not set")
-        
-        console.print(f"Broker URL: {broker_url}",style="bold green")
-        console.print(f"Mongo URL: {mongo_url}",style="bold green")
+    console.print(f"Broker URL: {broker_url}", style="bold green")
+    console.print(f"Mongo URL: {mongo_url}", style="bold green")
     
 except Exception as e :
     console.print(f"Error in getting credentials: {e}",style="dim red")

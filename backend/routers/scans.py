@@ -35,7 +35,6 @@ from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.new_models import scan_types
 from rich.console import Console
 from backend.utilities.dashboard.scan_list import generate_dashboard_data_for_scan_list
-from backend.get_db import dev_environment
 from datetime import datetime, timezone
 
 
@@ -57,7 +56,7 @@ async def list_scans(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -106,8 +105,8 @@ async def create_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -153,8 +152,8 @@ async def send_message_to_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -273,8 +272,8 @@ async def get_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -384,8 +383,8 @@ async def start_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -482,8 +481,8 @@ async def delete_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -553,7 +552,7 @@ async def update_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -620,7 +619,7 @@ async def export_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -679,7 +678,7 @@ async def reinitialize_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -741,7 +740,7 @@ async def estimate_credits_for_scan(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -807,7 +806,7 @@ async def create_ticket(
     """
     try:
          # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
 
 
@@ -879,9 +878,9 @@ async def toggle_finding_state(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        mongo_db = get_mongo_client_db(dev_environment)
+        mongo_db = get_mongo_client_db()
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_admin_of_team(user.id, team_id, engine)

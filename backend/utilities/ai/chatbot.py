@@ -5,14 +5,14 @@ import json
 from typing import Literal
 from bson import ObjectId
 from fastapi import HTTPException, status
-from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
-from langchain.messages import AnyMessage, HumanMessage , SystemMessage , AIMessage
+from langchain_core.messages import AnyMessage, HumanMessage , SystemMessage , AIMessage
 from pymongo.database import Database
 from rich.console import Console
 from dotenv import load_dotenv
 import os
 from backend.utilities.ai.llm import get_llm
+from backend.utilities.ai.agent_compat import create_agent
 
 from backend.mongo_models import ActiveContextLog, MessageLog
 

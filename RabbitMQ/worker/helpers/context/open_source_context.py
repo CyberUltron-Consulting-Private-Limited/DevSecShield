@@ -6,6 +6,7 @@ from helpers.context.base_context import BaseResult, BaseContextManager
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
 from langchain_text_splitters.json import RecursiveJsonSplitter
 import uuid
+import hashlib
 from datetime import datetime
 from helpers.context.base_summary_manager import BaseSummaryManager
 from dataclasses import dataclass
@@ -92,7 +93,10 @@ class OpenSourceContext(BaseContextManager):
             splitter = RecursiveCharacterTextSplitter(chunk_size=max_chunk_size)
             if not self.results:
                 raise ValueError(f"No results found")
-            split_json_documents = splitter.create_documents(texts=[str(self.results)])
+            # Strip non-deterministic fields so document content is identical across runs
+            _exclude_keys = ("time", "errors", "paths")
+            _det = {k: v for k, v in self.results.items() if k not in _exclude_keys} if isinstance(self.results, dict) else self.results
+            split_json_documents = splitter.create_documents(texts=[str(_det)])
             if not split_json_documents:
                 raise ValueError(f"No split json documents found")
             self.documents = split_json_documents # SET documents ⭐
@@ -111,7 +115,10 @@ class OpenSourceContext(BaseContextManager):
             splitter = RecursiveCharacterTextSplitter(chunk_size=max_chunk_size)
             if not self.results:
                 raise ValueError(f"No results found")
-            split_json_documents = splitter.create_documents(texts=[str(self.results)])
+            # Strip non-deterministic fields so document content is identical across runs
+            _exclude_keys = ("time", "errors", "paths")
+            _det = {k: v for k, v in self.results.items() if k not in _exclude_keys} if isinstance(self.results, dict) else self.results
+            split_json_documents = splitter.create_documents(texts=[str(_det)])
 
             # for testing 
             for json_document in split_json_documents:
@@ -122,14 +129,49 @@ class OpenSourceContext(BaseContextManager):
                 raise ValueError(f"No split json documents found")
 
             
-            # adding context_id to the documents metadata for filtering
-            generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+            # Generate deterministic context ID from content hash of results
+            # (uses the same filtered data as the documents above)
+            results_fingerprint = json.dumps(_det, sort_keys=True, ensure_ascii=True)
+            generated_id = hashlib.sha256(results_fingerprint.encode()).hexdigest()[:32]
             console.print(f"Adding {len(split_json_documents)} opensource context documents to vector store with context id : {generated_id}",style="bold green")
-            split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
-            
 
-            #adding documents to vector store
+            # Check if embeddings for this content hash already exist in Qdrant (reuse)
             vector_store = self.get_vector_store(collection_name=self.collection_name)
+            try:
+                from qdrant_client import models as _qmodels
+                _qdrant_client = vector_store.client
+                _existing, _ = _qdrant_client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=_qmodels.Filter(
+                        must=[_qmodels.FieldCondition(
+                            key="metadata.context_id",
+                            match=_qmodels.MatchValue(value=generated_id),
+                        )]
+                    ),
+                    limit=1,
+                )
+                if _existing:
+                    console.print(f"♻️ Embeddings already exist for context_id {generated_id}, reusing", style="bold green")
+                    # Retrieve all point IDs for cleanup tracking
+                    all_points, _ = _qdrant_client.scroll(
+                        collection_name=self.collection_name,
+                        scroll_filter=_qmodels.Filter(
+                            must=[_qmodels.FieldCondition(
+                                key="metadata.context_id",
+                                match=_qmodels.MatchValue(value=generated_id),
+                            )]
+                        ),
+                        limit=10000,
+                    )
+                    self.doc_ids = [str(p.id) for p in all_points]
+                    split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
+                    self.context_id = generated_id
+                    self.documents = split_json_documents
+                    return generated_id
+            except Exception as reuse_err:
+                console.print(f"⚠️ Embedding reuse check failed (will re-embed): {reuse_err}", style="dim yellow")
+
+            split_json_documents_with_context_id = self.add_context_id_to_documents(documents=split_json_documents, context_id=generated_id)
             adding_success = self.add_documents_to_vector_store(documents=split_json_documents_with_context_id, vector_store=vector_store) # SETS doc_ids ⭐
             if not adding_success:
                 raise ValueError(f"Failed to add documents to vector store")

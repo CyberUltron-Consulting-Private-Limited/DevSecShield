@@ -12,7 +12,7 @@ from datetime import timezone
 
 from backend.new_models import Scan
 from backend.utilities.celery.create_findings import create_findings_in_mongo_db
-from backend.get_db import get_mongo_client_db , dev_environment
+from backend.get_db import get_mongo_client_db
 console = Console()
 
 def get_celery_app():
@@ -20,38 +20,30 @@ def get_celery_app():
 
         load_dotenv()
 
-        is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
-
-        if is_docker_container and is_docker_container == "True":
-            console.print("Getting celery app in docker container",style="bold green")
-            # broker url
-            username = os.getenv("RABBIT_ADMIN_USERNAME")
-            password = os.getenv("RABBIT_ADMIN_PASSWORD")
-            if not username or not password:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
-            broker_url = f"amqp://{username}:{password}@13.203.233.15:4672"
-
-            # mongo 
-            mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
-            mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
-            if not mongo_username or not mongo_password:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Mongo username or password not set")
-            mongo_host = "13.203.233.15"
-            mongo_port = "27017"
-            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
         
-        
+        RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "13.203.233.15" if is_docker_container else "localhost")
+        RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "4672")
+        MONGO_HOST = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker_container else "localhost")
+        MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+
+        env_label = "Docker" if is_docker_container else "Local"
+        console.print(f"Getting celery app in {env_label} environment", style="bold green")
+
+        # broker url
+        username = os.getenv("RABBIT_ADMIN_USERNAME")
+        password = os.getenv("RABBIT_ADMIN_PASSWORD")
+        if not username or not password:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="RABBIT_ADMIN_USERNAME or RABBIT_ADMIN_PASSWORD not set")
+        broker_url = f"amqp://{username}:{password}@{RABBITMQ_HOST}:{RABBITMQ_PORT}"
+
+        # mongo
+        mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+        mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+        if mongo_username and mongo_password:
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
         else:
-            console.print("Getting celery app in local environment",style="bold green")
-            # broker url
-            username = os.getenv("RABBIT_ADMIN_USERNAME")
-            password = os.getenv("RABBIT_ADMIN_PASSWORD")
-            if not username or not password:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
-            broker_url = f"amqp://{username}:{password}@localhost:4672"
-
-            # mongo 
-            mongo_url = f"mongodb://localhost:27017/"
+            mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
         simple_app = Celery('task_sender',
                         broker=broker_url,
@@ -137,7 +129,7 @@ def get_status_and_update_db(
                 SCAN_DATA = results
                 scan.scan_data = SCAN_DATA
                 
-                mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+                mongo_db = get_mongo_client_db()
                 create_findings_in_mongo_db(scan_id=scan_id, scan_results=SCAN_DATA, scan_type=scan.scan_type, mongo_db=mongo_db)
                 scan.info = None # reset the info field
                 console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")

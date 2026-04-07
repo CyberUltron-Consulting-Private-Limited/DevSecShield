@@ -3,7 +3,6 @@ from fastapi import HTTPException, status
 from backend.new_models import Team, Scan
 from sqlmodel import Session, select 
 from backend.get_db import get_db
-from backend.get_db import dev_environment
 console = Console()
 
 def check_if_team_has_enough_credits(
@@ -23,7 +22,7 @@ def check_if_team_has_enough_credits(
         if team_object:
             return team_object.credit_balance >= credits_required
         
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         with Session(engine) as session:
             team = session.exec(select(Team).where(Team.id == team_id)).first()
             if not team:
@@ -57,7 +56,7 @@ def deduct_credits_from_team(
             team_object.credit_balance -= credits
             return team_object
 
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         
         with Session(engine) as session:
             team = session.exec(select(Team).where(Team.id == team_id)).first()
@@ -127,7 +126,7 @@ def check_if_team_has_enough_credits(
         if team_object:
             return team_object.credit_balance >= credits_required
 
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         with Session(engine) as session:
             team = session.exec(select(Team).where(Team.id == team_id)).first()
             if not team:
@@ -158,7 +157,7 @@ def update_scan_credit_consumed(
             scan_object.credit_consumed = credits_consumed
             return scan_object
         
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         with Session(engine) as session:
             scan = session.exec(select(Scan).where(Scan.id == scan_id)).first()
             if not scan:

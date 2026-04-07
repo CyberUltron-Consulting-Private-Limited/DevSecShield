@@ -194,26 +194,12 @@ class SASTAgent(BaseAgent):
             except Exception as e:
                 console.print(f"Error while deleting temp directory : {str(e)}", style = "dim red")
 
-            # Deleting codebase context
-            console.print(f"Deleting codebase context ...",style="bold yellow")
-            if self.codebase_context_id:
-                if self.codebase_context.delete_context():
-                    console.print(f"Codebase context deleted successfully",style="bold green")
-                else:
-                    console.print(f"Failed to delete codebase context",style="bold red")
-            else:
-                console.print(f"Codebase context id not found",style="bold red")
-
-
-            # Deleting open source context
-            console.print(f"Deleting open source context ...",style="bold yellow")
-            if self.opensource_context_id:
-                if self.open_source_context.delete_context():
-                    console.print(f"Open source context deleted successfully",style="bold green")
-                else:
-                    console.print(f"Failed to delete open source context",style="bold red")
-            else:
-                console.print(f"Open source context id not found",style="bold red")
+            # Keep embeddings in Qdrant for cross-scan reuse.
+            # When the same repo is scanned again, the deterministic context_id
+            # lets the next scan find and reuse these embeddings instead of
+            # re-embedding, ensuring identical RAG results and LLM cache hits.
+            console.print(f"Keeping codebase context embeddings for reuse (context_id: {self.codebase_context_id})", style="dim bright_cyan")
+            console.print(f"Keeping open source context embeddings for reuse (context_id: {self.opensource_context_id})", style="dim bright_cyan")
 
 
 
@@ -384,7 +370,9 @@ class SASTAgent(BaseAgent):
 
             
             console.print("---"*10 , style = "bold orange1 ")
-            for index, logical_component in enumerate(self.logical_components.logical_components[:10]):
+            # Sort logical components by title for deterministic ordering across runs
+            sorted_components = sorted(self.logical_components.logical_components, key=lambda c: c.title)
+            for index, logical_component in enumerate(sorted_components[:10]):
 
                 console.print(f"⏩ Analyzing Logical Component # {index + 1} : {logical_component.title} ... 🔃 " , style = "bold orange1 ")
                 

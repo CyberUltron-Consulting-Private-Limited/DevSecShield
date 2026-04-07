@@ -17,7 +17,6 @@ from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
 from backend.utilities.team.credits import deduct_credits_from_team
 from backend.utilities.team.validation import check_if_user_is_in_team
-from backend.get_db import dev_environment
 console = Console()
 
 router = APIRouter(prefix="/guardrails",tags=["Guardrails"])
@@ -35,8 +34,8 @@ async def list_guardrails_integrations(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         
         
@@ -91,8 +90,8 @@ async def create_guardrails_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get the database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         
         
@@ -142,8 +141,8 @@ async def get_guardrails_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
@@ -243,8 +242,8 @@ async def update_guardrails_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 
@@ -305,8 +304,8 @@ async def delete_guardrails_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
@@ -356,8 +355,8 @@ async def get_guardrails_integration_settings(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await  get_user_from_header_or_raise_exception(engine , Authorization)
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================

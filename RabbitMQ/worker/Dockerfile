@@ -42,8 +42,9 @@ RUN rustc --version && cargo --version
 ENV LINUX_GITLEAKS=True 
 
 
-# installing python 3.13.5 for garak 
-RUN uv python install 3.13.5
+# installing python 3.12.7 for garak 
+RUN uv python install 3.12.7
+ENV UV_PYTHON=3.12
 RUN uv sync
 
 ENV IS_DOCKER_CONTAINER="True"

@@ -30,7 +30,6 @@ from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
 from backend.utilities.cicd.sast_output import create_output_string_for_results
 from backend.utilities.team.credits import deduct_credits_from_team
-from backend.get_db import dev_environment
 
 console = Console()
 
@@ -61,8 +60,8 @@ async def run_cicd_scan(
     6. this route will poll the cicd_worker for the results and return them as a JSON response
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         cicd_log_collection = mongo_db["cicd_logs"]
 
         
@@ -190,8 +189,8 @@ async def list_cicd_integrations(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
@@ -243,8 +242,8 @@ async def create_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         if data.title is None or data.scan_type is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title and scan type are required")
@@ -289,8 +288,8 @@ async def delete_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 
@@ -337,8 +336,8 @@ async def update_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 
@@ -417,8 +416,8 @@ async def get_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 

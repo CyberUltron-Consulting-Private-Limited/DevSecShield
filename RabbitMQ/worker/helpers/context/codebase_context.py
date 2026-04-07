@@ -2,6 +2,7 @@ import json
 import os
 from typing import Iterable, Literal
 import uuid
+import hashlib
 from datetime import datetime
 from bson.regex import Regex
 from langchain_community.document_loaders.generic import GenericLoader
@@ -237,6 +238,9 @@ class CodebaseContext(BaseContextManager):
             for document in iterator:
                 documents.append(document)
 
+            # Sort documents by source path for deterministic batch composition across runs
+            documents.sort(key=lambda doc: doc.metadata.get("source", ""))
+
             console.print(f"{len(documents)} Language: {lang_ext} Documents loaded successfully",style="dim green")
             included_set = set(self.metadata["included_documents"])
             excluded_set = set(self.metadata["excluded_documents"])
@@ -393,8 +397,55 @@ class CodebaseContext(BaseContextManager):
             if not split_documents:
                 raise ValueError(f"No split documents found")
 
-            # Adding agent_job_id to the documents metadata for filtering
-            generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+            # Normalize document source paths to relative (strip temp directory) for determinism
+            dir_str = str(self.directory)
+            for doc in split_documents:
+                src = doc.metadata.get("source", "")
+                if src:
+                    doc.metadata["source"] = os.path.relpath(src, dir_str)
+
+            # Generate deterministic context ID from content hash of relative source file paths
+            sorted_sources = sorted(set(
+                doc.metadata.get("source", "") for doc in split_documents
+            ))
+            content_fingerprint = "\n".join(sorted_sources)
+            generated_id = hashlib.sha256(content_fingerprint.encode()).hexdigest()[:32]
+
+            # Check if embeddings for this content hash already exist in Qdrant (reuse)
+            try:
+                from qdrant_client import models as _qmodels
+                _qdrant_client = vectorstore.client
+                _existing, _ = _qdrant_client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=_qmodels.Filter(
+                        must=[_qmodels.FieldCondition(
+                            key="metadata.context_id",
+                            match=_qmodels.MatchValue(value=generated_id),
+                        )]
+                    ),
+                    limit=1,
+                )
+                if _existing:
+                    console.print(f"♻️ Embeddings already exist for context_id {generated_id}, reusing", style="bold green")
+                    # Retrieve all point IDs for cleanup tracking
+                    all_points, _ = _qdrant_client.scroll(
+                        collection_name=self.collection_name,
+                        scroll_filter=_qmodels.Filter(
+                            must=[_qmodels.FieldCondition(
+                                key="metadata.context_id",
+                                match=_qmodels.MatchValue(value=generated_id),
+                            )]
+                        ),
+                        limit=10000,
+                    )
+                    self.doc_ids = [str(p.id) for p in all_points]
+                    split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
+                    self.context_id = generated_id
+                    self.documents = split_documents_with_context_id
+                    return generated_id
+            except Exception as reuse_err:
+                console.print(f"⚠️ Embedding reuse check failed (will re-embed): {reuse_err}", style="dim yellow")
+
             split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
 
             console.print(f"Adding {len(split_documents_with_context_id)} codebase documents to vector store with context id : {generated_id}",style="bold green")

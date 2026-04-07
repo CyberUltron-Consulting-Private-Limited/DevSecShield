@@ -5,15 +5,14 @@ from rich.console import Console
 from helpers.context.base_utilities import BaseUtilities
 from helpers.context.schema import BaseVulnerability
 from helpers.context.output_model import OutputModelManager
-from openai import OpenAI
 import base64
 import json
+import time
 from dotenv import load_dotenv
 import os
 from langchain_aws import ChatBedrock
 from langchain_core.messages import HumanMessage , SystemMessage
 from qdrant_client import models
-from langsmith.wrappers import wrap_openai
 from helpers.parsers.base_vuln import parse_vuln
 
 console = Console()
@@ -85,8 +84,11 @@ class BaseAgent(OutputModelManager,BaseUtilities):
             docs = vector_store.similarity_search(
                 query=query, 
                 k=k, 
-                filter=filter
+                filter=filter,
+                search_params=models.SearchParams(exact=True),
                 )
+            # Sort results by source metadata for deterministic ordering across runs
+            docs.sort(key=lambda d: d.metadata.get("source", ""))
             console.print(f"🔍 RAG Results length: {len(docs)}",style="bold yellow")
             
             return docs
@@ -101,54 +103,49 @@ class BaseAgent(OutputModelManager,BaseUtilities):
         system_prompt: str,
         output_model: type[BaseModel],
         image: bytes = None,
-        llm_model: str = "gpt-5-nano",
+        llm_model: str = "openai.gpt-oss-120b-1:0",
+        max_retries: int = 3,
     ) -> type[BaseModel] | str:
         try:
-            
             load_dotenv()
-            client = OpenAI()
+            llm = self.get_llm(model=llm_model, temperature=0.0, output_model=output_model)
 
-            # remove from production 
-            if self.tracing:
-                client = wrap_openai(client)
-            
-
-            console.print("Generating Structured response .... ",style="bold bright_yellow")
+            console.print("Generating Structured response .... ", style="bold bright_yellow")
 
             if image:
-                console.print("Image input Detected",style="bright_cyan")
-                image_data = base64.b64encode(image).decode("ascii") #output is 'str'
-                response = client.responses.parse(
-                    model=llm_model,
-                    text_format=output_model,
-                    instructions= system_prompt,
-                    input=[
-                        {
-                            "role": "user",
-                            "content": [
-                                { "type": "input_text", "text": prompt },
-                                {
-                                    "type": "input_image",
-                                    "image_url": f"data:image/jpeg;base64,{image_data}",
-                                },
-                            ],
-                        }
-                    ],
-                        timeout=self.llm_timeout,
-                    )
-            
-            else:
-                console.print("Pure Text input Detected",style="bright_cyan")
-                response = client.responses.parse(
-                    model=llm_model,
-                    text_format=output_model,
-                    instructions=system_prompt,
-                    input=prompt,
-                    timeout=self.llm_timeout,
+                console.print("Image input Detected", style="bright_cyan")
+                image_data = base64.b64encode(image).decode("ascii")
+                user_prompt = (
+                    f"{prompt}\n\n"
+                    "Use the following base64 image payload as supporting evidence while answering:\n"
+                    f"{image_data}"
                 )
-            
-            model_response = response.output_parsed
-            return model_response
+            else:
+                console.print("Pure Text input Detected", style="bright_cyan")
+                user_prompt = prompt
+
+            messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            last_error = None
+            for attempt in range(1, max_retries + 1):
+                try:
+                    console.print(f"Using Bedrock Invoke API to generate response", style="dim cyan")
+                    response = llm.invoke(messages)
+                    return response
+                except Exception as invoke_err:
+                    last_error = invoke_err
+                    err_str = str(invoke_err)
+                    # Retry on transient Bedrock errors (Unknown role, throttling, 5xx)
+                    is_transient = any(s in err_str for s in [
+                        "Unknown role", "ThrottlingException", "ServiceUnavailableException",
+                        "ModelTimeoutException", "InternalServerException", "Too many requests",
+                    ])
+                    if is_transient and attempt < max_retries:
+                        wait_secs = 2 ** attempt
+                        console.print(f"⚠️ Transient Bedrock error (attempt {attempt}/{max_retries}), retrying in {wait_secs}s: {err_str[:120]}", style="bold yellow")
+                        time.sleep(wait_secs)
+                    else:
+                        raise
+            raise last_error  # should not reach here
         except Exception as e:
             console.print(f"Error: {e}",style="bold red")
             raise e
@@ -170,17 +167,17 @@ class BaseAgent(OutputModelManager,BaseUtilities):
                 pass
 
             model = ChatBedrock(
-                model="openai.gpt-oss-20b-1:0",
+                model="openai.gpt-oss-120b-1:0",
                 region=AWS_REGION or "ap-south-1",
                 aws_access_key_id=AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
                 max_tokens=max_output_tokens,
                 temperature=0,
+                model_kwargs={"top_p": 1, "top_k": 1},
             )
 
-            result = model.invoke({"messages":[SystemMessage(system_prompt), HumanMessage(prompt)]})
-            response = result["messages"][-1]
-            response_string = response.content
+            result = model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
+            response_string = result.content if hasattr(result, "content") else str(result)
 
             start = response_string.find("<reasoning>")
             end = response_string.find("</reasoning>")

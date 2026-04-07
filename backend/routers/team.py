@@ -11,7 +11,6 @@ from backend.new_models import Team, TeamMembership , User , Scan , CicdIntegrat
 from backend.utilities.team.membership import add_emails_to_team , remove_emails_from_team
 from sqlalchemy import or_
 from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
-from backend.get_db import dev_environment
 
 router = APIRouter( tags=["team"] )   
 console = Console()
@@ -30,7 +29,7 @@ async def get_team(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -85,7 +84,7 @@ async def list_teams(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -133,7 +132,7 @@ async def create_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -180,7 +179,7 @@ async def update_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -222,7 +221,7 @@ async def remove_or_add_members_to_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -258,8 +257,8 @@ async def delete_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         if user.default_team_id == team_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete default team")
@@ -369,7 +368,7 @@ async def get_team_dashboard(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
 
         # STEP [ 2 ] : =========== check if user is in team ======================
@@ -397,7 +396,7 @@ async def get_teams_dashboard(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
 
         # STEP [ 2 ] : =========== get the dashboard data for all teams that the current user is a member of ======================

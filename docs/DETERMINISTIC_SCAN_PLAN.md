@@ -817,4 +817,419 @@ class ScanResultCache:
 
 ---
 
+
+Created 6 todos
+
+Now let me launch parallel exploration: codebase scan pipeline, internet research, and GitHub open-source search — all at once. 
+
+Deep codebase scan pipeline exploration
+
+Searched for files matching `**/RabbitMQ/worker/**/*.py`, 78 matches
+
+Searched for files matching `**/RabbitMQ/dast_worker/**/*.py`, 43 matches
+
+Searched for files matching `**/RabbitMQ/guardrail_worker/**/*.py`, 7 matches
+
+Searched for files matching `**/backend/routers/scans.py`, 1 match
+
+Searched for files matching `**/backend/utilities/**/*.py`, 50 matches
+
+Searched for regex `temperature|model_name|ChatOpenAI|Claude|get_llm|invoke|arun`, 200 results
+
+Searched for regex `uuid\.uuid4|random\.|randint|Random|shuffle|set\(|dict.*items|time\.sleep`, 200 results
+
+Searched for regex `vector_store|similarity_search|semantic|qdrant|chromadb|query`, 150 results
+
+Searched for regex `map_reduce|batch|for.*in.*items\(\)|list\(dict|order|sort`, 150 results
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_agent.py)
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_utilities.py#1-1), lines 1 to 150
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_context.py#1-1), lines 1 to 200
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/codebase_context.py#390-390), lines 390 to 450
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/tools/sast_agent/main.py#1-1), lines 1 to 200
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/tools/sast_agent/main.py#300-300), lines 300 to 300
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/open_source_context.py#100-100), lines 100 to 185
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/scan_worker.py#1-1), lines 1 to 100
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/codebase_context.py#1-1), lines 1 to 150
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_summary_manager.py)
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/schema.py)
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/dast_worker/dast_worker.py)
+
+Created memory file [](file:///Users/anshsinghal/Library/Application%20Support/Code/User/workspaceStorage/b9d13f7650824c77697ac63e3f90af57/GitHub.copilot-chat/memory-tool/memories/MjA2NTY2ODYtODYxMy00YTk1LWEyOGEtYTUzODU4MWNjYTY1/non_determinism_mapping.md)
+
+Read [](file:///Users/anshsinghal/Library/Application%20Support/Code/User/workspaceStorage/b9d13f7650824c77697ac63e3f90af57/GitHub.copilot-chat/chat-session-resources/20656686-8613-4a95-a28a-a538581cca65/toolu_vrtx_01NGP7SYgb9XQuyhbFCFqJL3__vscode-1775101016881/content.txt)
+
+Starting: *Search internet for deterministic LLM solutions* (2/6)
+
+Now let me load the internet search + GitHub MCP tools:Good, tools are loaded. Now let me fire off parallel research — internet search + GitHub repo search + GitHub code search + Context7 docs: 
+
+
+
+Fetched 2 resources
+
+
+
+Fetched 2 resources
+
+Now let me fire all the parallel research queries:     
+
+Ran Search repositories 
+Completed with input: {
+  "query": "deterministic LLM security scanner pipeline cache vulnerability analysis reproducible stars:>50",
+  "sort": "stars",
+  "order": "desc",
+  "perPage": 15
+}
+
+Ran Search repositories 
+Completed with input: {
+  "query": "LLM scan caching pipeline deterministic results security SAST vulnerability language:python stars:>20",
+  "sort": "stars",
+  "order": "desc",
+  "perPage": 15
+}
+
+Ran Search code 
+Completed with input: {
+  "query": "temperature seed deterministic \"responses.parse\" language:python",
+  "perPage": 10
+}
+
+Ran Search code 
+Completed with input: {
+  "query": "scan_result_cache input_hash deterministic vulnerability scan language:python",
+  "perPage": 10
+}
+
+Ran Search repositories 
+Completed with input: {
+  "query": "semantic cache LLM response hash deterministic output python stars:>100",
+  "sort": "stars",
+  "order": "desc",
+  "perPage": 15
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 15,
+  "query": "GPTCache semantic cache LLM response stars:>100",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 15,
+  "query": "LLM cache deterministic response python hash stars:>50",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 15,
+  "query": "AI security scanner SAST vulnerability LLM analysis python celery stars:>30",
+  "sort": "stars"
+}
+
+
+
+Fetched https://developers.openai.com/api/docs/api-reference/responses/create
+
+Starting: *Search GitHub for open-source related tools* (3/6)
+
+Key finding from OpenAI API reference: The Responses API **DOES** support `temperature` and `top_p` parameters! Let me now search for the key open-source caching and determinism tools:    
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "GPTCache stars:>500",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "langchain cache LLM deterministic response mongodb stars:>100",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "ThreatGateAI security scanner deterministic",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "vulnerability scan cache hash reproducible results python",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "llm-configs secops deterministic temperature seed",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "litellm caching response hash stars:>500",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "openai response caching semantic deterministic pipeline python mongodb stars:>20",
+  "sort": "stars"
+}
+
+Ran Search code 
+Completed with input: {
+  "perPage": 10,
+  "query": "scan_cache input_hash sha256 deterministic vulnerability results mongodb language:python"
+}
+
+Ran Get file or directory contents 
+Completed with input: {
+  "owner": "zilliztech",
+  "path": "README.md",
+  "repo": "GPTCache"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "instructor structured output LLM deterministic pydantic validation retry stars:>500",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "semgrep llm analysis vulnerability enrichment security pipeline stars:>50",
+  "sort": "stars"
+}
+
+
+
+Fetched https://github.com/zilliztech/GPTCache
+
+Now let me search for more specific tools and also check the OpenAI deterministic outputs cookbook:    
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "litellm llm proxy cache stars:>1000",
+  "sort": "stars"
+}
+
+Ran Search repositories 
+Completed with input: {
+  "order": "desc",
+  "perPage": 10,
+  "query": "langchain caching mongodb openai deterministic stars:>50",
+  "sort": "stars"
+}
+
+Ran Search code 
+Completed with input: {
+  "perPage": 10,
+  "query": "\"temperature\" \"seed\" \"deterministic\" \"structured output\" \"responses\" openai language:python"
+}
+
+Read [](file:///Users/anshsinghal/Library/Application%20Support/Code/User/workspaceStorage/b9d13f7650824c77697ac63e3f90af57/GitHub.copilot-chat/chat-session-resources/20656686-8613-4a95-a28a-a538581cca65/toolu_vrtx_01FTuSU9A3Anw2scRGEGVHSV__vscode-1775101016932/content.json#1-1), lines 1 to 60
+
+Starting: *Map all non-determinism sources in code* (4/6)
+
+Now let me do the critical codebase validation — reading the actual LLM call parameters and checking what's missing. This is the **critical update from the previous session**: the OpenAI Responses API **DOES** support `temperature` and `top_p` now! 
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_agent.py#100-100), lines 100 to 155
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_utilities.py#80-80), lines 80 to 130
+
+Now let me check the DAST worker's LLM calls too:  
+
+Searched for text `responses.parse` (`**/RabbitMQ/**`), 4 results
+
+Searched for text `temperature` (`**/RabbitMQ/**/*.py`), 13 results
+
+Critical discovery: `responses.parse()` calls in base_agent.py (lines 121, 142) and BaseUtilities.py (lines 105, 126) do **NOT** pass `temperature=0`. But the OpenAI API reference confirms `temperature` IS a supported parameter on the Responses API. Let me also check for `time.sleep`:   
+
+Searched for text `time.sleep` (`**/RabbitMQ/**/*.py`), 8 results
+
+Searched for text `uuid.uuid4` (`**/RabbitMQ/**/*.py`), 4 results
+
+Compacted conversation
+
+Searched for regex `\bset\(` (`**/RabbitMQ/**/*.py`), 12 results
+
+Searched for regex `similarity_search` (`**/RabbitMQ/**/*.py`), 3 results
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_agent.py#48-48), lines 48 to 155
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/qdrant_utils.py#40-40), lines 40 to 65
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/dast_worker/helpers/agent/BaseUtilities.py#85-85), lines 85 to 140
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/output_model.py#100-100), lines 100 to 130
+
+Starting: *Validate research findings against codebase* (5/6)
+
+Now let me read the remaining critical files to complete the validation:  
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/codebase_context.py#230-230), lines 230 to 260
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_context.py#1-1), lines 1 to 80
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_context.py#80-80), lines 80 to 160
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/context/base_context.py#160-160), lines 160 to 210
+
+Now let me read the SAST agent main.py to check the logical component selection and scanning flow: 
+
+Searched for regex `logical_components|run_agent|populate|query_vector` (`**/RabbitMQ/worker/helpers/tools/sast_agent/main.py`), 20 results
+
+Read [](file:///Users/anshsinghal/Desktop/DevSecShield/RabbitMQ/worker/helpers/tools/sast_agent/main.py#336-336), lines 336 to 430
+
+Now I have a complete picture. Let me synthesize everything: 
+
+Starting: *Synthesize findings and recommendations* (6/6)
+
+Here is the complete validated synthesis of your research against the actual codebase, internet findings, and GitHub open-source tools.
+
+---
+
+## Validation of Your 10 Causes Against Codebase Evidence
+
+### Cause 1: LLM Non-Determinism ✅ CONFIRMED
+- **Evidence**: Even at `temperature=0`, OpenAI's own docs state: "content generated from a model is non-deterministic." This is inherent and unfixable at the API level — only mitigable via caching.
+
+### Cause 2: Uncontrolled Temperature & Missing Seed ✅ CONFIRMED — **CRITICAL FIX AVAILABLE**
+- **Evidence**: 4 `responses.parse()` calls in base_agent.py (lines 121, 142) and DAST BaseUtilities.py (lines 105, 126) pass **NO** `temperature` or `top_p`.
+- **Correction from previous session**: The OpenAI Responses API **DOES** support `temperature` (0-2) and `top_p` (0-1). The API reference page at `developers.openai.com/api/docs/api-reference/responses/create` explicitly states: *"temperature: What sampling temperature to use, between 0 and 2. Lower values like 0.2 will make it more focused and deterministic."*
+- **Also discovered**: The API supports `prompt_cache_key` and `prompt_cache_retention` ("in-memory" or "24h") for **built-in server-side prompt caching**.
+- LangChain's `ChatOpenAI` already uses `temperature=0.0` (in `get_llm()`), so map-reduce chains are partially controlled.
+
+### Cause 3: Multi-Stage Pipeline Variance ✅ CONFIRMED
+- **Evidence**: base_context.py shows the pipeline: `map_chain` → `combine_chain` → `refine_chain`. Documents are batched 10 at a time (line ~142). Each batch invokes an LLM call. With N documents producing ceil(N/10) map calls + 1 combine + potentially multiple refine calls, **variance compounds multiplicatively** across the pipeline.
+
+### Cause 4: Logical Component Variability ✅ CONFIRMED — **HIGH IMPACT**
+- **Evidence**: main.py line 387: `self.logical_components.logical_components[:10]` — takes the **first 10** logical components from the LLM-generated `LogicalComponents` model. Since the LLM generates different logical components each run (Cause 1), the **entire downstream analysis operates on different code portions each time**.
+
+### Cause 5: RAG (Vector Search) Instability ✅ CONFIRMED
+- **Evidence**: base_agent.py line 85: `vector_store.similarity_search(query=query, k=k, filter=filter)` — **no secondary sort** on returned documents. When multiple documents have similar similarity scores, Qdrant can return them in arbitrary order, changing what context the LLM sees per run.
+
+### Cause 6: Non-Deterministic Document Ordering ✅ CONFIRMED — **CRITICAL**
+- **Evidence**: codebase_context.py uses `GenericLoader.from_filesystem(glob="**/*")`. File iteration order is **OS-dependent** — different orderings on different runs/machines. The `set()` operations at lines 241-242, 330-331, 350-351 for `included_set`/`excluded_set` also produce non-deterministic orderings when iterated.
+
+### Cause 7: Top-N Selection Instability ✅ CONFIRMED
+- **Evidence**: Same as Cause 4 — `[:10]` slicing on a non-deterministic list. Additionally, RAG queries use `k=10` with no tie-breaking, so when N documents have similar scores, the top-10 selection is unstable.
+
+### Cause 8: AI-Based Filtering ✅ CONFIRMED
+- **Evidence**: The logical components are entirely LLM-generated (via map-reduce summary in `generate_map_reduce_summary()`). This means the **filtering of what code to scan is itself non-deterministic**, creating cascading variance.
+
+### Cause 9: Absence of Caching ✅ CONFIRMED
+- **Evidence**: grep for `cache` across the RabbitMQ worker code shows **zero caching** of any kind — no input hashing, no result caching, no context caching. Every run regenerates everything from scratch. Additionally, `uuid.uuid4()` in codebase_context.py and open_source_context.py generates unique context IDs per run, making cross-run reuse impossible.
+
+### Cause 10: Event Loop Blocking / Timing Sensitivity ⚠️ PARTIALLY CONFIRMED
+- **Evidence**: `time.sleep()` found in:
+  - qdrant_utils.py line 54: `time.sleep(1)` after collection delete/recreate
+  - output_model.py: `time.sleep(retry_delay)` during NVD API rate limiting
+  - DAST main.py: `time.sleep(self.interval_between_requests)` between crawler requests
+  - These are **not** in the hot path for SAST scanning, so impact is LOW for SAST but MEDIUM for DAST.
+
+---
+
+## Validation of Your 10 Solutions
+
+| # | Solution | Feasibility | Priority | Notes |
+|---|----------|-------------|----------|-------|
+| 1 | **Enforce Deterministic LLM Config** | ✅ IMMEDIATELY DOABLE | **P0** | Add `temperature=0, top_p=1` to all 4 `responses.parse()` calls. Also add `prompt_cache_key` for OpenAI's built-in caching. This is a 4-line change. |
+| 2 | **Cache-First Architecture** | ✅ FEASIBLE | **P0** | Hash scan inputs → check MongoDB → return cached if match. **GPTCache** (7,977 stars, MIT) is directly compatible with your stack (LangChain + Qdrant + MongoDB). |
+| 3 | **Cache Intermediate Outputs** | ✅ FEASIBLE | **P1** | Cache: (a) logical components per codebase hash, (b) map-reduce summaries per document set hash, (c) RAG query results per query+context hash. |
+| 4 | **Enforce Deterministic Ordering** | ✅ IMMEDIATELY DOABLE | **P0** | Sort `GenericLoader` output by filepath. Sort `similarity_search` results by `(score, doc_id)`. Replace `set()` iterations with `sorted()`. |
+| 5 | **Stabilize Component Selection** | ✅ FEASIBLE | **P1** | Use **deterministic rule-based component extraction** (AST parsing / directory structure mapping) instead of LLM-generated logical components. |
+| 6 | **Remove Blocking/Timing Issues** | ⚠️ LOW PRIORITY | **P3** | `time.sleep()` calls are in non-critical paths (cleanup, rate limiting). Not a significant variance source for SAST. |
+| 7 | **Controlled LLM Usage** | ✅ FEASIBLE | **P1** | Separate "deterministic analysis" (tool-based: Semgrep) from "enrichment" (LLM-based: descriptions, recommendations). Only use LLM for value-add, not for structural decisions. |
+| 8 | **Force Re-Scan Capability** | ✅ FEASIBLE | **P2** | Add UI toggle to bypass cache. Simple boolean flag in scan creation API. |
+| 9 | **Cache Expiration & Versioning** | ✅ FEASIBLE | **P2** | TTL on MongoDB cache entries. Version key includes: model version + prompt version + tool versions. |
+| 10 | **Prompt Engineering** | ✅ FEASIBLE | **P1** | Add explicit ordering instructions to prompts: "List components alphabetically", "Sort vulnerabilities by severity then by file path". |
+
+---
+
+## Open-Source Tools Found (GitHub MCP)
+
+### 1. **GPTCache** (zilliztech/GPTCache) — ⭐ 7,977 stars, MIT License
+- **Best match** for your caching needs
+- Supports **exact match** (hash-based) AND **semantic** (embedding similarity) caching
+- Natively integrates with: **LangChain** ✅, **Qdrant** ✅, **MongoDB** ✅ — all technologies already in DevSecShield
+- Python library, `pip install gptcache`
+- Adapters for OpenAI API calls
+- Could serve as turnkey solution for Solutions #2 and #3
+
+### 2. OpenAI Built-in Prompt Cache (API Feature)
+- `prompt_cache_key` parameter on `responses.create()` — groups requests for server-side caching
+- `prompt_cache_retention`: `"in-memory"` or `"24h"` — controls how long prompts are cached
+- **Free, zero-code integration** — just add parameters to existing calls
+- Reduces cost (cached prompt tokens billed at reduced rate) AND improves latency
+
+---
+
+## Recommended Implementation Priority
+
+### **Quick Wins (< 1 hour, immediate impact)**
+1. Add `temperature=0, top_p=1` to all 4 `responses.parse()` calls
+2. Add `prompt_cache_key` and `prompt_cache_retention="24h"` to `responses.parse()` calls
+3. Sort `GenericLoader` output: `documents = sorted(documents, key=lambda d: d.metadata.get('source', ''))`
+4. Sort RAG results: `docs = sorted(docs, key=lambda d: d.metadata.get('source', ''))`
+
+### **Medium-Term (1-3 days, major impact)**
+5. Input-hash → MongoDB cache layer (Solution #2)
+6. Cache logical components per codebase hash (Solution #3)
+7. Add ordering instructions to all prompts (Solution #10)
+
+### **Long-Term (1-2 weeks, structural fix)**
+8. Replace LLM-generated logical components with AST-based extraction (Solution #5)
+9. Integrate GPTCache for semantic caching of all LLM calls (Solutions #2/#3)
+10. Separate deterministic analysis from LLM enrichment (Solution #7)
+
+---
+
+Before I proceed with any code changes, I have clarifying questions per the mandatory policy:
+
+1. **Do you want me to implement the Quick Wins now?** (adding `temperature=0`, `top_p=1`, `prompt_cache_key` to all 4 `responses.parse()` calls, and adding sorted() to document loading and RAG results)
+2. **Which priority tier do you want me to tackle?** Quick wins only, or also medium-term caching?
+3. **GPTCache vs. custom MongoDB cache**: Do you prefer integrating GPTCache (proven, feature-rich, but adds a dependency) or building a simpler custom hash→MongoDB cache?
+4. **Should the `DETERMINISTIC_SCAN_PLAN.md` be updated** with these new findings (especially the temperature/prompt_cache_key discovery)? 
+
+Completed: *Synthesize findings and recommendations* (6/6)
+
 *End of Plan*

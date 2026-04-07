@@ -8,6 +8,11 @@ import time
 from enum import Enum
 from helpers.context.schema import FallbackCVEEnum
 
+# ---- Time-windowed CVE cache (module-level) ----
+_cve_cache: dict[str, dict[str, str]] = {}   # key → cves_dict
+_cve_cache_ts: dict[str, float] = {}          # key → timestamp
+_CVE_CACHE_TTL = 3600                         # 1 hour in seconds
+
 console = Console()
 
 class OutputModelManager:
@@ -160,10 +165,17 @@ class OutputModelManager:
         years : list[int] = [2025 , 2026],
         ) -> dict[str, str]:
         try:
+            cache_key = ",".join(str(y) for y in sorted(years))
+            now = time.time()
+            if cache_key in _cve_cache and (now - _cve_cache_ts.get(cache_key, 0)) < _CVE_CACHE_TTL:
+                console.print(f"Using cached CVEs (age {int(now - _cve_cache_ts[cache_key])}s), count: {len(_cve_cache[cache_key])}", style="dim green")
+                return _cve_cache[cache_key]
             cves_dict = {}
             for year in years:
                 cves_dict.update(self.fetch_cves_for_year(year=str(year)))
-            console.print(f"Recent CVEs fetched successfully, number of CVEs: {len(cves_dict)}",style="dim yellow")
+            _cve_cache[cache_key] = cves_dict
+            _cve_cache_ts[cache_key] = now
+            console.print(f"Recent CVEs fetched and cached, number of CVEs: {len(cves_dict)}",style="dim yellow")
             return cves_dict
         except Exception as e:
             console.print(f"Error in fetching recent CVEs: {e}",style="dim red")

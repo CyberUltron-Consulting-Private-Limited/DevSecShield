@@ -5,13 +5,12 @@ from langsmith import traceable
 from rich.console import Console
 from pydantic import BaseModel
 from helpers.agent.BaseSummaryManager import BaseSummaryManager
-from langchain_openai import ChatOpenAI
-from openai  import OpenAI
+from langchain_aws import ChatBedrock
 import base64
-from langsmith.wrappers import wrap_openai
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage, SystemMessage
 
 load_dotenv()
 console = Console()
@@ -38,40 +37,45 @@ class BaseUtilities:
     
     def get_llm(
         self,
-        model: str = "gpt-5-nano",
+        model: str = "openai.gpt-oss-120b-1:0",
         temperature: float = 0.0,
         max_tokens: int | None = None,
         output_model: type[BaseModel] = None,
         ):
         """
-        Responsible for getting OpenAI LLM, based on the specified model, temperature, max_tokens
+        Responsible for getting Bedrock LLM, based on the specified model, temperature, max_tokens
         """
         try:
             load_dotenv()
-            OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-            if not OPENAI_API_KEY:
-                raise ValueError("OPENAI_API_KEY not found")
-            else:
-                pass
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            aws_region = os.getenv("AWS_DEFAULT_REGION") or "ap-south-1"
+
+            if not aws_access_key or not aws_secret_key:
+                raise ValueError("AWS credentials not found")
             
             if output_model:
-                llm = ChatOpenAI(
+                llm = ChatBedrock(
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    api_key=OPENAI_API_KEY,
-                    timeout=self.llm_timeout,
+                    region=aws_region,
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key,
+                    model_kwargs={"top_p": 1},
                 ).with_structured_output(schema=output_model)
-                console.print(f"Structured OpenAI LLM fetched successfully",style="dim green")
+                console.print("Structured Bedrock LLM fetched successfully", style="dim green")
             else:
-                llm = ChatOpenAI(
+                llm = ChatBedrock(
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    api_key=OPENAI_API_KEY,
-                    timeout=self.llm_timeout,
+                    region=aws_region,
+                    aws_access_key_id=aws_access_key,
+                    aws_secret_access_key=aws_secret_key,
+                    model_kwargs={"top_p": 1},
                 )
-                console.print(f"Unstructured OpenAI LLM fetched successfully",style="dim green")
+                console.print("Unstructured Bedrock LLM fetched successfully", style="dim green")
             
             return llm
         except Exception as e:
@@ -85,54 +89,27 @@ class BaseUtilities:
         system_prompt: str,
         output_model: type[BaseModel],
         image: bytes = None,
-        llm_model: str = "gpt-5-nano",
+        llm_model: str = "openai.gpt-oss-120b-1:0",
     ) -> type[BaseModel] | str:
         try:
-            
-            load_dotenv()
-            client = OpenAI()
+            llm = self.get_llm(model=llm_model, temperature=0.0, output_model=output_model)
 
-            # remove from production 
-            if self.tracing:
-                client = wrap_openai(client)
-            
-
-            console.print("Generating Structured response .... ",style="bold bright_yellow")
+            console.print("Generating Structured response .... ", style="bold bright_yellow")
 
             if image:
-                console.print("Image input Detected",style="bright_cyan")
-                image_data = base64.b64encode(image).decode("ascii") #output is 'str'
-                response = client.responses.parse(
-                    model=llm_model,
-                    text_format=output_model,
-                    instructions= system_prompt,
-                    input=[
-                        {
-                            "role": "user",
-                            "content": [
-                                { "type": "input_text", "text": prompt },
-                                {
-                                    "type": "input_image",
-                                    "image_url": f"data:image/jpeg;base64,{image_data}",
-                                },
-                            ],
-                        }
-                    ],
-                    timeout=self.llm_timeout,
-                    )
-            
-            else:
-                console.print("Pure Text input Detected",style="bright_cyan")
-                response = client.responses.parse(
-                    model=llm_model,
-                    text_format=output_model,
-                    instructions=system_prompt,
-                    input=prompt,
-                    timeout=self.llm_timeout,
+                console.print("Image input Detected", style="bright_cyan")
+                image_data = base64.b64encode(image).decode("ascii")
+                user_prompt = (
+                    f"{prompt}\n\n"
+                    "Use the following base64 image payload as supporting evidence while answering:\n"
+                    f"{image_data}"
                 )
-            
-            model_response = response.output_parsed
-            return model_response
+            else:
+                console.print("Pure Text input Detected", style="bright_cyan")
+                user_prompt = prompt
+
+            response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
+            return response
         except Exception as e:
             console.print(f"Error: {e}",style="bold red")
             raise e

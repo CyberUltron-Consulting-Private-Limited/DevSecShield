@@ -1,7 +1,6 @@
 import datetime
 from collections import defaultdict
 
-from backend.get_db import dev_environment
 from backend.get_db import get_db , get_mongo_client_db
 from rich.console import Console
 
@@ -207,8 +206,8 @@ def get_cicd_list_dashboard_data(integration_ids : list[int]) -> dict:
         dict
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         cicd_logs_collection = mongo_db["cicd_logs"]
 
 
