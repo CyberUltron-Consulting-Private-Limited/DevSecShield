@@ -37,7 +37,7 @@ def check_if_team_has_enough_credits(
 
 def deduct_credits_from_team(
     team_id: int, 
-    credits: int,
+    credits: float,
     team_object: Team | None = None, # if None , get the team object from the database , if provided return the same object after update 
     ) -> Team | None:
     """

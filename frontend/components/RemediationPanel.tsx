@@ -296,6 +296,12 @@ export default function RemediationPanel({
         )}
       </Button>
 
+      {!generateMutation.isPending && (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 text-center mt-1.5">
+          0.05 credits will be used
+        </p>
+      )}
+
       {generateMutation.isPending && (
         <p className="text-xs text-zinc-500 dark:text-zinc-400 text-center mt-2">
           This may take 15-30 seconds. Two AI calls are being made for fix code and exploit analysis.

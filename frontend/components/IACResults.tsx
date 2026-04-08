@@ -1470,13 +1470,15 @@ function IACResultsAgentView({
                   })()}
 
                   {/* AI Remediation */}
-                  <RemediationPanel
-                    teamId={teamId ?? ""}
-                    scanType="iac"
-                    scanId={conversationId ?? 0}
-                    findingId={selectedVuln.id}
-                    existingRemediation={selectedVuln.remediation}
-                  />
+                  {'id' in selectedVuln && (
+                    <RemediationPanel
+                      teamId={teamId ?? ""}
+                      scanType="iac"
+                      scanId={conversationId ?? 0}
+                      findingId={(selectedVuln as IACFinding).id}
+                      existingRemediation={(selectedVuln as IACFinding).remediation}
+                    />
+                  )}
                 </div>
               </ScrollArea>
             </div>
