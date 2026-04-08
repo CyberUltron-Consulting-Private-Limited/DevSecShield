@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { generateFindingRemediation, type RemediationData } from "@/utils/backend_api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,6 +106,7 @@ export default function RemediationPanel({
   onRemediationGenerated,
 }: RemediationPanelProps) {
   const [remediation, setRemediation] = useState<RemediationData | null>(existingRemediation ?? null);
+  const queryClient = useQueryClient();
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -119,6 +120,9 @@ export default function RemediationPanel({
       setRemediation(data);
       onRemediationGenerated?.(data);
       if (data.status === "completed") {
+        queryClient.invalidateQueries({ queryKey: ["teams"] });
+        queryClient.invalidateQueries({ queryKey: ["teams-dashboard"] });
+        queryClient.invalidateQueries({ queryKey: ["team-dashboard"] });
         toast.success("AI remediation generated successfully");
       } else {
         toast.error("Remediation generation failed: " + (data.error || "Unknown error"));
