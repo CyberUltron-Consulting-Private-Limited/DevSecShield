@@ -35,6 +35,7 @@ import {
   Archive,
 } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -1405,6 +1406,15 @@ function SASTResultsAgentView({
                     </div>
                   ) : null;
                 })()}
+
+                {/* AI Remediation */}
+                <RemediationPanel
+                  teamId={teamId ?? ""}
+                  scanType="sast"
+                  scanId={conversationId ?? 0}
+                  findingId={selectedFinding.id}
+                  existingRemediation={selectedFinding.remediation}
+                />
               </div>
             </ScrollArea>
           )}

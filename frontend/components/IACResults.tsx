@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { AlertTriangle, ArrowLeft, MessageCircle, Download, Ticket, Shield, CheckCircle, EyeOff, Loader2, Circle, MoreVertical, Waypoints } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -1467,6 +1468,15 @@ function IACResultsAgentView({
                       </div>
                     ) : null;
                   })()}
+
+                  {/* AI Remediation */}
+                  <RemediationPanel
+                    teamId={teamId ?? ""}
+                    scanType="iac"
+                    scanId={conversationId ?? 0}
+                    findingId={selectedVuln.id}
+                    existingRemediation={selectedVuln.remediation}
+                  />
                 </div>
               </ScrollArea>
             </div>

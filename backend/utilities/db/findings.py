@@ -43,6 +43,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "location": finding["finding_data"]["location"],
                 "snippet": finding["finding_data"]["snippet"],
                 "cves": finding["finding_data"]["cves"],
+                "remediation": finding.get("remediation", None),
             })
     
     elif scan_type == "iac":
@@ -63,6 +64,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "cves": finding["finding_data"]["cves"],
                 "category": finding["finding_data"]["category"],
                 "resource": finding["finding_data"]["resource"],
+                "remediation": finding.get("remediation", None),
             })
     
     elif scan_type == "sbom_sca":
@@ -83,6 +85,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "reachability": finding["finding_data"]["reachability"],
                 "dependency_type": finding["finding_data"]["dependency_type"],
                 "license_type": finding["finding_data"]["license_type"],
+                "remediation": finding.get("remediation", None),
             })
     
     elif scan_type == "mcp":
@@ -100,6 +103,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "compliance_controls": finding["finding_data"]["compliance_controls"],
                 "suggested_fix": finding["finding_data"]["suggested_fix"],
                 "type": finding["finding_data"]["type"],
+                "remediation": finding.get("remediation", None),
             })
     
     elif scan_type == "llm":
@@ -115,6 +119,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "owasp_top_10_llm": finding["finding_data"]["owasp_top_10_llm"],
                 "compliance_controls": finding["finding_data"]["compliance_controls"],
                 "suggested_fix": finding["finding_data"]["suggested_fix"],
+                "remediation": finding.get("remediation", None),
             })
     
     elif scan_type == "dast":
@@ -133,6 +138,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "suggested_fix": finding["finding_data"]["suggested_fix"],
                 "category": finding["finding_data"]["category"],
                 "confidence": finding["finding_data"]["confidence"],
+                "remediation": finding.get("remediation", None),
             })
 
     return findings

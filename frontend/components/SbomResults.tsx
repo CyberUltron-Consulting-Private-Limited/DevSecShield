@@ -37,6 +37,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -1321,6 +1322,13 @@ function SbomResultsView({
                       </ul>
                     </div>
                   )}
+                  <RemediationPanel
+                    teamId={teamId ?? ""}
+                    scanType="sbom_sca"
+                    scanId={conversationId ?? 0}
+                    findingId={selectedFinding.id}
+                    existingRemediation={selectedFinding.remediation}
+                  />
                 </div>
               </ScrollArea>
             </div>

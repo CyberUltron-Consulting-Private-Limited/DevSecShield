@@ -909,3 +909,76 @@ async def toggle_finding_state(
     except Exception as e:
         console.print(f"Error in toggling finding state for {type} scan: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in toggling finding state for scan , please try again later")
+
+
+@router.post("/{team_id}/{type}/scan/{scan_id}/finding/{finding_id}/remediate",
+             summary="Generate AI remediation (fix code + exploit payload) for a finding")
+async def generate_finding_remediation(
+    team_id: int,
+    type: scan_types,
+    scan_id: int,
+    finding_id: str,
+    Authorization: Annotated[str | None, Header()] = None,
+    dependencies=[Depends(limiter)],
+    ):
+    """
+    Generate AI remediation for a specific finding.
+    Returns fix code + educational exploit payload.
+    Results are cached in MongoDB — subsequent calls return the stored result.
+    """
+    from backend.utilities.ai.remediation import generate_remediation
+
+    try:
+        # STEP [ 0 ] : =========== Auth + team check ======================
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        # STEP [ 1 ] : =========== Fetch finding from MongoDB ======================
+        scan_findings_collection = mongo_db["scan_findings"]
+        finding = scan_findings_collection.find_one({"_id": ObjectId(finding_id)})
+        if not finding:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
+        if finding.get("scan_id") != scan_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Finding does not belong to this scan")
+
+        # STEP [ 2 ] : =========== Check if remediation already exists (cache hit) ======================
+        existing_remediation = finding.get("remediation")
+        if existing_remediation and existing_remediation.get("status") == "completed":
+            console.print(f"Remediation cache hit for finding {finding_id}", style="dim green")
+            return existing_remediation
+
+        # STEP [ 3 ] : =========== Credit check (0.05 per remediation) ======================
+        REMEDIATION_CREDIT_COST = 0.05
+        if not check_if_team_has_enough_credits(team_id, REMEDIATION_CREDIT_COST):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Team does not have enough credits for remediation generation",
+            )
+
+        # STEP [ 4 ] : =========== Generate remediation ======================
+        finding_data = finding.get("finding_data", {})
+        remediation_result = generate_remediation(finding_data, type)
+
+        # STEP [ 5 ] : =========== Store in MongoDB ======================
+        scan_findings_collection.update_one(
+            {"_id": ObjectId(finding_id)},
+            {"$set": {"remediation": remediation_result}},
+        )
+        console.print(f"Remediation stored for finding {finding_id}", style="bold green")
+
+        # STEP [ 6 ] : =========== Deduct credits ======================
+        if remediation_result.get("status") == "completed":
+            deduct_credits_from_team(team_id, REMEDIATION_CREDIT_COST)
+
+        return remediation_result
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error generating remediation for finding {finding_id}: {e}", style="bold red")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generating remediation, please try again later",
+        )

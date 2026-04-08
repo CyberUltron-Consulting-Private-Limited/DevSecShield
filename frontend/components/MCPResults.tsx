@@ -43,6 +43,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -1480,6 +1481,13 @@ function AgentResultsView({
                       <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{selectedApiFinding.suggested_fix!.trim()}</p>
                     </div>
                   )}
+                  <RemediationPanel
+                    teamId={teamId ?? ""}
+                    scanType="mcp"
+                    scanId={conversationId ?? 0}
+                    findingId={selectedApiFinding.id}
+                    existingRemediation={selectedApiFinding.remediation}
+                  />
                 </div>
               </ScrollArea>
             </div>

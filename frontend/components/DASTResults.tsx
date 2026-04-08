@@ -37,6 +37,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -108,6 +109,7 @@ export interface DASTFinding {
   suggested_fix?: string | null;
   category?: string | null;
   confidence?: string | null;
+  remediation?: import('@/utils/backend_api').RemediationData | null;
 }
 
 export interface DASTResultsProps {
@@ -513,6 +515,8 @@ export default function DASTResults({
           getImpactBadgeClass={getImpactBadgeClass}
           getFindingStatusBadgeClass={getFindingStatusBadgeClass}
           getOwaspComplianceEntries={getOwaspComplianceEntries}
+          teamId={teamId}
+          scanId={scanId}
         />
       </div>
     );
@@ -1171,6 +1175,8 @@ export default function DASTResults({
         getImpactBadgeClass={getImpactBadgeClass}
         getFindingStatusBadgeClass={getFindingStatusBadgeClass}
         getOwaspComplianceEntries={getOwaspComplianceEntries}
+        teamId={teamId}
+        scanId={scanId}
       />
         </>
         )}
@@ -1355,12 +1361,16 @@ function FindingDetailDialog({
   getImpactBadgeClass,
   getFindingStatusBadgeClass,
   getOwaspComplianceEntries,
+  teamId,
+  scanId,
 }: {
   finding: DASTFinding | null;
   onClose: () => void;
   getImpactBadgeClass: (impact: string) => string;
   getFindingStatusBadgeClass: (status: string) => string;
   getOwaspComplianceEntries: (val: unknown) => [string, string][];
+  teamId?: string;
+  scanId?: number;
 }) {
   if (!finding) return null;
   return (
@@ -1446,6 +1456,15 @@ function FindingDetailDialog({
                   ))}
                 </div>
               </div>
+            )}
+            {teamId && scanId && finding.id && (
+              <RemediationPanel
+                teamId={teamId}
+                scanType="dast"
+                scanId={scanId}
+                findingId={finding.id}
+                existingRemediation={finding.remediation}
+              />
             )}
           </div>
         </ScrollArea>

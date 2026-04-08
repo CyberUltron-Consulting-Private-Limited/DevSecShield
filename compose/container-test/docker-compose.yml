@@ -42,3 +42,21 @@ services:
       RABBITMQ_PORT: "4672"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  dast-worker-test:
+    container_name: devsecshield-dast-worker-test
+    build:
+      context: ../../RabbitMQ/dast_worker
+      dockerfile: Dockerfile
+    env_file:
+      - ../../RabbitMQ/dast_worker/.env
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      RABBITMQ_HOST: "host.docker.internal"
+      RABBITMQ_PORT: "4672"
+      MONGO_HOST: "host.docker.internal"
+      MONGO_PORT: "27017"
+      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
+    command: uv run celery -A dast_worker worker -P threads --loglevel=info -Q dast_worker_queue
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

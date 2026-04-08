@@ -1,52 +1,56 @@
-FROM ghcr.io/astral-sh/uv:bookworm-slim
+# ============================================================
+# Stage 1: Builder — install build tools, compile dependencies
+# ============================================================
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON=3.12 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY . . 
+# Install build-time system dependencies (not carried to final image)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config libssl-dev curl git \
+    && rm -rf /var/lib/apt/lists/*
 
-
-
-# installing  curl + git
-RUN apt-get update && apt-get install -y build-essential pkg-config libssl-dev curl git
-
-
-# for sbom ( grype )
-RUN curl -sSfL https://get.anchore.io/grype | sh -s -- -b /usr/local/bin
-
-
-# for iac scan ( tfsec and trivy )
-# RUN curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
-
-# alternate method for installing tfsec ( using homebrew )
-# RUN curl -s https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
-# RUN brew install tfsec
-
-# RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.67.2
-
-# for SAST 
-ENV PYTHONUNBUFFERED=1
-ENV SEMGREP_APP_TOKEN="896b59e81d3e4d0484f91a6b648804dd9f372389b32c42f2756e901b0116af0a"
-
-# for MCP scanning ( purposefully left out the command that installs cs certificates ) 
-#installing npm
-# RUN  apt install -y npm 
-
-# for scan worker related dependencies rust and cargo for grype sbom scanning
+# Install Rust toolchain (needed to compile tree-sitter, cryptography wheels)
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN rustc --version && cargo --version
 
+# Install dependencies first (cached layer — only rebuilds when lockfile changes)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project
 
-# for gitleaks scanning 
-# True for Linux, False for Windows
-ENV LINUX_GITLEAKS=True 
+# Copy application source and install the project
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked
 
+# ============================================================
+# Stage 2: Runtime — minimal image with only what's needed
+# ============================================================
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-# installing python 3.12.7 for garak 
-RUN uv python install 3.12.7
-ENV UV_PYTHON=3.12
-RUN uv sync
+ENV PYTHONUNBUFFERED=1 \
+    UV_PYTHON=3.12 \
+    IS_DOCKER_CONTAINER="True" \
+    LINUX_GITLEAKS="True"
 
-ENV IS_DOCKER_CONTAINER="True"
+WORKDIR /app
 
-CMD ["uv", "run", "celery","-A","scan_worker","worker","-P","threads","--loglevel=info"]
+# Install only runtime system dependencies (no build-essential, no rust)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install grype (SBOM scanning — runtime binary)
+RUN curl -sSfL https://get.anchore.io/grype | sh -s -- -b /usr/local/bin
+
+# Copy the entire app + venv from builder (includes compiled wheels)
+COPY --from=builder /app /app
+
+CMD ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info"]

@@ -258,6 +258,7 @@ export interface SastFinding {
   suggested_fix?: string | null
   location?: string | null
   snippet?: string | null
+  remediation?: RemediationData | null
 }
 
 /** IAC finding from backend get_findings_for_scan_type (IAC branch: includes category, resource) */
@@ -276,6 +277,7 @@ export interface IACFinding {
   snippet?: string | null
   category?: string | null
   resource?: string | null
+  remediation?: RemediationData | null
 }
 
 /** SBOM/SCA finding from backend get_findings_for_scan_type (sbom_sca branch) */
@@ -294,6 +296,7 @@ export interface SbomFinding {
   reachability?: string | null
   dependency_type?: string | null
   license_type?: string | null
+  remediation?: RemediationData | null
 }
 
 /** SBOM/SCA scan metadata from backend get_scan_metadata (sbom_sca branch) */
@@ -796,6 +799,7 @@ export interface MCPFinding {
     compliance_controls?: unknown
     suggested_fix?: string | null
     type?: "tool" | "prompt" | "resource"
+    remediation?: RemediationData | null
 }
 
 /** MCP scan metadata from backend get_scan_metadata (MCP branch) */
@@ -848,6 +852,7 @@ export interface LLMFinding {
     owasp_top_10_llm: unknown
     compliance_controls: unknown
     suggested_fix?: string | null
+    remediation?: RemediationData | null
 }
 
 /** LLM scan metadata from backend get_scan_metadata (llm branch) */
@@ -2014,6 +2019,54 @@ export {
     reinitializeSBOMScanWithPayload,
     updateScan,
     toggleFindingState,
+    generateFindingRemediation,
+}
+
+// -------------------------------------------------------------- Remediation Types + API --------------------------------------------------------------
+
+export interface RemediationFix {
+    description: string
+    original_code: string
+    fixed_code: string
+    language: string
+    confidence: number
+    validation_notes: string
+    references: string[]
+}
+
+export interface RemediationExploitPayload {
+    description: string
+    payload: string
+    impact_demonstration: string
+    prerequisites: string
+    difficulty: "trivial" | "easy" | "moderate" | "hard" | "expert"
+    attack_vector: string
+}
+
+export interface RemediationData {
+    generated_at: string
+    status: "completed" | "failed"
+    fix?: RemediationFix
+    exploit_payload?: RemediationExploitPayload
+    diff?: string
+    error?: string
+}
+
+const generateFindingRemediation = async ({
+    team_id,
+    type,
+    scan_id,
+    finding_id,
+}: {
+    team_id: number
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast"
+    scan_id: number
+    finding_id: string
+}): Promise<RemediationData> => {
+    const response = await api.post<RemediationData>(
+        `/${team_id}/${type}/scan/${scan_id}/finding/${finding_id}/remediate`
+    )
+    return response.data
 }
 
 // -------------------------------------------------------------- Discovery API Routes --------------------------------------------------------------

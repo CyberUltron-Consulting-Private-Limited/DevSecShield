@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, MessageCircle, Download, RefreshCcw, BarChart3, Ticket, PieChart as PieChartIcon, Activity, Shield, Target, Swords, Table2, Zap, AlertTriangle, Percent, Clock, Pencil, Wrench, Bot, FlaskConical, CheckCircle, EyeOff, Loader2, Circle, BoxIcon, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
 import {
   Dialog,
   DialogContent,
@@ -81,6 +82,7 @@ export interface LLMDisplayFinding {
   compliance_controls?: OwaspOrCompliance;
   suggested_fix?: string | null;
   vulnerability_predictions?: unknown;
+  remediation?: import('@/utils/backend_api').RemediationData | null;
 }
 
 interface LLMResultsProps {
@@ -222,6 +224,7 @@ function buildDisplayList(findings: LLMFinding[] | null | undefined, fromData: L
       compliance_controls: f.compliance_controls as OwaspOrCompliance,
       suggested_fix: f.suggested_fix,
       vulnerability_predictions: f.vulnerability_predictions,
+      remediation: f.remediation,
     }));
   }
   return fromData.map((v, i) => ({
@@ -1412,6 +1415,13 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
                       </div>
                     );
                   })()}
+                  <RemediationPanel
+                    teamId={teamId ?? ""}
+                    scanType="llm"
+                    scanId={conversationId ?? 0}
+                    findingId={selectedVuln.id}
+                    existingRemediation={selectedVuln.remediation}
+                  />
                 </div>
               </ScrollArea>
             </div>
