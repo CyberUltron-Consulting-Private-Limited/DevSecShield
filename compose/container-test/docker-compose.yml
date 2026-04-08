@@ -1,0 +1,44 @@
+# Local container test compose - builds from source, connects to host-exposed infra
+# Usage: docker compose -f compose/container-test/docker-compose.yml up --build
+
+services:
+
+  scan-worker-test:
+    container_name: devsecshield-scan-worker-test
+    build:
+      context: ../../RabbitMQ/worker
+      dockerfile: Dockerfile
+    env_file:
+      - ../../RabbitMQ/worker/.env
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      RABBITMQ_HOST: "host.docker.internal"
+      RABBITMQ_PORT: "4672"
+      MONGO_HOST: "host.docker.internal"
+      MONGO_PORT: "27017"
+      QDRANT_HOST: "host.docker.internal"
+      QDRANT_PORT: "7333"
+      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
+    command: uv run celery -A scan_worker worker -P threads --loglevel=info -Q scan_worker_queue
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  backend-test:
+    container_name: devsecshield-backend-test
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    ports:
+      - "9001:8080"
+    env_file:
+      - ../../backend/.env
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      PG_HOST: "host.docker.internal"
+      PG_PORT: "4433"
+      MONGO_HOST: "host.docker.internal"
+      MONGO_PORT: "27017"
+      RABBITMQ_HOST: "host.docker.internal"
+      RABBITMQ_PORT: "4672"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

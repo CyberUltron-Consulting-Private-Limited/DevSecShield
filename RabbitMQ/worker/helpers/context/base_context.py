@@ -3,6 +3,7 @@ import os
 import time
 import hashlib
 import json as _json
+import logging
 from botocore.utils import tempfile
 from dotenv import load_dotenv
 from langchain_community.vectorstores import VectorStore
@@ -20,6 +21,7 @@ import json
 from langsmith import traceable
 
 console = Console()
+_logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -70,6 +72,7 @@ def _hash_documents(documents: list[Document]) -> str:
 
 _CACHE_DB = "new_devsecshield_backend_server_db"
 _CACHE_COLLECTION = "map_reduce_cache"
+_BATCH_MAP_CACHE_COLLECTION = "map_reduce_batch_cache"
 
 @dataclass
 class BaseResult:
@@ -205,31 +208,72 @@ class BaseContextManager(BaseUtilities):
 
 
 
-            # STEP [ 4 ] ----------------> Mapping ( each document is mapped to a summary )--------------------------------- --------------------------
+            # STEP [ 4 ] ----------------> Incremental Mapping with per-batch caching --------------------------
+            # Each batch of 10 documents is cached individually by content hash.
+            # When a small change occurs, only the affected batch is re-mapped;
+            # all other batches serve from cache, saving LLM calls.
             
             map_results = []
+            _batch_cache_hits = 0
+            _batch_cache_misses = 0
+            _last_map_response = None  # track final response object for single-batch case
             console.print(f"Mapping length of documents {len(self.documents)}",style="dim yellow")
             for i in range(0, len(self.documents), 10): # summarizing 10 documents at a time
                 documents_batch = self.documents[i:i+10]
-                documents_data = summary_manager.format_documents_to_string( documents=documents_batch )
 
-                # for testing 
-                # documents_for_ingestion = { "documents_data": documents_data }
-                # with open(f"logging_stuff_ingestion_{i}.json", "w+") as f:
-                #     json.dump(documents_for_ingestion, f, indent=4)
+                # Compute per-batch content hash for incremental caching
+                _batch_hash = _hash_documents(documents_batch)
 
-                console.print(f"Documents data length before summarizing {len(documents_data)}",style="dim bright_cyan")
-                map_chain_response = _invoke_with_retry(map_chain, {"text": documents_data})
-                documents_summary = summary_manager.format_to_string( input=map_chain_response )
+                # Check per-batch cache in MongoDB
+                _batch_cached_text = None
+                try:
+                    _mongo = _get_mongo_client()
+                    try:
+                        _bcol = _mongo[_CACHE_DB][_BATCH_MAP_CACHE_COLLECTION]
+                        _bcached = _bcol.find_one({"_id": _batch_hash})
+                        if _bcached:
+                            _batch_cached_text = _bcached.get("map_text", None)
+                    finally:
+                        _mongo.close()
+                except Exception:
+                    pass  # non-fatal, will just re-compute
 
-                console.print(f"Map Summary for Documents {i} to {i+10} .  Content length of map summary: {len(documents_summary)}",style="dim bright_cyan")
+                if _batch_cached_text:
+                    _batch_cache_hits += 1
+                    console.print(f"♻️ Batch {i//10} map cache HIT (hash {_batch_hash[:12]}...)", style="dim green")
+                    _logger.warning("♻️ Batch %d map cache HIT (hash %s...)", i//10, _batch_hash[:12])
+                    map_results.append(_batch_cached_text)
+                else:
+                    _batch_cache_misses += 1
+                    _logger.warning("🔍 Batch %d map cache MISS (hash %s...)", i//10, _batch_hash[:12])
+                    documents_data = summary_manager.format_documents_to_string( documents=documents_batch )
 
-                # for testing 
-                # logging_stuff = { "documents_summary": documents_summary }
-                # with open(f"logging_stuff_map_{i}.json", "w+") as f:
-                #     json.dump(logging_stuff, f, indent=4)
+                    console.print(f"Documents data length before summarizing {len(documents_data)}",style="dim bright_cyan")
+                    map_chain_response = _invoke_with_retry(map_chain, {"text": documents_data})
+                    _last_map_response = map_chain_response
+                    documents_summary = summary_manager.format_to_string( input=map_chain_response )
 
-                map_results.append(documents_summary)       
+                    console.print(f"Map Summary for Documents {i} to {i+10} .  Content length of map summary: {len(documents_summary)}",style="dim bright_cyan")
+
+                    # Store per-batch map result for future incremental reuse
+                    try:
+                        _mongo = _get_mongo_client()
+                        try:
+                            _bcol = _mongo[_CACHE_DB][_BATCH_MAP_CACHE_COLLECTION]
+                            _bcol.replace_one(
+                                {"_id": _batch_hash},
+                                {"_id": _batch_hash, "map_text": documents_summary},
+                                upsert=True,
+                            )
+                        finally:
+                            _mongo.close()
+                    except Exception:
+                        pass  # non-fatal
+
+                    map_results.append(documents_summary)
+
+            console.print(f"📊 Batch map summary: {_batch_cache_hits} cache hits, {_batch_cache_misses} misses out of {_batch_cache_hits + _batch_cache_misses} batches", style="bold bright_cyan")
+            _logger.warning("📊 Batch map summary: %d cache hits, %d misses out of %d batches", _batch_cache_hits, _batch_cache_misses, _batch_cache_hits + _batch_cache_misses)       
 
 
 
@@ -241,8 +285,28 @@ class BaseContextManager(BaseUtilities):
             # =========================== if the map results has only 1 item , then skip summarization and return that one map result =========================================
             if len(map_results)==1 : 
                 console.print("Skipping Combine and Refine steps as there is only 1 Map summary result .", style="dim yellow")
-                self._store_map_reduce_cache(_doc_hash, map_chain_response)
-                return map_chain_response
+                if _last_map_response is not None:
+                    # Fresh LLM response — cache the full result
+                    self._store_map_reduce_cache(_doc_hash, _last_map_response)
+                    return _last_map_response
+                else:
+                    # All batches served from cache — reconstruct from cached summary output model
+                    if summary_output_model:
+                        try:
+                            _mongo = _get_mongo_client()
+                            try:
+                                _col = _mongo[_CACHE_DB][_CACHE_COLLECTION]
+                                cached = _col.find_one({"_id": _doc_hash})
+                                if cached and cached.get("model_data"):
+                                    return summary_output_model.model_validate(cached["model_data"])
+                            finally:
+                                _mongo.close()
+                        except Exception:
+                            pass
+                    # Fallback: re-run combine on the single cached map text
+                    combine_chain_response = _invoke_with_retry(combine_chain, {"text": map_results[0]})
+                    self._store_map_reduce_cache(_doc_hash, combine_chain_response)
+                    return combine_chain_response
             
             
             # =================================== Creating initial summary that will be refined ===================================

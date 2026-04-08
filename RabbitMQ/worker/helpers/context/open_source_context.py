@@ -94,7 +94,7 @@ class OpenSourceContext(BaseContextManager):
             if not self.results:
                 raise ValueError(f"No results found")
             # Strip non-deterministic fields so document content is identical across runs
-            _exclude_keys = ("time", "errors", "paths")
+            _exclude_keys = ("time", "errors", "paths", "profiling_results")
             _det = {k: v for k, v in self.results.items() if k not in _exclude_keys} if isinstance(self.results, dict) else self.results
             split_json_documents = splitter.create_documents(texts=[str(_det)])
             if not split_json_documents:
@@ -116,7 +116,7 @@ class OpenSourceContext(BaseContextManager):
             if not self.results:
                 raise ValueError(f"No results found")
             # Strip non-deterministic fields so document content is identical across runs
-            _exclude_keys = ("time", "errors", "paths")
+            _exclude_keys = ("time", "errors", "paths", "profiling_results")
             _det = {k: v for k, v in self.results.items() if k not in _exclude_keys} if isinstance(self.results, dict) else self.results
             split_json_documents = splitter.create_documents(texts=[str(_det)])
 

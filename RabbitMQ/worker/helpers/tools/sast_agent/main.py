@@ -267,13 +267,18 @@ class SASTAgent(BaseAgent):
         try:
             formatted_string = ""
             for document in documents:
+                # Use basename for path-independent LLM prompts (same code in different
+                # dirs produces identical prompts → deterministic LLM cache + analysis)
+                _meta = dict(document.metadata)
+                if "source" in _meta:
+                    _meta["source"] = os.path.basename(_meta["source"])
                 temp = f"""
                 ===========================================================
                 # Content : 
                 {document.page_content} 
                 \n\n
                 ## Metadata 
-                {document.metadata}
+                {_meta}
                 ===========================================================
                 \n\n
                 """

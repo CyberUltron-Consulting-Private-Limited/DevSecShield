@@ -404,12 +404,19 @@ class CodebaseContext(BaseContextManager):
                 if src:
                     doc.metadata["source"] = os.path.relpath(src, dir_str)
 
-            # Generate deterministic context ID from content hash of relative source file paths
-            sorted_sources = sorted(set(
-                doc.metadata.get("source", "") for doc in split_documents
+            # Generate deterministic context ID from CONTENT hashes (not file paths).
+            # This ensures that the same code produces the same fingerprint regardless
+            # of directory structure, zip layout, or repo location.
+            per_doc_hashes = sorted(set(
+                hashlib.sha256(doc.page_content.encode()).hexdigest()
+                for doc in split_documents
             ))
-            content_fingerprint = "\n".join(sorted_sources)
+            content_fingerprint = "\n".join(per_doc_hashes)
             generated_id = hashlib.sha256(content_fingerprint.encode()).hexdigest()[:32]
+
+            # Sort documents by content hash for deterministic batch ordering
+            # (path-independent — same code always lands in the same batch)
+            split_documents.sort(key=lambda d: hashlib.sha256(d.page_content.encode()).hexdigest())
 
             # Check if embeddings for this content hash already exist in Qdrant (reuse)
             try:

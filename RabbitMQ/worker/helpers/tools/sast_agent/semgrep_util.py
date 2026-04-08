@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -91,6 +92,40 @@ def run_sast_scan_on_directory(
                     for span in err.get("spans", []):
                         if isinstance(span, dict) and "file" in span:
                             span["file"] = os.path.relpath(span["file"], dir_str)
+
+            # Normalize nested paths in extra.dataflow_trace and recompute fingerprint
+            def _normalise_trace_paths(obj, base_dir):
+                """Recursively replace absolute paths under base_dir with relative ones."""
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if k == "path" and isinstance(v, str) and base_dir in v:
+                            obj[k] = os.path.relpath(v, base_dir)
+                        else:
+                            _normalise_trace_paths(v, base_dir)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        _normalise_trace_paths(item, base_dir)
+
+            for result in sast_json["results"]:
+                extra = result.get("extra", {})
+                # Normalise dataflow_trace paths
+                dt = extra.get("dataflow_trace")
+                if dt:
+                    _normalise_trace_paths(dt, dir_str)
+                # Recompute fingerprint from deterministic fields only
+                fp_src = ":".join([
+                    str(result.get("check_id", "")),
+                    str(result.get("path", "")),
+                    str(result["start"]["line"]),
+                    str(result["start"].get("col", 0)),
+                    str(result["end"]["line"]),
+                    str(result["end"].get("col", 0)),
+                    str(extra.get("lines", "")),
+                ])
+                extra["fingerprint"] = hashlib.sha256(fp_src.encode()).hexdigest()
+
+            # Strip profiling_results (contains run-specific timing data)
+            sast_json.pop("profiling_results", None)
 
             # Sort results deterministically by (path, start_line, start_col)
             sast_json["results"].sort(
