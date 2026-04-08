@@ -254,7 +254,7 @@ export default function HomeLayout({
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  const queryClient = new QueryClient()
+  const [queryClient] = useState(() => new QueryClient())
 
   const homeHref = team_id ? `/${team_id}` : "#";
   const getItemHref = (path: string) => (team_id && path ? `/${team_id}/${path}` : "#");
