@@ -63,7 +63,7 @@ async def get_current_user_from_access_token(engine: Engine, token: str, ignore_
             )
             token_data = TokenPayload(**payload)
             
-            if datetime.fromtimestamp(token_data.exp) < datetime.now():
+            if datetime.fromtimestamp(token_data.exp, tz=timezone.utc) < datetime.now(timezone.utc):
                 print("Token expired 🔴")
                 raise HTTPException(
                     status_code = status.HTTP_401_UNAUTHORIZED,
@@ -113,7 +113,7 @@ async def get_current_user_from_refresh_token(engine: Engine, token: str) -> Use
             )
             token_data = TokenPayload(**payload)
             
-            if datetime.fromtimestamp(token_data.exp) < datetime.now():
+            if datetime.fromtimestamp(token_data.exp, tz=timezone.utc) < datetime.now(timezone.utc):
                 with Session(engine) as session:
                     statement = select(User).where(User.email == token_data.sub)
                     user = session.exec(statement).first()
@@ -143,6 +143,11 @@ async def get_current_user_from_refresh_token(engine: Engine, token: str) -> Use
         with Session(engine) as session:
             user = session.exec(select(User).where(User.email == token_data.sub)).first()
         
+        if user and not user.session_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Session not active",
+            )
         
         if user is None:
             with Session(engine) as session:
@@ -163,7 +168,10 @@ async def get_user_from_header_or_raise_exception(engine: Engine,Authorization: 
     if not Authorization:
         print("No Authorization header provided 🔴")
         raise HTTPException(status_code=401, detail="Unauthorized")
-    access_token = Authorization.split(" ")[1]
+    parts = Authorization.split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
+    access_token = parts[1]
     user = await get_current_user_from_access_token(engine, access_token, ignore_session_active)
     return user
 
@@ -255,8 +263,8 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
 
 
 def generate_verification_code():
-    import random
-    code = ''.join(random.choices('0123456789', k=6))
+    import secrets
+    code = ''.join(secrets.choice('0123456789') for _ in range(6))
     return code
 
 def create_and_store_verification_code(recipient_email: str, engine: Engine) -> str:

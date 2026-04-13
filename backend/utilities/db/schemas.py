@@ -174,6 +174,18 @@ class StartDASTScanData(BaseModel):
     include_url_patterns: list[str] | None = None # either exclude urls that match these patterns or include urls that match these patterns
 
 
+class StartCBOMScanData(BaseStartRepositoryScanData):
+    zip_file_used : bool = False
+    cbom_file_used : bool = False  # if true, a pre-existing CBOM JSON file was uploaded
+    scan_binaries : bool = False   # if true, enable cbomkit-theia binary/config scanning
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.cbom_file_used and not self.zip_file_used and not self.repo_context:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CBOM file or zip file or repository context is required")
+        return self
+
+
 class StartScanPayload(BaseModel):
     sast : StartSastScanData | None = None
     iac : StartIACScanData | None = None
@@ -181,3 +193,4 @@ class StartScanPayload(BaseModel):
     mcp : StartMCPScanData | None = None
     llm : StartLLMBenchmarkingData | None = None
     dast : StartDASTScanData | None = None
+    cbom : StartCBOMScanData | None = None

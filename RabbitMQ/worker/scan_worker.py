@@ -13,6 +13,7 @@ from helpers.tools.mcp_agent.main import MCPAgent
 from helpers.tools.sast_agent.main import SASTAgent
 from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
 from helpers.tools.iac_agent.main import IACAgent
+from helpers.tools.cbom_agent.main import CBOMAgent
 from helpers.tools.iac_agent.context import IACTypeContext, validate_dict_with_iac_context
 from helpers.tools.llm_agent.context import LLMBenchmarkingContext
 from helpers.tools.llm_agent.main import LLMBenchmarkingAgent
@@ -27,9 +28,9 @@ try:
     is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
     
     # Hosts: Docker uses production host, local uses env var with localhost default
-    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "13.203.233.15" if is_docker_container else "localhost")
-    RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "4672")
-    MONGO_HOST = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker_container else "localhost")
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "devsecshield-rabbitmq" if is_docker_container else "localhost")
+    RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672" if is_docker_container else "4672")
+    MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker_container else "localhost")
     MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 
     env_label = "Docker" if is_docker_container else "Local"
@@ -52,8 +53,9 @@ try:
         else:
             mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
-    console.print(f"Broker URL: {broker_url}", style="bold green")
-    console.print(f"Mongo URL: {mongo_url}", style="bold green")
+    console.print(f"Broker URL: {RABBITMQ_HOST}:{RABBITMQ_PORT}", style="bold green")
+    console.print(f"Mongo URL: {MONGO_HOST}:{MONGO_PORT}", style="bold green")
+    # SECURITY: Credentials masked - never log sensitive connection strings
     
 except Exception as e :
     console.print(f"Error in getting credentials: {e}",style="dim red")
@@ -68,6 +70,12 @@ try:
     app.conf.update(
         RESULT_PERSISTENT=True,
         TASK_TRACK_STARTED=True,
+        # SECURITY: Global task timeout defaults to prevent unbounded execution
+        task_time_limit=900,           # Hard kill after 15 minutes
+        task_soft_time_limit=600,      # SoftTimeLimitExceeded after 10 minutes
+        task_acks_late=True,           # Re-queue if worker dies
+        task_reject_on_worker_lost=True,
+        worker_prefetch_multiplier=1,  # Prevent greedy prefetching
     )
     console.print(f"Celery App instantiated",style="bold green")
 
@@ -584,6 +592,165 @@ try:
                     console.print(f"Error in deleting zip file from bucket",style="bold red")
 
     console.print(f"Registered IAC estimation task",style="bold green")
+
+
+     # ------------------------------------------- CBOM Scanning task -------------------------------------------------------------------------------------------
+    @app.task(track_started=True, bind=True)
+    def cbom(
+        self,
+        repo_dict_context: dict | None = None,
+        zip_dict_context: dict | None = None,
+        file_dict_context: dict | None = None,
+        scan_binaries: bool = False,
+    ):
+
+        try:
+            start_time = time.time()
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context, zip_context, file_context = None, None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            elif file_dict_context:
+                file_context = validate_dict_with_file_context(file_dict_context)
+            else:
+                raise Exception("No context provided")
+
+            state_update_writer = StateUpdateWriter(self)
+
+            # STEP [ 2 ] : =========== Initialize the agent , and run the agent ======================
+            if repo_context:
+                agent = CBOMAgent(
+                    context=repo_context,
+                    scan_binaries=scan_binaries,
+                    state_update_writer=state_update_writer,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                cbom_json = agent.get_cyclonedx_cbom()
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "cbom_json": cbom_json,
+                    "duration_of_scan": duration_of_scan,
+                }
+            elif zip_context:
+                agent = CBOMAgent(
+                    zip_context=zip_context,
+                    scan_binaries=scan_binaries,
+                    state_update_writer=state_update_writer,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                cbom_json = agent.get_cyclonedx_cbom()
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "cbom_json": cbom_json,
+                    "duration_of_scan": duration_of_scan,
+                }
+            elif file_context:
+                agent = CBOMAgent(
+                    cbom_file_context=file_context,
+                    scan_binaries=scan_binaries,
+                    state_update_writer=state_update_writer,
+                )
+                result = agent.run_agent()
+                parsed_output = agent.to_dict_list(result)
+                cbom_json = agent.get_cyclonedx_cbom()
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return {
+                    "results": parsed_output,
+                    "cbom_json": cbom_json,
+                    "duration_of_scan": duration_of_scan,
+                }
+            else:
+                raise Exception("Unable to run cbom scan with the provided context")
+
+        except Exception as e:
+            console.print(f"Error in cbom task: {str(e)}", style="bold red")
+            raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket", style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket", style="bold red")
+
+    console.print(f"Registered CBOM task", style="bold green")
+
+
+     # ------------------------------------------- CBOM Estimation task -------------------------------------------------------------------------------------------
+    @app.task(track_started=True)
+    def cbom_estimation(
+        repo_dict_context: dict | None = None,
+        zip_dict_context: dict | None = None,
+        file_dict_context: dict | None = None,
+        scan_binaries: bool = False,
+    ):
+
+        try:
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context, zip_context, file_context = None, None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            elif file_dict_context:
+                file_context = validate_dict_with_file_context(file_dict_context)
+            else:
+                raise Exception("No context provided")
+
+            # STEP [ 2 ] : =========== Initialize the agent , and estimate the credits required ======================
+            agent = None
+            if repo_context:
+                agent = CBOMAgent(
+                    context=repo_context,
+                    scan_binaries=scan_binaries,
+                )
+            elif zip_context:
+                agent = CBOMAgent(
+                    zip_context=zip_context,
+                    scan_binaries=scan_binaries,
+                )
+            elif file_context:
+                agent = CBOMAgent(
+                    cbom_file_context=file_context,
+                    scan_binaries=scan_binaries,
+                )
+            else:
+                raise Exception("Unable to run cbom scan with the provided context")
+
+            credits_required = agent.estimate_credits_required()
+            return credits_required
+
+        except Exception as e:
+            console.print(f"Error in cbom_estimation task: {str(e)}", style="bold red")
+            import traceback
+            console.print(traceback.format_exc(), style="dim red")
+            return -1  # return -1 to indicate that the estimation failed
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket", style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket", style="bold red")
+
+    console.print(f"Registered CBOM estimation task", style="bold green")
 
 
 

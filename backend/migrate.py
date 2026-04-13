@@ -1,4 +1,4 @@
-from backend.get_db import get_db , get_mongo_db
+from backend.get_db import get_db , get_mongo_client_db
 from backend.new_models import Scan 
 from sqlmodel import Session , select
 from backend.mongo_models import ScanFindings
@@ -10,7 +10,7 @@ console = Console()
 
 def migrate_findings_to_mongo_db():
     engine = get_db()
-    mongo_db = get_mongo_db()
+    mongo_db = get_mongo_client_db()
 
     # SAST scans 
     with Session(engine) as session:

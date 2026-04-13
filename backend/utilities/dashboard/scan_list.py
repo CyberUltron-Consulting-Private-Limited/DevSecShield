@@ -125,6 +125,8 @@ def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_typ
             return generate_llm_dashboard_data(scans=scans)
         elif scan_type == "dast":
             return generate_dast_dashboard_data(scans=scans)
+        elif scan_type == "cbom":
+            return generate_cbom_dashboard_data(scans=scans)
     except Exception as e:
         console.print(f"Error in generating dashboard data for scan list: {e}", style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating dashboard data for scan list, please try again later")
@@ -1659,4 +1661,132 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
         "ai_security_posture_overview": ai_security_posture_overview,
         "owasp_top_10_llm_metrics": owasp_top_10_llm_metrics,
         "scans_per_day": scans_per_day,
+    }
+
+
+CBOM_RISK_SCORE_FOR_IMPACT = {"critical": 10.0, "high": 7.5, "medium": 5.0, "low": 2.5}
+
+
+def _cbom_results(scan: Scan) -> list:
+    """Get CBOM results list from scan.scan_data."""
+    if not scan.scan_data or not isinstance(scan.scan_data, dict):
+        return []
+    return scan.scan_data.get("results", []) or []
+
+
+def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
+    """Aggregate CBOM dashboard data across all scans for the scan-list page."""
+    severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    algorithm_type_distribution: dict[str, int] = defaultdict(int)
+    strength_distribution = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
+    quantum_readiness = {"quantum_safe": 0, "quantum_vulnerable": 0, "unknown": 0}
+    top_risks_entries: list[dict] = []
+
+    total_crypto_assets = 0
+    total_weak = 0
+    total_quantum_vulnerable = 0
+    total_certificates = 0
+    total_keys = 0
+
+    for scan in scans:
+        if scan.scan_status != "success":
+            continue
+        results = _cbom_results(scan)
+        if not results:
+            continue
+
+        total_crypto_assets += len(results)
+
+        for vuln in results:
+            impact = vuln.get("impact", "Low")
+            impact_lower = impact.lower()
+            if impact_lower in severity_distribution:
+                severity_distribution[impact_lower] += 1
+
+            algo_type = vuln.get("algorithm_type", "unknown")
+            algorithm_type_distribution[algo_type] += 1
+
+            strength = vuln.get("crypto_strength", "unknown")
+            if strength in strength_distribution:
+                strength_distribution[strength] += 1
+
+            qs = vuln.get("quantum_safe")
+            if qs is True:
+                quantum_readiness["quantum_safe"] += 1
+            elif qs is False:
+                quantum_readiness["quantum_vulnerable"] += 1
+                total_quantum_vulnerable += 1
+            else:
+                quantum_readiness["unknown"] += 1
+
+            if strength == "weak":
+                total_weak += 1
+
+            if algo_type == "certificate":
+                total_certificates += 1
+            elif algo_type in ("key", "secret"):
+                total_keys += 1
+
+            risk_score = CBOM_RISK_SCORE_FOR_IMPACT.get(impact_lower, 2.5)
+            top_risks_entries.append({
+                "algorithm_name": vuln.get("algorithm_name", vuln.get("title", "Unknown")),
+                "algorithm_type": algo_type,
+                "crypto_strength": strength,
+                "quantum_safe": vuln.get("quantum_safe", False),
+                "impact": impact,
+                "risk_score": risk_score,
+            })
+
+    quantum_readiness_score = 0.0
+    if total_crypto_assets > 0:
+        quantum_readiness_score = round((quantum_readiness["quantum_safe"] / total_crypto_assets) * 100, 1)
+
+    total_findings = sum(severity_distribution.values())
+    if total_findings > 0:
+        weighted = (severity_distribution["critical"] * 4 + severity_distribution["high"] * 3 + severity_distribution["medium"] * 2 + severity_distribution["low"] * 1) / total_findings
+        average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+    else:
+        average_risk_score = 0.0
+
+    top_risks_list = sorted(top_risks_entries, key=lambda x: x["risk_score"], reverse=True)[:10]
+
+    # Aggregate remediation across all successful scans
+    total_fixed = 0
+    total_in_progress = 0
+    total_not_started = 0
+    total_ignored = 0
+    all_findings_count = 0
+    for scan in scans:
+        if scan.scan_status != "success":
+            continue
+        findings = get_findings_for_scan_id(scan_id=scan.id)
+        all_findings_count += len(findings)
+        metrics = get_issue_status_metrics(findings)
+        total_fixed += metrics.get("fixed", 0)
+        total_in_progress += metrics.get("in_progress", 0)
+        total_not_started += metrics.get("not_started", 0)
+        total_ignored += metrics.get("ignored", 0)
+
+    return {
+        "card_data": {
+            "total_crypto_assets": total_crypto_assets,
+            "total_weak_algorithms": total_weak,
+            "total_quantum_vulnerable": total_quantum_vulnerable,
+            "total_certificates": total_certificates,
+            "total_keys": total_keys,
+            "quantum_readiness_score": quantum_readiness_score,
+            "average_risk_score": round(average_risk_score * 10) / 10,
+        },
+        "severity_distribution": severity_distribution,
+        "algorithm_type_distribution": dict(algorithm_type_distribution),
+        "strength_distribution": strength_distribution,
+        "quantum_readiness": quantum_readiness,
+        "top_risks": top_risks_list,
+        "remediation_actions_required": {
+            "total_findings": all_findings_count,
+            "total_fixed": total_fixed,
+            "total_in_progress": total_in_progress,
+            "total_not_started": total_not_started,
+            "total_ignored": total_ignored,
+        },
     }

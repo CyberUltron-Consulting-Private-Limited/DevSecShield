@@ -140,5 +140,29 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "confidence": finding["finding_data"]["confidence"],
                 "remediation": finding.get("remediation", None),
             })
+    
+    elif scan_type == "cbom":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            fd = finding.get("finding_data", {})
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": fd.get("title", ""),
+                "description": fd.get("description", ""),
+                "impact": fd.get("impact", "low"),
+                "risk_score": risk_score_map[fd.get("impact", "low").lower()],
+                "status": finding.get("finding_status", "open"),
+                "compliance_controls": fd.get("compliance_controls", []),
+                "owasp_top_10": fd.get("owasp_top_10", []),
+                "suggested_fix": fd.get("suggested_fix", ""),
+                "algorithm_name": fd.get("algorithm_name", ""),
+                "algorithm_type": fd.get("algorithm_type", ""),
+                "crypto_strength": fd.get("crypto_strength", ""),
+                "key_size": fd.get("key_size"),
+                "quantum_safe": fd.get("quantum_safe", False),
+                "location": fd.get("location", ""),
+                "snippet": fd.get("snippet", ""),
+                "remediation": finding.get("remediation", None),
+            })
 
     return findings

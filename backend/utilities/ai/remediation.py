@@ -63,6 +63,13 @@ REMEDIATION_SYSTEM_PROMPTS: dict[str, str] = {
         "Given an AI agent discovery finding, generate security hardening for the agent integration.\n"
         "Focus on: agent permissions, sandboxing, output validation, monitoring."
     ),
+    "cbom": (
+        "You are a senior cryptography engineer specializing in cryptographic bill of materials.\n"
+        "Given a CBOM vulnerability finding about a weak or quantum-vulnerable cryptographic asset, "
+        "generate code or configuration changes to migrate to a stronger algorithm.\n"
+        "Focus on: post-quantum readiness, algorithm migration (e.g., RSA→ML-KEM, SHA-1→SHA-256), "
+        "key size upgrades, certificate rotation, compliance with NIST SP 800-131A."
+    ),
 }
 
 EXPLOIT_SYSTEM_PROMPT = (

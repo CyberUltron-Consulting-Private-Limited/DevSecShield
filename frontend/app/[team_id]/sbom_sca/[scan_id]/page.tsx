@@ -41,9 +41,10 @@ export default function SCASBOMPage() {
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
-      setTimeout(() => {
+      const t = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversation-data", team_id, scan_id] });
       }, 6 * 1000);
+      return () => clearTimeout(t);
     }
   }, [query.dataUpdatedAt, scan_id, team_id, queryClient]);
 

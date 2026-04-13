@@ -1,10 +1,14 @@
 # ============================================================
 # Stage 1: Builder — install dependencies and compile bytecode
 # ============================================================
-FROM ghcr.io/astral-sh/uv:bookworm-slim AS builder
-
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_PYTHON=3.12 \
+    UV_PYTHON_PREFERENCE=only-system \
+    UV_HTTP_TIMEOUT=180 \
+    UV_HTTP_RETRIES=5 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -27,10 +31,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ============================================================
 # Stage 2: Runtime
 # ============================================================
-FROM ghcr.io/astral-sh/uv:bookworm-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 ENV IS_DOCKER_CONTAINER="True" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_PYTHON=3.12 \
+    UV_PYTHON_PREFERENCE=only-system
 
 WORKDIR /app
 

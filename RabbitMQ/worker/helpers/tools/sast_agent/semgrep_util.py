@@ -49,7 +49,7 @@ def run_sast_scan_on_directory(
         else:
             raise ValueError(f"Directory not provided")
 
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
 
         if result.returncode != 0:

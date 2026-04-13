@@ -324,8 +324,8 @@ class BaseUtilities:
             # getting qdrant client from url and api key 
             load_dotenv()
             is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
-            qdrant_host = os.getenv("QDRANT_HOST", "13.203.233.15" if is_docker_container else "localhost")
-            qdrant_port = os.getenv("QDRANT_PORT", "7333")
+            qdrant_host = os.getenv("QDRANT_HOST", "qdrant" if is_docker_container else "localhost")
+            qdrant_port = os.getenv("QDRANT_PORT", "6333" if is_docker_container else "7333")
             qdrant_url = f"http://{qdrant_host}:{qdrant_port}"
 
             # getting api key from environment variable

@@ -268,3 +268,25 @@ class Impact(Enum):
     MEDIUM = "Medium"
     HIGH = "High"
     CRITICAL = "Critical"
+
+
+# ========================================= CBOM Enums =========================================
+
+class CryptoAssetType(str, Enum):
+    HASH = "hash"
+    SYMMETRIC_CIPHER = "symmetric_cipher"
+    ASYMMETRIC_CIPHER = "asymmetric_cipher"
+    MAC = "mac"
+    KEY_DERIVATION = "key_derivation"
+    SIGNATURE = "signature"
+    PROTOCOL = "protocol"
+    CERTIFICATE = "certificate"
+    KEY = "key"
+    SECRET = "secret"
+    RANDOM_NUMBER_GENERATOR = "random_number_generator"
+
+class CryptoStrength(str, Enum):
+    WEAK = "weak"               # MD5, SHA1, DES, RC4, RSA<1024
+    MODERATE = "moderate"       # 3DES, RSA-1024, SHA-224
+    STRONG = "strong"           # AES-128+, SHA-256+, RSA-2048+ (but quantum-vulnerable)
+    QUANTUM_SAFE = "quantum_safe"  # CRYSTALS-Kyber, Dilithium, SPHINCS+, etc.

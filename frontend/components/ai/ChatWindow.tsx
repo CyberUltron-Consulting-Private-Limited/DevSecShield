@@ -31,18 +31,19 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { ChevronRightIcon, EyeIcon, MicIcon, PaperclipIcon, RefreshCcwIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
 import { nanoid } from 'nanoid';
-import { type FormEventHandler, useCallback, useEffect, useState } from 'react';
+import { type FormEventHandler, useCallback, useEffect, useState, useMemo } from 'react';
 import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
+import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
 import { MCPConversationResponse } from '@/utils/backend_api';
 import ReactMarkdown from 'react-markdown';
+import { sanitizeMarkdown } from '@/utils/sanitize';
 
 export type ChatMessage = {
   id: number;
@@ -60,7 +61,7 @@ const ChatWindow = ({
   query,
   progress,
 }: {
-  query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<DASTScanResponse> | UseQueryResult<SCASBOMConversationResponse>;
+  query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<DASTScanResponse> | UseQueryResult<SCASBOMConversationResponse> | UseQueryResult<CBOMConversationResponse>;
   progress?: ChatWindowProgress;
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -102,7 +103,7 @@ const ChatWindow = ({
   }, [query.data, query.error]);
 
   // check type of conversation (path format: /team_id/type/scan_id or similar)
-  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | 'cbom' | undefined;
   const typeSegment = pathParts[1];
   if (typeSegment === 'sast') {
       type = 'sast';
@@ -127,6 +128,9 @@ const ChatWindow = ({
   }
   else if (typeSegment === 'dast') {
       type = 'dast';
+  }
+  else if (typeSegment === 'cbom') {
+      type = 'cbom';
   }
   else {
       toast.error('Invalid conversation type');
@@ -215,13 +219,16 @@ const ChatWindow = ({
     else if (type === 'dast') {
       queryClient.invalidateQueries({ queryKey: ['dast-conversation-data', scan_id] });
     }
+    else if (type === 'cbom') {
+      queryClient.invalidateQueries({ queryKey: ['cbom-conversation-data', team_id, scan_id] });
+    }
     else {
       toast.error('Invalid conversation type');
     }
   }, [queryClient, type, team_id, scan_id]);
 
  
-  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast'];
+  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom'];
   let Heading: string = '';
   switch (type) {
     case 'sast':
@@ -247,6 +254,9 @@ const ChatWindow = ({
       break;
     case 'dast':
       Heading = 'DAST';
+      break;
+    case 'cbom':
+      Heading = 'CBOM';
       break;
     default:
       Heading = 'Unknown';
@@ -294,7 +304,7 @@ const ChatWindow = ({
                       <span className="text-muted-foreground text-sm">Thinking...</span>
                     </div>
                   ) : (
-                    <ReactMarkdown >{message.content}</ReactMarkdown>
+                    <ReactMarkdown>{sanitizeMarkdown(message.content)}</ReactMarkdown>
                   )}
                 </MessageContent>
                 <MessageAvatar  

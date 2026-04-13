@@ -55,8 +55,21 @@ def add_message(messages:list[AnyMessage],role:Literal["human" , "system" , "ai"
 
 
 
+SCAN_TYPE_DISPLAY_NAMES = {
+    "sast": "SAST",
+    "dast": "DAST",
+    "sbom_sca": "SCA+SBOM",
+    "iac": "IAC",
+    "leakage": "Code/Data Leakage",
+    "mcp": "MCP Server",
+    "llm": "LLM Benchmarking",
+    "agent_discovery": "AI Agent Discovery",
+    "cbom": "CBOM (Cryptographic Bill of Materials)",
+}
+
+
 async def chatbot_response(
-    scan_type:Literal["SAST" , "SCA+SBOM" , "IAC" , "Code/Data Leakage" , "MCP Server" , "LLM Benchmarking" , "AI Agent Discovery"],
+    scan_type:str,
     scan_results:str,
     history:list[AnyMessage],
     content:str,
@@ -68,8 +81,9 @@ async def chatbot_response(
     """
 
     load_dotenv()
+    display_name = SCAN_TYPE_DISPLAY_NAMES.get(scan_type, scan_type)
     system_prompt = f"""
-    You are a Cybersecurity Expert who has just run a {scan_type} scan . Keeping the results of the scan in mind , answer any question the user asks. ( Sidenote : Do not generate a Markdown response , the response can at most use bullets and numbering )
+    You are a Cybersecurity Expert who has just run a {display_name} scan . Keeping the results of the scan in mind , answer any question the user asks. ( Sidenote : Do not generate a Markdown response , the response can at most use bullets and numbering )
     ## Scan Results :
     {scan_results} 
     """
@@ -131,7 +145,7 @@ def summarize ( history : list[AnyMessage] ):
 async def create_response(
     scan_id:int,
     mongo_db: Database,
-    scan_type:Literal["SAST" , "SCA+SBOM" , "IAC" , "Code/Data Leakage" , "MCP Server" , "LLM Benchmarking" , "AI Agent Discovery"],
+    scan_type:str,
     scan_results:str,
     content:str,
     role:Literal["human" ,"system" ,"ai"],

@@ -109,3 +109,25 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "urls_included": urls_included,
             "urls_excluded": urls_excluded,
         }
+    
+    elif scan_type == "cbom":
+        _meta = scan.scan_metadata or {}
+        repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
+        zip_file_used = bool(_meta.get("zip_file_used"))
+        branch = _meta.get("branch") or "main"
+        cbom_file_used = bool(_meta.get("cbom_file_used"))
+        scan_binaries = bool(_meta.get("scan_binaries"))
+
+        # Extract cbom_json from scan_data (follows IAC dependency_diagram pattern)
+        cbom_json = None
+        if scan.scan_data and isinstance(scan.scan_data, dict) and "cbom_json" in scan.scan_data:
+            cbom_json = scan.scan_data["cbom_json"]
+
+        return {
+            "repo_url": repo_url,
+            "branch": branch,
+            "zip_file_used": zip_file_used,
+            "cbom_file_used": cbom_file_used,
+            "scan_binaries": scan_binaries,
+            "cbom_json": cbom_json,
+        }

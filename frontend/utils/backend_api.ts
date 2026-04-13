@@ -61,10 +61,19 @@ export interface StartSBOMScanData {
   sbom_file_used: boolean;
 }
 
+/** CBOM scan input: exactly one of repo_context, zip_file_used, or cbom_file_used (matches backend StartCBOMScanData) */
+export interface StartCBOMScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  cbom_file_used: boolean;
+  scan_binaries: boolean;
+}
+
 export interface StartScanPayload {
   sast?: StartSastScanData | null;
   iac?: StartIACScanData | null;
   sbom_sca?: StartSBOMScanData | null;
+  cbom?: StartCBOMScanData | null;
 }
 
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
@@ -450,7 +459,7 @@ const reinitializeSastScan = async (params: {
 /** Send a message to a scan. POST /{team_id}/{type}/scan/{scan_id}/message */
 const sendMessageToScan = async (
     team_id: number,
-    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast",
+    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast" | "cbom",
     scan_id: number,
     user_message: string
 ): Promise<{ content: string }> => {
@@ -469,7 +478,7 @@ const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: Fi
 /** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
 const estimateCreditsForScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -486,7 +495,7 @@ const estimateCreditsForScan = async (
 /** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
 const startScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -511,7 +520,7 @@ export interface CreateTicketData {
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
 const createTicket = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom",
   scan_id: number,
   data: CreateTicketData
 ): Promise<{ message: string }> => {
@@ -1764,7 +1773,7 @@ const updateScan = async ({
     data,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom";
     scan_id: number;
     data: UpdateScanPayload;
 }) => {
@@ -1781,7 +1790,7 @@ const toggleFindingState = async ({
     state,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom";
     scan_id: number;
     finding_id: string;
     state: "fixed" | "ignored" | "in_progress" | "not_started";
@@ -2022,6 +2031,275 @@ export {
     generateFindingRemediation,
 }
 
+// -------------------------------------------------------------- CBOM API Routes --------------------------------------------------------------
+
+/** CBOM finding from backend get_findings_for_scan_type (cbom branch) */
+export interface CbomFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  suggested_fix?: string | null
+  algorithm_name?: string | null
+  algorithm_type?: string | null
+  crypto_strength?: string | null
+  key_size?: number | null
+  quantum_safe?: boolean | null
+  location?: string | null
+  snippet?: string | null
+  remediation?: RemediationData | null
+}
+
+/** CBOM scan metadata from backend get_scan_metadata (cbom branch) */
+export interface CbomScanMetadata {
+  repo_url?: string | null
+  branch?: string | null
+  zip_file_used?: boolean
+  cbom_file_used?: boolean
+  scan_binaries?: boolean
+  cbom_json?: Record<string, unknown> | null
+}
+
+/** CBOM single-scan dashboard from backend generate_scan_dashboard (scan.py cbom branch) */
+export interface CbomScanDashboardData {
+  card_data: {
+    total_crypto_assets: number
+    total_weak_algorithms: number
+    total_quantum_vulnerable: number
+    total_certificates: number
+    total_keys: number
+    quantum_readiness_score: number
+    average_risk_score: number
+  }
+  remediation_metrics: {
+    mean_time_to_remediate: [number, number, number]
+    critical_issues_fixed: number
+    remediation_velocity: number
+    high_priority_backlog: number
+  }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  algorithm_type_distribution: Record<string, number>
+  strength_distribution: Record<string, number>
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown: number }
+  owasp_top_10_issues: Record<string, number>
+  compliance_controls: Record<string, number>
+  top_risks: Array<{
+    algorithm_name: string
+    algorithm_type: string
+    crypto_strength: string
+    quantum_safe: boolean
+    impact: string
+  }>
+}
+
+/** CBOM conversation (scan) row returned by list scans endpoint. Same shape as SCASBOMConversation. */
+export interface CBOMConversation {
+  id: number
+  title: string
+  scan_status: string
+  created_at: string
+  last_updated: string
+  estimated_credits: number | null
+  average_risk_score: number | null
+  branch: string | null
+  repo_url: string | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  total_quantum_vulnerable: number | null
+  total_weak_algorithms: number | null
+  zip_file_used: boolean | null
+  cbom_file_used: boolean | null
+  scan_binaries: boolean | null
+  info: string | null
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_weak?: number
+    total_quantum_vulnerable?: number
+    scan_binaries?: boolean
+  } | null
+  scan_metadata: CbomScanMetadata | null
+}
+
+/** Card counts returned by list CBOM scans */
+export interface CBOMListCardData {
+  pending_scans: number
+  started_scans: number
+  success_scans: number
+  failure_scans: number
+  not_started_scans: number
+  scans_created_today: number
+  scans_updated_today: number
+}
+
+/** CBOM list dashboard from backend generate_cbom_dashboard_data */
+export interface CBOMDashboardData {
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  algorithm_type_distribution: Record<string, number>
+  strength_distribution: Record<string, number>
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown: number }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  top_risks: Array<{
+    algorithm_name: string
+    algorithm_type: string
+    crypto_strength: string
+    quantum_safe: boolean
+    impact: string
+  }>
+  card_data: {
+    total_crypto_assets: number
+    total_weak_algorithms: number
+    total_quantum_vulnerable: number
+    total_certificates: number
+    total_keys: number
+    quantum_readiness_score: number
+    average_risk_score: number
+  }
+}
+
+export interface CBOMListResponse {
+  scans_list_data: CBOMConversation[]
+  dashboard_data: CBOMDashboardData
+}
+
+export interface CBOMConversationResponse {
+  title: string
+  repo_url?: string | null
+  scan_status: string
+  scan_metadata?: CbomScanMetadata | Record<string, unknown> | null
+  data: any
+  dashboard?: CbomScanDashboardData | null
+  findings?: CbomFinding[] | null
+  messages: SCASBOMConversationMessage[]
+  integration_settings?: Record<string, unknown> | null
+  info?: ScanInfoField | null
+}
+
+/** Team-scoped: GET /{team_id}/cbom/scans */
+const getCBOMScans = async (team_id: number): Promise<CBOMListResponse> => {
+  try {
+    const response = await api.get(`/${team_id}/cbom/scans`);
+    toast.success("CBOM scans fetched successfully");
+    return response.data as CBOMListResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching CBOM scans");
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id} */
+const getCBOMScanData = async ({
+  queryKey,
+}: {
+  queryKey: ["cbom-conversation-data", number, number];
+}): Promise<CBOMConversationResponse> => {
+  const [, team_id, scan_id] = queryKey;
+  try {
+    const response = await api.get(`/${team_id}/cbom/scan/${scan_id}`);
+    toast.success("CBOM scan data fetched successfully");
+    return response.data as CBOMConversationResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching CBOM scan data");
+    throw error;
+  }
+};
+
+const createCBOMScan = async (team_id: number, title: string): Promise<number> => {
+  try {
+    const response = await api.post(`/${team_id}/cbom/scan`, { title });
+    toast.success("CBOM scan created successfully");
+    return response.data.scan_id as number;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteCBOMScan = async (team_id: number, scan_id: number) => {
+  try {
+    const response = await api.delete(`/${team_id}/cbom/scan/${scan_id}`);
+    toast.success("CBOM scan deleted successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const renameCBOMScan = async ({
+  team_id,
+  scan_id,
+  title,
+}: {
+  team_id: number;
+  scan_id: number;
+  title: string;
+}) => {
+  try {
+    const response = await api.put(`/${team_id}/cbom/scan/${scan_id}`, { title });
+    toast.success("CBOM scan renamed successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export */
+const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+  try {
+    const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
+    toast.success("CBOM export results fetched successfully");
+    return response.data;
+  } catch (error) {
+    showErrorToast(error, "Error fetching CBOM export results");
+    throw error;
+  }
+};
+
+/** Team-scoped: POST /{team_id}/cbom/scan/{scan_id}/reinitialize with FormData */
+const reinitializeCBOMScanWithPayload = async (
+  team_id: number,
+  scan_id: number,
+  start_scan_payload_string: string,
+  uploaded_file?: File | null
+) => {
+  const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+  const response = await api.post<{ message: string }>(
+    `/${team_id}/cbom/scan/${scan_id}/reinitialize`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  toast.success("CBOM scan reinitialized successfully");
+  return response.data;
+};
+
+export {
+  getCBOMScans,
+  getCBOMScanData,
+  createCBOMScan,
+  deleteCBOMScan,
+  renameCBOMScan,
+  getCBOMExportResults,
+  reinitializeCBOMScanWithPayload,
+}
+
 // -------------------------------------------------------------- Remediation Types + API --------------------------------------------------------------
 
 export interface RemediationFix {
@@ -2059,7 +2337,7 @@ const generateFindingRemediation = async ({
     finding_id,
 }: {
     team_id: number
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast"
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom"
     scan_id: number
     finding_id: string
 }): Promise<RemediationData> => {

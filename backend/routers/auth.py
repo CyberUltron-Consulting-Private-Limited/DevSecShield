@@ -1,3 +1,4 @@
+import datetime
 from fastapi import APIRouter, BackgroundTasks
 from typing import Annotated
 from fastapi import Depends, HTTPException, status , Header
@@ -32,9 +33,12 @@ router = APIRouter(
 )
 
 
-limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
+# SECURITY: Tiered rate limiting for auth endpoints
+limiter = RateLimiter(times=20, seconds=30)  # General: 20 requests per 30 seconds
+limiter_strict = RateLimiter(times=5, seconds=60)  # Strict: 5 requests per 60 seconds (login, signup)
+limiter_very_strict = RateLimiter(times=3, seconds=120)  # Very strict: 3 requests per 120 seconds (verification codes)
 
-@router.post('/signup', summary="Create new user", dependencies=[Depends(limiter)])
+@router.post('/signup', summary="Create new user", dependencies=[Depends(limiter_strict)])
 async def create_user(data: UserSignup):
     """
     Request Fields:
@@ -51,12 +55,12 @@ async def create_user(data: UserSignup):
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()
+            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code, VerificationCode.expires_at >= datetime.datetime.now(datetime.timezone.utc))).first()
         if verification_code is None:
             print("invalid verification code 🔴")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code"
+                detail="Invalid or expired verification code"
             )
         else:
             # code verified and performing cleanup
@@ -107,7 +111,7 @@ async def create_user(data: UserSignup):
             raise e
         raise HTTPException(status_code=403, detail="Could not create user, please try again later")
 
-@router.post('/login', summary="Create access and refresh tokens for user. body should be form data", response_model=TokenSchema, dependencies=[Depends(limiter)])
+@router.post('/login', summary="Create access and refresh tokens for user. body should be form data", response_model=TokenSchema, dependencies=[Depends(limiter_strict)])
 async def login(form_data: UserLogin):
     """
     Request Fields:
@@ -124,7 +128,7 @@ async def login(form_data: UserLogin):
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == form_data.email, VerificationCode.code == form_data.verification_code)).first()
+            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == form_data.email, VerificationCode.code == form_data.verification_code, VerificationCode.expires_at >= datetime.datetime.now(datetime.timezone.utc))).first()
         if verification_code is None:
             print("invalid verification code 🔴")
             raise HTTPException(
@@ -222,7 +226,13 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
             )
 
 
-        access_token = Authorization.split(" ")[1]
+        parts = Authorization.split(" ")
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Authorization header format"
+            )
+        access_token = parts[1]
         user = await get_current_user_from_access_token(engine, access_token)
         return {
             "email": user.email,
@@ -238,7 +248,7 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
             raise e
         raise HTTPException(status_code=403, detail="Could not get user details, please try again later")
 
-@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(limiter)])
+@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(limiter_very_strict)])
 async def send_verification_code(data: CodeSend, background_tasks: BackgroundTasks):
     """
     Request Fields:
@@ -282,12 +292,12 @@ async def reset_password(data: ResetPassword):
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()
+            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code, VerificationCode.expires_at >= datetime.datetime.now(datetime.timezone.utc))).first()
         if verification_code is None:
             Console().print("invalid verification code 🔴", style="bold red")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code"
+                detail="Invalid or expired verification code"
             )
 
         # STEP 2-------------updating password

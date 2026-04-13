@@ -51,14 +51,17 @@ export default function LoginPage({
       setTimerStarted(false)
       setTimer(delay*1000)
     }
-  }, [timer])
+    return () => {
+      if (timerId) clearInterval(timerId)
+    }
+  }, [timer, timerId])
 
   // get query params for redirect url after auth ( and redirect to that url after auth if this query param is present)
   const searchParams = useSearchParams()
   const redirectUrlString = searchParams.get("redirect_url")
-  const redirectUrl = redirectUrlString?.split("-").join("/") || ""
-
-  console.log(redirectUrl)
+  // Validate redirect URL to prevent open redirect attacks - only allow relative paths
+  const rawRedirect = redirectUrlString?.split("-").join("/") || ""
+  const redirectUrl = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : ""
 
 
 
@@ -120,7 +123,7 @@ export default function LoginPage({
         if(response.status === 200){
             localStorage.setItem("access_token", response.data.access_token)
             localStorage.setItem("refresh_token", response.data.refresh_token)
-            router.push("/home")
+            router.push(redirectUrl || "/home")
         }else{
             toast.error("Error while registering",{description: response.data.detail})
         }
@@ -151,7 +154,7 @@ export default function LoginPage({
             toast.success("Logged in successfully")
             localStorage.setItem("access_token", response.data.access_token)
             localStorage.setItem("refresh_token", response.data.refresh_token)
-            router.push("/home")
+            router.push(redirectUrl || "/home")
         }else{
             toast.error("Error while logging in",{description: response.data.detail})
         }

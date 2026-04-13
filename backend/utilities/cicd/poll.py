@@ -4,11 +4,12 @@ from fastapi import HTTPException, status
 from pymongo.collection import Collection
 from bson import ObjectId
 import time
+import asyncio
 from rich.console import Console
 
 console = Console()
 
-def poll_for_results(
+async def poll_for_results(
     task_id: str, 
     celery_app: Celery , 
     cicd_log_collection: Collection,
@@ -18,7 +19,7 @@ def poll_for_results(
     Poll for the results of a task
     """
     for i in range(20):
-        time.sleep(10)
+        await asyncio.sleep(10)
         task_status = AsyncResult(task_id, app=celery_app).status.lower() if task_id else None
         if not task_status:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get status of task")

@@ -22,9 +22,9 @@ def get_celery_app():
 
         is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
         
-        RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "13.203.233.15" if is_docker_container else "localhost")
-        RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "4672")
-        MONGO_HOST = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker_container else "localhost")
+        RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "devsecshield-rabbitmq" if is_docker_container else "localhost")
+        RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672" if is_docker_container else "4672")
+        MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker_container else "localhost")
         MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 
         env_label = "Docker" if is_docker_container else "Local"

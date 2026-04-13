@@ -1,4 +1,5 @@
 import datetime
+import asyncio
 from typing import Annotated, Literal
 from bson import ObjectId
 from celery.result import AsyncResult
@@ -28,14 +29,19 @@ async def poll_for_estimated_credits (
         for i in range(30):
             task_result = simple_app.AsyncResult(task_id)
             if task_result.state == "FAILURE":
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in polling for result of task , please try again later")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation failed, please try again later")
             if task_result.state == "SUCCESS":
-                return task_result.result # here the result is a float number that represents the estimated credits consumed for the scan
-            time.sleep(2)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in polling for result of task , please try again later")
+                result = task_result.result
+                if result is None or result < 0:
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation failed, please try again later")
+                return result # here the result is a float number that represents the estimated credits consumed for the scan
+            await asyncio.sleep(2)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation timed out, please try again later")
+    except HTTPException:
+        raise
     except Exception as e:
         console.print(f"Error in polling for result of task: {e}",style="bold red")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in polling for result of task , please try again later")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in polling for result of task, please try again later")
 
 
 async def estimate_credits(
@@ -73,6 +79,9 @@ async def estimate_credits(
         elif scan_type == "dast":
             task_result = simple_app.send_task(name="dast_worker.dast_estimation", kwargs=scan_kwargs, queue="dast_worker_queue")
             console.print(f"Sent dast estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
+        elif scan_type == "cbom":
+            task_result = simple_app.send_task(name="scan_worker.cbom_estimation", kwargs=scan_kwargs, queue="scan_worker_queue")
+            console.print(f"Sent cbom estimation task to celery worker. task id: {task_result.id}" ,style="bold yellow")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 

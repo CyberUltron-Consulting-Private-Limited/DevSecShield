@@ -1,6 +1,8 @@
 
 import os
 import contextlib
+import logging
+import re
 from rich.console import Console
 from fastapi import FastAPI
 from starlette.middleware import Middleware
@@ -18,6 +20,54 @@ import json
 from starlette.responses import JSONResponse
 
 console = Console()
+
+# SECURITY: Log filter to redact sensitive credentials
+class CredentialRedactionFilter(logging.Filter):
+    """Filter to redact sensitive information from logs."""
+    PATTERNS = [
+        (re.compile(r'(mongodb://|amqp://|redis://|postgres://)[^\s]+', re.I), r'\1[REDACTED]'),
+        (re.compile(r'(api[_-]?key.*?[:=]\s*["\']?)([a-zA-Z0-9]{16,})', re.I), r'\1[REDACTED]'),
+        (re.compile(r'(Bearer\s+)([a-zA-Z0-9._-]+)', re.I), r'\1[REDACTED]'),
+        (re.compile(r'(password.*?[:=]\s*["\']?)([^\s"\']+)', re.I), r'\1[REDACTED]'),
+        (re.compile(r'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'), '[JWT_REDACTED]'),
+        (re.compile(r'(secret.*?[:=]\s*["\']?)([^\s"\']{8,})', re.I), r'\1[REDACTED]'),
+    ]
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        if hasattr(record, 'msg') and isinstance(record.msg, str):
+            for pattern, replacement in self.PATTERNS:
+                record.msg = pattern.sub(replacement, record.msg)
+        if hasattr(record, 'args') and record.args:
+            try:
+                record.args = tuple(
+                    self._redact(arg) if isinstance(arg, str) else arg
+                    for arg in record.args
+                )
+            except (TypeError, AttributeError):
+                pass
+        return True
+    
+    def _redact(self, text: str) -> str:
+        for pattern, replacement in self.PATTERNS:
+            text = pattern.sub(replacement, text)
+        return text
+
+# Apply filter to root logger
+logging.getLogger().addFilter(CredentialRedactionFilter())
+console.print("[bold green]✓ Credential redaction filter applied to logging[/bold green]")
+
+# SECURITY: Load CORS origins from environment variable
+def get_cors_origins() -> list[str]:
+    """Get allowed CORS origins from environment variable."""
+    origins_str = os.getenv("CORS_ORIGINS", "")
+    if not origins_str:
+        # Default to localhost for development
+        console.print("[bold yellow]⚠ CORS_ORIGINS not set, defaulting to localhost[/bold yellow]")
+        return ["http://localhost:3000", "http://localhost:4000", "http://127.0.0.1:3000", "http://127.0.0.1:4000"]
+    return [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+
+CORS_ALLOWED_ORIGINS = get_cors_origins()
+console.print(f"[bold green]✓ CORS allowed origins: {CORS_ALLOWED_ORIGINS}[/bold green]")
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,8 +90,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, middleware=[
     Middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # consider restricting to ["http://localhost:3000"] in dev
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -60,6 +110,15 @@ app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)
 app.include_router(admin_router)
 app.include_router(team_router)
+
+# Health check endpoint for container orchestration
+@app.get("/health", tags=["health"])
+async def health_check():
+    """
+    Health check endpoint for Docker health checks and load balancer probes.
+    Returns 200 OK if the service is healthy.
+    """
+    return {"status": "healthy", "service": "devsecshield-backend"}
 
 # Use this only for debugging purposes ⚠️⚠️⚠️⚠️
 # @app.exception_handler(RequestValidationError)

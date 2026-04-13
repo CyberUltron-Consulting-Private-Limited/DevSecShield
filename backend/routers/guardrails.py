@@ -60,7 +60,7 @@ async def list_guardrails_integrations(
                     "scanners_enabled": list(integration.settings.keys()),
                     "owner_user_email": owner_user.email,
                     "owner_user_full_name": f"{owner_user.first_name} {owner_user.last_name}",
-                    "api_key": integration.api_key,
+                    "api_key": integration.api_key[:8] + "..." + integration.api_key[-4:] if len(integration.api_key) > 12 else "****",
                     "created_at": integration.created_at,
                     "last_updated": integration.last_updated
                 })
@@ -101,12 +101,12 @@ async def create_guardrails_integration(
         
         # STEP [ 3 ] : ======================================== Create the guardrails integration ====================================
         with Session(engine) as session:
-            api_key = create_api_key(team_id)
+            plaintext_api_key, hashed_api_key = create_api_key(team_id)
             new_integration = GuardrailsIntegration(
                 owner_user_id=user.id,
                 team_id=team_id,
                 title=data.title,
-                api_key=api_key,
+                api_key=hashed_api_key,  # Store only the hash
             )
             session.add(new_integration)
             session.commit()
@@ -116,7 +116,9 @@ async def create_guardrails_integration(
         deduct_credits_from_team(team_id=team_id, credits=0.5)
         return {
             "message": "Guardrails integration created successfully",
-            "integration_id": new_integration.id
+            "integration_id": new_integration.id,
+            "api_key": plaintext_api_key,  # Return plaintext ONCE, user must save it
+            "warning": "Save this API key now. It will not be shown again."
         }
     except HTTPException as e:
         raise e
@@ -213,7 +215,7 @@ async def get_guardrails_integration(
         
         return {
             "dashboard_data" : dashboard_data,
-            "api_key": integration.api_key,
+            "api_key": integration.api_key[:8] + "..." + integration.api_key[-4:] if len(integration.api_key) > 12 else "****",
             "log_data": log_data,
             "settings": integration.settings,
             "integration_settings": integration.integration_settings or {},
@@ -376,3 +378,69 @@ async def get_guardrails_integration_settings(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Error getting guardrails integration settings")
+
+
+# new ✅
+@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration")
+async def rotate_guardrails_api_key(
+    team_id: int,
+    integration_id: int,
+    Authorization: Annotated[str | None, Header()] = None,
+    dependencies=[Depends(limiter)]):
+    """
+    Rotate the API key for a guardrails integration.
+    The old key is immediately invalidated and a new key is generated.
+    Only the integration owner can rotate the key.
+    
+    Returns the new API key ONCE - user must save it immediately.
+    """
+    try:
+        # STEP [ 1 ] : ======================================== Get database ====================================
+        engine = get_db()
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+
+        # STEP [ 2 ] : ======================================== Check if user is in team ====================================
+        check_if_user_is_in_team(user.id, team_id, engine)
+
+        # STEP [ 3 ] : ======================================== Rotate the API key ========================================
+        with Session(engine) as session:
+            integration: GuardrailsIntegration | None = session.exec(
+                select(GuardrailsIntegration).where(
+                    GuardrailsIntegration.id == integration_id,
+                    GuardrailsIntegration.team_id == team_id
+                )
+            ).first()
+            
+            if integration is None or not integration.id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails integration not found")
+            
+            # Only the owner can rotate the key
+            if integration.owner_user_id != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only the integration owner can rotate the API key"
+                )
+            
+            # Generate new API key
+            plaintext_api_key, hashed_api_key = create_api_key(team_id)
+            
+            # Update the integration with new hashed key
+            integration.api_key = hashed_api_key
+            integration.last_updated = datetime.now(timezone.utc)
+            session.add(integration)
+            session.commit()
+            
+            console.print(f"API key rotated for guardrails integration {integration_id}", style="bold green")
+            
+            return {
+                "message": "API key rotated successfully",
+                "integration_id": integration_id,
+                "api_key": plaintext_api_key,  # Return plaintext ONCE, user must save it
+                "warning": "Save this API key now. It will not be shown again. The old key has been invalidated."
+            }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error rotating API key: {str(e)}", style="bold red")
+        raise HTTPException(status_code=500, detail="Error rotating API key")

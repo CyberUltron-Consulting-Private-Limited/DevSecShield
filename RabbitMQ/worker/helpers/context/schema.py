@@ -102,6 +102,18 @@ class MCPResourceResponse(BaseModel):
     resource_risk_level : Impact = Field(description="The risk level of the resource")
 
 
+# ========================================= CBOM Schemas =========================================
+
+class CryptographicAssetVulnerability(BaseVulnerability):
+    algorithm_name : str = Field(description="The name of the cryptographic algorithm or asset, e.g. AES-256-GCM, RSA-2048, MD5, TLS 1.2")
+    algorithm_type : CryptoAssetType = Field(description="The type of the cryptographic asset")
+    crypto_strength : CryptoStrength = Field(description="The strength classification of the cryptographic asset")
+    key_size : int | None = Field(default=None, description="The key size in bits, if applicable")
+    quantum_safe : bool = Field(description="Whether the cryptographic asset is quantum-safe (post-quantum cryptography)")
+    location : str = Field(description="The file path where the cryptographic usage was detected")
+    snippet : str = Field(description="The code or configuration snippet containing the cryptographic usage")
+
+
 
 
 

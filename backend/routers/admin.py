@@ -119,6 +119,7 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
                     "sast_scans_count": len([scan for scan in team.scans if scan.scan_type == "sast"]),
                     "iac_scans_count": len([scan for scan in team.scans if scan.scan_type == "iac"]),
                     "sbom_sca_scans_count": len([scan for scan in team.scans if scan.scan_type == "sbom_sca"]),
+                    "cbom_scans_count": len([scan for scan in team.scans if scan.scan_type == "cbom"]),
                 })
             
             return teams_data
@@ -292,7 +293,13 @@ async def update_team_credit_balance(
             if not team:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
+                    detail="Team not found"
+                )
+            
+            if data.credit_balance < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Credit balance cannot be negative"
                 )
             
             team.credit_balance = data.credit_balance

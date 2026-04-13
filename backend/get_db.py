@@ -10,40 +10,49 @@ load_dotenv()
 
 _is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
 
-# Hosts: Docker uses production host, local uses env var with localhost default
-PG_HOST = os.getenv("PG_HOST", "13.203.233.15" if _is_docker else "localhost")
-PG_PORT = os.getenv("PG_PORT", "4433")
-MONGO_HOST = os.getenv("MONGO_HOST", "13.203.233.15" if _is_docker else "localhost")
+# Hosts: Docker uses container names on the shared network, local uses localhost with host-mapped ports
+PG_HOST = os.getenv("PG_HOST", "devsecshield-postgres" if _is_docker else "localhost")
+PG_PORT = os.getenv("PG_PORT", "5432" if _is_docker else "4433")
+MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if _is_docker else "localhost")
 MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+
+# Singleton instances for connection pooling
+_pg_engine = None
+_mongo_db = None
 
 
 def get_db():
 
+    global _pg_engine
     console = _console
     try:
+        if _pg_engine is not None:
+            return _pg_engine
         postgres_username = os.environ['PG_USER']
         postgres_password = os.environ['PG_USER_PASS']
         postgres_db = os.environ['PG_DB']
         postgres_url = f"postgresql://{postgres_username}:{postgres_password}@{PG_HOST}:{PG_PORT}/{postgres_db}"
 
-        console.print(f"Database URL: {postgres_url}", style="bold green")
-
-        engine = create_engine(postgres_url)
-        return engine
+        _pg_engine = create_engine(postgres_url, pool_size=10, max_overflow=20, pool_pre_ping=True)
+        return _pg_engine
 
     except Exception as e:
-        console.print(f"Error getting database: {e}", style="bold red")
+        console.print(f"Error getting database: connection to {PG_HOST}:{PG_PORT} failed", style="bold red")
         raise e 
 
 def get_mongo_client_db():
+    global _mongo_db
     mongo_username = os.getenv('MONGO_INITDB_ROOT_USERNAME')
     mongo_password = os.getenv('MONGO_INITDB_ROOT_PASSWORD')
+    
+    if _mongo_db is not None:
+        return _mongo_db
     
     if mongo_username and mongo_password:
         mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
     else:
         mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
     
-    mongo_client = MongoClient(mongo_url)
-    db = mongo_client['new_devsecshield_backend_server_db']
-    return db
+    mongo_client = MongoClient(mongo_url, maxPoolSize=50, minPoolSize=5)
+    _mongo_db = mongo_client['new_devsecshield_backend_server_db']
+    return _mongo_db

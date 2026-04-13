@@ -45,7 +45,7 @@ def run_sbom_scan(
             raise ValueError(f"Directory not provided")
 
         if cmd:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
                 raise RuntimeError(f"SBOM scan failed: {result.stderr}")
         else:

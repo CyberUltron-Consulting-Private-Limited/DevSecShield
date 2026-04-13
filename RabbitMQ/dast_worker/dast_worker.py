@@ -17,9 +17,9 @@ try:
     load_dotenv()
     is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
     
-    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "13.203.233.15" if is_docker_container else "localhost")
-    RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "4672")
-    MONGO_HOST = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker_container else "localhost")
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "devsecshield-rabbitmq" if is_docker_container else "localhost")
+    RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672" if is_docker_container else "4672")
+    MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker_container else "localhost")
     MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 
     env_label = "Docker" if is_docker_container else "Local"
@@ -42,8 +42,9 @@ try:
         else:
             mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
-    console.print(f"Broker URL: {broker_url}", style="bold green")
-    console.print(f"Mongo URL: {mongo_url}", style="bold green")
+    console.print(f"Broker URL: {RABBITMQ_HOST}:{RABBITMQ_PORT}", style="bold green")
+    console.print(f"Mongo URL: {MONGO_HOST}:{MONGO_PORT}", style="bold green")
+    # SECURITY: Credentials masked - never log sensitive connection strings
     
 except Exception as e :
     console.print(f"Error in getting credentials: {e}",style="dim red")
@@ -56,6 +57,11 @@ try:
     app.conf.update(
         RESULT_PERSISTENT=True,
         TASK_TRACK_STARTED=True,
+        # SECURITY: Global task timeout defaults to prevent unbounded execution
+        task_time_limit=1800,          # Hard kill after 30 minutes (DAST is slower)
+        task_soft_time_limit=1500,     # SoftTimeLimitExceeded after 25 minutes
+        task_acks_late=True,           # Re-queue if worker dies
+        task_reject_on_worker_lost=True,
     )
     console.print(f"Celery App instantiated",style="bold green")
 

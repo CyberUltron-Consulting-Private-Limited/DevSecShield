@@ -21,7 +21,7 @@ import { toast } from "sonner";
 
 interface RemediationPanelProps {
   teamId: string;
-  scanType: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast";
+  scanType: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom";
   scanId: number;
   findingId: string;
   existingRemediation?: RemediationData | null;

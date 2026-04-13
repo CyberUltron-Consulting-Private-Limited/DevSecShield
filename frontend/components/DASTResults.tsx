@@ -554,6 +554,7 @@ export default function DASTResults({
   }, [dashboard.vulnerability_category_issues_distribution]);
 
   const riskScoresPerCategoryData = useMemo(() => {
+    if (!dashboard?.risk_scores_per_category) return [];
     const categories = Object.keys(dashboard.risk_scores_per_category);
     if (categories.length === 0) return [];
     const severityKeys = ["critical", "high", "medium", "low"] as const;

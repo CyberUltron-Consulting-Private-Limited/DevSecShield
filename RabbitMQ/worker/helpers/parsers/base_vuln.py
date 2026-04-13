@@ -18,7 +18,9 @@ from helpers.context.schema import (
     LicenseCategory,
     DependencyType,
     MitreAtlasTactic,
+    CryptographicAssetVulnerability,
 )
+from helpers.context.enums import CryptoAssetType, CryptoStrength
 console = Console()
 
 def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | type[DependencyVulnerability] | type[MCPVulnerability]) -> dict:
@@ -101,6 +103,19 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
             mitre_atlas_tactic : type[MitreAtlasTactic] = dumped["mitre_atlas_tactic"]
             dumped["mitre_atlas_tactic"] = mitre_atlas_tactic.value
             console.print(f"✅ Mitre Atlas Tactic parsed successfully",style="bold green")
+        
+        if "algorithm_type" in dumped:
+            console.print(f"⚠️ Algorithm type found in dumped,parsing it...",style="bold yellow")
+            algorithm_type : type[CryptoAssetType] = dumped["algorithm_type"]
+            dumped["algorithm_type"] = algorithm_type.value
+            console.print(f"✅ Algorithm type parsed successfully",style="bold green")
+        
+        if "crypto_strength" in dumped:
+            console.print(f"⚠️ Crypto strength found in dumped,parsing it...",style="bold yellow")
+            crypto_strength : type[CryptoStrength] = dumped["crypto_strength"]
+            dumped["crypto_strength"] = crypto_strength.value
+            console.print(f"✅ Crypto strength parsed successfully",style="bold green")
+
         console.print(f"✅ Vulnerability parsed successfully",style="bold green")
         return dumped
     

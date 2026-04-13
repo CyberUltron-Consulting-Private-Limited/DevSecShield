@@ -39,9 +39,10 @@ export default function IACPage() {
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
-      setTimeout(() => {
+      const t = setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["iac-conversation-data", team_id, scan_id] });
       }, 6 * 1000);
+      return () => clearTimeout(t);
     }
   }, [query.dataUpdatedAt, scan_id, team_id, queryClient]);
 

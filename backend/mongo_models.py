@@ -10,7 +10,8 @@ ConversationType = Literal[
     "discovery",
     "llm",
     "mcp",
-    "dast"
+    "dast",
+    "cbom"
 ]
 
 # Message/Active context types

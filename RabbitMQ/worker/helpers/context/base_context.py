@@ -52,7 +52,7 @@ def _invoke_with_retry(chain, payload: dict, max_retries: int = 3):
 def _get_mongo_client():
     """Get a MongoDB client using environment variables."""
     is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
-    host = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker else "localhost")
+    host = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker else "localhost")
     port = os.getenv("MONGO_PORT", "27017")
     username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
     password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
@@ -353,7 +353,7 @@ class BaseContextManager(BaseUtilities):
             _col = _mongo[_CACHE_DB][_CACHE_COLLECTION]
             cache_doc = {"_id": doc_hash}
             if isinstance(result, BaseModel):
-                cache_doc["model_data"] = result.model_dump()
+                cache_doc["model_data"] = result.model_dump(mode="json")
                 cache_doc["model_class"] = result.__class__.__name__
             else:
                 cache_doc["raw_text"] = str(result)

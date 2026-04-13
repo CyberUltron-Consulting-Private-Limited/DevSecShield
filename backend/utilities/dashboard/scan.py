@@ -144,31 +144,52 @@ def generate_scan_dashboard(
 
             # STEP [ 1a ] : -----------------> Calculate Metrics on OWASP Top 10 and compliance controls in findings 
             for item in results:
-                for vulnerability in item["vulnerabilities"]:
+                for vulnerability in item.get("vulnerabilities", []):
 
                     # calculating owasp metrics 
-                    for key,value in vulnerability["owasp_top_10"].items(): 
-                        owasp_top_10_metrics[value] += 1
+                    owasp = vulnerability.get("owasp_top_10") or {}
+                    if isinstance(owasp, dict):
+                        for key,value in owasp.items(): 
+                            owasp_top_10_metrics[value] += 1
+                    elif isinstance(owasp, list):
+                        for item_val in owasp:
+                            owasp_top_10_metrics[str(item_val)] += 1
 
                     # calculating compliance controls metrics 
-                    for key,value in vulnerability["compliance_controls"].items():
-                        compliance_controls_metrics[value] += 1
+                    compliance = vulnerability.get("compliance_controls") or {}
+                    if isinstance(compliance, dict):
+                        for key,value in compliance.items():
+                            compliance_controls_metrics[value] += 1
+                    elif isinstance(compliance, list):
+                        for item_val in compliance:
+                            compliance_controls_metrics[str(item_val)] += 1
 
                     # calculating risk metrics 
-                    risk_metrics[vulnerability["impact"]] += 1
+                    impact_raw = vulnerability.get("impact") or "Low"
+                    risk_metrics[str(impact_raw)] = risk_metrics.get(str(impact_raw), 0) + 1
 
                     # calculating cves per vulnerability 
-                    for key,value in vulnerability["cves"].items():
-                        cves_per_vulnerability[value] += 1
+                    cves = vulnerability.get("cves") or {}
+                    if isinstance(cves, dict):
+                        for key,value in cves.items():
+                            cves_per_vulnerability[value] += 1
+                    elif isinstance(cves, list):
+                        for item_val in cves:
+                            cves_per_vulnerability[str(item_val)] += 1
                     
                     # calculating risk score per finding 
-                    risk_score = risk_score_for_impact[vulnerability["impact"].lower()]
-                    risk_scores_per_finding[vulnerability["title"]] = risk_score
+                    risk_score = risk_score_for_impact.get(str(impact_raw).lower(), 2.0)
+                    risk_scores_per_finding[vulnerability.get("title") or "Untitled"] = risk_score
 
                     # calculating policy violations 
-                    for key,value in vulnerability["compliance_controls"].items():
-                        complaince_standard = value.split(" - ")[0]
-                        policy_violations[complaince_standard] += 1
+                    if isinstance(compliance, dict):
+                        for key,value in compliance.items():
+                            complaince_standard = str(value).split(" - ")[0]
+                            policy_violations[complaince_standard] += 1
+                    elif isinstance(compliance, list):
+                        for item_val in compliance:
+                            complaince_standard = str(item_val).split(" - ")[0]
+                            policy_violations[complaince_standard] += 1
 
             # calculate remediation metrics 
             findings = get_findings_for_scan_id(scan_id)
@@ -1125,6 +1146,126 @@ def generate_scan_dashboard(
                 "remediation_metrics": remediation_metrics,
             }
             
+        elif scan_type == "cbom":
+            # =========== CBOM Dashboard ===========================
+            severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            algorithm_type_distribution = defaultdict(int)
+            strength_distribution = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
+            quantum_readiness = {"quantum_safe": 0, "quantum_vulnerable": 0, "unknown": 0}
+            owasp_top_10_metrics = defaultdict(int)
+            compliance_controls_metrics = defaultdict(int)
+            top_risks_entries = []
+            
+            total_crypto_assets = len(results)
+            total_weak = 0
+            total_quantum_vulnerable = 0
+            total_certificates = 0
+            total_keys = 0
+
+            for vulnerability in results:
+                # severity distribution
+                impact = vulnerability.get("impact", "Low")
+                impact_lower = impact.lower()
+                if impact_lower in severity_distribution:
+                    severity_distribution[impact_lower] += 1
+                
+                # algorithm type distribution
+                algo_type = vulnerability.get("algorithm_type", "unknown")
+                algorithm_type_distribution[algo_type] += 1
+                
+                # strength distribution
+                strength = vulnerability.get("crypto_strength", "unknown")
+                if strength in strength_distribution:
+                    strength_distribution[strength] += 1
+                
+                # quantum readiness
+                qs = vulnerability.get("quantum_safe")
+                if qs is True:
+                    quantum_readiness["quantum_safe"] += 1
+                elif qs is False:
+                    quantum_readiness["quantum_vulnerable"] += 1
+                    total_quantum_vulnerable += 1
+                else:
+                    quantum_readiness["unknown"] += 1
+                
+                # weak algorithms
+                if strength == "weak":
+                    total_weak += 1
+                
+                # certificates and keys
+                if algo_type == "certificate":
+                    total_certificates += 1
+                elif algo_type == "key" or algo_type == "secret":
+                    total_keys += 1
+                
+                # owasp metrics
+                for key, value in vulnerability.get("owasp_top_10", {}).items():
+                    owasp_top_10_metrics[value] += 1
+                
+                # compliance controls
+                for key, value in vulnerability.get("compliance_controls", {}).items():
+                    compliance_controls_metrics[value] += 1
+                
+                # top risks entries with full vulnerability info
+                risk_score = risk_score_for_impact.get(impact_lower, 2.5)
+                top_risks_entries.append({
+                    "algorithm_name": vulnerability.get("algorithm_name", vulnerability.get("title", "Unknown")),
+                    "algorithm_type": algo_type,
+                    "crypto_strength": strength,
+                    "quantum_safe": vulnerability.get("quantum_safe", False),
+                    "impact": impact,
+                    "risk_score": risk_score,
+                })
+
+            # Calculate quantum readiness score
+            quantum_readiness_score = 0
+            if total_crypto_assets > 0:
+                quantum_readiness_score = round((quantum_readiness["quantum_safe"] / total_crypto_assets) * 100, 1)
+
+            # Average risk score
+            total_findings = sum(severity_distribution.values())
+            if total_findings > 0:
+                weighted = (severity_distribution["critical"] * 4 + severity_distribution["high"] * 3 + severity_distribution["medium"] * 2 + severity_distribution["low"] * 1) / total_findings
+                average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+            else:
+                average_risk_score = 0.0
+
+            # Top risks sorted by risk score
+            top_risks_list = sorted(top_risks_entries, key=lambda x: x["risk_score"], reverse=True)[:10]
+
+            # Remediation metrics
+            findings = get_findings_for_scan_id(scan_id=scan_id)
+            remediation_metrics = get_remediation_metrics(findings)
+            status_metrics = get_issue_status_metrics(findings)
+
+            remediation_actions_required = {
+                "total_findings": len(findings),
+                "total_fixed": status_metrics.get("fixed", 0),
+                "total_in_progress": status_metrics.get("in_progress", 0),
+                "total_not_started": status_metrics.get("not_started", 0),
+                "total_ignored": status_metrics.get("ignored", 0),
+            }
+
+            return {
+                "card_data": {
+                    "total_crypto_assets": total_crypto_assets,
+                    "total_weak_algorithms": total_weak,
+                    "total_quantum_vulnerable": total_quantum_vulnerable,
+                    "total_certificates": total_certificates,
+                    "total_keys": total_keys,
+                    "quantum_readiness_score": quantum_readiness_score,
+                    "average_risk_score": round(average_risk_score * 10) / 10,
+                },
+                "severity_distribution": severity_distribution,
+                "algorithm_type_distribution": dict(algorithm_type_distribution),
+                "strength_distribution": strength_distribution,
+                "quantum_readiness": quantum_readiness,
+                "owasp_top_10_issues": dict(owasp_top_10_metrics),
+                "compliance_controls": dict(compliance_controls_metrics),
+                "top_risks": top_risks_list,
+                "remediation_actions_required": remediation_actions_required,
+                "remediation_metrics": remediation_metrics,
+            }
 
     except Exception as e:
         console.print(f"Error in generate_scan_dashboard: {e}",style="bold red")

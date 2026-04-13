@@ -558,7 +558,10 @@ class CodebaseContext(BaseContextManager):
             tuple[int, int, int] : (size_in_bytes, size_in_mb, size_in_gb)
         """
         try:
-            self.split_documents_and_set_documents()
+            has_docs = self.split_documents_and_set_documents()
+
+            if not has_docs or not hasattr(self, 'documents') or not self.documents:
+                return (0, 0.0, 0.0)
 
             documents = self.documents
             sizes = get_size_of_documents(documents)

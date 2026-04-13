@@ -80,11 +80,12 @@ export default function SASTPage() {
 
   useEffect(() => {
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
-      setTimeout(()=>{
+      const t = setTimeout(()=>{
         queryClient.invalidateQueries({ queryKey: ['sast-conversation-data', team_id, scan_id] });
       }, 6 * 1000);
+      return () => clearTimeout(t);
     }
-  }, [query.dataUpdatedAt, team_id, scan_id]);
+  }, [query.dataUpdatedAt, team_id, scan_id, queryClient]);
 
   useEffect(() => {
     setScanStatus(query.data?.scan_status || "unknown");

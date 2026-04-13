@@ -23,6 +23,8 @@ async def format_input_for_scan(
                 if start_scan_payload.sast.zip_file_used:
                     bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
                     s3_upload_response = upload_file(bytes_io_zip_file_object)
+                    if not s3_upload_response:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload file to storage")
                     zip_context = {
                         "bucket_name": s3_upload_response["bucket"],
                         "object_name": s3_upload_response["object_name"],
@@ -44,6 +46,8 @@ async def format_input_for_scan(
                 if start_scan_payload.iac.zip_file_used:
                     bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
                     s3_upload_response = upload_file(bytes_io_zip_file_object)
+                    if not s3_upload_response:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload file to storage")
                     zip_context = {
                         "bucket_name": s3_upload_response["bucket"],
                         "object_name": s3_upload_response["object_name"],
@@ -64,6 +68,8 @@ async def format_input_for_scan(
                 if start_scan_payload.sbom_sca.zip_file_used:
                     bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
                     s3_upload_response = upload_file(bytes_io_zip_file_object, extension=".json")
+                    if not s3_upload_response:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload file to storage")
                     zip_context = {
                         "bucket_name": s3_upload_response["bucket"],
                         "object_name": s3_upload_response["object_name"],
@@ -74,6 +80,8 @@ async def format_input_for_scan(
                 elif start_scan_payload.sbom_sca.sbom_file_used:
                     bytes_io_sbom_file_object = BytesIO(await uploaded_file.read())
                     s3_upload_response = upload_file(bytes_io_sbom_file_object, extension=".json")
+                    if not s3_upload_response:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload file to storage")
                     file_context = {
                         "bucket_name": s3_upload_response["bucket"],
                         "object_name": s3_upload_response["object_name"],
@@ -104,6 +112,35 @@ async def format_input_for_scan(
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DAST context is required")
                 scan_kwargs["dast_dict_context"] = start_scan_payload.dast.model_dump()
                 console.print(f"DAST kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                return scan_kwargs
+            
+            case "cbom":
+                if start_scan_payload.cbom.zip_file_used:
+                    bytes_io_zip_file_object = BytesIO(await uploaded_file.read())
+                    s3_upload_response = upload_file(bytes_io_zip_file_object)
+                    if not s3_upload_response:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload file to storage")
+                    zip_context = {
+                        "bucket_name": s3_upload_response["bucket"],
+                        "object_name": s3_upload_response["object_name"],
+                    }
+                    scan_kwargs["zip_dict_context"] = zip_context
+                elif start_scan_payload.cbom.repo_context:
+                    scan_kwargs["repo_dict_context"] = start_scan_payload.cbom.repo_context.model_dump()
+                elif start_scan_payload.cbom.cbom_file_used:
+                    bytes_io_cbom_file_object = BytesIO(await uploaded_file.read())
+                    s3_upload_response = upload_file(bytes_io_cbom_file_object, extension=".json")
+                    if not s3_upload_response:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload file to storage")
+                    file_context = {
+                        "bucket_name": s3_upload_response["bucket"],
+                        "object_name": s3_upload_response["object_name"],
+                    }
+                    scan_kwargs["file_dict_context"] = file_context
+                else:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context or CBOM file provided")
+                scan_kwargs["scan_binaries"] = start_scan_payload.cbom.scan_binaries
+                console.print(f"CBOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
             
             case _:

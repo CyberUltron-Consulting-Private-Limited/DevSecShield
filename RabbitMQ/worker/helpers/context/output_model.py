@@ -1,5 +1,5 @@
 from rich.console import Console
-from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability, IACVulnerability
+from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability, IACVulnerability, CryptographicAssetVulnerability
 from pydantic import BaseModel, Field , create_model
 from typing import Annotated, Literal
 import urllib.parse
@@ -21,7 +21,7 @@ _CVE_CACHE_COLLECTION = "cve_cache"
 def _get_cve_mongo_client():
     """Get a MongoDB client for CVE cache persistence."""
     is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
-    host = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker else "localhost")
+    host = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker else "localhost")
     port = os.getenv("MONGO_PORT", "27017")
     username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
     password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
@@ -78,6 +78,16 @@ class OutputModelManager:
             console.print(f"Error in getting llm benchmarking output model: {e}",style="dim red")
             raise e
     
+    def get_cryptographic_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting Cryptographic Output Model ....",style="dim yellow")
+            cryptographic_output_model = self.get_output_model(CryptographicAssetVulnerability)
+            console.print(f"Cryptographic Output Model generated successfully",style="bold green")
+            return cryptographic_output_model
+        except Exception as e:
+            console.print(f"Error in getting cryptographic output model: {e}",style="dim red")
+            raise e
+    
     def get_base_output_model(self) -> type[BaseModel]:
         try:
             console.print(f"Getting Base Output Model ....",style="dim yellow")
@@ -104,7 +114,10 @@ class OutputModelManager:
 
     def create_CVE_enum(self,cves: dict[str, str]) -> Enum:
         try:
-            DynamicEnum = Enum('DynamicEnum', cves)
+            # Use CVE IDs as enum values so structured outputs can emit stable IDs
+            # (descriptions are too long/noisy and lead to empty selections).
+            enum_members = {cve_id: cve_id for cve_id in cves.keys()}
+            DynamicEnum = Enum('DynamicEnum', enum_members)
             enum_members = list(DynamicEnum.__members__.keys())
             console.print(f"CVE Enum Members: {enum_members}",style="dim bright_cyan")
             return DynamicEnum

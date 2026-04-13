@@ -1,4 +1,6 @@
 import datetime
+import json
+import os
 import tempfile
 from typing import Annotated
 
@@ -29,9 +31,10 @@ from backend.utilities.integrations.jira import create_issue_in_project as creat
 from backend.utilities.dashboard.scan import generate_scan_dashboard
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.estimate_scan import estimate_credits
-from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed
+from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
+from backend.utilities.db.encryption import decrypt_value, is_encrypted
 from backend.new_models import scan_types
 from rich.console import Console
 from backend.utilities.dashboard.scan_list import generate_dashboard_data_for_scan_list
@@ -239,7 +242,7 @@ async def send_message_to_scan(
             mongo_db=mongo_db,
             scan_id=SCAN.id,
             scan_type=type,
-            scan_results=SCAN_DATA,
+            scan_results=json.dumps(SCAN_DATA, default=str),
             content=data.user_message,
             role="human", # doesnt get saved to any db , jsut for functional clarity 
         )
@@ -438,20 +441,30 @@ async def start_scan(
         
 
 
-        # STEP [ 3 ] : =========== Start the scan and update the main db ======================
-        await start_scan_and_update_db(
-            scan_id=scan_id,
-            start_scan_payload=start_scan_payload,
-            team_id=team_id,
-            engine=engine,
-            scan_type=type,
-            uploaded_file=uploaded_file,
-        )
-
-
-
-        # STEP [ 4 ] : =========== Deduct credits for scan for team  ====================== ⭐
+        # STEP [ 3 ] : =========== Deduct credits BEFORE dispatching scan (atomic with check) ====================== ⭐
+        # SECURITY FIX: Deduct credits first to prevent race condition where scan runs without payment
         deduct_credits_from_team(team_id=team_id, credits=credits_to_deduct)
+
+
+
+        # STEP [ 4 ] : =========== Start the scan and update the main db ======================
+        try:
+            await start_scan_and_update_db(
+                scan_id=scan_id,
+                start_scan_payload=start_scan_payload,
+                team_id=team_id,
+                engine=engine,
+                scan_type=type,
+                uploaded_file=uploaded_file,
+            )
+        except Exception as scan_dispatch_error:
+            # Refund credits if scan dispatch fails
+            console.print(f"Scan dispatch failed, refunding {credits_to_deduct} credits to team {team_id}", style="bold yellow")
+            try:
+                refund_credits_to_team(team_id=team_id, credits=credits_to_deduct)
+            except Exception as refund_err:
+                console.print(f"CRITICAL: Failed to refund credits after scan dispatch failure: {refund_err}", style="bold red")
+            raise scan_dispatch_error
 
         return {
             "message": "Scan started successfully",
@@ -611,6 +624,7 @@ async def export_scan(
     type: scan_types, 
     scan_id: int, 
     team_id: int,
+    background_tasks: BackgroundTasks,
     Authorization: Annotated[str | None, Header()] = None , 
     dependencies=[Depends(limiter)] ,
     ):
@@ -644,21 +658,21 @@ async def export_scan(
         
         
         # STEP [ 3 ] : =========================== create a temp pdf file to create the exported scan data pdf ========================================
-        temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf",mode="w+",delete=False)
+        temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        temp_pdf_path = temp_pdf_file.name
         temp_pdf_file.close()
-        generate_pdf_for_type(type, scan_data, temp_pdf_file.name)
+        generate_pdf_for_type(type, scan_data, temp_pdf_path)
 
 
-        # STEP [ 4 ] : =========================== return the pdf file as a response ========================================
-        return FileResponse(temp_pdf_file.name, media_type="application/pdf")
+        # STEP [ 4 ] : =========================== return the pdf file as a response and schedule cleanup ========================================
+        background_tasks.add_task(os.unlink, temp_pdf_path)
+        return FileResponse(temp_pdf_path, media_type="application/pdf")
     
     except HTTPException as e:
         raise e
     except Exception as e:
         console.print(f"Error in exporting scan with id: {scan_id} for team: {team_id}: {e}",style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in exporting scan , please try again later")
-    finally:
-        temp_pdf_file.close()
 
 
 
@@ -837,7 +851,9 @@ async def create_ticket(
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira integration settings are not found, cannot create ticket")
             
             jira_project_id = scan.integration_settings["jira"]["jira_project_id"]
-            jira_api_token = team.integration_settings["jira"]["api_token"]
+            jira_api_token_raw = team.integration_settings["jira"]["api_token"]
+            # SECURITY: Decrypt api_token if encrypted (supports both encrypted and legacy plaintext)
+            jira_api_token = decrypt_value(jira_api_token_raw) if is_encrypted(jira_api_token_raw) else jira_api_token_raw
             jira_api_url = team.integration_settings["jira"]["url"]
             jira_api_email = team.integration_settings["jira"]["email"]
 
@@ -961,16 +977,30 @@ async def generate_finding_remediation(
         finding_data = finding.get("finding_data", {})
         remediation_result = generate_remediation(finding_data, type)
 
-        # STEP [ 5 ] : =========== Store in MongoDB ======================
-        scan_findings_collection.update_one(
-            {"_id": ObjectId(finding_id)},
-            {"$set": {"remediation": remediation_result}},
-        )
-        console.print(f"Remediation stored for finding {finding_id}", style="bold green")
-
-        # STEP [ 6 ] : =========== Deduct credits ======================
+        # STEP [ 5 ] : =========== Atomic store + deduct (prevent double-deduction) ======================
         if remediation_result.get("status") == "completed":
-            deduct_credits_from_team(team_id, REMEDIATION_CREDIT_COST)
+            # Use MongoDB findOneAndUpdate to atomically set remediation only if not already set
+            update_result = scan_findings_collection.update_one(
+                {"_id": ObjectId(finding_id), "remediation.status": {"$ne": "completed"}},
+                {"$set": {"remediation": remediation_result}},
+            )
+            if update_result.modified_count > 0:
+                # Only deduct credits if we were the one to write the remediation
+                deduct_credits_from_team(team_id, REMEDIATION_CREDIT_COST)
+                console.print(f"Remediation stored and credits deducted for finding {finding_id}", style="bold green")
+            else:
+                console.print(f"Remediation already stored by concurrent request for finding {finding_id}", style="dim yellow")
+                # Return the already-stored remediation
+                updated_finding = scan_findings_collection.find_one({"_id": ObjectId(finding_id)})
+                if updated_finding and updated_finding.get("remediation"):
+                    return updated_finding["remediation"]
+        else:
+            # Non-completed remediation, just store without deducting
+            scan_findings_collection.update_one(
+                {"_id": ObjectId(finding_id)},
+                {"$set": {"remediation": remediation_result}},
+            )
+            console.print(f"Remediation (non-completed) stored for finding {finding_id}", style="bold yellow")
 
         return remediation_result
 

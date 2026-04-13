@@ -244,6 +244,23 @@ class SASTAgent(BaseAgent):
 
             ## Relevant Results from an open source tool that looks for vulnerable patterns in the code:
             {relevant_open_source_results}
+
+            ### CVE Mapping (MANDATORY):
+            For EVERY vulnerability you identify, you MUST map it to known CVEs from the available CVE catalog in the output schema.
+            Guidelines:
+            - Match each vulnerability to the most relevant CVE(s) from the provided enum values
+            - A single vulnerability can relate to 1-3 CVEs
+            - Only use CVE IDs that exist in the provided enum
+            - If no exact CVE match exists, select the closest related CVE(s) based on vulnerability type and attack vector
+
+            ### Compliance Controls Mapping (MANDATORY):
+            For EVERY vulnerability, you MUST map it to the relevant compliance controls from the output schema.
+            Map vulnerabilities to the most relevant standards:
+            - NIST 800-53 controls (e.g., AC-*, SC-*, SI-*, AU-*, CM-*)
+            - ISO 27001 Annex A controls (e.g., A.8, A.10, A.12, A.14)
+            - OWASP categories (e.g., A01-A10)
+            - PCI DSS requirements where applicable
+            Always include at least 2-3 compliance controls per vulnerability.
             """
 
             

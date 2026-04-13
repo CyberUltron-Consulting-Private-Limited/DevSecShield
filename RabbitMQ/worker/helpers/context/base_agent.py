@@ -103,7 +103,7 @@ class BaseAgent(OutputModelManager,BaseUtilities):
         system_prompt: str,
         output_model: type[BaseModel],
         image: bytes = None,
-        llm_model: str = "openai.gpt-oss-120b-1:0",
+        llm_model: str = os.getenv("LLM_MODEL", "openai.gpt-oss-120b-1:0"),
         max_retries: int = 3,
     ) -> type[BaseModel] | str:
         try:
@@ -167,7 +167,7 @@ class BaseAgent(OutputModelManager,BaseUtilities):
                 pass
 
             model = ChatBedrock(
-                model="openai.gpt-oss-120b-1:0",
+                model=os.getenv("LLM_MODEL", "openai.gpt-oss-120b-1:0"),
                 region=AWS_REGION or "ap-south-1",
                 aws_access_key_id=AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,

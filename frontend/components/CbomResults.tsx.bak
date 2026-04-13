@@ -1,0 +1,751 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  MessageCircle,
+  Download,
+  Ticket,
+  Pencil,
+  CheckCircle,
+  EyeOff,
+  Loader2,
+  Circle,
+  Github,
+  GitBranch,
+  Archive,
+  Shield,
+  AlertCircle,
+  Lock,
+  Key,
+  ShieldCheck,
+  ShieldAlert,
+  Activity,
+  XCircle,
+  HelpCircle,
+} from "lucide-react";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import RemediationPanel from "@/components/RemediationPanel";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { useRouter, useSearchParams, useParams } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getCBOMExportResults, updateScan, createTicket, toggleFindingState, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { showErrorToast } from "@/utils/error-handler";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { BarChart3, Search, Filter, Check, X, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
+import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
+import FindingSelectionMenu from "@/components/finding-selection-menu";
+
+interface CbomResultsProps {
+  data: unknown;
+  conversationId?: number;
+  teamId?: string;
+  dashboard?: CbomScanDashboardData | null;
+  findings?: CbomFinding[] | null;
+  scanMetadata?: CbomScanMetadata | Record<string, unknown> | null;
+  integrationSettings?: Record<string, unknown> | null;
+  onIntegrationSettingsUpdated?: () => void;
+  onFindingsUpdated?: () => void;
+}
+
+function getImpactBadgeClass(impact: string): string {
+  const i = (impact || "").toLowerCase();
+  if (i === "critical") return "bg-red-600 hover:bg-red-700 text-white";
+  if (i === "high") return "bg-orange-500 hover:bg-orange-600 text-white";
+  if (i === "medium") return "bg-amber-500 hover:bg-amber-600 text-white";
+  if (i === "low") return "bg-blue-500 hover:bg-blue-600 text-white";
+  return "bg-zinc-500 hover:bg-zinc-600 text-white";
+}
+
+function getFindingStatusBadgeClass(status: string): string {
+  const s = (status ?? "").toLowerCase().replace(/\s/g, "_");
+  if (s === "fixed") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200";
+  if (s === "ignored") return "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200";
+  if (s === "in_progress") return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
+  if (s === "not_started") return "bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300";
+  return "bg-zinc-100 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-300";
+}
+
+function getStrengthBadgeClass(strength: string | null | undefined): string {
+  const s = (strength ?? "").toLowerCase();
+  if (s === "weak") return "border-red-500/50 text-red-400";
+  if (s === "moderate") return "border-yellow-500/50 text-yellow-400";
+  if (s === "strong") return "border-green-500/50 text-green-400";
+  if (s === "quantum_safe") return "border-blue-500/50 text-blue-400";
+  return "border-zinc-500/50 text-zinc-400";
+}
+
+const radarConfig = { count: { label: "Findings", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
+const barConfig = { count: { label: "Assets", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
+
+export default function CbomResults({
+  data,
+  conversationId,
+  teamId,
+  dashboard,
+  findings,
+  scanMetadata,
+  integrationSettings,
+  onIntegrationSettingsUpdated,
+  onFindingsUpdated,
+}: CbomResultsProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const params = useParams();
+  const team_id = parseInt(teamId ?? (params?.team_id as string) ?? "0", 10);
+  const scan_id = conversationId ?? parseInt((params?.scan_id as string) ?? "0", 10);
+  const origin = searchParams?.get("origin");
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [strengthFilter, setStrengthFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [quantumFilter, setQuantumFilter] = useState<string>("all");
+  const [selectedFinding, setSelectedFinding] = useState<CbomFinding | null>(null);
+  const [selectedFindings, setSelectedFindings] = useState<Set<string>>(new Set());
+
+  const queryClient = useQueryClient();
+
+  const findingsList: CbomFinding[] = useMemo(() => {
+    if (findings && Array.isArray(findings)) return findings;
+    return [];
+  }, [findings]);
+
+  const filteredFindings = useMemo(() => {
+    let list = [...findingsList];
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((f) =>
+        f.title?.toLowerCase().includes(q) ||
+        f.algorithm_name?.toLowerCase().includes(q) ||
+        f.location?.toLowerCase().includes(q) ||
+        f.description?.toLowerCase().includes(q)
+      );
+    }
+    if (strengthFilter !== "all") {
+      list = list.filter((f) => f.crypto_strength === strengthFilter);
+    }
+    if (typeFilter !== "all") {
+      list = list.filter((f) => f.algorithm_type === typeFilter);
+    }
+    if (quantumFilter !== "all") {
+      if (quantumFilter === "safe") list = list.filter((f) => f.quantum_safe === true);
+      else if (quantumFilter === "vulnerable") list = list.filter((f) => f.quantum_safe === false);
+      else list = list.filter((f) => f.quantum_safe == null);
+    }
+    return list;
+  }, [findingsList, searchQuery, strengthFilter, typeFilter, quantumFilter]);
+
+  const uniqueTypes = useMemo(() => {
+    const types = new Set(findingsList.map((f) => f.algorithm_type).filter(Boolean) as string[]);
+    return Array.from(types).sort();
+  }, [findingsList]);
+
+  const toggleFindingMutation = useMutation({
+    mutationFn: ({ finding_id, state }: { finding_id: string; state: "fixed" | "ignored" | "in_progress" | "not_started" }) =>
+      toggleFindingState({ team_id, type: "cbom", scan_id, finding_id, state }),
+    onSuccess: () => {
+      onFindingsUpdated?.();
+      queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data", team_id, scan_id] });
+    },
+    onError: (err) => showErrorToast(err, "Error updating finding status"),
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: () => getCBOMExportResults(team_id, scan_id),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cbom_scan_report_${scan_id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err) => showErrorToast(err, "Error downloading report"),
+  });
+
+  // Download raw CycloneDX CBOM JSON from scan data
+  const handleDownloadCBOMJson = () => {
+    if (!data) {
+      toast.error("No CBOM data available");
+      return;
+    }
+    // data is the raw scan_data which should contain cbom_json
+    const cbomJson = (data as Record<string, unknown>)?.cbom_json ?? data;
+    const blob = new Blob([JSON.stringify(cbomJson, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cbom_cyclonedx_${scan_id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Dashboard summary cards
+  const cardData = dashboard?.card_data;
+  const remediation = dashboard?.remediation_metrics;
+  const totalFindings = remediation?.total_findings || 1;
+
+  const severityRadarData = useMemo(() => {
+    if (!dashboard) return [];
+    return [
+      { severity: "Critical", count: dashboard.severity_distribution.critical },
+      { severity: "High", count: dashboard.severity_distribution.high },
+      { severity: "Medium", count: dashboard.severity_distribution.medium },
+      { severity: "Low", count: dashboard.severity_distribution.low },
+    ];
+  }, [dashboard]);
+
+  const algorithmTypeData = useMemo(() => {
+    if (!dashboard) return [];
+    return Object.entries(dashboard.algorithm_type_distribution)
+      .map(([name, count]) => ({ name: name.replace(/_/g, " "), count }))
+      .filter((d) => d.count > 0)
+      .sort((a, b) => b.count - a.count);
+  }, [dashboard]);
+
+  const strengthData = useMemo(() => {
+    if (!dashboard) return [];
+    const COLORS: Record<string, string> = {
+      weak: "hsl(0 72% 51%)",
+      moderate: "hsl(45 93% 47%)",
+      strong: "hsl(142 71% 45%)",
+      quantum_safe: "hsl(220 70% 50%)",
+    };
+    return Object.entries(dashboard.strength_distribution)
+      .map(([name, count]) => ({
+        name: name === "quantum_safe" ? "Quantum-Safe" : name.charAt(0).toUpperCase() + name.slice(1),
+        count,
+        fill: COLORS[name] ?? "hsl(220 9% 46%)",
+      }))
+      .filter((d) => d.count > 0);
+  }, [dashboard]);
+
+  const quantumData = useMemo(() => {
+    if (!dashboard) return [];
+    return [
+      { name: "Safe", count: dashboard.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
+      { name: "Vulnerable", count: dashboard.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
+      { name: "Unknown", count: dashboard.quantum_readiness.unknown, fill: "hsl(220 9% 46%)" },
+    ].filter((d) => d.count > 0);
+  }, [dashboard]);
+
+  const meta = scanMetadata as CbomScanMetadata | null;
+
+  return (
+    <ScrollArea className="h-screen">
+      <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {origin === "chat" && (
+              <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-zinc-400 hover:text-white cursor-pointer">
+                <ArrowLeft className="size-4 mr-1" /> Back
+              </Button>
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="size-6 text-blue-400" />
+                CBOM Scan Results
+              </h1>
+              <div className="flex items-center gap-3 mt-1 text-sm text-zinc-400">
+                {meta?.repo_url && (
+                  <span className="flex items-center gap-1"><GitBranch className="size-3" /> {meta.repo_url}</span>
+                )}
+                {meta?.branch && <span className="flex items-center gap-1">Branch: {meta.branch}</span>}
+                {meta?.zip_file_used && <Badge variant="outline" className="border-zinc-700 text-zinc-400"><Archive className="size-3 mr-1" /> Zip Upload</Badge>}
+                {meta?.cbom_file_used && <Badge variant="outline" className="border-zinc-700 text-zinc-400"><Lock className="size-3 mr-1" /> CBOM File</Badge>}
+                {meta?.scan_binaries && <Badge variant="outline" className="border-blue-500/50 text-blue-400">Binary Scan</Badge>}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={handleDownloadCBOMJson} className="text-zinc-400 hover:text-white cursor-pointer">
+              <Download className="size-4 mr-1" /> CycloneDX JSON
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending} className="text-zinc-400 hover:text-white cursor-pointer">
+              {exportMutation.isPending ? <Loader2 className="size-4 animate-spin mr-1" /> : <Download className="size-4 mr-1" />}
+              PDF Report
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => router.push(`/${team_id}/cbom/${scan_id}`)} className="text-zinc-400 hover:text-white cursor-pointer">
+              <MessageCircle className="size-4 mr-1" /> Chat
+            </Button>
+          </div>
+        </div>
+
+        {/* Dashboard Summary */}
+        {dashboard && cardData && (
+          <>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+              {[
+                { label: "Crypto Assets", value: cardData.total_crypto_assets, icon: Lock },
+                { label: "Weak", value: cardData.total_weak_algorithms, icon: ShieldAlert },
+                { label: "Quantum Vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle },
+                { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck },
+                { label: "Keys", value: cardData.total_keys, icon: Key },
+                { label: "Quantum Ready", value: `${cardData.quantum_readiness_score}%`, icon: Shield },
+                { label: "Avg Risk", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity },
+              ].map((c) => (
+                <Card key={c.label} className="bg-zinc-900 border-zinc-800">
+                  <CardContent className="p-4 flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <c.icon className="size-4 text-zinc-400" />
+                      <span className="text-xs text-zinc-400">{c.label}</span>
+                    </div>
+                    <span className="text-xl font-bold text-white">{c.value}</span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Remediation + Charts */}
+            {remediation && (
+              <Card className="bg-zinc-900 border-zinc-800">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-zinc-300">Remediation Progress</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex items-center gap-4 text-sm text-zinc-400">
+                    <span>Fixed: <span className="text-green-400 font-medium">{remediation.total_fixed}</span></span>
+                    <span>In Progress: <span className="text-yellow-400 font-medium">{remediation.total_in_progress}</span></span>
+                    <span>Not Started: <span className="text-zinc-300 font-medium">{remediation.total_not_started}</span></span>
+                    <span>Ignored: <span className="text-zinc-500 font-medium">{remediation.total_ignored}</span></span>
+                  </div>
+                  <Progress value={(remediation.total_fixed / totalFindings) * 100} className="h-2" />
+                  <p className="text-xs text-zinc-500">{remediation.total_fixed}/{totalFindings} findings resolved</p>
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Severity Radar */}
+              <Card className="bg-zinc-900 border-zinc-800">
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-zinc-300">Severity Distribution</CardTitle></CardHeader>
+                <CardContent>
+                  <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[240px]">
+                    <RadarChart data={severityRadarData}>
+                      <PolarGrid className="fill-zinc-800/30" />
+                      <PolarAngleAxis dataKey="severity" className="text-xs text-zinc-500" />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Radar dataKey="count" fill="hsl(220 70% 50%)" fillOpacity={0.4} stroke="hsl(220 70% 50%)" strokeWidth={2} />
+                    </RadarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+
+              {/* Algorithm Types */}
+              <Card className="bg-zinc-900 border-zinc-800">
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-zinc-300">Algorithm Types</CardTitle></CardHeader>
+                <CardContent>
+                  <ChartContainer config={barConfig} className="mx-auto aspect-square max-h-[240px]">
+                    <BarChart data={algorithmTypeData} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-800" />
+                      <XAxis type="number" className="text-xs text-zinc-500" />
+                      <YAxis dataKey="name" type="category" className="text-xs text-zinc-500" width={120} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="count" fill="hsl(220 70% 50%)" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+
+              {/* Strength */}
+              <Card className="bg-zinc-900 border-zinc-800">
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-zinc-300">Crypto Strength</CardTitle></CardHeader>
+                <CardContent>
+                  <ChartContainer config={barConfig} className="mx-auto aspect-square max-h-[240px]">
+                    <BarChart data={strengthData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-800" />
+                      <XAxis dataKey="name" className="text-xs text-zinc-500" />
+                      <YAxis className="text-xs text-zinc-500" />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        {strengthData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+
+              {/* Quantum Readiness */}
+              <Card className="bg-zinc-900 border-zinc-800">
+                <CardHeader className="pb-2"><CardTitle className="text-sm text-zinc-300">Quantum Readiness</CardTitle></CardHeader>
+                <CardContent>
+                  <ChartContainer config={barConfig} className="mx-auto aspect-square max-h-[240px]">
+                    <BarChart data={quantumData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-zinc-800" />
+                      <XAxis dataKey="name" className="text-xs text-zinc-500" />
+                      <YAxis className="text-xs text-zinc-500" />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        {quantumData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+
+        {/* Findings Table */}
+        <Card className="bg-zinc-900 border-zinc-800">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg text-white">Cryptographic Findings</CardTitle>
+              <div className="flex items-center gap-2">
+                <FindingSelectionMenu
+                  selectedCount={selectedFindings.size}
+                  onClearSelection={() => setSelectedFindings(new Set())}
+                  ticketType="jira"
+                />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Filters */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-500" />
+                <Input
+                  placeholder="Search findings..."
+                  className="pl-9 bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <Select value={strengthFilter} onValueChange={setStrengthFilter}>
+                <SelectTrigger className="w-[140px] bg-zinc-800 border-zinc-700 text-zinc-300">
+                  <SelectValue placeholder="Strength" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-800 border-zinc-700">
+                  <SelectItem value="all">All strengths</SelectItem>
+                  <SelectItem value="weak">Weak</SelectItem>
+                  <SelectItem value="moderate">Moderate</SelectItem>
+                  <SelectItem value="strong">Strong</SelectItem>
+                  <SelectItem value="quantum_safe">Quantum-Safe</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-[160px] bg-zinc-800 border-zinc-700 text-zinc-300">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-800 border-zinc-700">
+                  <SelectItem value="all">All types</SelectItem>
+                  {uniqueTypes.map((t) => (
+                    <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={quantumFilter} onValueChange={setQuantumFilter}>
+                <SelectTrigger className="w-[150px] bg-zinc-800 border-zinc-700 text-zinc-300">
+                  <SelectValue placeholder="Quantum" />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-800 border-zinc-700">
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="safe">Quantum-Safe</SelectItem>
+                  <SelectItem value="vulnerable">Vulnerable</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Results Count */}
+            <p className="text-xs text-zinc-500">{filteredFindings.length} of {findingsList.length} findings</p>
+
+            {/* Table */}
+            {filteredFindings.length === 0 ? (
+              <div className="text-center text-zinc-500 py-8">No findings match your filters.</div>
+            ) : (
+              <div className="rounded-lg border border-zinc-800 overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-zinc-800 hover:bg-transparent">
+                      <TableHead className="w-8 text-zinc-400">
+                        <input
+                          type="checkbox"
+                          className="rounded border-zinc-600"
+                          checked={selectedFindings.size === filteredFindings.length && filteredFindings.length > 0}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
+                            } else {
+                              setSelectedFindings(new Set());
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="text-zinc-400">Algorithm</TableHead>
+                      <TableHead className="text-zinc-400">Type</TableHead>
+                      <TableHead className="text-zinc-400">Strength</TableHead>
+                      <TableHead className="text-zinc-400">Quantum</TableHead>
+                      <TableHead className="text-zinc-400">Risk</TableHead>
+                      <TableHead className="text-zinc-400">Location</TableHead>
+                      <TableHead className="text-zinc-400">Status</TableHead>
+                      <TableHead className="text-zinc-400 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredFindings.map((finding) => (
+                      <TableRow
+                        key={finding.id}
+                        className="border-zinc-800 hover:bg-zinc-800/50 cursor-pointer"
+                        onClick={() => setSelectedFinding(finding)}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="rounded border-zinc-600"
+                            checked={selectedFindings.has(finding.id)}
+                            onChange={(e) => {
+                              const next = new Set(selectedFindings);
+                              if (e.target.checked) next.add(finding.id);
+                              else next.delete(finding.id);
+                              setSelectedFindings(next);
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="text-zinc-200 font-medium max-w-[150px] truncate">
+                          {finding.algorithm_name || finding.title}
+                        </TableCell>
+                        <TableCell className="text-zinc-400 text-sm">
+                          {finding.algorithm_type?.replace(/_/g, " ") ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={getStrengthBadgeClass(finding.crypto_strength)}>
+                            {finding.crypto_strength ?? "unknown"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {finding.quantum_safe === true ? (
+                            <Badge variant="outline" className="border-green-500/50 text-green-400">Safe</Badge>
+                          ) : finding.quantum_safe === false ? (
+                            <Badge variant="outline" className="border-red-500/50 text-red-400">Vulnerable</Badge>
+                          ) : (
+                            <span className="text-zinc-500 text-xs">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getImpactBadgeClass(finding.impact)}>
+                            {finding.risk_score?.toFixed(1) ?? "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-zinc-500 text-xs max-w-[150px] truncate" title={finding.location ?? ""}>
+                          {finding.location ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getFindingStatusBadgeClass(finding.status)}>
+                            {finding.status?.replace(/_/g, " ") ?? "not started"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-zinc-400 hover:text-white cursor-pointer">
+                                <ChevronDown className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-zinc-800 border-zinc-700">
+                              <DropdownMenuLabel className="text-zinc-400 text-xs">Status</DropdownMenuLabel>
+                              {(["not_started", "in_progress", "fixed", "ignored"] as const).map((state) => (
+                                <DropdownMenuItem
+                                  key={state}
+                                  className="text-zinc-300 focus:bg-zinc-700 cursor-pointer"
+                                  onClick={() => toggleFindingMutation.mutate({ finding_id: finding.id, state })}
+                                >
+                                  {state === "fixed" && <CheckCircle className="size-3 mr-2 text-green-400" />}
+                                  {state === "ignored" && <EyeOff className="size-3 mr-2 text-zinc-500" />}
+                                  {state === "in_progress" && <Loader2 className="size-3 mr-2 text-blue-400" />}
+                                  {state === "not_started" && <Circle className="size-3 mr-2 text-zinc-400" />}
+                                  {state.replace(/_/g, " ")}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top Risks Table */}
+        {dashboard?.top_risks && dashboard.top_risks.length > 0 && (
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-zinc-300">Top Cryptographic Risks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-800 hover:bg-transparent">
+                    <TableHead className="text-zinc-400">Algorithm</TableHead>
+                    <TableHead className="text-zinc-400">Type</TableHead>
+                    <TableHead className="text-zinc-400">Strength</TableHead>
+                    <TableHead className="text-zinc-400">Quantum Safe</TableHead>
+                    <TableHead className="text-zinc-400">Impact</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dashboard.top_risks.map((risk, i) => (
+                    <TableRow key={i} className="border-zinc-800 hover:bg-zinc-800/50">
+                      <TableCell className="text-zinc-200 font-medium">{risk.algorithm_name}</TableCell>
+                      <TableCell className="text-zinc-400">{risk.algorithm_type?.replace(/_/g, " ")}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={getStrengthBadgeClass(risk.crypto_strength)}>
+                          {risk.crypto_strength}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {risk.quantum_safe ? (
+                          <Badge variant="outline" className="border-green-500/50 text-green-400">Yes</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-red-500/50 text-red-400">No</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-zinc-400 max-w-[200px] truncate">{risk.impact}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Finding Detail Dialog */}
+      <Dialog open={!!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
+        <DialogContent className="bg-zinc-900 border-zinc-800 max-w-2xl max-h-[80vh] overflow-y-auto">
+          {selectedFinding && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-white text-lg">
+                  {selectedFinding.algorithm_name || selectedFinding.title}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-xs text-zinc-500">Algorithm Type</span>
+                    <p className="text-zinc-200">{selectedFinding.algorithm_type?.replace(/_/g, " ") ?? "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">Crypto Strength</span>
+                    <p><Badge variant="outline" className={getStrengthBadgeClass(selectedFinding.crypto_strength)}>{selectedFinding.crypto_strength ?? "unknown"}</Badge></p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">Key Size</span>
+                    <p className="text-zinc-200">{selectedFinding.key_size ? `${selectedFinding.key_size} bits` : "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">Quantum Safe</span>
+                    <p>
+                      {selectedFinding.quantum_safe === true ? (
+                        <Badge variant="outline" className="border-green-500/50 text-green-400">Yes</Badge>
+                      ) : selectedFinding.quantum_safe === false ? (
+                        <Badge variant="outline" className="border-red-500/50 text-red-400">No</Badge>
+                      ) : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">Risk Score</span>
+                    <p><Badge className={getImpactBadgeClass(selectedFinding.impact)}>{selectedFinding.risk_score?.toFixed(1) ?? "—"}</Badge></p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-500">Impact</span>
+                    <p className="text-zinc-200">{selectedFinding.impact}</p>
+                  </div>
+                </div>
+                {selectedFinding.location && (
+                  <div>
+                    <span className="text-xs text-zinc-500">Location</span>
+                    <p className="text-zinc-300 text-sm font-mono bg-zinc-800 px-3 py-2 rounded">{selectedFinding.location}</p>
+                  </div>
+                )}
+                {selectedFinding.description && (
+                  <div>
+                    <span className="text-xs text-zinc-500">Description</span>
+                    <p className="text-zinc-300 text-sm">{selectedFinding.description}</p>
+                  </div>
+                )}
+                {selectedFinding.snippet && (
+                  <div>
+                    <span className="text-xs text-zinc-500">Code Snippet</span>
+                    <pre className="text-zinc-300 text-xs font-mono bg-zinc-800 px-3 py-2 rounded overflow-x-auto whitespace-pre-wrap">{selectedFinding.snippet}</pre>
+                  </div>
+                )}
+                {selectedFinding.suggested_fix && (
+                  <div>
+                    <span className="text-xs text-zinc-500">Suggested Fix</span>
+                    <p className="text-zinc-300 text-sm">{selectedFinding.suggested_fix}</p>
+                  </div>
+                )}
+                {selectedFinding.remediation && (
+                  <RemediationPanel
+                    teamId={String(team_id)}
+                    scanType="cbom"
+                    scanId={typeof scan_id === "number" ? scan_id : parseInt(scan_id, 10)}
+                    findingId={selectedFinding.id}
+                    existingRemediation={selectedFinding.remediation}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      <ScrollBar orientation="vertical" />
+    </ScrollArea>
+  );
+}

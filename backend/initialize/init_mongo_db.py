@@ -1,6 +1,6 @@
 import os
 from sqlmodel import SQLModel, create_engine
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING
 from rich.console import Console
 import argparse
 from dotenv import load_dotenv
@@ -21,7 +21,7 @@ def mongo_db_create_collections_and_documents(
     try:
         console = Console()
         is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
-        mongo_host = os.getenv("MONGO_HOST", "13.203.233.15" if is_docker else "localhost")
+        mongo_host = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker else "localhost")
         mongo_port = os.getenv("MONGO_PORT", "27017")
         
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
@@ -44,6 +44,20 @@ def mongo_db_create_collections_and_documents(
                 db.create_collection(collection_name)
                 console.print(f"{collection_name} collection created",style="bold green")
 
+        # Create indexes for query performance
+        if "scan_findings" in db.list_collection_names():
+            db["scan_findings"].create_index([("scan_id", ASCENDING)])
+        if "message_log" in db.list_collection_names():
+            db["message_log"].create_index([("scan_id", ASCENDING)])
+        if "active_context" in db.list_collection_names():
+            db["active_context"].create_index([("scan_id", ASCENDING)])
+        if "guardrails_logs" in db.list_collection_names():
+            db["guardrails_logs"].create_index([("integration_id", ASCENDING)])
+            db["guardrails_logs"].create_index([("created_at", ASCENDING)])
+        if "cicd_logs" in db.list_collection_names():
+            db["cicd_logs"].create_index([("integration_id", ASCENDING)])
+            db["cicd_logs"].create_index([("task_id", ASCENDING)])
+        console.print("MongoDB indexes created",style="bold green")
         
         console.print(f"collections created",style="bold green")
         console.print(f"list of collections: {db.list_collection_names()}",style="bold green")

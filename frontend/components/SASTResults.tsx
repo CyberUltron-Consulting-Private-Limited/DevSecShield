@@ -107,9 +107,9 @@ type SastAgentResult = SastAgentLogicalComponent;
 
 /** Safe string from owasp/compliance item: { "KEY": "Label" } -> "Label" or key */
 function formatOwaspOrComplianceItem(item: OwaspOrComplianceItem): string {
-  if (item == null || typeof item !== "object") return "â€”";
+  if (item == null || typeof item !== "object") return "—";
   const entries = Object.entries(item).filter(([, v]) => v != null && String(v).trim() !== "");
-  if (entries.length === 0) return Object.keys(item)[0] ?? "â€”";
+  if (entries.length === 0) return Object.keys(item)[0] ?? "—";
   return entries[0][1];
 }
 
@@ -121,7 +121,7 @@ function getOwaspComplianceCount(val: OwaspOrCompliance): number {
   return 0;
 }
 
-/** Entries for display: [title, description][] â€” supports dict or legacy list of one-item dicts */
+/** Entries for display: [title, description][] — supports dict or legacy list of one-item dicts */
 function getOwaspComplianceEntries(val: OwaspOrCompliance): [string, string][] {
   if (val == null) return [];
   if (Array.isArray(val)) {
@@ -238,7 +238,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
     .map(([cve, count]) => ({ cve, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 20);
-  const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "â€”", count: 0 }];
+  const cvesAreaDisplay = cvesAreaData.length > 0 ? cvesAreaData : [{ cve: "—", count: 0 }];
 
   const hasOwaspData = owaspEntries.length > 0 && owaspEntries.some((d) => d.actualCount > 0);
   const hasRiskData = riskRadarData.some((d) => d.count > 0);
@@ -295,7 +295,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                   content={
                     <ChartTooltipContent
                       nameKey="displayValue"
-                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "â€”"}
+                      labelFormatter={(_, payload) => (payload?.[0]?.payload as { displayValue?: string } | undefined)?.displayValue ?? "—"}
                       formatter={(_, __, ___, ____, payload) => {
                         const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
                         return <>Count: <span className="font-mono font-semibold tabular-nums">{count}</span></>;
