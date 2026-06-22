@@ -1,0 +1,23 @@
+# Risk weights for the AI-BOM scorer (config-driven; edit without touching code).
+# The scorer sums the weight of every flag a scan raises into ScanResult.scores.
+# This is intentionally trivial for now — the seam matters more than the math.
+
+default: 1          # weight for any flag not listed below
+
+flags:
+  MODEL_NO_LICENSE: 8
+  DATASET_NO_DEIDENT: 10
+  MODEL_EU_AI_ACT_HIGH_RISK: 5
+  MODEL_PHI_AT_INFERENCE: 4
+
+# Score SCALE — locked BEFORE the Phase-4 heatmap so the dashboard never has to
+# retrofit it. We use Trusera-style 0-100 normalization plus low/med/high bands:
+#   risk_normalized = min(100, round(risk_total / max_raw * 100, 1))
+# max_raw is the calibration ceiling = "every defined flag tripped once" -> 100.
+# Omit max_raw to auto-compute it as the sum of the flag weights above.
+# bands are inclusive upper bounds ON THE 0-100 normalized score.
+scale:
+  max_raw: 27       # 8 + 10 + 5 + 4 (sum of the flag weights above)
+  bands:
+    low: 33         # 0-33  -> low
+    medium: 66      # 34-66 -> medium;  67-100 -> high

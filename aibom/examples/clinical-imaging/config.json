@@ -1,0 +1,16 @@
+{
+  "architectures": ["ResNetForImageClassification"],
+  "model_architecture": "ResNet-50",
+  "model_type": "resnet",
+  "approach": "supervised",
+  "task": "classification/detection",
+  "num_labels": 2,
+  "id2label": { "0": "no-nodule", "1": "nodule" },
+  "label2id": { "no-nodule": 0, "nodule": 1 },
+  "inputs": ["DICOM DX image"],
+  "outputs": ["nodule probability + bounding box"],
+  "image_size": 1024,
+  "num_channels": 1,
+  "framework": "pytorch",
+  "torch_dtype": "float32"
+}

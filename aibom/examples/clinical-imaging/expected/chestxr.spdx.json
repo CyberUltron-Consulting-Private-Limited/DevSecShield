@@ -1,0 +1,178 @@
+{
+  "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+  "@graph": [
+    {
+      "type": "CreationInfo",
+      "@id": "_:creationinfo",
+      "specVersion": "3.0.1",
+      "created": "2026-06-21T00:00:00Z",
+      "createdBy": [
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/tool/clinithread-aibom"
+      ]
+    },
+    {
+      "type": "Tool",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/tool/clinithread-aibom",
+      "creationInfo": "_:creationinfo",
+      "name": "clinithread-aibom"
+    },
+    {
+      "type": "ai_AIPackage",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "creationInfo": "_:creationinfo",
+      "name": "chestxr-nodule-detector",
+      "software_packageVersion": "2.1.0",
+      "ai_typeOfModel": [
+        "convolutional neural network (ResNet-50)"
+      ],
+      "ai_limitation": "not validated on pediatric or portable AP supine films",
+      "ai_safetyRiskAssessment": "serious",
+      "ai_useSensitivePersonalInformation": "yes",
+      "ai_informationAboutApplication": "triage and prioritization of chest radiographs (SaMD)",
+      "ai_metric": [
+        {
+          "type": "DictionaryEntry",
+          "key": "AUROC (overall)",
+          "value": "0.94"
+        },
+        {
+          "type": "DictionaryEntry",
+          "key": "sensitivity (age>=65)",
+          "value": "0.91"
+        }
+      ]
+    },
+    {
+      "type": "simplelicensing_LicenseExpression",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/license/model-chestxr-cnn",
+      "creationInfo": "_:creationinfo",
+      "simplelicensing_licenseExpression": "Apache-2.0"
+    },
+    {
+      "type": "dataset_DatasetPackage",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/dataset-chestxr-train",
+      "creationInfo": "_:creationinfo",
+      "name": "chestxr-training-cohort",
+      "dataset_datasetType": [
+        "image"
+      ],
+      "dataset_datasetSize": 412000,
+      "dataset_dataCollectionProcess": "Retrospective extraction from PACS across 3 US health systems (2019-2024) under IRB approval.",
+      "dataset_dataPreprocessing": [
+        "DICOM windowing to soft-tissue/lung presets",
+        "resize to 1024x1024, single channel",
+        "HIPAA Safe Harbor de-identification of DICOM headers and pixels"
+      ],
+      "dataset_anonymizationMethodUsed": [
+        "HIPAA Safe Harbor"
+      ],
+      "dataset_confidentialityLevel": "amber",
+      "dataset_intendedUse": "training and validation of the chest radiograph triage model",
+      "dataset_knownBias": [
+        "skews adult, 2 scanner vendors"
+      ],
+      "dataset_hasSensitivePersonalInformation": "no"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-numpy",
+      "creationInfo": "_:creationinfo",
+      "name": "numpy",
+      "software_packageVersion": "1.26.4",
+      "software_packageUrl": "pkg:pypi/numpy@1.26.4"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-pydicom",
+      "creationInfo": "_:creationinfo",
+      "name": "pydicom",
+      "software_packageVersion": "2.4.4",
+      "software_packageUrl": "pkg:pypi/pydicom@2.4.4"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-safetensors",
+      "creationInfo": "_:creationinfo",
+      "name": "safetensors",
+      "software_packageVersion": "0.4.3",
+      "software_packageUrl": "pkg:pypi/safetensors@0.4.3"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torch",
+      "creationInfo": "_:creationinfo",
+      "name": "torch",
+      "software_packageVersion": "2.3.1",
+      "software_packageUrl": "pkg:pypi/torch@2.3.1"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torchvision",
+      "creationInfo": "_:creationinfo",
+      "name": "torchvision",
+      "software_packageVersion": "0.18.1",
+      "software_packageUrl": "pkg:pypi/torchvision@0.18.1"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/service-acme-cloud",
+      "creationInfo": "_:creationinfo",
+      "name": "Acme Imaging AI Cloud"
+    },
+    {
+      "type": "SpdxDocument",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/document",
+      "creationInfo": "_:creationinfo",
+      "name": "ChestXR-Triage-SaMD",
+      "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
+      "rootElement": [
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn"
+      ]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/1",
+      "creationInfo": "_:creationinfo",
+      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "relationshipType": "hasConcludedLicense",
+      "to": [
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/license/model-chestxr-cnn"
+      ]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/2",
+      "creationInfo": "_:creationinfo",
+      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "relationshipType": "trainedOn",
+      "to": [
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/dataset-chestxr-train"
+      ]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/3",
+      "creationInfo": "_:creationinfo",
+      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "relationshipType": "dependsOn",
+      "to": [
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-numpy",
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-pydicom",
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-safetensors",
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torch",
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torchvision"
+      ]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/4",
+      "creationInfo": "_:creationinfo",
+      "comment": "served_by",
+      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "relationshipType": "other",
+      "to": [
+        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/service-acme-cloud"
+      ]
+    }
+  ]
+}
