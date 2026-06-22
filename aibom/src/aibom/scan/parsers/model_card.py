@@ -50,6 +50,7 @@ class ParsedModelCard:
     device_class: str | None = None
     eu_ai_act_risk_tier: str | None = None
     uses_sensitive_personal_information: str | None = None
+    human_oversight: str | None = None
     # Deployment graph: the inference service that serves the model (with BAA
     # status) and the sites where it is deployed (with validation/drift state).
     served_by: dict[str, Any] | None = None
@@ -191,6 +192,7 @@ def parse_model_card(path: Path) -> ParsedModelCard | None:
         uses_sensitive_personal_information=_opt_str(
             clinical.get("uses_sensitive_personal_information")
         ),
+        human_oversight=_opt_str(clinical.get("human_oversight")),
         served_by=(
             fm.get("served_by") if isinstance(fm.get("served_by"), dict) else None
         ),

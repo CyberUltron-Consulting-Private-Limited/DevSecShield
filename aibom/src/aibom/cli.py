@@ -170,13 +170,86 @@ _NOT_IMPLEMENTED = "not yet implemented in phase 1"
 
 @app.command()
 def map(  # noqa: A001 - 'map' is the documented subcommand name
-    bom: pathlib.Path = typer.Argument(
-        None, help="BOM to map to FDA / EU AI Act compliance."
+    path: pathlib.Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Repo / model project directory to scan and map to compliance.",
+    ),
+    framework: str = typer.Option(
+        "all", "--framework", "-F",
+        help="fda524b | euaiact | gmlp | hipaa | nist | all.",
+    ),
+    output: pathlib.Path = typer.Option(
+        None, "--output", "-o", dir_okay=False, writable=True,
+        help="Write the compliance JSON here instead of stdout.",
+    ),
+    indent: int = typer.Option(2, help="JSON indentation."),
+) -> None:
+    """Scan a repo and map its graph to advisory compliance readiness.
+
+    Runs the graph-aware checks (CHECKS READ THE GRAPH, never flags) and reports
+    {pass, fail, na} + coverage per framework. Mappings are ADVISORY only.
+    """
+    # Imported here so the engine sees every self-registered framework.
+    import aibom.compliance as compliance
+    from aibom.scan.pipeline import scan_repo
+
+    result = scan_repo(path)
+    full = compliance.run_all(result)
+    if framework == "all":
+        report = full
+    else:
+        try:
+            fw = compliance.resolve_framework(framework)
+        except KeyError as exc:
+            _eprint(str(exc))
+            raise typer.Exit(code=2) from exc
+        report = {fw: full[fw], "disclaimer": full["disclaimer"]}
+
+    _write(json.dumps(report, indent=indent) + "\n", output)
+    # One-line readiness summary to stderr (stdout stays a clean payload).
+    for fw in [k for k in report if k != "disclaimer"]:
+        b = report[fw]
+        cov = "N/A" if b["coverage"] is None else f"{b['coverage'] * 100:.0f}%"
+        _eprint(
+            f"# {fw}: pass={b['pass']} fail={b['fail']} na={b['na']} coverage={cov}"
+        )
+    _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
+
+
+@app.command()
+def report(
+    path: pathlib.Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Repo / model project directory to scan and report on.",
+    ),
+    fmt: str = typer.Option(
+        "pdf", "--format", "-f", help="Deliverable: xlsx | pdf | docx.",
+    ),
+    output: pathlib.Path = typer.Option(
+        None, "--output", "-o", dir_okay=False, writable=True,
+        help="Output file (default: compliance.<ext>).",
     ),
 ) -> None:
-    """Map a BOM to FDA §524B / EU AI Act Annex IV readiness. (stub, advisory)"""
-    _eprint(f"map: {_NOT_IMPLEMENTED}")
-    raise typer.Exit(code=0)
+    """Generate a client compliance deliverable from the scan's compliance report.
+
+    xlsx = traceability matrix; pdf = readiness report; docx = SaMD/PCCP memo.
+    All are ADVISORY and generated from ``ScanResult.compliance``.
+    """
+    import aibom.compliance as compliance
+    from aibom.deliverables import available_formats, get_writer
+    from aibom.scan.pipeline import scan_repo
+
+    if fmt not in available_formats():
+        choices = ", ".join(available_formats())
+        _eprint(f"format {fmt!r} not supported (choose: {choices}).")
+        raise typer.Exit(code=2)
+
+    result = scan_repo(path)
+    compliance.run_all(result)
+    out = output or pathlib.Path(f"compliance.{fmt}")
+    get_writer(fmt)(result.compliance, out, result.subject.name)
+    _eprint(f"wrote {fmt} deliverable -> {out}")
+    _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
 
 
 @app.command()

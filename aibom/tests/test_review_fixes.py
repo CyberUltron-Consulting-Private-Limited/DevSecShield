@@ -24,10 +24,12 @@ import pytest
 from aibom.emit.cyclonedx import emit_cyclonedx
 from aibom.emit.sarif import emit_sarif
 from aibom.emit.spdx import emit_spdx
-from aibom.model.component import DatasetComponent, MetadataComponent
+from aibom.model.component import DatasetComponent, MetadataComponent, is_deidentified
 from aibom.model.result import Flag, ScanResult
 from aibom.scan.pipeline import scan_repo
-from aibom.scan.scanners.model_repo import _find_model_card, _is_deidentified
+from aibom.scan.scanners.model_repo import _find_model_card
+
+_is_deidentified = is_deidentified  # canonical predicate moved to model.component
 
 _FIXTURE = (
     pathlib.Path(__file__).resolve().parent.parent / "examples" / "clinical-imaging"

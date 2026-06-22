@@ -24,12 +24,12 @@ from pathlib import Path
 from typing import Any
 
 from aibom.model.component import (
-    DatasetComponent,
     InfraComponent,
     MetadataComponent,
     ModelCard,
     ModelComponent,
     ServiceComponent,
+    is_deidentified,
 )
 from aibom.model.result import (
     REL_DEPENDS_ON,
@@ -94,6 +94,7 @@ def _build_model(
         device_class=card.device_class,
         eu_ai_act_risk_tier=card.eu_ai_act_risk_tier,
         uses_sensitive_personal_information=card.uses_sensitive_personal_information,
+        human_oversight=card.human_oversight,
     )
     hashes = [sha256_hash(p) for p in find_model_files(weights_root)] or None
     return ModelComponent(
@@ -119,22 +120,6 @@ def _bom_properties(card: ParsedModelCard) -> dict[str, str]:
     if card.eu_ai_act_risk_tier:
         props["regulatory:eu_ai_act_risk"] = card.eu_ai_act_risk_tier
     return props
-
-
-def _is_deidentified(ds: DatasetComponent) -> bool:
-    """Whether a dataset is de-identified, from STRUCTURED fields only.
-
-    De-identification is asserted via the explicit presence flag or a recorded
-    anonymization method — never inferred from free text. Substring scanning of
-    prose both false-negatives on negation ("NOT de-identified") and
-    false-positives on unrelated mentions ("anonymized logins"), so for a HIPAA
-    gate we fail closed and require a structured signal.
-    """
-    if ds.has_sensitive_personal_information == "no":
-        return True
-    if ds.has_sensitive_personal_information == "yes":
-        return False
-    return bool(ds.anonymization_method)
 
 
 def _baa_value(raw: Any) -> str:
@@ -225,7 +210,7 @@ class ModelRepoScanner(Scanner):
             if dataset is None:
                 continue
             ctx.add_component(dataset)
-            if not _is_deidentified(dataset):
+            if not is_deidentified(dataset):
                 ctx.add_flag(
                     "DATASET_NO_DEIDENT",
                     dataset.bom_ref,

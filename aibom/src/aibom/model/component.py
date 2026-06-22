@@ -203,6 +203,12 @@ class ModelCard(BaseModel):
         Literal["yes", "no", "noAssertion"] | None
     ) = None
 
+    # Structured human-oversight signal (EU AI Act Art 14 / GMLP-7). A boolean
+    # graph fact a compliance check reads directly — NOT inferred by substring-
+    # scanning the free-text ``considerations.users`` list (which false-passes on
+    # negation like "no human review" and false-fails on unlisted reviewer roles).
+    human_oversight: Literal["yes", "no", "noAssertion"] | None = None
+
 
 # --------------------------------------------------------------------------- #
 # Component base + discriminated union members
@@ -330,6 +336,22 @@ AIComponent = Annotated[
 """Discriminated union over ``kind``. Use to validate heterogeneous inventories."""
 
 
+def is_deidentified(ds: DatasetComponent) -> bool:
+    """Whether a dataset is de-identified, from STRUCTURED fields only.
+
+    The single canonical predicate shared by the scanner (DATASET_NO_DEIDENT
+    flag) and the compliance checks (EU AIV-2, HIPAA-2). De-identification is
+    asserted via the explicit presence flag or a recorded anonymization method,
+    NEVER inferred from free text (which false-negates on negation and
+    false-positives on unrelated mentions) — so the HIPAA gate fails closed.
+    """
+    if ds.has_sensitive_personal_information == "no":
+        return True
+    if ds.has_sensitive_personal_information == "yes":
+        return False
+    return bool(ds.anonymization_method)
+
+
 # --------------------------------------------------------------------------- #
 # BOM-level assembly
 # --------------------------------------------------------------------------- #
@@ -372,4 +394,5 @@ __all__ = [
     "SecretComponent",
     "AIComponent",
     "MetadataComponent",
+    "is_deidentified",
 ]

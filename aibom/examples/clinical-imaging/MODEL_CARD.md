@@ -47,6 +47,8 @@ clinical:
   pacs_ae_title: CHESTXR_AI
   # Model processes PHI (patient radiographs) at inference time.
   uses_sensitive_personal_information: "yes"
+  # A board-certified radiologist makes the final read (human-in-the-loop).
+  human_oversight: "yes"
 
 # Regulatory extensions -> emitted as regulatory: namespaced properties (advisory).
 regulatory:

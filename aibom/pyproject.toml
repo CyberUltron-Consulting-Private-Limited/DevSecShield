@@ -29,6 +29,13 @@ scan = [
 imaging = ["pydicom>=2.4"]
 # API / MCP surface (Phase 5).
 api = ["fastapi>=0.111"]
+# Phase-3 client deliverables (xlsx traceability matrix, pdf readiness report,
+# docx SaMD/PCCP memo) generated from ScanResult.compliance.
+report = [
+    "openpyxl>=3.1",
+    "reportlab>=4.0",
+    "python-docx>=1.1",
+]
 
 [project.scripts]
 aibom = "aibom.cli:app"
@@ -40,6 +47,7 @@ dev = [
     "mypy>=1.10",
     "types-PyYAML>=6.0",
     "types-jsonschema>=4.20",
+    "pypdf>=4.0",  # PDF text extraction in deliverable tests
 ]
 
 [build-system]
@@ -77,6 +85,11 @@ plugins = ["pydantic.mypy"]
 warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
+
+# Document-generation libraries ship no type stubs (deliverables extra only).
+[[tool.mypy.overrides]]
+module = ["openpyxl.*", "reportlab.*", "docx.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
