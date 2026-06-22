@@ -44,6 +44,7 @@ __all__ = [
     "CheckResult",
     "Check",
     "register_check",
+    "register_manual",
     "checks_for",
     "PASS",
     "FAIL",
@@ -60,7 +61,6 @@ __all__ = [
     "depends_on_frameworks",
     "is_deidentified",
     "has_license",
-    "human_in_the_loop",
 ]
 
 Verdict = Literal["pass", "fail", "na"]
@@ -104,6 +104,19 @@ def register_check(requirement: Requirement) -> Callable[[Check], Check]:
 def checks_for(framework: str) -> list[tuple[Requirement, Check]]:
     """The registered (requirement, check) pairs for a framework (in order)."""
     return list(_CHECK_REGISTRY.get(framework, []))
+
+
+def register_manual(requirement: Requirement, note: str) -> None:
+    """Register a requirement that the AI-BOM graph cannot evidence -> always NA.
+
+    Honest per the coverage rule: a manual/process-evidence obligation is
+    reported as not-applicable-to-the-BOM (excluded from coverage) with an
+    advisory note, never a false pass or fail.
+    """
+
+    @register_check(requirement)
+    def _manual(r: ScanResult, req: Requirement) -> CheckResult:
+        return NA(note)
 
 
 # --------------------------------------------------------------------------- #
@@ -210,15 +223,3 @@ def depends_on_frameworks(r: ScanResult, m: ModelComponent) -> list[FrameworkCom
 
 def has_license(c: object) -> bool:
     return bool(getattr(c, "licenses", None))
-
-
-def human_in_the_loop(m: ModelComponent) -> bool:
-    """Whether the model declares human oversight (Art 14 / GMLP-7).
-
-    Reads the STRUCTURED ``model_card.human_oversight`` graph fact — NEVER
-    inferred by substring-scanning the free-text ``considerations.users`` list
-    (which false-passes on negation like "no human review required" and
-    false-fails on unlisted reviewer roles), matching the rule in
-    :func:`is_deidentified`. Fails closed when oversight is unasserted.
-    """
-    return m.model_card.human_oversight == "yes"

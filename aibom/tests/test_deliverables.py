@@ -33,8 +33,8 @@ def test_xlsx_has_summary_and_framework_sheets(tmp_path: pathlib.Path) -> None:
     assert "Summary" in wb.sheetnames
     assert "HIPAA" in wb.sheetnames and "FDA §524B" in wb.sheetnames
     hipaa = wb["HIPAA"]
-    assert hipaa.max_row == 6  # header + 5 requirements
-    verdicts = {hipaa.cell(row=i, column=4).value for i in range(2, 7)}
+    assert hipaa.max_row == 14  # header + 13 requirements
+    verdicts = {hipaa.cell(row=i, column=4).value for i in range(2, 15)}
     assert verdicts <= {"PASS", "FAIL", "NA"}
 
 

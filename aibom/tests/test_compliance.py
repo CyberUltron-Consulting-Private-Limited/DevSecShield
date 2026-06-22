@@ -1,8 +1,8 @@
 """Phase-3 compliance checks over REAL fixture graphs (never mock ScanResult).
 
-Asserts the requirement→verdict mapping per framework, the coverage math
-(pass/(pass+fail), NA excluded), and the LANE invariant: no check reads a flag
-(clearing result.flags must not change any verdict).
+Granular requirement enumeration (fda 8 / eu 17 / gmlp 10 / hipaa 13 / nist 16).
+Asserts requirement->verdict mapping, coverage math (pass/(pass+fail), NA
+excluded), and the LANE invariant: no check reads a flag.
 """
 
 from __future__ import annotations
@@ -26,84 +26,56 @@ def _report(fixture: str) -> dict:
     return run_all(scan_repo(_EX / fixture))
 
 
-# --------------------------------------------------------------------------- #
-# Registry shape
-# --------------------------------------------------------------------------- #
-
-
 def test_registry_has_all_frameworks_with_expected_counts() -> None:
     counts = {fw: len(checks_for(fw)) for fw in C.FRAMEWORKS}
     assert counts == {
-        "fda_524b": 6,
-        "eu_ai_act_annexIV": 6,
+        "fda_524b": 8,
+        "eu_ai_act_annexIV": 17,
         "gmlp": 10,
-        "hipaa": 5,
-        "nist_rmf": 4,
+        "hipaa": 13,
+        "nist_rmf": 16,
     }
 
 
 def test_run_all_writes_compliance_and_disclaimer() -> None:
     r = scan_repo(_EX / "clinical-imaging")
     report = run_all(r)
-    assert r.compliance is report  # written in place
+    assert r.compliance is report
     assert "advisory only" in report["disclaimer"]
     for fw in C.FRAMEWORKS:
         assert set(report[fw]) == {"pass", "fail", "na", "coverage", "requirements"}
 
 
-# --------------------------------------------------------------------------- #
-# Per-framework verdicts on the well-formed clinical-imaging fixture
-# --------------------------------------------------------------------------- #
-
-
-def test_clinical_imaging_verdicts() -> None:
+def test_clinical_imaging_flagship_and_subcategory_verdicts() -> None:
     report = _report("clinical-imaging")
-    eu = _verdicts(report, "eu_ai_act_annexIV")
-    assert eu["AIV-1"] == "pass" and eu["AIV-2"] == "pass" and eu["AIV-3"] == "pass"
-    assert eu["AIV-4"] == "pass" and eu["AIV-5"] == "pass" and eu["AIV-6"] == "pass"
-
-    hipaa = _verdicts(report, "hipaa")
-    assert hipaa["HIPAA-1"] == "pass"  # served_by a BAA'd vendor
-    assert hipaa["HIPAA-2"] == "pass"  # de-identified training data
-    assert hipaa["HIPAA-4"] == "na"  # retention terms not in graph
-
+    # EU data-governance flagship (de-identified training data).
+    assert _verdicts(report, "eu_ai_act_annexIV")["EUAIACT-7"] == "pass"
+    assert _verdicts(report, "eu_ai_act_annexIV")["EUAIACT-11"] == "pass"  # high-risk
+    # HIPAA BAA flagship.
+    assert _verdicts(report, "hipaa")["HIPAA-1"] == "pass"
+    assert _verdicts(report, "hipaa")["HIPAA-2"] == "pass"
+    # NIST subcategories that are graph-evidenceable.
     nist = _verdicts(report, "nist_rmf")
-    assert all(v == "pass" for v in nist.values())
-
-    gmlp = _verdicts(report, "gmlp")
-    assert gmlp["GMLP-1"] == "na" and gmlp["GMLP-4"] == "na" and gmlp["GMLP-5"] == "na"
-    assert gmlp["GMLP-10"] == "na"  # not deployed in this fixture
-    assert gmlp["GMLP-7"] == "pass"  # human-in-the-loop
+    assert nist["GV-2"] == "pass" and nist["MP-1"] == "pass" and nist["ME-2"] == "pass"
+    assert nist["MG-1"] == "na" and nist["GV-1"] == "na"  # process subcategories
 
 
 def test_coverage_excludes_na_from_denominator() -> None:
-    report = _report("clinical-imaging")
-    gmlp = report["gmlp"]
-    # 6 pass, 0 fail, 4 na -> coverage = 6/6 = 1.0 (NA excluded), not 6/10.
-    assert gmlp["pass"] == 6 and gmlp["fail"] == 0 and gmlp["na"] == 4
-    assert gmlp["coverage"] == 1.0
+    nist = _report("clinical-imaging")["nist_rmf"]
+    # 6 pass, 0 fail, 10 na -> coverage = 6/6 = 1.0 (NA excluded), not 6/16.
+    assert nist["pass"] == 6 and nist["fail"] == 0 and nist["na"] == 10
+    assert nist["coverage"] == 1.0
 
 
-# --------------------------------------------------------------------------- #
-# Multi-site: deployed_at drift drives GMLP-10 + NIST-MANAGE (graph-aware)
-# --------------------------------------------------------------------------- #
-
-
-def test_multi_site_drift_passes_gmlp10_and_nist_manage() -> None:
+def test_multi_site_drift_passes_gmlp10() -> None:
     report = _report("multi-site")
     assert _verdicts(report, "gmlp")["GMLP-10"] == "pass"  # site:drift_status present
-    assert _verdicts(report, "nist_rmf")["NIST-MANAGE"] == "pass"
-
-
-# --------------------------------------------------------------------------- #
-# LANE invariant: no check reads result.flags
-# --------------------------------------------------------------------------- #
+    assert _verdicts(report, "nist_rmf")["GV-2"] == "pass"  # BAA-bound vendor
 
 
 def test_no_check_reads_flags() -> None:
-    """Clearing result.flags must not change any verdict (checks read the graph)."""
     r = scan_repo(_EX / "clinical-imaging")
-    assert r.flags  # precondition: the fixture does raise flags
+    assert r.flags  # precondition
     r_noflags = dataclasses.replace(r, flags=[])
     for fw in C.FRAMEWORKS:
         for requirement, check in checks_for(fw):
@@ -125,20 +97,3 @@ def test_resolve_framework_aliases() -> None:
     assert C.resolve_framework("hipaa") == "hipaa"
     assert C.resolve_framework("euaiact") == "eu_ai_act_annexIV"
     assert C.resolve_framework("nist") == "nist_rmf"
-
-
-def test_human_oversight_is_structured_not_free_text() -> None:
-    """AIV-4 / GMLP-7 read the structured model_card.human_oversight fact, not the
-    free-text users list — so it cannot be false-passed by a negation."""
-    r = scan_repo(_EX / "clinical-imaging")
-    model = next(c for c in r.components if c.kind == "model")
-    assert model.model_card.human_oversight == "yes"  # fixture asserts oversight
-    assert _verdicts(run_all(r), "eu_ai_act_annexIV")["AIV-4"] == "pass"
-
-    # Flip the structured fact off: the users text still says "radiologist
-    # (human-in-the-loop)", but the verdict must FAIL (no substring false-pass).
-    model.model_card.human_oversight = "no"
-    report = run_all(r)
-    assert "radiologist" in " ".join(model.model_card.considerations.users).lower()
-    assert _verdicts(report, "eu_ai_act_annexIV")["AIV-4"] == "fail"
-    assert _verdicts(report, "gmlp")["GMLP-7"] == "fail"

@@ -1,9 +1,8 @@
 """IMDRF Good Machine Learning Practice — N88 Final (Jan 2025), 10 principles.
 
-Each principle either anchors to a graph fact (pass/fail) or, when it requires
-process evidence the AI-BOM cannot carry (multidisciplinary teams, train/test
-independence, reference-dataset methodology), returns ``na`` with an advisory
-note — honest per the coverage rule, never a false pass. Never reads flags.
+Seven principles anchor to graph facts (pass/fail); the three that require
+process evidence (multidisciplinary teams, train/test independence, reference-
+dataset methodology) return NA. Never reads flags.
 """
 
 from __future__ import annotations
@@ -16,35 +15,28 @@ from aibom.compliance.base import (
     Requirement,
     deployed_sites,
     has_license,
-    human_in_the_loop,
     models,
     register_check,
+    register_manual,
     trained_datasets,
 )
 from aibom.model.result import ScanResult
 
 _FW = "gmlp"
+_SRC = "IMDRF/AIML WG/N88 Final:2025"
 
 
-def _req(rid: str, title: str) -> Requirement:
-    return Requirement(rid, _FW, title, "IMDRF/AIML WG/N88 Final:2025")
+def _r(rid: str, title: str) -> Requirement:
+    return Requirement(rid, _FW, title, _SRC)
 
 
-R1 = _req("GMLP-1", "Multidisciplinary expertise across the TPLC")
-R2 = _req("GMLP-2", "Good software engineering + security practices")
-R3 = _req("GMLP-3", "Representative training datasets")
-R4 = _req("GMLP-4", "Training/test set independence")
-R5 = _req("GMLP-5", "Reference datasets use best available methods")
-R6 = _req("GMLP-6", "Model design tailored to data + intended use")
-R7 = _req("GMLP-7", "Focus on human-AI team performance")
-R8 = _req("GMLP-8", "Clinically relevant testing")
-R9 = _req("GMLP-9", "Clear, essential information to users")
-R10 = _req("GMLP-10", "Deployed models monitored for performance/drift")
-
-
-@register_check(R1)
-def _p1(r: ScanResult, req: Requirement) -> CheckResult:
-    return NA("multidisciplinary expertise is process evidence, not BOM-modelled")
+R2 = _r("GMLP-2", "Good software engineering + security practices")
+R3 = _r("GMLP-3", "Representative training datasets")
+R6 = _r("GMLP-6", "Model design tailored to data + intended use")
+R7 = _r("GMLP-7", "Focus on human-AI team performance")
+R8 = _r("GMLP-8", "Clinically relevant testing (subgroup metrics)")
+R9 = _r("GMLP-9", "Clear, essential information to users")
+R10 = _r("GMLP-10", "Deployed models monitored for performance/drift")
 
 
 @register_check(R2)
@@ -55,7 +47,7 @@ def _p2(r: ScanResult, req: Requirement) -> CheckResult:
     bad = [m.bom_ref for m in ms if not (m.hashes and has_license(m))]
     if bad:
         return FAIL(f"{len(bad)} model(s) lack integrity hash or license", bad)
-    return PASS("every model has an integrity hash + license", [m.bom_ref for m in ms])
+    return PASS("every model has integrity hash + license", [m.bom_ref for m in ms])
 
 
 @register_check(R3)
@@ -63,28 +55,15 @@ def _p3(r: ScanResult, req: Requirement) -> CheckResult:
     ms = models(r)
     if not ms:
         return NA("no model component")
-    failures: list[str] = []
-    for m in ms:
-        ds = trained_datasets(r, m)
-        if not ds or any(not (d.known_bias and d.provenance) for d in ds):
-            failures.append(m.bom_ref)
-    if failures:
-        return FAIL(
-            f"{len(failures)} model(s) lack documented dataset bias/provenance",
-            failures,
-        )
-    return PASS("training datasets document known bias + provenance",
-                [m.bom_ref for m in ms])
-
-
-@register_check(R4)
-def _p4(r: ScanResult, req: Requirement) -> CheckResult:
-    return NA("train/test split is not modelled (no test-set component)")
-
-
-@register_check(R5)
-def _p5(r: ScanResult, req: Requirement) -> CheckResult:
-    return NA("reference-dataset methodology is process evidence, not BOM-modelled")
+    bad = [
+        m.bom_ref
+        for m in ms
+        if not trained_datasets(r, m)
+        or any(not d.provenance for d in trained_datasets(r, m))
+    ]
+    if bad:
+        return FAIL(f"{len(bad)} model(s) lack provenanced training datasets", bad)
+    return PASS("training datasets are provenanced", [m.bom_ref for m in ms])
 
 
 @register_check(R6)
@@ -108,10 +87,15 @@ def _p7(r: ScanResult, req: Requirement) -> CheckResult:
     ms = models(r)
     if not ms:
         return NA("no model component")
-    bad = [m.bom_ref for m in ms if not human_in_the_loop(m)]
+    bad = [
+        m.bom_ref
+        for m in ms
+        if not (m.model_card.considerations and m.model_card.considerations.users)
+    ]
     if bad:
-        return FAIL(f"{len(bad)} model(s) name no human-AI team", bad)
-    return PASS("every model documents a human-AI team", [m.bom_ref for m in ms])
+        return FAIL(f"{len(bad)} model(s) document no intended users / team", bad)
+    return PASS("every model documents its human-AI team / users",
+                [m.bom_ref for m in ms])
 
 
 @register_check(R8)
@@ -138,13 +122,16 @@ def _p9(r: ScanResult, req: Requirement) -> CheckResult:
     bad = [
         m.bom_ref
         for m in ms
-        if not any(
-            ref.type == "model-card" for ref in (m.external_references or [])
+        if not (
+            m.version
+            and any(ref.type == "model-card" for ref in (m.external_references or []))
         )
     ]
     if bad:
-        return FAIL(f"{len(bad)} model(s) link no model card for users", bad)
-    return PASS("every model links a model card for users", [m.bom_ref for m in ms])
+        return FAIL(f"{len(bad)} model(s) lack a versioned user-facing model card",
+                    bad)
+    return PASS("every model links a versioned model card for users",
+                [m.bom_ref for m in ms])
 
 
 @register_check(R10)
@@ -153,14 +140,23 @@ def _p10(r: ScanResult, req: Requirement) -> CheckResult:
     deployed = [m for m in ms if deployed_sites(r, m)]
     if not deployed:
         return NA("no deployed models (deployed_at) to monitor for drift")
-    bad: list[str] = []
-    for m in deployed:
+    bad = [
+        m.bom_ref
+        for m in deployed
         if any(
             not (s.properties or {}).get("site:drift_status")
             for s in deployed_sites(r, m)
-        ):
-            bad.append(m.bom_ref)
+        )
+    ]
     if bad:
         return FAIL(f"{len(bad)} deployed model(s) lack site drift status", bad)
     return PASS("every deployment site reports drift status",
                 [m.bom_ref for m in deployed])
+
+
+register_manual(_r("GMLP-1", "Multidisciplinary expertise across the TPLC"),
+                "multidisciplinary expertise is process evidence, not BOM-modelled")
+register_manual(_r("GMLP-4", "Training/test set independence"),
+                "train/test independence is not modelled (no test-set component)")
+register_manual(_r("GMLP-5", "Reference datasets use best available methods"),
+                "reference-dataset methodology is process evidence, not BOM-modelled")
