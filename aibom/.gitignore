@@ -4,3 +4,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+# Ruflo runtime artifacts (not source)
+ruvector.db
+*.db
+.swarm/
+.claude-flow/
+*.rvf
+*.rvf.lock
