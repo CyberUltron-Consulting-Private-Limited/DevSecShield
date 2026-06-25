@@ -10,6 +10,7 @@ from aibom.scan.scanners import (  # noqa: F401
     model_repo,
     net_env_scan,
     requirements,
+    secret_scan,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "net_env_scan",
     "cloud_iac_scan",
     "live_cloud_scan",
+    "secret_scan",
 ]
