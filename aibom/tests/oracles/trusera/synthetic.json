@@ -1,0 +1,408 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:f42bcea0-ef16-4534-8499-331c8b8185a0",
+  "metadata": {
+    "timestamp": "2026-06-25T05:56:30.980674+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "12"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "1"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "11"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "0.02"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "dc2414cd-db2e-4a71-8be0-bbc0b78d4033",
+      "type": "framework",
+      "name": "crewai",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "5f243b7b-c487-40d5-a88f-6197840d0932",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "84bf2f63-ccc1-45a4-96de-5f2b3bc95761",
+      "type": "framework",
+      "name": "langchain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "a5a54d26-ef26-4e9f-bccf-dd56d53feecc",
+      "type": "machine-learning-model",
+      "name": "anthropic",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic"
+    },
+    {
+      "bom-ref": "aaef7f68-4956-4e4e-8df8-994102422478",
+      "type": "machine-learning-model",
+      "name": "cohere",
+      "description": "Cohere completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Cohere"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/cohere"
+    },
+    {
+      "bom-ref": "0d7bc870-2749-440d-b8a8-2f42511e5277",
+      "type": "machine-learning-model",
+      "name": "openai",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "a86e5173-1f8a-4bd4-a62c-a7245b8a8ea5",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic/app.py:19"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "b7ac06f3-70bd-437d-8b24-34366befb00a",
+      "type": "machine-learning-model",
+      "name": "Anthropic",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic/app.py:20"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic"
+    },
+    {
+      "bom-ref": "1fa711c4-3d8b-44eb-b208-fc6889a65ffd",
+      "type": "machine-learning-model",
+      "name": "Cohere",
+      "description": "Cohere completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic/app.py:21"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Cohere"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/cohere"
+    },
+    {
+      "bom-ref": "6b58e9a7-a17d-494f-b0a9-942430f7e82e",
+      "type": "framework",
+      "name": "LangChain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic/app.py:24"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "09a95655-9811-405f-8632-2ff5bfa12861",
+      "type": "framework",
+      "name": "CrewAI",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic/app.py:25"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "b36d03df-edc9-4a30-93ff-aebd3809280b",
+      "type": "machine-learning-model",
+      "name": "OpenAI API Key",
+      "description": "OpenAI unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic/app.py:31"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai api key"
+    }
+  ]
+}

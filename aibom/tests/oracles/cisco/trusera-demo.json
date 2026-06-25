@@ -1,0 +1,2234 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "1720e953-c9ff-4ef9-8953-02850f4abb25",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-25T06:05:31Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "openai.gpt-oss-120b-1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-25T06:05:33Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "cisco-td-git": {
+        "source_name": "cisco-td-git",
+        "source_path": "aibom/tests/fixtures/trusera-demo",
+        "components": {
+          "model": [
+            {
+              "name": "gpt-3.5-turbo",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/app.py",
+              "line_number": 13,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "gpt-3.5-turbo",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-3.5-turbo' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/app.py",
+                    "start_line": 13,
+                    "end_line": 13,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "5",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/app.py"
+                ]
+              },
+              "instance_id": "gpt-3.5-turbo_aibom/tests/fixtures/trusera-demo/app.py_13",
+              "confidence": 1.0
+            },
+            {
+              "name": "OpenAI Chat Model",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "gpt-4o",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'OpenAI Chat Model' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                "model_name": "gpt-4o",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/agents/langchain_pipeline.py",
+                    "line": 8,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  },
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+                    "line": 27,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 3,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/agents/langchain_pipeline.py",
+                  "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+                ],
+                "consolidated_count": 3
+              },
+              "instance_id": "OpenAI Chat Model_aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "gpt-4",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/agents/crew.py",
+              "line_number": 6,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "gpt-4",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-4' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/agents/crew.py",
+                    "start_line": 6,
+                    "end_line": 6,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "gpt",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/agents/crew.py"
+                ]
+              },
+              "instance_id": "gpt-4_aibom/tests/fixtures/trusera-demo/agents/crew.py_6",
+              "confidence": 1.0
+            },
+            {
+              "name": "OpenAI Model",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "gpt-4o-mini",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'OpenAI Model' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                "model_name": "gpt-4o-mini",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                    "line": 27,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "OpenAI Model_aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "Anthropic Model",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "claude-3-5-sonnet-20241022",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Anthropic Model' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+                "model_name": "claude-3-5-sonnet-20241022",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+                    "line": 28,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "Anthropic Model_aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "Google Gemini",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "gemini-1.5-pro",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Google Gemini' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+                "model_name": "gemini-1.5-pro",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+                    "line": 57,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "Google Gemini_aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "compose_service_ollama",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/docker-compose.yml",
+              "line_number": 5,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "ollama/ollama:latest",
+              "embedding_model": null,
+              "description": "Docker Compose service `ollama` uses AI image",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'compose_service_ollama' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/docker-compose.yml",
+                    "start_line": 5,
+                    "end_line": 5,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "service": "ollama",
+                "image": "ollama/ollama:latest",
+                "config_kind": "docker-compose",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/docker-compose.yml"
+                ]
+              },
+              "instance_id": "compose_service_ollama_aibom/tests/fixtures/trusera-demo/docker-compose.yml_5",
+              "confidence": 1.0
+            },
+            {
+              "name": "compose_service_vllm",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/docker-compose.yml",
+              "line_number": 20,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "vllm/vllm-openai:latest",
+              "embedding_model": null,
+              "description": "Docker Compose service `vllm` uses AI image",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'compose_service_vllm' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/docker-compose.yml",
+                    "start_line": 20,
+                    "end_line": 20,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "service": "vllm",
+                "image": "vllm/vllm-openai:latest",
+                "config_kind": "docker-compose",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/docker-compose.yml"
+                ]
+              },
+              "instance_id": "compose_service_vllm_aibom/tests/fixtures/trusera-demo/docker-compose.yml_20",
+              "confidence": 1.0
+            },
+            {
+              "name": "s3://my-bucket/models/fine-tuned-model.tar.gz",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+              "line_number": 32,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "s3://my-bucket/models/fine-tuned-model.tar.gz",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 's3://my-bucket/models/fine-tuned-model.tar.gz' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+                    "start_line": 32,
+                    "end_line": 32,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_resource_type": "aws_sagemaker_model",
+                "terraform_resource_name": "llm_model",
+                "field": "model_data_url",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/infra/main.tf"
+                ]
+              },
+              "instance_id": "s3://my-bucket/models/fine-tuned-model.tar.gz_aibom/tests/fixtures/trusera-demo/infra/main.tf_32",
+              "confidence": 1.0
+            }
+          ],
+          "embedding": [
+            {
+              "name": "text-embedding-ada-002",
+              "component_type": "embedding",
+              "file_path": "aibom/tests/fixtures/trusera-demo/services/embeddings.py",
+              "line_number": 12,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "text-embedding-ada-002",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Embedding 'text-embedding-ada-002' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/services/embeddings.py",
+                    "start_line": 12,
+                    "end_line": 12,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "text-embedding-ada",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/app.py",
+                    "line": 20,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/app.py",
+                  "aibom/tests/fixtures/trusera-demo/services/embeddings.py"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "text-embedding-ada-002_aibom/tests/fixtures/trusera-demo/services/embeddings.py_12",
+              "confidence": 1.0
+            }
+          ],
+          "agent": [
+            {
+              "name": "AI Agent",
+              "component_type": "agent",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'AI Agent' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.agent",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+                    "line": 0,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                  "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "AI Agent_aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "Research Agent",
+              "component_type": "agent",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'Research Agent' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.agent",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+                ]
+              },
+              "instance_id": "Research Agent_aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "Summarization Chain",
+              "component_type": "agent",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'Summarization Chain' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.chainSummarization",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+                ]
+              },
+              "instance_id": "Summarization Chain_aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json_0",
+              "confidence": 1.0
+            }
+          ],
+          "tool": [
+            {
+              "name": "Code Tool",
+              "component_type": "tool",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Tool 'Code Tool' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.toolCode",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+                ]
+              },
+              "instance_id": "Code Tool_aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "HTTP Request Tool",
+              "component_type": "tool",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Tool 'HTTP Request Tool' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+                ]
+              },
+              "instance_id": "HTTP Request Tool_aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "MCP Client",
+              "component_type": "tool",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Tool 'MCP Client' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+                ]
+              },
+              "instance_id": "MCP Client_aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json_0",
+              "confidence": 1.0
+            }
+          ],
+          "memory": [
+            {
+              "name": "Memory",
+              "component_type": "memory",
+              "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+              "line_number": 0,
+              "framework": "n8n",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Memory 'Memory' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "workflow_type": "n8n",
+                "n8n_node_type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+                ]
+              },
+              "instance_id": "Memory_aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json_0",
+              "confidence": 1.0
+            }
+          ],
+          "secret": [
+            {
+              "name": "env_secret_OPENAI_API_KEY",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 2,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "API key variable `OPENAI_API_KEY` present (value redacted)",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env_secret_OPENAI_API_KEY' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 2,
+                    "end_line": 2,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env_var": "OPENAI_API_KEY",
+                "redacted": true,
+                "config_kind": ".env",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ]
+              },
+              "instance_id": "env_secret_OPENAI_API_KEY_aibom/tests/fixtures/trusera-demo/.env.example_2",
+              "confidence": 1.0
+            },
+            {
+              "name": "env_secret_ANTHROPIC_API_KEY",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 3,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "API key variable `ANTHROPIC_API_KEY` present (value redacted)",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env_secret_ANTHROPIC_API_KEY' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 3,
+                    "end_line": 3,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env_var": "ANTHROPIC_API_KEY",
+                "redacted": true,
+                "config_kind": ".env",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ]
+              },
+              "instance_id": "env_secret_ANTHROPIC_API_KEY_aibom/tests/fixtures/trusera-demo/.env.example_3",
+              "confidence": 1.0
+            },
+            {
+              "name": "openai_api_key",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 2,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.88,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Potential openai_api_key detected",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'openai_api_key' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 2,
+                    "end_line": 2,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "secret_type": "openai_api_key",
+                "detection_method": "regex",
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/app.py",
+                    "line": 7,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  },
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/agents/crew.py",
+                    "line": 6,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  },
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/services/embeddings.py",
+                    "line": 6,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 4,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/app.py",
+                  "aibom/tests/fixtures/trusera-demo/agents/crew.py",
+                  "aibom/tests/fixtures/trusera-demo/services/embeddings.py",
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ],
+                "consolidated_count": 4
+              },
+              "instance_id": "openai_api_key_aibom/tests/fixtures/trusera-demo/.env.example_2",
+              "confidence": 0.88
+            },
+            {
+              "name": "anthropic_api_key",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 3,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Potential anthropic_api_key detected",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'anthropic_api_key' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 3,
+                    "end_line": 3,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "secret_type": "anthropic_api_key",
+                "detection_method": "regex",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ]
+              },
+              "instance_id": "anthropic_api_key_aibom/tests/fixtures/trusera-demo/.env.example_3",
+              "confidence": 0.9
+            },
+            {
+              "name": "huggingface_api_key",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 4,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.88,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Potential huggingface_api_key detected",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'huggingface_api_key' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 4,
+                    "end_line": 4,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "secret_type": "huggingface_api_key",
+                "detection_method": "regex",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ]
+              },
+              "instance_id": "huggingface_api_key_aibom/tests/fixtures/trusera-demo/.env.example_4",
+              "confidence": 0.88
+            }
+          ],
+          "llm_endpoint": [
+            {
+              "name": "env:OPENAI_BASE_URL",
+              "component_type": "llm_endpoint",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 7,
+              "framework": "openai",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "https://api.openai.com/v1",
+              "embedding_model": null,
+              "description": "Endpoint URL from `OPENAI_BASE_URL`",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Llm endpoint 'env:OPENAI_BASE_URL' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 7,
+                    "end_line": 7,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env_var": "OPENAI_BASE_URL",
+                "endpoint_url": "https://api.openai.com/v1",
+                "config_kind": ".env",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ]
+              },
+              "instance_id": "env:OPENAI_BASE_URL_aibom/tests/fixtures/trusera-demo/.env.example_7",
+              "confidence": 1.0
+            },
+            {
+              "name": "env:ANTHROPIC_BASE_URL",
+              "component_type": "llm_endpoint",
+              "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+              "line_number": 8,
+              "framework": "anthropic",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "https://api.anthropic.com",
+              "embedding_model": null,
+              "description": "Endpoint URL from `ANTHROPIC_BASE_URL`",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Llm endpoint 'env:ANTHROPIC_BASE_URL' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                    "start_line": 8,
+                    "end_line": 8,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env_var": "ANTHROPIC_BASE_URL",
+                "endpoint_url": "https://api.anthropic.com",
+                "config_kind": ".env",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/.env.example"
+                ]
+              },
+              "instance_id": "env:ANTHROPIC_BASE_URL_aibom/tests/fixtures/trusera-demo/.env.example_8",
+              "confidence": 1.0
+            }
+          ],
+          "other": [
+            {
+              "name": "aws_sagemaker_endpoint.llm_endpoint",
+              "component_type": "other",
+              "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+              "line_number": 10,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Terraform resource aws_sagemaker_endpoint",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Other 'aws_sagemaker_endpoint.llm_endpoint' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+                    "start_line": 10,
+                    "end_line": 10,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_resource_type": "aws_sagemaker_endpoint",
+                "terraform_resource_name": "llm_endpoint",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/infra/main.tf"
+                ]
+              },
+              "instance_id": "aws_sagemaker_endpoint.llm_endpoint_aibom/tests/fixtures/trusera-demo/infra/main.tf_10",
+              "confidence": 1.0
+            },
+            {
+              "name": "aws_sagemaker_endpoint_configuration.llm_config",
+              "component_type": "other",
+              "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+              "line_number": 15,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Terraform resource aws_sagemaker_endpoint_configuration",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Other 'aws_sagemaker_endpoint_configuration.llm_config' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+                    "start_line": 15,
+                    "end_line": 15,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_resource_type": "aws_sagemaker_endpoint_configuration",
+                "terraform_resource_name": "llm_config",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/infra/main.tf"
+                ]
+              },
+              "instance_id": "aws_sagemaker_endpoint_configuration.llm_config_aibom/tests/fixtures/trusera-demo/infra/main.tf_15",
+              "confidence": 1.0
+            },
+            {
+              "name": "aws_sagemaker_model.llm_model",
+              "component_type": "other",
+              "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+              "line_number": 26,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Terraform resource aws_sagemaker_model",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Other 'aws_sagemaker_model.llm_model' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+                    "start_line": 26,
+                    "end_line": 26,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_resource_type": "aws_sagemaker_model",
+                "terraform_resource_name": "llm_model",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/infra/main.tf"
+                ]
+              },
+              "instance_id": "aws_sagemaker_model.llm_model_aibom/tests/fixtures/trusera-demo/infra/main.tf_26",
+              "confidence": 1.0
+            },
+            {
+              "name": "aws_bedrock_guardrail.content_safety",
+              "component_type": "other",
+              "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+              "line_number": 63,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Terraform resource aws_bedrock_guardrail",
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Other 'aws_bedrock_guardrail.content_safety' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+                    "start_line": 63,
+                    "end_line": 63,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_resource_type": "aws_bedrock_guardrail",
+                "terraform_resource_name": "content_safety",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/infra/main.tf"
+                ]
+              },
+              "instance_id": "aws_bedrock_guardrail.content_safety_aibom/tests/fixtures/trusera-demo/infra/main.tf_63",
+              "confidence": 1.0
+            }
+          ],
+          "training_run": [
+            {
+              "name": "gpu_instance:ml.g5.2xlarge",
+              "component_type": "training_run",
+              "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+              "line_number": 22,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Training run 'gpu_instance:ml.g5.2xlarge' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/infra/main.tf",
+                    "start_line": 22,
+                    "end_line": 22,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_resource_type": "aws_sagemaker_endpoint_configuration",
+                "terraform_resource_name": "llm_config",
+                "instance_type": "ml.g5.2xlarge",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/infra/main.tf"
+                ]
+              },
+              "instance_id": "gpu_instance:ml.g5.2xlarge_aibom/tests/fixtures/trusera-demo/infra/main.tf_22",
+              "confidence": 1.0
+            }
+          ],
+          "dependency": [
+            {
+              "name": "openai",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+              "line_number": 3,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'openai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "start_line": 3,
+                    "end_line": 3,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "1.0.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/requirements.txt"
+                ]
+              },
+              "instance_id": "openai_aibom/tests/fixtures/trusera-demo/requirements.txt_3",
+              "confidence": 1.0
+            },
+            {
+              "name": "langchain",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+              "line_number": 4,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'langchain' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "start_line": 4,
+                    "end_line": 4,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.1.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "line": 4,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/requirements.txt"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "langchain_aibom/tests/fixtures/trusera-demo/requirements.txt_4",
+              "confidence": 1.0
+            },
+            {
+              "name": "langchain-openai",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+              "line_number": 5,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'langchain-openai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "start_line": 5,
+                    "end_line": 5,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.0.5",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "line": 5,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/requirements.txt"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "langchain-openai_aibom/tests/fixtures/trusera-demo/requirements.txt_5",
+              "confidence": 1.0
+            },
+            {
+              "name": "crewai",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+              "line_number": 6,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'crewai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "start_line": 6,
+                    "end_line": 6,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.1.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/requirements.txt"
+                ]
+              },
+              "instance_id": "crewai_aibom/tests/fixtures/trusera-demo/requirements.txt_6",
+              "confidence": 1.0
+            },
+            {
+              "name": "chromadb",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+              "line_number": 7,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'chromadb' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/trusera-demo/requirements.txt",
+                    "start_line": 7,
+                    "end_line": 7,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.4.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/trusera-demo/requirements.txt"
+                ]
+              },
+              "instance_id": "chromadb_aibom/tests/fixtures/trusera-demo/requirements.txt_7",
+              "confidence": 1.0
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 34,
+          "last_generated_at": "2026-06-25T06:05:33Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "",
+          "source_ref_version": "12a2ce0d0e24b6ec686a33eddcf32acb692ea18b",
+          "elapsed_s": 1.29,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 34,
+      "pending_agent_review": 22,
+      "test_only_components": 0,
+      "component_types": {
+        "model": 9,
+        "embedding": 1,
+        "agent": 3,
+        "tool": 3,
+        "memory": 1,
+        "secret": 5,
+        "llm_endpoint": 2,
+        "other": 4,
+        "training_run": 1,
+        "dependency": 5
+      },
+      "total_relationships": 0,
+      "risk_score": 100,
+      "risk_severity": "critical"
+    },
+    "risk": {
+      "score": 100,
+      "severity": "critical",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+          "line_number": 0,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json",
+                "start_line": 1,
+                "end_line": 1,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "aibom/tests/fixtures/trusera-demo/agents/crew.py",
+          "line_number": 6,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/agents/crew.py",
+                "start_line": 6,
+                "end_line": 6,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+          "line_number": 0,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json",
+                "start_line": 1,
+                "end_line": 1,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+          "line_number": 2,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                "start_line": 2,
+                "end_line": 2,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+          "line_number": 3,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                "start_line": 3,
+                "end_line": 3,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+          "line_number": 2,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                "start_line": 2,
+                "end_line": 2,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+          "line_number": 3,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                "start_line": 3,
+                "end_line": 3,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+          "line_number": 4,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/trusera-demo/.env.example",
+                "start_line": 4,
+                "end_line": 4,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

@@ -1,0 +1,4 @@
+# The chroma fixture is a 71MB external clone AND its own git repo (embedded) —
+# not vendored. Ignore it wholesale. Reproduce via tests/fixtures/CHROMA.md;
+# its oracle goldens (tests/oracles/{trusera,cisco}/chroma.json) ARE committed.
+chroma/

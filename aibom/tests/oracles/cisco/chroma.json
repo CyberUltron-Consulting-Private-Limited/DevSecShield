@@ -1,0 +1,970 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "1fa00bd4-47e3-43e3-8ab2-5e38b62a18bf",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-25T06:04:55Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "openai.gpt-oss-120b-1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-25T06:09:42Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "chroma-core/chroma": {
+        "source_name": "chroma-core/chroma",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma",
+        "components": {
+          "model": [
+            {
+              "name": "chroma/all-minilm-l6-v2-f32",
+              "component_type": "model",
+              "file_path": "clients/new-js/packages/ai-embeddings/ollama/start-ollama.ts",
+              "line_number": 13,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "chroma/all-minilm-l6-v2-f32",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'chroma/all-minilm-l6-v2-f32' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/new-js/packages/ai-embeddings/ollama/start-ollama.ts",
+                    "start_line": 13,
+                    "end_line": 13,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence": [
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/startOllamaContainer.ts",
+                    "line": 13,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/startOllamaContainer.ts",
+                    "line": 16,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "clients/js/packages/chromadb-core/src/embeddings/OllamaEmbeddingFunction.ts",
+                    "line": 17,
+                    "service": ".",
+                    "test_only": false
+                  },
+                  {
+                    "file": "clients/new-js/packages/ai-embeddings/ollama/start-ollama.ts",
+                    "line": 18,
+                    "service": ".",
+                    "test_only": false
+                  },
+                  {
+                    "file": "clients/new-js/packages/ai-embeddings/ollama/src/index.test.ts",
+                    "line": 66,
+                    "service": ".",
+                    "test_only": false
+                  },
+                  {
+                    "file": "clients/new-js/packages/ai-embeddings/ollama/src/index.ts",
+                    "line": 30,
+                    "service": ".",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/ollama_embedding_function.py",
+                    "line": 6,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma",
+                    "test_only": true
+                  }
+                ],
+                "evidence_count": 8,
+                "evidence_files": [
+                  "clients/js/packages/chromadb-core/test/embeddings/startOllamaContainer.ts",
+                  "clients/js/packages/chromadb-core/src/embeddings/OllamaEmbeddingFunction.ts",
+                  "clients/new-js/packages/ai-embeddings/ollama/start-ollama.ts",
+                  "clients/new-js/packages/ai-embeddings/ollama/src/index.test.ts",
+                  "clients/new-js/packages/ai-embeddings/ollama/src/index.ts",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/ollama_embedding_function.py"
+                ],
+                "consolidated_count": 8
+              },
+              "instance_id": "chroma/all-minilm-l6-v2-f32_clients/new-js/packages/ai-embeddings/ollama/start-ollama.ts_13",
+              "confidence": 0.75
+            },
+            {
+              "name": "large",
+              "component_type": "model",
+              "file_path": "clients/js/packages/chromadb-core/src/embeddings/CohereEmbeddingFunction.ts",
+              "line_number": 105,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "large",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'large' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/js/packages/chromadb-core/src/embeddings/CohereEmbeddingFunction.ts",
+                    "start_line": 105,
+                    "end_line": 105,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence": [
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                    "line": 54,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/alternative_embeddings.ipynb",
+                    "line": 31,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma",
+                    "test_only": true
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere/cohere_python.ipynb",
+                    "line": 15,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere",
+                    "test_only": true
+                  }
+                ],
+                "evidence_count": 4,
+                "evidence_files": [
+                  "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                  "clients/js/packages/chromadb-core/src/embeddings/CohereEmbeddingFunction.ts",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/alternative_embeddings.ipynb",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere/cohere_python.ipynb"
+                ],
+                "consolidated_count": 4
+              },
+              "instance_id": "large_clients/js/packages/chromadb-core/src/embeddings/CohereEmbeddingFunction.ts_105",
+              "confidence": 0.75
+            },
+            {
+              "name": "Xenova/all-MiniLM-L6-v2",
+              "component_type": "model",
+              "file_path": "clients/js/packages/chromadb-core/src/embeddings/TransformersEmbeddingFunction.ts",
+              "line_number": 31,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "Xenova/all-MiniLM-L6-v2",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Xenova/all-MiniLM-L6-v2' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/js/packages/chromadb-core/src/embeddings/TransformersEmbeddingFunction.ts",
+                    "start_line": 31,
+                    "end_line": 31,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence": [
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                    "line": 64,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                    "line": 69,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                    "line": 97,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                    "line": 102,
+                    "service": ".",
+                    "test_only": true
+                  },
+                  {
+                    "file": "clients/js/packages/chromadb-core/src/embeddings/DefaultEmbeddingFunction.ts",
+                    "line": 33,
+                    "service": ".",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 6,
+                "evidence_files": [
+                  "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                  "clients/js/packages/chromadb-core/src/embeddings/DefaultEmbeddingFunction.ts",
+                  "clients/js/packages/chromadb-core/src/embeddings/TransformersEmbeddingFunction.ts"
+                ],
+                "consolidated_count": 6
+              },
+              "instance_id": "Xenova/all-MiniLM-L6-v2_clients/js/packages/chromadb-core/src/embeddings/TransformersEmbeddingFunction.ts_31",
+              "confidence": 0.75
+            },
+            {
+              "name": "embedding-001",
+              "component_type": "model",
+              "file_path": "clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts",
+              "line_number": 25,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "embedding-001",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'embedding-001' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts",
+                    "start_line": 25,
+                    "end_line": 25,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence": [
+                  {
+                    "file": "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                    "line": 121,
+                    "service": ".",
+                    "test_only": true
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "clients/js/packages/chromadb-core/test/embeddings/ef_schema.test.ts",
+                  "clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "embedding-001_clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts_25",
+              "confidence": 0.75
+            },
+            {
+              "name": "new-model",
+              "component_type": "model",
+              "file_path": "clients/new-js/packages/ai-embeddings/chroma-cloud-splade/src/index.test.ts",
+              "line_number": 141,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "new-model",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'new-model' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/new-js/packages/ai-embeddings/chroma-cloud-splade/src/index.test.ts",
+                    "start_line": 141,
+                    "end_line": 141,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "clients/new-js/packages/ai-embeddings/chroma-cloud-splade/src/index.test.ts"
+                ]
+              },
+              "instance_id": "new-model_clients/new-js/packages/ai-embeddings/chroma-cloud-splade/src/index.test.ts_141",
+              "confidence": 0.75
+            },
+            {
+              "name": "custom-model",
+              "component_type": "model",
+              "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+              "line_number": 29,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "custom-model",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'custom-model' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+                    "start_line": 29,
+                    "end_line": 29,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts"
+                ]
+              },
+              "instance_id": "custom-model_clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts_29",
+              "confidence": 0.75
+            },
+            {
+              "name": "config-model",
+              "component_type": "model",
+              "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+              "line_number": 75,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "config-model",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'config-model' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+                    "start_line": 75,
+                    "end_line": 75,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts"
+                ]
+              },
+              "instance_id": "config-model_clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts_75",
+              "confidence": 0.75
+            },
+            {
+              "name": "multilingual-22-12",
+              "component_type": "model",
+              "file_path": "examples/use_with/cohere/cohere_js.js",
+              "line_number": 56,
+              "framework": "npm",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.75,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "multilingual-22-12",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'multilingual-22-12' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "examples/use_with/cohere/cohere_js.js",
+                    "start_line": 56,
+                    "end_line": 56,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "scanner": "multi_language_scanner",
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere/cohere_python.ipynb",
+                    "line": 30,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere",
+                    "test_only": true
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "examples/use_with/cohere/cohere_js.js",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere/cohere_python.ipynb"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "multilingual-22-12_examples/use_with/cohere/cohere_js.js_56",
+              "confidence": 0.75
+            }
+          ],
+          "embedding": [
+            {
+              "name": "mistral-embed",
+              "component_type": "embedding",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/test/utils/test_embedding_function_schemas.py",
+              "line_number": 349,
+              "framework": "mistral",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": "mistral-embed",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Embedding 'mistral-embed' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/test/utils/test_embedding_function_schemas.py",
+                    "start_line": 349,
+                    "end_line": 349,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=mistral-embed",
+                "provider": "mistral",
+                "family": "mistral",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence": [
+                  {
+                    "file": "clients/new-js/packages/ai-embeddings/mistral/src/index.ts",
+                    "line": 30,
+                    "service": ".",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "clients/new-js/packages/ai-embeddings/mistral/src/index.ts",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/test/utils/test_embedding_function_schemas.py"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "mistral-embed_/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/test/utils/test_embedding_function_schemas.py_349",
+              "confidence": 1.0
+            }
+          ],
+          "dependency": [
+            {
+              "name": "ai",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json",
+              "line_number": 11,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "5.0.113",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'ai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json",
+                    "start_line": 11,
+                    "end_line": 11,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "npm",
+                "version_spec": "5.0.113",
+                "manifest": "package-lock.json",
+                "known_ai_package": true,
+                "evidence": [
+                  {
+                    "file": "sample_apps/movies/src/app/api/chat/route.ts",
+                    "line": 1,
+                    "service": ".",
+                    "test_only": false
+                  },
+                  {
+                    "file": "sample_apps/movies/src/app/api/chat/route.ts",
+                    "line": 7,
+                    "service": ".",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 3,
+                "evidence_files": [
+                  "sample_apps/movies/src/app/api/chat/route.ts",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json"
+                ],
+                "consolidated_count": 3
+              },
+              "instance_id": "ai_/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json_11",
+              "confidence": 1.0
+            },
+            {
+              "name": "@ai-sdk/openai",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json",
+              "line_number": 11,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "2.0.86",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency '@ai-sdk/openai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json",
+                    "start_line": 11,
+                    "end_line": 11,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "npm",
+                "version_spec": "2.0.86",
+                "manifest": "package-lock.json",
+                "known_ai_package": true,
+                "evidence": [
+                  {
+                    "file": "sample_apps/movies/src/app/api/chat/route.ts",
+                    "line": 8,
+                    "service": ".",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "sample_apps/movies/src/app/api/chat/route.ts",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "@ai-sdk/openai_/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/movies/package-lock.json_11",
+              "confidence": 1.0
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 11,
+          "last_generated_at": "2026-06-25T06:09:42Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/chroma-core/chroma",
+          "source_ref_version": "207de398a18c703cd69b43aae54078d9e3064747",
+          "elapsed_s": 286.1,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 11,
+      "pending_agent_review": 11,
+      "test_only_components": 0,
+      "component_types": {
+        "model": 8,
+        "embedding": 1,
+        "dependency": 2
+      },
+      "total_relationships": 0,
+      "risk_score": 60,
+      "risk_severity": "high"
+    },
+    "risk": {
+      "score": 60,
+      "severity": "high",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "clients/js/packages/chromadb-core/src/embeddings/CohereEmbeddingFunction.ts",
+          "line_number": 105,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "clients/js/packages/chromadb-core/src/embeddings/CohereEmbeddingFunction.ts",
+                "start_line": 105,
+                "end_line": 105,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts",
+          "line_number": 25,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts",
+                "start_line": 25,
+                "end_line": 25,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "clients/new-js/packages/ai-embeddings/chroma-cloud-splade/src/index.test.ts",
+          "line_number": 141,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "clients/new-js/packages/ai-embeddings/chroma-cloud-splade/src/index.test.ts",
+                "start_line": 141,
+                "end_line": 141,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+          "line_number": 29,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+                "start_line": 29,
+                "end_line": 29,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+          "line_number": 75,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "clients/new-js/packages/ai-embeddings/mistral/src/index.test.ts",
+                "start_line": 75,
+                "end_line": 75,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "examples/use_with/cohere/cohere_js.js",
+          "line_number": 56,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "examples/use_with/cohere/cohere_js.js",
+                "start_line": 56,
+                "end_line": 56,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}
