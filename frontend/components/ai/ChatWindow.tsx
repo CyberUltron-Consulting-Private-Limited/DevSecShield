@@ -36,7 +36,7 @@ import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
+import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, AIBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
@@ -61,7 +61,7 @@ const ChatWindow = ({
   query,
   progress,
 }: {
-  query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<DASTScanResponse> | UseQueryResult<SCASBOMConversationResponse> | UseQueryResult<CBOMConversationResponse>;
+  query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<DASTScanResponse> | UseQueryResult<SCASBOMConversationResponse> | UseQueryResult<CBOMConversationResponse> | UseQueryResult<AIBOMConversationResponse>;
   progress?: ChatWindowProgress;
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -103,7 +103,7 @@ const ChatWindow = ({
   }, [query.data, query.error]);
 
   // check type of conversation (path format: /team_id/type/scan_id or similar)
-  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | 'cbom' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | 'cbom' | 'ai_bom' | undefined;
   const typeSegment = pathParts[1];
   if (typeSegment === 'sast') {
       type = 'sast';
@@ -131,6 +131,9 @@ const ChatWindow = ({
   }
   else if (typeSegment === 'cbom') {
       type = 'cbom';
+  }
+  else if (typeSegment === 'ai_bom') {
+      type = 'ai_bom';
   }
   else {
       toast.error('Invalid conversation type');
@@ -222,13 +225,16 @@ const ChatWindow = ({
     else if (type === 'cbom') {
       queryClient.invalidateQueries({ queryKey: ['cbom-conversation-data', team_id, scan_id] });
     }
+    else if (type === 'ai_bom') {
+      queryClient.invalidateQueries({ queryKey: ['ai_bom-conversation-data', team_id, scan_id] });
+    }
     else {
       toast.error('Invalid conversation type');
     }
   }, [queryClient, type, team_id, scan_id]);
 
  
-  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom'];
+  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom', 'ai_bom'];
   let Heading: string = '';
   switch (type) {
     case 'sast':
@@ -257,6 +263,9 @@ const ChatWindow = ({
       break;
     case 'cbom':
       Heading = 'CBOM';
+      break;
+    case 'ai_bom':
+      Heading = 'AI BOM';
       break;
     default:
       Heading = 'Unknown';

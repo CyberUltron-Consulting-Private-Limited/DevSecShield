@@ -47,6 +47,8 @@ async def start_scan_and_update_db(
             task_result = simple_app.send_task(name="dast_worker.dast", kwargs=scan_kwargs, queue="dast_worker_queue")
         elif scan_type == "cbom":
             task_result = simple_app.send_task(name="scan_worker.cbom", kwargs=scan_kwargs, queue="scan_worker_queue")
+        elif scan_type == "ai_bom":
+            task_result = simple_app.send_task(name="scan_worker.ai_bom", kwargs=scan_kwargs, queue="scan_worker_queue")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 
@@ -55,7 +57,8 @@ async def start_scan_and_update_db(
         
         
         # STEP [ 3 ] : =========== Update the main db conversation the task id and status of task======================
-        time.sleep(2) 
+        # I-17: removed time.sleep(2). Persist scan.task_id from the send_task() return synchronously
+        # so the duplicate-start guard window (task_id == None) closes immediately after dispatch.
         with Session(engine) as session:
             scan = None
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()

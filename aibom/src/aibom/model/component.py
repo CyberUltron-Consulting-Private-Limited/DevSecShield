@@ -30,7 +30,11 @@ from pydantic import BaseModel, ConfigDict, Field
 # Discriminator
 # --------------------------------------------------------------------------- #
 
+# Expanded shadow-AI taxonomy (Phase 4). Every kind is a registry entry — no
+# special-casing (decision D4). New "discovered" kinds (agent, tool, MCP, vector
+# store, …) are thin _BaseComponent subclasses that serialize via KIND_TO_CDX.
 ComponentKind = Literal[
+    # core (Phase 0-3)
     "model",
     "dataset",
     "framework",
@@ -38,6 +42,29 @@ ComponentKind = Literal[
     "service",
     "infra",
     "secret",
+    # agentic / tooling
+    "agent",
+    "tool",
+    "mcp_server",
+    "mcp_client",
+    "guardrail",
+    "orchestrator",
+    "plugin",
+    # data / retrieval
+    "vector_store",
+    "knowledge_base",
+    "retriever",
+    "reranker",
+    "embedding_model",
+    "notebook",
+    # deployment / runtime
+    "container",
+    "cloud_service",
+    "endpoint",
+    "registry",
+    "pipeline",
+    "fine_tuning",
+    "evaluation",
 ]
 
 
@@ -323,6 +350,129 @@ class SecretComponent(_BaseComponent):
     kind: Literal["secret"] = "secret"
 
 
+# --- Expanded shadow-AI taxonomy (thin subclasses; serialize via KIND_TO_CDX) - #
+
+
+class AgentComponent(_BaseComponent):
+    """An autonomous / tool-using AI agent."""
+
+    kind: Literal["agent"] = "agent"
+
+
+class ToolComponent(_BaseComponent):
+    """A tool/function an agent can call."""
+
+    kind: Literal["tool"] = "tool"
+
+
+class McpServerComponent(_BaseComponent):
+    """A Model Context Protocol server."""
+
+    kind: Literal["mcp_server"] = "mcp_server"
+
+
+class McpClientComponent(_BaseComponent):
+    """A Model Context Protocol client."""
+
+    kind: Literal["mcp_client"] = "mcp_client"
+
+
+class GuardrailComponent(_BaseComponent):
+    """A safety / content guardrail."""
+
+    kind: Literal["guardrail"] = "guardrail"
+
+
+class OrchestratorComponent(_BaseComponent):
+    """An agent/workflow orchestrator (the imaging 'traffic cop')."""
+
+    kind: Literal["orchestrator"] = "orchestrator"
+
+
+class PluginComponent(_BaseComponent):
+    """A plugin / extension."""
+
+    kind: Literal["plugin"] = "plugin"
+
+
+class VectorStoreComponent(_BaseComponent):
+    """A vector store / index (Chroma, pgvector, …)."""
+
+    kind: Literal["vector_store"] = "vector_store"
+
+
+class KnowledgeBaseComponent(_BaseComponent):
+    """A RAG knowledge base / corpus."""
+
+    kind: Literal["knowledge_base"] = "knowledge_base"
+
+
+class RetrieverComponent(_BaseComponent):
+    """A retriever."""
+
+    kind: Literal["retriever"] = "retriever"
+
+
+class RerankerComponent(_BaseComponent):
+    """A reranker."""
+
+    kind: Literal["reranker"] = "reranker"
+
+
+class EmbeddingModelComponent(_BaseComponent):
+    """An embedding model."""
+
+    kind: Literal["embedding_model"] = "embedding_model"
+
+
+class NotebookComponent(_BaseComponent):
+    """A discovered notebook (.ipynb)."""
+
+    kind: Literal["notebook"] = "notebook"
+
+
+class ContainerComponent(_BaseComponent):
+    """A container image / runtime (Ollama, vLLM, Triton, …)."""
+
+    kind: Literal["container"] = "container"
+
+
+class CloudServiceComponent(_BaseComponent):
+    """A cloud AI service (Bedrock, SageMaker, Vertex, Azure OpenAI, …)."""
+
+    kind: Literal["cloud_service"] = "cloud_service"
+
+
+class EndpointComponent(_BaseComponent):
+    """A network AI endpoint (api.openai.com, localhost:11434, …)."""
+
+    kind: Literal["endpoint"] = "endpoint"
+
+
+class RegistryComponent(_BaseComponent):
+    """A model registry / hub."""
+
+    kind: Literal["registry"] = "registry"
+
+
+class PipelineComponent(_BaseComponent):
+    """An ML / inference pipeline."""
+
+    kind: Literal["pipeline"] = "pipeline"
+
+
+class FineTuningComponent(_BaseComponent):
+    """A fine-tuning job / artifact."""
+
+    kind: Literal["fine_tuning"] = "fine_tuning"
+
+
+class EvaluationComponent(_BaseComponent):
+    """An evaluation / benchmark artifact."""
+
+    kind: Literal["evaluation"] = "evaluation"
+
+
 AIComponent = Annotated[
     ModelComponent
     | DatasetComponent
@@ -330,10 +480,62 @@ AIComponent = Annotated[
     | PromptComponent
     | ServiceComponent
     | InfraComponent
-    | SecretComponent,
+    | SecretComponent
+    | AgentComponent
+    | ToolComponent
+    | McpServerComponent
+    | McpClientComponent
+    | GuardrailComponent
+    | OrchestratorComponent
+    | PluginComponent
+    | VectorStoreComponent
+    | KnowledgeBaseComponent
+    | RetrieverComponent
+    | RerankerComponent
+    | EmbeddingModelComponent
+    | NotebookComponent
+    | ContainerComponent
+    | CloudServiceComponent
+    | EndpointComponent
+    | RegistryComponent
+    | PipelineComponent
+    | FineTuningComponent
+    | EvaluationComponent,
     Field(discriminator="kind"),
 ]
 """Discriminated union over ``kind``. Use to validate heterogeneous inventories."""
+
+
+# kind -> CycloneDX component ``type`` (one place; no per-kind special-casing, D4).
+KIND_TO_CDX: dict[str, str] = {
+    "model": "machine-learning-model",
+    "dataset": "data",
+    "framework": "library",
+    "prompt": "data",
+    "service": "application",
+    "infra": "platform",
+    "secret": "data",
+    "agent": "application",
+    "tool": "application",
+    "mcp_server": "application",
+    "mcp_client": "application",
+    "guardrail": "application",
+    "orchestrator": "application",
+    "plugin": "application",
+    "vector_store": "data",
+    "knowledge_base": "data",
+    "retriever": "application",
+    "reranker": "application",
+    "embedding_model": "machine-learning-model",
+    "notebook": "file",
+    "container": "container",
+    "cloud_service": "application",
+    "endpoint": "application",
+    "registry": "application",
+    "pipeline": "application",
+    "fine_tuning": "data",
+    "evaluation": "data",
+}
 
 
 def is_deidentified(ds: DatasetComponent) -> bool:
@@ -392,7 +594,28 @@ __all__ = [
     "ServiceComponent",
     "InfraComponent",
     "SecretComponent",
+    "AgentComponent",
+    "ToolComponent",
+    "McpServerComponent",
+    "McpClientComponent",
+    "GuardrailComponent",
+    "OrchestratorComponent",
+    "PluginComponent",
+    "VectorStoreComponent",
+    "KnowledgeBaseComponent",
+    "RetrieverComponent",
+    "RerankerComponent",
+    "EmbeddingModelComponent",
+    "NotebookComponent",
+    "ContainerComponent",
+    "CloudServiceComponent",
+    "EndpointComponent",
+    "RegistryComponent",
+    "PipelineComponent",
+    "FineTuningComponent",
+    "EvaluationComponent",
     "AIComponent",
     "MetadataComponent",
+    "KIND_TO_CDX",
     "is_deidentified",
 ]

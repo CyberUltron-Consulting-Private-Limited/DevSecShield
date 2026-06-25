@@ -290,3 +290,36 @@ class CryptoStrength(str, Enum):
     MODERATE = "moderate"       # 3DES, RSA-1024, SHA-224
     STRONG = "strong"           # AES-128+, SHA-256+, RSA-2048+ (but quantum-vulnerable)
     QUANTUM_SAFE = "quantum_safe"  # CRYSTALS-Kyber, Dilithium, SPHINCS+, etc.
+
+
+# ===== AI-BOM Enums =====
+
+class AIComponentType(str, Enum):
+    LOCAL_MODEL_FILE = "local_model_file"
+    EXTERNAL_PROVIDER = "external_provider"
+    HUGGINGFACE_MODEL = "huggingface_model"
+    ML_FRAMEWORK = "ml_framework"
+    AI_FRAMEWORK = "ai_framework"
+    DATASET = "dataset"
+    PROMPT_ASSET = "prompt_asset"
+    EMBEDDING_MODEL = "embedding_model"
+
+class AIRiskCategory(str, Enum):
+    UNTRUSTED_MODEL_DESERIALIZATION = "untrusted_model_deserialization"
+    UNPINNED_MODEL_VERSION = "unpinned_model_version"
+    DEPRECATED_EOL_MODEL = "deprecated_eol_model"
+    MISSING_MODEL_CARD_LINEAGE = "missing_model_card_lineage"
+    LICENSE_COMPLIANCE_GAP = "license_compliance_gap"
+    DATA_PRIVACY_TRAINING_CONFIG = "data_privacy_training_config"
+    MODEL_THEFT_EXPOSURE = "model_theft_exposure"
+
+class ModelProvider(str, Enum):
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    BEDROCK = "bedrock"
+    VERTEX = "vertex"
+    COHERE = "cohere"
+    MISTRAL = "mistral"
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    UNKNOWN = "unknown"

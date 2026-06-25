@@ -150,6 +150,7 @@ const toolsItems = [
   { name: "SAST", path: "sast", icon: Code },
   { name: "SCA + SBOM", path: "sbom_sca", icon: Package },
   { name: "CBOM", path: "cbom", icon: ShieldCheck },
+  { name: "AI BOM", path: "ai_bom", icon: Bot },
   { name: "MCP", path: "mcp", icon: Server },
   { name: "LLM", path: "llm", icon: Box },
   { name: "IAC", path: "iac", icon: FileText },

@@ -1,5 +1,5 @@
 from rich.console import Console
-from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability, IACVulnerability, CryptographicAssetVulnerability
+from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability, IACVulnerability, CryptographicAssetVulnerability, AIComponentVulnerability
 from pydantic import BaseModel, Field , create_model
 from typing import Annotated, Literal
 import urllib.parse
@@ -87,7 +87,17 @@ class OutputModelManager:
         except Exception as e:
             console.print(f"Error in getting cryptographic output model: {e}",style="dim red")
             raise e
-    
+
+    def get_ai_component_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting AI Component Output Model ....",style="dim yellow")
+            ai_component_output_model = self.get_output_model(AIComponentVulnerability)
+            console.print(f"AI Component Output Model generated successfully",style="bold green")
+            return ai_component_output_model
+        except Exception as e:
+            console.print(f"Error in getting ai component output model: {e}",style="dim red")
+            raise e
+
     def get_base_output_model(self) -> type[BaseModel]:
         try:
             console.print(f"Getting Base Output Model ....",style="dim yellow")
@@ -266,7 +276,7 @@ class OutputModelManager:
             #     final_vulnerability_model_fields[f_name] = (
             #         Annotated[f_dct['annotation'] , *f_dct['metadata'], Field(**f_dct['attributes'])],
             #     )
-            final_vulnerability_model_fields["cves"] = ( list[cves_enum],  Field(description="A list of CVE vulnerabilities that this vulnerability is related to") )
+            final_vulnerability_model_fields["cves"] = ( list[cves_enum],  Field(default_factory=list, description="A list of CVE vulnerabilities that this vulnerability is related to") )
             
             FinalVulnerabilityModel = create_model(
                 "FinalVulnerabilityModel",
@@ -296,7 +306,7 @@ class OutputModelManager:
         try:
             console.print(f"Creating Fallback Output Model ....",style="dim yellow")
             class FinalVulnerabilityModel(VulnerabilityModel):
-                cves : list[FallbackCVEEnum] = Field(description="A list of CVE vulnerabilities that this vulnerability is related to")
+                cves : list[FallbackCVEEnum] = Field(default_factory=list, description="A list of CVE vulnerabilities that this vulnerability is related to")
             
             attributes = [attribute for attribute in FinalVulnerabilityModel.__pydantic_fields__.keys()]
             expected_attributes = ["title", "description", "impact", "owasp_top_10", "suggested_fix"]

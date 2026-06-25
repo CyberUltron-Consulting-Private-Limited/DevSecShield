@@ -1,0 +1,178 @@
+[
+  {
+    "uid": {
+      "type": "Dataset",
+      "id": "dataset-chestxr-train"
+    },
+    "attrs": {
+      "name": "chestxr-training-cohort",
+      "kind": "dataset",
+      "vendor": "",
+      "sanctioned": true,
+      "risk_band": "medium",
+      "risk_contribution": 0.0
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Framework",
+      "id": "lib-numpy"
+    },
+    "attrs": {
+      "name": "numpy",
+      "kind": "framework",
+      "vendor": "",
+      "sanctioned": true,
+      "version": "1.26.4",
+      "risk_band": "medium",
+      "risk_contribution": 0.0
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Framework",
+      "id": "lib-pydicom"
+    },
+    "attrs": {
+      "name": "pydicom",
+      "kind": "framework",
+      "vendor": "",
+      "sanctioned": true,
+      "version": "2.4.4",
+      "risk_band": "medium",
+      "risk_contribution": 0.0
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Framework",
+      "id": "lib-safetensors"
+    },
+    "attrs": {
+      "name": "safetensors",
+      "kind": "framework",
+      "vendor": "",
+      "sanctioned": true,
+      "version": "0.4.3",
+      "risk_band": "medium",
+      "risk_contribution": 0.0
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Framework",
+      "id": "lib-torch"
+    },
+    "attrs": {
+      "name": "torch",
+      "kind": "framework",
+      "vendor": "",
+      "sanctioned": true,
+      "version": "2.3.1",
+      "risk_band": "medium",
+      "risk_contribution": 0.0
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Framework",
+      "id": "lib-torchvision"
+    },
+    "attrs": {
+      "name": "torchvision",
+      "kind": "framework",
+      "vendor": "",
+      "sanctioned": true,
+      "version": "0.18.1",
+      "risk_band": "medium",
+      "risk_contribution": 0.0
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Model",
+      "id": "model-chestxr-cnn"
+    },
+    "attrs": {
+      "name": "chestxr-nodule-detector",
+      "kind": "model",
+      "vendor": "Acme Medical AI",
+      "sanctioned": true,
+      "version": "2.1.0",
+      "risk_band": "medium",
+      "risk_contribution": 9.0,
+      "processes_phi": true,
+      "served_by": [
+        {
+          "__entity": {
+            "type": "Service",
+            "id": "service-acme-cloud"
+          }
+        }
+      ],
+      "trained_on": [
+        {
+          "__entity": {
+            "type": "Dataset",
+            "id": "dataset-chestxr-train"
+          }
+        }
+      ],
+      "depends_on": [
+        {
+          "__entity": {
+            "type": "Framework",
+            "id": "lib-numpy"
+          }
+        },
+        {
+          "__entity": {
+            "type": "Framework",
+            "id": "lib-pydicom"
+          }
+        },
+        {
+          "__entity": {
+            "type": "Framework",
+            "id": "lib-safetensors"
+          }
+        },
+        {
+          "__entity": {
+            "type": "Framework",
+            "id": "lib-torch"
+          }
+        },
+        {
+          "__entity": {
+            "type": "Framework",
+            "id": "lib-torchvision"
+          }
+        }
+      ]
+    },
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "Service",
+      "id": "service-acme-cloud"
+    },
+    "attrs": {
+      "name": "Acme Imaging AI Cloud",
+      "kind": "service",
+      "vendor": "",
+      "sanctioned": true,
+      "risk_band": "medium",
+      "risk_contribution": 0.0,
+      "baa": true
+    },
+    "parents": []
+  }
+]

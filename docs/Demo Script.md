@@ -1,7 +1,7 @@
 # DevSecShield — Client Demo Script (Detailed)
 
 > **Audience:** Business leaders, security decision-makers, engineering managers  
-> **Duration:** ~25 to 30 minutes  
+> **Duration:** ~30 to 35 minutes  
 > **Format:** Frontend-first, screen-by-screen walkthrough  
 > **Tone:** Sales-focused, non-technical, outcome-driven
 
@@ -13,6 +13,8 @@ DevSecShield is a unified, AI-powered DevSecOps platform that helps organization
 
 - Source code (SAST)
 - Open-source dependencies (SCA + SBOM)
+- Cryptographic assets and algorithms (CBOM)
+- AI/ML components, models, and datasets (AI BOM)
 - Infrastructure-as-code (IAC)
 - Running apps and APIs (DAST)
 - LLM behavior and safety (LLM scans)
@@ -32,6 +34,8 @@ A fintech product team is preparing a release with new APIs, frontend updates, T
 
 - SAST catches insecure auth or unsafe code paths before merge.
 - SCA + SBOM identifies vulnerable third-party packages and affected services.
+- CBOM inventories cryptographic usage and flags weak or outdated algorithms before they become compliance or breach risk.
+- AI BOM maps models, datasets, and AI dependencies into a governed inventory with compliance and shadow-AI visibility.
 - IAC finds risky cloud misconfigurations before infrastructure deployment.
 - DAST validates runtime security posture on staging environments.
 - LLM scan tests prompt injection and data leakage behavior.
@@ -52,8 +56,8 @@ A fintech product team is preparing a release with new APIs, frontend updates, T
 
 ## 3. Demo Opening (30-45 seconds)
 
-> "In this walkthrough, I’ll show how DevSecShield helps teams ship secure releases faster using one frontend workflow.  
-> We’ll go from team-level visibility to scan execution, AI-guided remediation, CI/CD automation, Guardrails, and Jira-based closure."
+> "In this walkthrough, I'll show how DevSecShield helps teams ship secure releases faster using one frontend workflow.  
+> We'll go from team-level visibility to scan execution across supply chain, cryptography, and AI inventory, then AI-guided remediation, CI/CD automation, Guardrails, and Jira-based closure."
 
 ---
 
@@ -133,7 +137,41 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 6 — IAC: Cloud Misconfiguration Prevention (2 minutes)
+## Screen 6 — CBOM: Cryptography Inventory and Post-Quantum Readiness (2.5 minutes)
+
+### Routes
+`/[team_id]/cbom` -> `/{scan_id}` -> `/results`
+
+### Script (What to say)
+
+> "CBOM stands for Cryptography Bill of Materials. It gives teams a complete inventory of where cryptography is used across applications and infrastructure — algorithms, keys, certificates, and protocols — so weak or outdated choices are visible before they become compliance or breach risk."
+
+> "Real-world example: a regulated fintech team is preparing for post-quantum migration and an upcoming audit. Instead of manually tracing every TLS configuration and encryption library, CBOM surfaces weak algorithms, deprecated ciphers, and certificate gaps in one prioritized view."
+
+> "Teams can scan from a repository, upload a zip, or import an existing CBOM file. Optional binary scanning extends coverage to packaged applications where source code is not available."
+
+> "Benefit: stronger cryptographic governance, faster audit readiness, and a practical path toward post-quantum preparedness without slowing release velocity."
+
+---
+
+## Screen 7 — AI BOM: AI/ML Inventory, Compliance, and Shadow-AI Visibility (2.5 minutes)
+
+### Routes
+`/[team_id]/ai_bom` -> `/{scan_id}` -> `/results`
+
+### Script (What to say)
+
+> "AI BOM gives organizations a governed inventory of AI and ML components — models, datasets, frameworks, and AI-related dependencies — so teams know exactly what AI is in their software and where it runs."
+
+> "Real-world example: a healthcare product team ships features that rely on multiple models and third-party AI services. AI BOM maps those components, flags unapproved or shadow-AI usage, and aligns findings with compliance frameworks such as NIST AI RMF, EU AI Act, HIPAA, FDA, and GMLP."
+
+> "Teams can scan from a repository, upload a zip, or import an existing inventory file — the same practical workflow security and engineering teams already use for other scan types."
+
+> "Benefit: clearer AI governance, faster compliance conversations with auditors and regulators, and reduced risk from unmanaged or shadow-AI adoption."
+
+---
+
+## Screen 8 — IAC: Cloud Misconfiguration Prevention (2 minutes)
 
 ### Routes
 `/[team_id]/iac` -> `/{scan_id}` -> `/results`
@@ -148,7 +186,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 7 — DAST: Runtime Validation on Live Targets (2.5 minutes)
+## Screen 9 — DAST: Runtime Validation on Live Targets (2.5 minutes)
 
 ### Routes
 `/[team_id]/dast` -> `/{scan_id}` -> `/results`
@@ -163,7 +201,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 8 — LLM Security: AI Behavior Risk Testing (2.5 minutes)
+## Screen 10 — LLM Security: AI Behavior Risk Testing (2.5 minutes)
 
 ### Routes
 `/[team_id]/llm` -> `/[conversation_id]` -> `/results`
@@ -178,7 +216,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 9 — MCP Security: Tool and Server Exposure Review (2 minutes)
+## Screen 11 — MCP Security: Tool and Server Exposure Review (2 minutes)
 
 ### Routes
 `/[team_id]/mcp` -> `/[conversation_id]` -> `/results`
@@ -193,7 +231,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 10 — CI/CD Integrations: Automated Security Gates (2.5 minutes)
+## Screen 12 — CI/CD Integrations: Automated Security Gates (2.5 minutes)
 
 ### Routes
 `/[team_id]/ci_cd` -> `/[integration_id]`
@@ -208,7 +246,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 11 — Guardrails Integrations: Runtime AI Policy Controls (2 minutes)
+## Screen 13 — Guardrails Integrations: Runtime AI Policy Controls (2 minutes)
 
 ### Routes
 `/[team_id]/guardrails` -> `/[integration_id]`
@@ -223,7 +261,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 12 — Jira and Team Settings: Ownership and Execution (3 minutes)
+## Screen 14 — Jira and Team Settings: Ownership and Execution (3 minutes)
 
 ### Route
 `/[team_id]/settings`
@@ -238,7 +276,7 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 13 — AI Chat and Reporting: Fast Decisions for Mixed Teams (2 minutes)
+## Screen 15 — AI Chat and Reporting: Fast Decisions for Mixed Teams (2 minutes)
 
 ### Routes
 Any scan detail page and results page
@@ -255,7 +293,7 @@ Any scan detail page and results page
 
 ## 5. Scenario Wrap-Up (1 minute)
 
-> "In one release cycle, the team used DevSecShield to secure code, dependencies, infrastructure, runtime behavior, LLM safety, and MCP exposure."
+> "In one release cycle, the team used DevSecShield to secure code, dependencies, cryptography, AI inventory, infrastructure, runtime behavior, LLM safety, and MCP exposure."
 
 > "Then they operationalized fixes through CI/CD and Jira, while maintaining governance with team-level controls and credit visibility."
 
@@ -276,7 +314,7 @@ Any scan detail page and results page
 | Can non-security teams use it? | Yes. The frontend flow is designed for mixed security and engineering audiences. |
 | How do we track remediation? | Through severity-based findings, Jira ticketing integration, and scan history. |
 | How do we control usage and spend? | Credits are team-scoped and visible in home/settings experiences. |
-| Can we start small? | Yes. Most teams begin with SAST + SCA, then expand into IAC, DAST, LLM, and MCP. |
+| Can we start small? | Yes. Most teams begin with SAST + SCA, then expand into CBOM, AI BOM, IAC, DAST, LLM, and MCP. |
 
 ---
 

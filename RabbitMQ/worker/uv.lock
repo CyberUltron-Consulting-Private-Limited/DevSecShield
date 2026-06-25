@@ -450,6 +450,45 @@ wheels = [
 ]
 
 [[package]]
+name = "clinithread-aibom"
+version = "0.1.0"
+source = { editable = "../../aibom" }
+dependencies = [
+    { name = "jsonschema" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "referencing" },
+    { name = "typer" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.111" },
+    { name = "jsonschema", specifier = ">=4.20" },
+    { name = "libcst", marker = "extra == 'scan'", specifier = ">=1.4" },
+    { name = "openpyxl", marker = "extra == 'report'", specifier = ">=3.1" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydicom", marker = "extra == 'imaging'", specifier = ">=2.4" },
+    { name = "python-docx", marker = "extra == 'report'", specifier = ">=1.1" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "referencing", specifier = ">=0.30" },
+    { name = "reportlab", marker = "extra == 'report'", specifier = ">=4.0" },
+    { name = "tree-sitter", marker = "extra == 'scan'", specifier = ">=0.22" },
+    { name = "typer", specifier = ">=0.12" },
+]
+provides-extras = ["scan", "imaging", "api", "report"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pypdf", specifier = ">=4.0" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.5" },
+    { name = "types-jsonschema", specifier = ">=4.20" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "cmd2"
 version = "2.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -613,6 +652,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "celery" },
+    { name = "clinithread-aibom" },
     { name = "esprima" },
     { name = "garak" },
     { name = "gitpython" },
@@ -634,6 +674,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "celery", specifier = ">=5.5.3" },
+    { name = "clinithread-aibom", editable = "../../aibom" },
     { name = "esprima", specifier = ">=4.0.1" },
     { name = "garak", specifier = ">=0.12.0" },
     { name = "gitpython", specifier = ">=3.1.45" },

@@ -27,14 +27,10 @@ from aibom.emit._disclaimer import ADVISORY_DISCLAIMER as _ADVISORY_DISCLAIMER
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_cyclonedx
 from aibom.model.component import (
+    KIND_TO_CDX,
     DatasetComponent,
-    FrameworkComponent,
-    InfraComponent,
     ModelCard,
     ModelComponent,
-    PromptComponent,
-    SecretComponent,
-    ServiceComponent,
 )
 from aibom.model.result import ScanResult
 
@@ -277,19 +273,17 @@ def _emit_plain(comp: Any, cdx_type: str) -> dict[str, Any]:
 
 
 def _emit_component(comp: Any) -> dict[str, Any]:
+    # model + dataset have rich, bespoke serializers; every other kind (the full
+    # shadow-AI taxonomy) maps to a CycloneDX type via KIND_TO_CDX — one place,
+    # no per-kind special-casing (decision D4).
     if isinstance(comp, ModelComponent):
         return _emit_model(comp)
     if isinstance(comp, DatasetComponent):
         return _emit_dataset(comp)
-    if isinstance(comp, FrameworkComponent):
-        return _emit_plain(comp, "library")
-    if isinstance(comp, ServiceComponent):
-        return _emit_plain(comp, "application")
-    if isinstance(comp, InfraComponent):
-        return _emit_plain(comp, "platform")
-    if isinstance(comp, (PromptComponent, SecretComponent)):
-        return _emit_plain(comp, "data")
-    raise TypeError(f"Unknown component kind: {type(comp).__name__}")
+    cdx_type = KIND_TO_CDX.get(comp.kind)
+    if cdx_type is None:
+        raise TypeError(f"Unknown component kind: {comp.kind!r}")
+    return _emit_plain(comp, cdx_type)
 
 
 # --------------------------------------------------------------------------- #

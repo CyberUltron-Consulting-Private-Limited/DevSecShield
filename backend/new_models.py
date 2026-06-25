@@ -1,7 +1,7 @@
 import datetime
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom"]
+scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
 
@@ -80,7 +80,7 @@ class Scan(SQLModel,table=True):
     team_id : int = Field(foreign_key="team.id")
     owner_user_id : int = Field(foreign_key="user.id") 
     credit_consumed : float | None = Field(default=None)
-    scan_type : Literal["sast" , "llm" , "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery" , "dast" , "cbom"] = Field(default="sast",sa_type=String , index=True)
+    scan_type : Literal["sast" , "llm" , "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery" , "dast" , "cbom" , "ai_bom"] = Field(default="sast",sa_type=String , index=True)
     title : str = Field(default="New Scan")
     task_id : str | None = Field(default=None)
     scan_metadata : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))

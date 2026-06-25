@@ -433,21 +433,23 @@ def return_cbom_list_item(scan : Scan) -> dict:
     total_weak , total_quantum_vulnerable = 0, 0
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
         for vulnerability in scan.scan_data["results"]:
-            if vulnerability["impact"].lower() == "critical":
+            impact_lower = (vulnerability.get("impact") or "").lower()
+            if impact_lower == "critical":
                 total_critical += 1
-            elif vulnerability["impact"].lower() == "high":
+            elif impact_lower == "high":
                 total_high += 1
-            elif vulnerability["impact"].lower() == "medium":
+            elif impact_lower == "medium":
                 total_medium += 1
-            elif vulnerability["impact"].lower() == "low":
+            elif impact_lower == "low":
                 total_low += 1
-            
+
             # Count weak algorithms and quantum-vulnerable
-            strength = vulnerability.get("crypto_strength", "").lower()
+            strength = (vulnerability.get("crypto_strength") or "").lower()
             if strength == "weak":
                 total_weak += 1
-            quantum_safe = vulnerability.get("quantum_safe", True)
-            if not quantum_safe:
+            # quantum_safe is tri-state: explicit False => vulnerable;
+            # missing/None => unknown (NOT counted vulnerable), matching the dashboards.
+            if vulnerability.get("quantum_safe") is False:
                 total_quantum_vulnerable += 1
 
     risk_data = {
@@ -458,10 +460,11 @@ def return_cbom_list_item(scan : Scan) -> dict:
     }
 
 
-    # calculating average risk score
-    if sum([total_critical, total_high, total_medium, total_low]) > 0:
-        average_risk_score = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / (total_critical + total_high + total_medium + total_low)
-        
+    # calculating average risk score (app-wide 0-10 CBOM scale: critical=9, high=7, medium=5, low=2)
+    total_cbom_findings = total_critical + total_high + total_medium + total_low
+    if total_cbom_findings > 0:
+        average_risk_score = (total_critical * 9 + total_high * 7 + total_medium * 5 + total_low * 2) / total_cbom_findings
+
 
     return {
         "id": scan.id,
@@ -484,5 +487,73 @@ def return_cbom_list_item(scan : Scan) -> dict:
         "average_risk_score" : average_risk_score,
         "total_weak_algorithms": total_weak,
         "total_quantum_vulnerable": total_quantum_vulnerable,
+        "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
+    }
+
+
+
+
+def return_ai_bom_list_item(scan : Scan) -> dict:
+    total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
+    total_high_risk_assets , total_models = 0, 0
+    model_component_types = {"local_model_file", "huggingface_model", "embedding_model"}
+    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
+        for asset in scan.scan_data["results"]:
+            impact = (asset.get("impact") or "").lower()
+            if impact == "critical":
+                total_critical += 1
+            elif impact == "high":
+                total_high += 1
+            elif impact == "medium":
+                total_medium += 1
+            elif impact == "low":
+                total_low += 1
+
+            # Count high risk assets (Critical / High impact)
+            if impact in ("critical", "high"):
+                total_high_risk_assets += 1
+
+            # Count models by component_type
+            component_type = (asset.get("component_type") or "").lower()
+            if component_type in model_component_types:
+                total_models += 1
+
+    risk_data = {
+        "total_critical": total_critical,
+        "total_high": total_high,
+        "total_medium": total_medium,
+        "total_low": total_low,
+        "total_high_risk_assets": total_high_risk_assets,
+        "total_models": total_models,
+    }
+
+
+    # calculating average risk score (normalized 0-10 scale, same as the
+    # single-scan AI-BOM dashboard and cbom)
+    total_findings = total_critical + total_high + total_medium + total_low
+    if total_findings > 0:
+        weighted = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / total_findings
+        average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+
+
+    return {
+        "id": scan.id,
+        "title": scan.title,
+        "created_at": scan.created_at,
+        "last_updated": scan.last_updated,
+        "scan_status": scan.scan_status.lower(),
+
+        "estimated_credits": scan.credit_consumed,
+        "owner_user_email": scan.owner_user.email,
+        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+
+
+        "info": scan.info,
+        'risk_data': risk_data,
+        "repo_url": scan.scan_metadata["repo_url"] if scan.scan_metadata and "repo_url" in scan.scan_metadata else None,
+        "zip_file_used": scan.scan_metadata["zip_file_used"] if scan.scan_metadata and "zip_file_used" in scan.scan_metadata else None,
+        "ai_bom_file_used": scan.scan_metadata.get("ai_bom_file_used", False) if scan.scan_metadata else False,
+        "branch": scan.scan_metadata["branch"] if scan.scan_metadata and "branch" in scan.scan_metadata else None,
+        "average_risk_score" : average_risk_score,
         "scan_binaries": scan.scan_metadata.get("scan_binaries", False) if scan.scan_metadata else False,
     }

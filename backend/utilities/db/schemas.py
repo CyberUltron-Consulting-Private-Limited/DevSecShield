@@ -1,10 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 from fastapi import HTTPException, status
 from pydantic import model_validator
+from urllib.parse import urlparse
 
 class CreateScanData(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=256)
 
 class SendMessageToScanData(BaseModel):
     user_message: str
@@ -41,7 +42,7 @@ class ScanTicketingIntegrationSettingsData(BaseModel):
     jira: JiraScanSettingsData | None = None
 
 class UpdateScanData(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=256)
     integration_settings: ScanTicketingIntegrationSettingsData | None = None
 
 class RemoveOrAddMembersToTeamData(BaseModel):
@@ -54,11 +55,44 @@ class CreateTicketData(BaseModel):
     description: str
 # ----------------------------------------------------- Start scan related schemas --------------------------------------------
 
+def _validate_repo_url(repo_url: str, provider_host: str, provider_label: str) -> None:
+    """
+    Validate that `repo_url` is an http(s) URL whose host is exactly the
+    expected provider host (e.g. 'github.com') or a subdomain of it
+    (e.g. 'gist.github.com'). Uses exact host / suffix matching so that
+    look-alike hosts such as 'github.com.evil.tld' are rejected.
+
+    Raises ValueError on failure. Pydantic converts the ValueError raised
+    inside a `mode="after"` validator into a ValidationError, which the
+    scan handlers map to a 422 response.
+    """
+    if not repo_url or not repo_url.strip():
+        raise ValueError(f"{provider_label} repo_url is required")
+
+    parsed = urlparse(repo_url.strip())
+    if parsed.scheme not in ("https", "http"):
+        raise ValueError(
+            f"{provider_label} repo_url must start with https:// or http://"
+        )
+
+    host = (parsed.hostname or "").lower()
+    if host != provider_host and not host.endswith("." + provider_host):
+        raise ValueError(
+            f"{provider_label} repo_url host must be '{provider_host}' "
+            f"(or a subdomain of it), got '{host or parsed.netloc}'"
+        )
+
+
 class GithubContextSchema(BaseModel):
     mode: Literal["github"] = "github"
     repo_url: str
     PAT: str
     branch: str = "main"
+
+    @model_validator(mode="after")
+    def validate_repo_url(self):
+        _validate_repo_url(self.repo_url, "github.com", "GitHub")
+        return self
 
 class GitlabContextSchema(BaseModel):
     mode: Literal["gitlab"] = "gitlab"
@@ -66,11 +100,21 @@ class GitlabContextSchema(BaseModel):
     PAT: str
     branch: str = "main"
 
+    @model_validator(mode="after")
+    def validate_repo_url(self):
+        _validate_repo_url(self.repo_url, "gitlab.com", "GitLab")
+        return self
+
 class BitbucketContextSchema(BaseModel):
     mode: Literal["bitbucket"] = "bitbucket"
     repo_url: str
     PAT: str
     branch: str = "main"
+
+    @model_validator(mode="after")
+    def validate_repo_url(self):
+        _validate_repo_url(self.repo_url, "bitbucket.org", "Bitbucket")
+        return self
 
 class BaseStartRepositoryScanData(BaseModel):
     repo_context: GithubContextSchema | GitlabContextSchema | BitbucketContextSchema | None = None
@@ -186,6 +230,18 @@ class StartCBOMScanData(BaseStartRepositoryScanData):
         return self
 
 
+class StartAIBOMScanData(BaseStartRepositoryScanData):
+    zip_file_used : bool = False
+    ai_bom_file_used : bool = False  # if true, a pre-existing AI-BOM JSON file was uploaded
+    scan_binaries : bool = False   # if true, enable binary/config scanning
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.ai_bom_file_used and not self.zip_file_used and not self.repo_context:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AI-BOM file or zip file or repository context is required")
+        return self
+
+
 class StartScanPayload(BaseModel):
     sast : StartSastScanData | None = None
     iac : StartIACScanData | None = None
@@ -194,3 +250,4 @@ class StartScanPayload(BaseModel):
     llm : StartLLMBenchmarkingData | None = None
     dast : StartDASTScanData | None = None
     cbom : StartCBOMScanData | None = None
+    ai_bom : StartAIBOMScanData | None = None

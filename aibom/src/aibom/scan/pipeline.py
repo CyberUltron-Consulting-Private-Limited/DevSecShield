@@ -31,10 +31,18 @@ _KIND_ORDER = {
 }
 
 
-def scan_repo(path: str | Path, weights_path: str | None = None) -> ScanResult:
-    """Scan a model repo at ``path`` into a scored :class:`ScanResult`.
+def scan_repo(
+    path: str | Path,
+    level: int = 1,
+    allowlist: str | Path | None = None,
+    weights_path: str | None = None,
+) -> ScanResult:
+    """Scan a repo at ``path`` into a scored :class:`ScanResult`.
 
-    Raises ``NotADirectoryError`` if ``path`` is not an existing directory.
+    ``level`` selects scan depth: only scanners with ``scanner.level <= level``
+    run (1=filesystem … 5=live cloud). ``allowlist`` (a YAML path) enables shadow
+    diffing: discovered components not on the allowlist get an ``UNSANCTIONED_*``
+    flag before scoring. Raises ``NotADirectoryError`` if ``path`` is not a dir.
     """
     root = Path(path)
     if not root.is_dir():
@@ -42,8 +50,15 @@ def scan_repo(path: str | Path, weights_path: str | None = None) -> ScanResult:
 
     ctx = ScanContext(root)
     for scanner in ordered_scanners():
-        if scanner.matches(root):
+        if scanner.level <= level and scanner.matches(root):
             scanner.scan(ctx)
+
+    if allowlist is not None:
+        # Shadow-AI diff is a finalize step: it EMITS flags (lane-clean), the
+        # scorer weights them. Imported here to keep the core pipeline thin.
+        from aibom.shadow.diff import flag_unsanctioned
+
+        flag_unsanctioned(ctx, allowlist)
 
     components = sorted(
         ctx.components, key=lambda c: (_KIND_ORDER.get(c.kind, 9), c.bom_ref)

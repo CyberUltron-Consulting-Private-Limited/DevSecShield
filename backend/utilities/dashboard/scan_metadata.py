@@ -131,3 +131,33 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "scan_binaries": scan_binaries,
             "cbom_json": cbom_json,
         }
+
+    elif scan_type == "ai_bom":
+        _meta = scan.scan_metadata or {}
+        repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
+        zip_file_used = bool(_meta.get("zip_file_used"))
+        branch = _meta.get("branch") or "main"
+        ai_bom_file_used = bool(_meta.get("ai_bom_file_used"))
+        scan_binaries = bool(_meta.get("scan_binaries"))
+
+        # Extract ai_bom_json from scan_data (follows IAC dependency_diagram pattern)
+        ai_bom_json = None
+        ai_bom_compliance = None
+        if scan.scan_data and isinstance(scan.scan_data, dict):
+            if "ai_bom_json" in scan.scan_data:
+                ai_bom_json = scan.scan_data["ai_bom_json"]
+            # Advisory healthcare regulatory-readiness mapping (FDA §524B/SaMD/PCCP,
+            # EU AI Act Annex IV, GMLP, HIPAA, NIST AI RMF). May be absent on scans
+            # produced before the compliance layer was added.
+            if "ai_bom_compliance" in scan.scan_data:
+                ai_bom_compliance = scan.scan_data["ai_bom_compliance"]
+
+        return {
+            "repo_url": repo_url,
+            "branch": branch,
+            "zip_file_used": zip_file_used,
+            "ai_bom_file_used": ai_bom_file_used,
+            "scan_binaries": scan_binaries,
+            "ai_bom_json": ai_bom_json,
+            "ai_bom_compliance": ai_bom_compliance,
+        }

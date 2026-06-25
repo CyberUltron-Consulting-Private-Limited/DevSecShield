@@ -65,6 +65,7 @@ SCAN_TYPE_DISPLAY_NAMES = {
     "llm": "LLM Benchmarking",
     "agent_discovery": "AI Agent Discovery",
     "cbom": "CBOM (Cryptographic Bill of Materials)",
+    "ai_bom": "AI-BOM (AI Bill of Materials)",
 }
 
 
@@ -84,8 +85,14 @@ async def chatbot_response(
     display_name = SCAN_TYPE_DISPLAY_NAMES.get(scan_type, scan_type)
     system_prompt = f"""
     You are a Cybersecurity Expert who has just run a {display_name} scan . Keeping the results of the scan in mind , answer any question the user asks. ( Sidenote : Do not generate a Markdown response , the response can at most use bullets and numbering )
+
+    ## Grounding rules ( mandatory ) :
+    1. Answer ONLY using the scan results provided below ( and any prior summary in this conversation that was derived from them ) . Do not rely on outside knowledge to assert that a specific finding, file, vulnerability, package, or identifier exists for this scan.
+    2. Do NOT invent, fabricate, or guess findings, file paths, line numbers, CVE/CWE ids, package names, versions, or severities. Only state details that actually appear in the scan results.
+    3. If the user asks about something that is not present in the scan results, say plainly that it is not in the scan results rather than inventing an answer. You may then offer general security guidance, but make it clear that it is general advice and not a finding from this scan.
+
     ## Scan Results :
-    {scan_results} 
+    {scan_results}
     """
     model = get_llm()
     agent = create_agent(model,system_prompt=system_prompt)
@@ -134,9 +141,24 @@ async def chatbot_response(
 
 
 
+SUMMARIZER_SYSTEM_PROMPT = (
+    "You are a summarizing agent that compresses the OLDEST part of a chat history "
+    "between a user and a cybersecurity assistant. Produce a concise summary that the "
+    "assistant can use as background context for the rest of the conversation.\n"
+    "GROUNDING RULES (mandatory):\n"
+    "1. PRESERVE every concrete scan finding, identifier, file path, line number, CVE/CWE id, "
+    "vulnerability name, package/version, severity, and any other specific fact VERBATIM. "
+    "Do not generalize or drop these details.\n"
+    "2. NEVER invent, infer, or embellish findings, identifiers, or details that are not "
+    "explicitly present in the messages you are summarizing. If something was not stated, do not add it.\n"
+    "3. It is better to quote a concrete finding exactly than to paraphrase it.\n"
+    "Output only the summary."
+)
+
+
 def summarize ( history : list[AnyMessage] ):
     model = get_llm()
-    summarizing_agent = create_agent(model,system_prompt="You are a summarizing agent, please summarize the chat history given to you and output the results to the user")
+    summarizing_agent = create_agent(model,system_prompt=SUMMARIZER_SYSTEM_PROMPT)
     result = summarizing_agent.invoke({"messages":history})
     summarized_history = result["messages"][-1]
     return summarized_history.content
@@ -149,7 +171,8 @@ async def create_response(
     scan_results:str,
     content:str,
     role:Literal["human" ,"system" ,"ai"],
-    max_history_length:int=3 ):
+    max_history_length:int=12,
+    retained_raw_messages:int=6 ):
 
     """
     Args :
@@ -159,7 +182,8 @@ async def create_response(
     - scan_results : scan results
     - content : new user message
     - role : role of the new user message
-    - max_history_length : max history length
+    - max_history_length : number of raw active-context messages allowed before summarization kicks in
+    - retained_raw_messages : number of most-recent raw messages kept verbatim (only the OLDER messages are summarized)
 
     Prerequisites : 
     1. new user message has already been added to message log collection , before calling this function
@@ -175,8 +199,11 @@ async def create_response(
         # STEP [ 1 ] ========================= Get active context history from the database ===============================================
         
         active_context_collection = mongo_db["active_context"]
+        # Keep the raw documents (with _id / sender) in insertion order so we can later
+        # summarize ONLY the oldest messages while retaining the most recent ones verbatim.
+        raw_items = list(active_context_collection.find({"scan_id":scan_id}).sort("created_at", 1))
         history = []
-        for item in active_context_collection.find({"scan_id":scan_id}):
+        for item in raw_items:
             Message = None
             if item["sender"] == "user":
                 Message = HumanMessage(item["content"])
@@ -188,33 +215,52 @@ async def create_response(
 
         
         
-        # STEP [ 2 ] ========================= Summarize the chat history when active history is above limit ===============================================
-        if len(history) >= max_history_length:
-            Console().print(f"Chat history has reached its maximum length of {max_history_length}. Summarizing chat...",style="dim orange1")
-            
-            # STEP [ 2a ] -----------------> summarize 
-            summarized_history = summarize(history=history)
+        # STEP [ 2 ] ========================= Summarize the OLDEST chat history when active history is above limit ===============================================
+        # Conservative strategy: only compress when we exceed max_history_length, and even then
+        # summarize ONLY the oldest messages while RETAINING the most recent `retained_raw_messages`
+        # turns verbatim. This avoids the previous behaviour of collapsing the entire conversation
+        # into a single lossy message, which dropped concrete scan findings and led to fabrication.
+        if len(history) > max_history_length:
+            Console().print(f"Chat history has exceeded its maximum length of {max_history_length}. Summarizing oldest messages while keeping the last {retained_raw_messages} verbatim...",style="dim orange1")
 
-            # STEP [ 2b ] ----------------> delete all active context items for the conversation
-            active_context_collection = mongo_db["active_context"]
-            for item in active_context_collection.find({"scan_id":scan_id}):
-                active_context_collection.delete_one({"_id":item["_id"]})
-            console.print(f"Deleted all active context items for scan {scan_id} , replacing with summarized history",style="bold blue")
-            
-            # STEP [ 2c ] ----------------> add the summarized history to the active context collection
-            active_context_instance = ActiveContextLog(
-                scan_id=scan_id,
-                content=summarized_history,
-                type="message",
-                sender="assistant",
-                created_at=datetime.datetime.now(datetime.timezone.utc),
-            )
-            result = active_context_collection.insert_one(active_context_instance)
-            console.print(f"Summarized history added to active context collection for scan {scan_id} with _id {str(result.inserted_id)}",style="bold green")
-            
-            # STEP [ 4 ] ----------------> update the lanchain history with the summarized history
-            history=[AIMessage(summarized_history)]
-            Console().print(f"Chat history summarized ✔️",style="bold green")
+            # Split into the oldest messages (to be summarized) and the most recent ones (kept raw).
+            keep_count = min(retained_raw_messages, len(raw_items))
+            old_items = raw_items[:len(raw_items) - keep_count]
+            recent_items = raw_items[len(raw_items) - keep_count:]
+
+            if old_items:
+                old_history = history[:len(old_items)]
+                recent_history = history[len(old_items):]
+
+                # STEP [ 2a ] -----------------> summarize ONLY the oldest messages
+                summarized_history = summarize(history=old_history)
+
+                # STEP [ 2b ] ----------------> delete ONLY the oldest active context items
+                active_context_collection = mongo_db["active_context"]
+                for item in old_items:
+                    active_context_collection.delete_one({"_id":item["_id"]})
+                console.print(f"Deleted {len(old_items)} oldest active context items for scan {scan_id} , replacing with one summary (kept {len(recent_items)} recent messages verbatim)",style="bold blue")
+
+                # STEP [ 2c ] ----------------> insert the summary as the OLDEST item so ordering is preserved
+                # Use a created_at strictly before the oldest retained message so the summary
+                # always sorts ahead of the retained raw turns on the next read.
+                if recent_items:
+                    summary_created_at = recent_items[0]["created_at"] - datetime.timedelta(microseconds=1)
+                else:
+                    summary_created_at = datetime.datetime.now(datetime.timezone.utc)
+                active_context_instance = ActiveContextLog(
+                    scan_id=scan_id,
+                    content=summarized_history,
+                    type="message",
+                    sender="assistant",
+                    created_at=summary_created_at,
+                )
+                result = active_context_collection.insert_one(active_context_instance)
+                console.print(f"Summarized history added to active context collection for scan {scan_id} with _id {str(result.inserted_id)}",style="bold green")
+
+                # STEP [ 2d ] ----------------> rebuild the in-memory history: summary first, then retained raw turns
+                history=[AIMessage(summarized_history)] + recent_history
+                Console().print(f"Chat history summarized ✔️",style="bold green")
 
 
 

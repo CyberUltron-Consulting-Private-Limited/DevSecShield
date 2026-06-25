@@ -1,7 +1,22 @@
-"""Scanner package. Importing it self-registers every scanner (import order =
-registration order). Add a scanner = add one module here.
+"""Scanner package. Importing it self-registers every scanner. Adding a scanner
+(or a scan level) is one module here — no special-casing (decision D4). The
+pipeline runs scanners with ``scanner.level <= requested level``.
 """
 
-from aibom.scan.scanners import model_repo, requirements  # noqa: F401
+from aibom.scan.scanners import (  # noqa: F401
+    cloud_iac_scan,
+    docker_scan,
+    live_cloud_scan,
+    model_repo,
+    net_env_scan,
+    requirements,
+)
 
-__all__ = ["requirements", "model_repo"]
+__all__ = [
+    "requirements",
+    "model_repo",
+    "docker_scan",
+    "net_env_scan",
+    "cloud_iac_scan",
+    "live_cloud_scan",
+]

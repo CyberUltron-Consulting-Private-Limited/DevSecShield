@@ -24,20 +24,12 @@ export default function CBOMScanPage() {
   const params = useParams();
   const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
-  if (!team_id || !scan_id) {
-    toast.error("Team or scan id not found");
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Team or scan id not found
-        </p>
-      </div>
-    );
-  }
+  const hasValidIds = !!team_id && !!scan_id;
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["cbom-conversation-data", team_id, scan_id],
     queryFn: getCBOMScanData,
+    enabled: hasValidIds,
   });
 
   useEffect(() => {
@@ -57,6 +49,17 @@ export default function CBOMScanPage() {
       setScanBinaries(query.data.scan_metadata.scan_binaries);
     }
   }, [query.data]);
+
+  if (!hasValidIds) {
+    toast.error("Team or scan id not found");
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+          Team or scan id not found
+        </p>
+      </div>
+    );
+  }
 
   if (query.isError) {
     return <div className="flex h-screen w-full items-center justify-center">

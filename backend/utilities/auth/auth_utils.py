@@ -81,18 +81,19 @@ async def get_current_user_from_access_token(engine: Engine, token: str, ignore_
             
         with Session(engine) as session:
             user = session.exec(select(User).where(User.email == token_data.sub)).first()
-        
+
+        if user is None:
+            print("Could not find user 🔴")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         if not user.session_active and not ignore_session_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Session not active",
-            )
-        
-        if user is None:
-            print("Could not find user 🔴")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Could not find user",
             )
         print("User found 🟩")
 

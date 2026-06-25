@@ -70,6 +70,15 @@ REMEDIATION_SYSTEM_PROMPTS: dict[str, str] = {
         "Focus on: post-quantum readiness, algorithm migration (e.g., RSA→ML-KEM, SHA-1→SHA-256), "
         "key size upgrades, certificate rotation, compliance with NIST SP 800-131A."
     ),
+    "ai_bom": (
+        "You are a senior AI/ML supply-chain security engineer specializing in AI Bill of Materials (AI-BOM).\n"
+        "Given an AI-BOM finding about an AI/ML component (local model file, external model provider, dataset, "
+        "framework, or prompt asset), generate code or configuration changes to remediate the identified risk.\n"
+        "Focus on: replacing unsafe pickle-serialized models (.pkl/.pt) with safetensors, pinning model/provider "
+        "versions to dated snapshots or revision SHAs, adding model cards / provenance / lineage, resolving "
+        "license-compliance gaps, removing deprecated/EOL models, and protecting training-data privacy. "
+        "Map fixes to the OWASP Top 10 for LLM Applications where relevant."
+    ),
 }
 
 EXPLOIT_SYSTEM_PROMPT = (
@@ -123,6 +132,21 @@ def _build_finding_prompt(finding_data: dict, scan_type: str) -> str:
         parts.append(f"**Reachability:** {finding_data['reachability']}")
     if finding_data.get("type"):
         parts.append(f"**MCP Component Type:** {finding_data['type']}")
+    # AI-BOM fields (tolerate both stored worker names and frontend-facing names)
+    if finding_data.get("component_name") or finding_data.get("asset_name"):
+        parts.append(f"**AI/ML Component:** {finding_data.get('component_name') or finding_data.get('asset_name')}")
+    if finding_data.get("component_type") or finding_data.get("asset_type"):
+        parts.append(f"**Component Type:** {finding_data.get('component_type') or finding_data.get('asset_type')}")
+    if finding_data.get("source") or finding_data.get("provider"):
+        parts.append(f"**Provider/Source:** {finding_data.get('source') or finding_data.get('provider')}")
+    if finding_data.get("framework"):
+        parts.append(f"**Framework:** {finding_data['framework']}")
+    if finding_data.get("version"):
+        parts.append(f"**Version:** {finding_data['version']}")
+    if finding_data.get("license") or finding_data.get("license_type"):
+        parts.append(f"**License:** {finding_data.get('license') or finding_data.get('license_type')}")
+    if finding_data.get("risk_category"):
+        parts.append(f"**AI Risk Category:** {finding_data['risk_category']}")
 
     return "\n".join(parts)
 
@@ -198,6 +222,22 @@ def generate_remediation(finding_data: dict, scan_type: str) -> dict:
         }
 
     except Exception as e:
+        # #region agent log
+        try:
+            import json as _json, time as _time
+            with open("/Users/anshsinghal/Desktop/DevSecShield/.cursor/debug-dd4a33.log", "a", encoding="utf-8") as _f:
+                _f.write(_json.dumps({
+                    "sessionId": "dd4a33",
+                    "runId": "pre-fix",
+                    "hypothesisId": "A",
+                    "location": "remediation.py:generate_remediation",
+                    "message": "Remediation generation exception",
+                    "data": {"scan_type": scan_type, "error_type": type(e).__name__, "error": str(e)},
+                    "timestamp": int(_time.time() * 1000),
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion
         console.print(f"[bold red]Remediation generation failed: {e}[/]")
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),

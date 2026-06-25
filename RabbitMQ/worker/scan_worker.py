@@ -14,6 +14,7 @@ from helpers.tools.sast_agent.main import SASTAgent
 from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
 from helpers.tools.iac_agent.main import IACAgent
 from helpers.tools.cbom_agent.main import CBOMAgent
+from helpers.tools.ai_bom_agent.main import AIBOMAgent
 from helpers.tools.iac_agent.context import IACTypeContext, validate_dict_with_iac_context
 from helpers.tools.llm_agent.context import LLMBenchmarkingContext
 from helpers.tools.llm_agent.main import LLMBenchmarkingAgent
@@ -689,6 +690,98 @@ try:
     console.print(f"Registered CBOM task", style="bold green")
 
 
+     # ------------------------------------------- AI BOM Scanning task -------------------------------------------------------------------------------------------
+    @app.task(track_started=True, bind=True)
+    def ai_bom(
+        self,
+        repo_dict_context: dict | None = None,
+        zip_dict_context: dict | None = None,
+        file_dict_context: dict | None = None,
+        scan_binaries: bool = False,
+    ):
+
+        try:
+            start_time = time.time()
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context, zip_context, file_context = None, None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            elif file_dict_context:
+                file_context = validate_dict_with_file_context(file_dict_context)
+            else:
+                raise Exception("No context provided")
+
+            state_update_writer = StateUpdateWriter(self)
+
+            # STEP [ 2 ] : ===== Resolve the input to a local directory, then run
+            # the clinithread-aibom engine via the native adapter (lanes intact).
+            # The standalone engine replaces the in-tree scan body; AIBOMAgent is
+            # reused ONLY to clone/extract the input into a directory and to keep
+            # the existing bucket-cleanup in `finally`. The adapter returns the
+            # locked run-object (results + ai_bom_json + ai_bom_compliance +
+            # duration_of_scan, plus additive ai_bom_spdx/sarif/graph/scores).
+            from aibom.integrations.devsecshield import scan_to_devsecshield
+
+            def _progress(pct: float, message: str) -> None:
+                state_update_writer.write_progress_percentage(pct)
+
+            if repo_context:
+                agent = AIBOMAgent(
+                    context=repo_context,
+                    scan_binaries=scan_binaries,
+                    state_update_writer=state_update_writer,
+                )
+                return scan_to_devsecshield(
+                    str(agent.directory), level=4, progress=_progress
+                )
+            elif zip_context:
+                agent = AIBOMAgent(
+                    zip_context=zip_context,
+                    scan_binaries=scan_binaries,
+                    state_update_writer=state_update_writer,
+                )
+                return scan_to_devsecshield(
+                    str(agent.directory), level=4, progress=_progress
+                )
+            elif file_context:
+                # Re-ingesting an existing AI-BOM file is a distinct capability
+                # the directory-scanning engine does not cover; keep the in-tree
+                # agent for this path.
+                agent = AIBOMAgent(
+                    aibom_file_context=file_context,
+                    scan_binaries=scan_binaries,
+                    state_update_writer=state_update_writer,
+                )
+                result = agent.run_agent()
+                return {
+                    "results": agent.to_dict_list(result),
+                    "ai_bom_json": agent.get_aibom_json(),
+                    "ai_bom_compliance": agent.get_compliance_report(),
+                    "duration_of_scan": time.time() - start_time,
+                }
+            else:
+                raise Exception("Unable to run ai_bom scan with the provided context")
+
+        except Exception as e:
+            console.print(f"Error in ai_bom task: {str(e)}", style="bold red")
+            raise e
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket", style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket", style="bold red")
+
+    console.print(f"Registered AI BOM task", style="bold green")
+
+
      # ------------------------------------------- CBOM Estimation task -------------------------------------------------------------------------------------------
     @app.task(track_started=True)
     def cbom_estimation(
@@ -751,6 +844,70 @@ try:
                     console.print(f"Error in deleting file from bucket", style="bold red")
 
     console.print(f"Registered CBOM estimation task", style="bold green")
+
+
+     # ------------------------------------------- AI BOM Estimation task -------------------------------------------------------------------------------------------
+    @app.task(track_started=True)
+    def ai_bom_estimation(
+        repo_dict_context: dict | None = None,
+        zip_dict_context: dict | None = None,
+        file_dict_context: dict | None = None,
+        scan_binaries: bool = False,
+    ):
+
+        try:
+            # STEP [ 1 ] : =========== Validate the context ======================
+            repo_context, zip_context, file_context = None, None, None
+            if repo_dict_context:
+                repo_context = validate_dict_with_context(repo_dict_context)
+            elif zip_dict_context:
+                zip_context = validate_dict_with_zip_context(zip_dict_context)
+            elif file_dict_context:
+                file_context = validate_dict_with_file_context(file_dict_context)
+            else:
+                raise Exception("No context provided")
+
+            # STEP [ 2 ] : =========== Initialize the agent , and estimate the credits required ======================
+            agent = None
+            if repo_context:
+                agent = AIBOMAgent(
+                    context=repo_context,
+                    scan_binaries=scan_binaries,
+                )
+            elif zip_context:
+                agent = AIBOMAgent(
+                    zip_context=zip_context,
+                    scan_binaries=scan_binaries,
+                )
+            elif file_context:
+                agent = AIBOMAgent(
+                    aibom_file_context=file_context,
+                    scan_binaries=scan_binaries,
+                )
+            else:
+                raise Exception("Unable to run ai_bom scan with the provided context")
+
+            credits_required = agent.estimate_credits_required()
+            return credits_required
+
+        except Exception as e:
+            console.print(f"Error in ai_bom_estimation task: {str(e)}", style="bold red")
+            import traceback
+            console.print(traceback.format_exc(), style="dim red")
+            return -1  # return -1 to indicate that the estimation failed
+        finally:
+            if zip_context:
+                if delete_file(zip_context.bucket_name, zip_context.object_name):
+                    console.print(f"Deleted zip file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting zip file from bucket", style="bold red")
+            if file_context:
+                if delete_file(file_context.bucket_name, file_context.object_name):
+                    console.print(f"Deleted file from bucket", style="bold green")
+                else:
+                    console.print(f"Error in deleting file from bucket", style="bold red")
+
+    console.print(f"Registered AI BOM estimation task", style="bold green")
 
 
 

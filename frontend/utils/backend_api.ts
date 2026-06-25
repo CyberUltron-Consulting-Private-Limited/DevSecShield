@@ -69,11 +69,19 @@ export interface StartCBOMScanData {
   scan_binaries: boolean;
 }
 
+/** AI BOM scan input: exactly one of repo_context, zip_file_used, or ai_bom_file_used (matches backend StartAiBomScanData) */
+export interface StartAiBomScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  ai_bom_file_used: boolean;
+}
+
 export interface StartScanPayload {
   sast?: StartSastScanData | null;
   iac?: StartIACScanData | null;
   sbom_sca?: StartSBOMScanData | null;
   cbom?: StartCBOMScanData | null;
+  ai_bom?: StartAiBomScanData | null;
 }
 
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
@@ -459,7 +467,7 @@ const reinitializeSastScan = async (params: {
 /** Send a message to a scan. POST /{team_id}/{type}/scan/{scan_id}/message */
 const sendMessageToScan = async (
     team_id: number,
-    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast" | "cbom",
+    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast" | "cbom" | "ai_bom",
     scan_id: number,
     user_message: string
 ): Promise<{ content: string }> => {
@@ -478,7 +486,7 @@ const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: Fi
 /** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
 const estimateCreditsForScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -495,7 +503,7 @@ const estimateCreditsForScan = async (
 /** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
 const startScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -520,7 +528,7 @@ export interface CreateTicketData {
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
 const createTicket = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
   scan_id: number,
   data: CreateTicketData
 ): Promise<{ message: string }> => {
@@ -1773,7 +1781,7 @@ const updateScan = async ({
     data,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom";
     scan_id: number;
     data: UpdateScanPayload;
 }) => {
@@ -1790,7 +1798,7 @@ const toggleFindingState = async ({
     state,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom";
     scan_id: number;
     finding_id: string;
     state: "fixed" | "ignored" | "in_progress" | "not_started";
@@ -2300,6 +2308,235 @@ export {
   reinitializeCBOMScanWithPayload,
 }
 
+// -------------------------------------------------------------- AI BOM API Routes --------------------------------------------------------------
+
+/** AI BOM finding from backend get_findings_for_scan_type (ai_bom branch) */
+export interface AiBomFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: Record<string, string> | null
+  owasp_top_10: Record<string, string> | null
+  owasp_top_10_llm: Record<string, string> | null
+  suggested_fix?: string
+  asset_name?: string
+  asset_type?: string
+  provider?: string
+  framework?: string
+  version?: string
+  license_type?: string
+  risk_category?: string
+  location?: string
+  snippet?: string
+  remediation?: RemediationData | null
+}
+
+/** AI BOM scan metadata from backend get_scan_metadata (ai_bom branch) */
+export interface AiBomScanMetadata {
+  repo_url?: string
+  branch?: string
+  zip_file_used?: boolean
+  ai_bom_file_used?: boolean
+  scan_binaries?: boolean
+  ai_bom_json?: Record<string, unknown>
+  error_message?: string
+}
+
+/** AI BOM single-scan dashboard from backend generate_scan_dashboard (scan.py ai_bom branch) */
+export interface AiBomScanDashboardData {
+  card_data: {
+    total_ai_assets: number
+    total_models: number
+    total_datasets: number
+    total_external_providers: number
+    total_high_risk_assets: number
+    total_unlicensed_assets: number
+    governance_readiness_score: number
+    average_risk_score: number
+  }
+  remediation_metrics: {
+    mean_time_to_remediate: [number, number, number]
+    critical_issues_fixed: number
+    remediation_velocity: number
+    high_priority_backlog: number
+  }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  asset_type_distribution: Record<string, number>
+  provider_distribution: Record<string, number>
+  license_distribution: Record<string, number>
+  risk_category_distribution: Record<string, number>
+  owasp_top_10_llm_issues: Record<string, number>
+  compliance_controls: Record<string, number>
+  top_risks: Array<{
+    asset_name: string
+    asset_type: string
+    provider: string
+    license_type: string
+    impact: string
+  }>
+}
+
+/** AI BOM conversation (scan) row returned by list scans endpoint. Same shape as CBOMConversation. */
+export interface AIBOMConversation {
+  id: number
+  title: string
+  scan_status: string
+  created_at: string
+  last_updated: string
+  estimated_credits: number | null
+  average_risk_score: number | null
+  branch: string | null
+  repo_url: string | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  total_high_risk_assets: number | null
+  total_unlicensed_assets: number | null
+  zip_file_used: boolean | null
+  ai_bom_file_used: boolean | null
+  info: string | null
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_high_risk?: number
+    total_unlicensed?: number
+  } | null
+  scan_metadata: AiBomScanMetadata | null
+}
+
+export interface AIBOMListResponse {
+  scans_list_data: AIBOMConversation[]
+  dashboard_data: AiBomScanDashboardData
+}
+
+export interface AIBOMConversationResponse {
+  title: string
+  repo_url?: string | null
+  scan_status: string
+  scan_metadata?: AiBomScanMetadata | Record<string, unknown> | null
+  data: any
+  dashboard?: AiBomScanDashboardData | null
+  findings?: AiBomFinding[] | null
+  messages: SCASBOMConversationMessage[]
+  integration_settings?: Record<string, unknown> | null
+  info?: ScanInfoField | null
+}
+
+/** Team-scoped: GET /{team_id}/ai_bom/scans */
+const getAIBOMScans = async (team_id: number): Promise<AIBOMListResponse> => {
+  try {
+    const response = await api.get(`/${team_id}/ai_bom/scans`);
+    return response.data as AIBOMListResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching AI BOM scans");
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id} */
+const getAIBOMScanData = async ({
+  queryKey,
+}: {
+  queryKey: ["ai_bom-conversation-data", number, number];
+}): Promise<AIBOMConversationResponse> => {
+  const [, team_id, scan_id] = queryKey;
+  try {
+    const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}`);
+    return response.data as AIBOMConversationResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching AI BOM scan data");
+    throw error;
+  }
+};
+
+const createAIBOMScan = async (team_id: number, title: string): Promise<number> => {
+  try {
+    const response = await api.post(`/${team_id}/ai_bom/scan`, { title });
+    toast.success("AI BOM scan created successfully");
+    return response.data.scan_id as number;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteAIBOMScan = async (team_id: number, scan_id: number) => {
+  try {
+    const response = await api.delete(`/${team_id}/ai_bom/scan/${scan_id}`);
+    toast.success("AI BOM scan deleted successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const renameAIBOMScan = async ({
+  team_id,
+  scan_id,
+  title,
+}: {
+  team_id: number;
+  scan_id: number;
+  title: string;
+}) => {
+  try {
+    const response = await api.put(`/${team_id}/ai_bom/scan/${scan_id}`, { title });
+    toast.success("AI BOM scan renamed successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id}/export */
+const getAIBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+  try {
+    const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}/export`, { responseType: "blob" });
+    toast.success("AI BOM export results fetched successfully");
+    return response.data;
+  } catch (error) {
+    showErrorToast(error, "Error fetching AI BOM export results");
+    throw error;
+  }
+};
+
+/** Team-scoped: POST /{team_id}/ai_bom/scan/{scan_id}/reinitialize with FormData */
+const reinitializeAIBOMScanWithPayload = async (
+  team_id: number,
+  scan_id: number,
+  start_scan_payload_string: string,
+  uploaded_file?: File | null
+) => {
+  const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+  const response = await api.post<{ message: string }>(
+    `/${team_id}/ai_bom/scan/${scan_id}/reinitialize`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  toast.success("AI BOM scan reinitialized successfully");
+  return response.data;
+};
+
+export {
+  getAIBOMScans,
+  getAIBOMScanData,
+  createAIBOMScan,
+  deleteAIBOMScan,
+  renameAIBOMScan,
+  getAIBOMExportResults,
+  reinitializeAIBOMScanWithPayload,
+}
+
 // -------------------------------------------------------------- Remediation Types + API --------------------------------------------------------------
 
 export interface RemediationFix {
@@ -2337,7 +2574,7 @@ const generateFindingRemediation = async ({
     finding_id,
 }: {
     team_id: number
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom"
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom"
     scan_id: number
     finding_id: string
 }): Promise<RemediationData> => {

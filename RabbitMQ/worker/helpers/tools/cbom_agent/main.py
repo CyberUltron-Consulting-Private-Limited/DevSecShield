@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 import shutil
 from langchain_core.documents import Document
 from helpers.context.scan_context import *
@@ -45,6 +46,12 @@ class CBOMAgent(BaseAgent):
             self.cbom_json_file = file
             self.scan_binaries = scan_binaries
             self.state_update_writer: StateUpdateWriter | None = state_update_writer
+
+            # Store the ORIGINAL repo url (only present for a repo context).
+            # None for zip / CBOM-file scans. Used to make the generated
+            # CycloneDX CBOM content-deterministic (metadata.component.name must
+            # derive from the real repo, not the random temp dir basename).
+            self.repo_url = getattr(context, "repo_url", None) if context else None
 
             # initialized later
             self.vulnerabilities: list[type[CryptographicAssetVulnerability]] | None = None
@@ -148,6 +155,30 @@ class CBOMAgent(BaseAgent):
         except Exception as e:
             raise ValueError(f"Error analyzing CBOM file: {e}")
 
+    @staticmethod
+    def _compute_deterministic_scan_id(detections: list[dict]) -> str:
+        """Derive a content-deterministic id from the raw detections.
+
+        Identical repo content (same set of crypto assets) must produce a
+        byte-identical id so the generated CycloneDX CBOM (serialNumber +
+        timestamp) is reproducible across runs. We hash the sorted tuples of
+        (algorithm_name, algorithm_type, location) — the stable identity of
+        each detection, independent of scan-run-specific fields like temp
+        paths or detector ordering.
+        """
+        identity = sorted(
+            (
+                str(d.get("algorithm_name", "")),
+                str(d.get("algorithm_type", "")),
+                str(d.get("location", "")),
+            )
+            for d in detections
+        )
+        digest = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        return digest
+
     def run_source_scan_with_llm(self) -> None:
         """Run source/binary scanning, then LLM enrichment via map-reduce."""
         try:
@@ -176,11 +207,23 @@ class CBOMAgent(BaseAgent):
                 )
             )
 
-            # STEP 3: Generate CycloneDX CBOM JSON from raw detections
-            repo_url = None
-            if hasattr(self, "directory") and self.directory:
-                repo_url = str(self.directory)
-            self.cyclonedx_cbom = generate_cyclonedx_cbom(self.raw_detections, repo_url=repo_url)
+            # STEP 3: Generate CycloneDX CBOM JSON from raw detections.
+            # Compute a CONTENT-DETERMINISTIC scan_id from the sorted detections so
+            # that identical repo content yields a byte-identical serialNumber +
+            # timestamp (routes through the deterministic branch in the parser).
+            scan_id = self._compute_deterministic_scan_id(self.raw_detections)
+            # Prefer the ORIGINAL repo url over the random temp dir path so that
+            # metadata.component.name is stable across runs of the same repo.
+            repo_url = self.repo_url or (str(self.directory) if self.directory else None)
+            # Pin metadata.timestamp to a fixed epoch so the whole BOM is byte-
+            # reproducible for identical repo content (timestamp is the only
+            # otherwise non-deterministic field).
+            self.cyclonedx_cbom = generate_cyclonedx_cbom(
+                self.raw_detections,
+                scan_id=scan_id,
+                repo_url=repo_url,
+                timestamp="1970-01-01T00:00:00+00:00",
+            )
 
             console.print(f"Generated CycloneDX CBOM with {len(self.cyclonedx_cbom.get('components', []))} components", style="bold cyan")
 
@@ -297,7 +340,7 @@ class CBOMAgent(BaseAgent):
     CBOM_FILE_EXTENSIONS = {
         ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
         ".java", ".go", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp",
-        ".rb", ".rs",
+        ".rb", ".rs", ".php", ".phtml", ".kt", ".kts", ".scala",
     }
 
     def _measure_directory_size(self) -> tuple[int, float, float]:

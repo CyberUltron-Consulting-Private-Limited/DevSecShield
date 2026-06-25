@@ -82,12 +82,22 @@ def run_cbomkit_theia(directory: str) -> dict | None:
             console.print("cbomkit-theia produced output despite non-zero exit – attempting to parse", style="dim yellow")
 
         output = json.loads(result.stdout)
-        if "components" not in output:
-            console.print("cbomkit-theia output missing 'components' key, discarding", style="bold yellow")
+        if not isinstance(output, dict):
+            console.print("cbomkit-theia output is not a JSON object, discarding", style="bold yellow")
             return None
 
-        components = output.get("components", [])
-        console.print(f"cbomkit-theia found {len(components)} cryptographic components", style="bold cyan")
+        # "components" may be missing OR explicitly null when no crypto is found.
+        # Coerce both to [] so downstream len()/iteration never sees None.
+        components = output.get("components") or []
+        output["components"] = components
+        if not components:
+            console.print(
+                "cbomkit-theia returned zero usable cryptographic components "
+                "(null/empty 'components'); binary scan produced no crypto assets",
+                style="bold yellow",
+            )
+        else:
+            console.print(f"cbomkit-theia found {len(components)} cryptographic components", style="bold cyan")
         return output
 
     except subprocess.TimeoutExpired:
@@ -113,10 +123,17 @@ def parse_theia_components(theia_output: dict) -> list[dict]:
     """
     if not theia_output:
         return []
-    
+
     assets = []
-    components = theia_output.get("components", [])
-    
+    # "components" may be missing OR explicitly null (no crypto found) -> treat as [].
+    components = theia_output.get("components") or []
+    if not components:
+        console.print(
+            "cbomkit-theia output has zero usable components; no crypto assets to parse",
+            style="bold yellow",
+        )
+        return []
+
     for component in components:
         comp_type = component.get("type", "")
         name = component.get("name", "Unknown")

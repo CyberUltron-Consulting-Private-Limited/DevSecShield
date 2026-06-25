@@ -5,10 +5,13 @@ import tempfile
 from typing import Annotated
 
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, status
 from fastapi.responses import FileResponse
 from fastapi_throttle import RateLimiter
+from pydantic import ValidationError
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.get_db import get_db, get_mongo_client_db
@@ -174,7 +177,7 @@ async def send_message_to_scan(
 
         # STEP [ 1 ] : =========== Get the conversation from the main db ======================
         with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if not scan:
                 console.print(f"Scan with id: {scan_id} and team_id: {team_id} not found in main database" ,style="bold red")
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found ")
@@ -295,7 +298,7 @@ async def get_scan(
         TASK_ID = None
 
         with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
             TASK_ID = scan.task_id
@@ -315,7 +318,12 @@ async def get_scan(
             )
             SCAN_STATUS = FETCHED_SCAN_STATUS if FETCHED_SCAN_STATUS else SCAN_STATUS
             SCAN_DATA = FETCHED_SCAN_DATA if FETCHED_SCAN_DATA else SCAN_DATA
-        
+            # I-13: get_status_and_update_db may have just written scan.info={"error":...} on a
+            # failure transition; re-read it from the updated scan so the error surfaces on THIS
+            # poll instead of one poll later.
+            if scan is not None:
+                SCAN_INFO = scan.info
+
         # STEP [ 3 ] : =================== Fetching messages if scan is completed ======================
         MESSAGES = get_messages_from_scan(
             scan_id=scan_id,
@@ -372,11 +380,38 @@ async def get_scan(
 
 
 
+def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
+    """
+    Release an atomic start-claim made by the /start handler.
+
+    The /start handler atomically flips NOT_STARTED -> pending BEFORE deducting credits
+    and dispatching the scan (I-1). If deduction or dispatch then fails, the scan would be
+    stranded in "pending" with no task_id and could never be started again. This resets the
+    claim back to NOT_STARTED, but ONLY while task_id is still None (i.e. dispatch never
+    actually happened) so we never clobber a scan that did get dispatched.
+    """
+    try:
+        with Session(engine) as session:
+            session.exec(
+                update(Scan)
+                .where(
+                    Scan.id == scan_id,
+                    Scan.team_id == team_id,
+                    Scan.scan_status == "pending",
+                    Scan.task_id == None,
+                )
+                .values(scan_status="NOT_STARTED")
+            )
+            session.commit()
+    except Exception as e:
+        console.print(f"Failed to release scan claim for scan {scan_id}: {e}", style="bold red")
+
+
 # revamped ✅
 @router.post("/{team_id}/{type}/scan/{scan_id}/start",summary="Start a scan")
 async def start_scan(
     type: scan_types,
-    scan_id: int, 
+    scan_id: int,
     team_id: int,
     start_scan_payload_string: str = Form(...),
     uploaded_file: UploadFile | None = None,
@@ -392,7 +427,10 @@ async def start_scan(
         # user = User(id=1) # for testing purposes
 
         # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
-        start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+        try:
+            start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+        except ValidationError as ve:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
         
 
 
@@ -406,7 +444,7 @@ async def start_scan(
         # STEP [ 2 ] : =========== Validate getting the conversation from the main db ======================
         with Session(engine) as session:
             scan = None
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
             if scan.credit_consumed == None :
@@ -428,10 +466,35 @@ async def start_scan(
                 )
                 if FETCHED_STATUS == "success" or FETCHED_STATUS == "started" or FETCHED_STATUS == "failure" or FETCHED_STATUS == "pending" or FETCHED_DATA != {} :
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or completed , cannot start again")
-            
+
             scan_metadata = get_scan_metadata_for_type(type, start_scan_payload)
             if scan_metadata == None:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error in getting scan metadata")
+
+            # STEP [ 2.5 ] : =========== ATOMIC CLAIM (I-1) ====================== ⭐
+            # TOCTOU fix: the read-based "already started" checks above can let two concurrent
+            # /start requests both pass and both deduct + dispatch (double-charge / duplicate scan).
+            # Atomically compare-and-set NOT_STARTED -> pending BEFORE any deduct/dispatch.
+            # Only the single request that flips the row (rowcount == 1) wins the right to charge
+            # and dispatch; all losers get a 400. task_id == None ensures we never re-claim a scan
+            # that was already dispatched. A failed scan stays at "failure" (never reset to
+            # NOT_STARTED), so this preserves the existing "cannot re-run after failure" behavior.
+            claim_result = session.exec(
+                update(Scan)
+                .where(
+                    Scan.id == scan_id,
+                    Scan.team_id == team_id,
+                    Scan.scan_status == "NOT_STARTED",
+                    Scan.task_id == None,
+                )
+                .values(scan_status="pending")
+            )
+            session.commit()
+            if claim_result.rowcount == 0:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or is not ready")
+
+            # Winner of the claim: persist metadata and proceed to deduct + dispatch.
+            session.refresh(scan)
             scan.scan_metadata = scan_metadata
             scan.last_updated = datetime.now(timezone.utc) # updating last_updated field
             session.add(scan)
@@ -442,8 +505,15 @@ async def start_scan(
 
 
         # STEP [ 3 ] : =========== Deduct credits BEFORE dispatching scan (atomic with check) ====================== ⭐
-        # SECURITY FIX: Deduct credits first to prevent race condition where scan runs without payment
-        deduct_credits_from_team(team_id=team_id, credits=credits_to_deduct)
+        # SECURITY FIX: Deduct credits first to prevent race condition where scan runs without payment.
+        # If deduction fails (e.g. a concurrent spend drained the balance after our pre-check),
+        # release the atomic claim so the scan can be started again later.
+        try:
+            deduct_credits_from_team(team_id=team_id, credits=credits_to_deduct)
+        except Exception as deduct_error:
+            console.print(f"Credit deduction failed after claim, releasing claim for scan {scan_id}", style="bold yellow")
+            _release_scan_claim(engine=engine, scan_id=scan_id, team_id=team_id)
+            raise deduct_error
 
 
 
@@ -464,6 +534,8 @@ async def start_scan(
                 refund_credits_to_team(team_id=team_id, credits=credits_to_deduct)
             except Exception as refund_err:
                 console.print(f"CRITICAL: Failed to refund credits after scan dispatch failure: {refund_err}", style="bold red")
+            # Release the atomic claim so the scan is not stranded in "pending" and can be retried.
+            _release_scan_claim(engine=engine, scan_id=scan_id, team_id=team_id)
             raise scan_dispatch_error
 
         return {
@@ -504,14 +576,12 @@ async def delete_scan(
         check_if_user_is_in_team(user.id, team_id, engine)
 
         # STEP [ 2 ] : =========== Delete the scan from the main db ======================
-        
-        # deleting scan findings for this scan 
-        scan_findings_collection = mongo_db["scan_findings"]
-        result = scan_findings_collection.delete_many({"scan_id": scan_id})
-        console.print(f"{result.deleted_count} Scan findings with scan_id: {scan_id} deleted from mongo db" ,style="bold orange3")
-        
+        # D-1 (IDOR fix): authorize the scan (team + type + owner) BEFORE deleting any of its
+        # data. Previously the mongo scan_findings delete_many ran before this check, so an
+        # attacker in any team could wipe another team's findings by enumerating global scan ids
+        # and still receive a 404 that masked the destruction.
         with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.owner_user_id != user.id: # only the user who created the scan can delete the scan ⭐
@@ -519,6 +589,11 @@ async def delete_scan(
             session.delete(scan)
             session.commit()
         console.print(f"Scan id: {scan.id} deleted from main database" ,style="bold orange3")
+
+        # deleting scan findings for this scan (only AFTER ownership is confirmed above)
+        scan_findings_collection = mongo_db["scan_findings"]
+        result = scan_findings_collection.delete_many({"scan_id": scan_id})
+        console.print(f"{result.deleted_count} Scan findings with scan_id: {scan_id} deleted from mongo db" ,style="bold orange3")
 
         
         # STEP [ 3 ] ------------------ Delelte messages with scan_id -----------------------------
@@ -574,7 +649,7 @@ async def update_scan(
 
         # STEP [ 2 ] : =========== Update the main db scan the title ======================
         with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.owner_user_id != user.id: # only the user who created the scan can update the scan ⭐
@@ -645,7 +720,7 @@ async def export_scan(
         scan = None
         scan_data = None
         with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.scan_status not in ["success"]:
@@ -697,7 +772,10 @@ async def reinitialize_scan(
         # user = User(id=1) # for testing purposes
 
         # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
-        start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+        try:
+            start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+        except ValidationError as ve:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
@@ -708,7 +786,7 @@ async def reinitialize_scan(
         # STEP [ 2 ] : =========== Validate getting the conversation from the main db ======================
         with Session(engine) as session:
             scan = None
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
             if scan.scan_status != "pending" : 
@@ -759,7 +837,10 @@ async def estimate_credits_for_scan(
         # user = User(id=1) # for testing purposes
 
         # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
-        start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+        try:
+            start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
+        except ValidationError as ve:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid start scan payload: {ve.errors()}")
 
         console.print(f"Start scan payload: {start_scan_payload}",style="bold yellow")
 
@@ -772,7 +853,7 @@ async def estimate_credits_for_scan(
         # STEP [ 2 ] : =========== Validate getting the scan from the main db ======================
         with Session(engine) as session:
             scan = None
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
             if scan.owner_user_id != user.id: # only the user who created the scan can estimate the credits for the scan ⭐
@@ -830,7 +911,7 @@ async def create_ticket(
         # STEP [ 2 ] : ============= get Team and Scan from the main db ======================
         scan , team = None, None
         with Session(engine) as session:
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for specified team and scan id")
             if scan.scan_status not in ["success"]:
@@ -898,21 +979,36 @@ async def toggle_finding_state(
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         mongo_db = get_mongo_client_db()
 
-        # STEP [ 1 ] : =========== Check if user is in team ======================
+        # STEP [ 1 ] : =========== Check if user is admin of team ======================
         check_if_user_is_admin_of_team(user.id, team_id, engine)
-        
-        
+
+        # STEP [ 1.5 ] : === Authorize: scan must belong to this team (prevent cross-tenant IDOR) ===
+        with Session(engine) as session:
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
+            if not scan:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for this team")
+
         # STEP [ 2 ] : ================= update scan finding in mongo db ======================
         if data.state not in ["fixed" , "ignored" , "in_progress" , "not_started"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid finding state")
-        
+
+        try:
+            finding_oid = ObjectId(data.finding_id)
+        except (InvalidId, TypeError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid finding id")
+
         scan_findings_collection = mongo_db["scan_findings"]
+        # The finding must belong to the (team-owned) scan referenced in the path.
+        target_finding = scan_findings_collection.find_one({"_id": finding_oid})
+        if not target_finding or target_finding.get("scan_id") != scan_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found for this scan")
+
         if data.state == "fixed":
-            scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state, "fixed_at": datetime.now(timezone.utc)}})
+            scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state, "fixed_at": datetime.now(timezone.utc)}})
         elif data.state == "ignored":
-            scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state, "ignored_at": datetime.now(timezone.utc)}})
+            scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state, "ignored_at": datetime.now(timezone.utc)}})
         else:
-            scan_findings_collection.update_one({"_id": ObjectId(data.finding_id)}, {"$set": {"finding_status": data.state}})
+            scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state}})
         console.print(f"Finding state updated for {data.finding_id} to {data.state}",style="bold green")
 
         return {
@@ -951,9 +1047,20 @@ async def generate_finding_remediation(
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         check_if_user_is_in_team(user.id, team_id, engine)
 
+        # === Authorize: scan must belong to this team (prevent cross-tenant IDOR) ===
+        with Session(engine) as session:
+            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
+            if not scan:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found for this team")
+
+        try:
+            finding_oid = ObjectId(finding_id)
+        except (InvalidId, TypeError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid finding id")
+
         # STEP [ 1 ] : =========== Fetch finding from MongoDB ======================
         scan_findings_collection = mongo_db["scan_findings"]
-        finding = scan_findings_collection.find_one({"_id": ObjectId(finding_id)})
+        finding = scan_findings_collection.find_one({"_id": finding_oid})
         if not finding:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
         if finding.get("scan_id") != scan_id:

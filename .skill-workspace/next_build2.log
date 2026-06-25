@@ -1,0 +1,64 @@
+
+> frontend@0.1.0 build
+> next build
+
+▲ Next.js 16.2.3 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 12.7s
+  Running TypeScript ...
+  Finished TypeScript in 10.8s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/10) ...
+api base url :  https://devsecshieldapi.zeroshield.ai
+  Generating static pages using 7 workers (2/10) 
+  Generating static pages using 7 workers (4/10) 
+  Generating static pages using 7 workers (7/10) 
+✓ Generating static pages using 7 workers (10/10) in 229ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /[team_id]
+├ ƒ /[team_id]/cbom
+├ ƒ /[team_id]/cbom/[scan_id]
+├ ƒ /[team_id]/cbom/[scan_id]/results
+├ ƒ /[team_id]/ci_cd
+├ ƒ /[team_id]/ci_cd/[integration_id]
+├ ƒ /[team_id]/ci_cd/[integration_id]/sast/results
+├ ƒ /[team_id]/dast
+├ ƒ /[team_id]/dast/[scan_id]
+├ ƒ /[team_id]/dast/[scan_id]/results
+├ ƒ /[team_id]/guardrails
+├ ƒ /[team_id]/guardrails/[integration_id]
+├ ƒ /[team_id]/iac
+├ ƒ /[team_id]/iac/[scan_id]
+├ ƒ /[team_id]/iac/[scan_id]/results
+├ ƒ /[team_id]/leakage
+├ ƒ /[team_id]/leakage/[conversation_id]
+├ ƒ /[team_id]/leakage/[conversation_id]/results
+├ ƒ /[team_id]/llm
+├ ƒ /[team_id]/llm/[conversation_id]
+├ ƒ /[team_id]/llm/[conversation_id]/results
+├ ƒ /[team_id]/mcp
+├ ƒ /[team_id]/mcp/[conversation_id]
+├ ƒ /[team_id]/mcp/[conversation_id]/results
+├ ƒ /[team_id]/sast
+├ ƒ /[team_id]/sast/[scan_id]
+├ ƒ /[team_id]/sast/[scan_id]/results
+├ ƒ /[team_id]/sbom_sca
+├ ƒ /[team_id]/sbom_sca/[scan_id]
+├ ƒ /[team_id]/sbom_sca/[scan_id]/results
+├ ƒ /[team_id]/settings
+├ ○ /admin
+├ ○ /home
+├ ○ /home/create_team
+├ ○ /login
+├ ○ /password_reset
+└ ○ /register
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

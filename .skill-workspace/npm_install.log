@@ -1,0 +1,16 @@
+npm warn deprecated hast@1.0.0: Renamed to rehype
+
+added 811 packages, and audited 812 packages in 2m
+
+272 packages are looking for funding
+  run `npm fund` for details
+
+14 vulnerabilities (4 low, 6 moderate, 4 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.

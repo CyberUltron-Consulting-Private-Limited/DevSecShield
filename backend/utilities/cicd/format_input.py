@@ -107,7 +107,13 @@ async def format_cicd_input(
             case "cbom":
                 cbom_scan_settings: dict | None = scan_settings.get("cbom") if scan_settings else None
                 cicd_kwargs["scan_binaries"] = cbom_scan_settings.get("scan_binaries", False) if cbom_scan_settings else False
-                
+
+                console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
+                return cicd_kwargs
+            case "ai_bom":
+                ai_bom_scan_settings: dict | None = scan_settings.get("ai_bom") if scan_settings else None
+                cicd_kwargs["scan_binaries"] = ai_bom_scan_settings.get("scan_binaries", False) if ai_bom_scan_settings else False
+
                 console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
                 return cicd_kwargs
 

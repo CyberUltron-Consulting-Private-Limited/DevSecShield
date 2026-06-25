@@ -11,8 +11,15 @@ export default function CbomResultsPage() {
   const params = useParams();
   const team_id = parseInt((params?.team_id as string) ?? "0", 10);
   const scan_id = parseInt((params?.scan_id as string) ?? "0", 10);
+  const hasValidIds = !!team_id && !!scan_id;
 
-  if (!team_id || !scan_id) {
+  const query = useQuery({
+    queryKey: ["cbom-conversation-data", team_id, scan_id],
+    queryFn: getCBOMScanData,
+    enabled: hasValidIds,
+  });
+
+  if (!hasValidIds) {
     toast.error("Team or scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
@@ -22,11 +29,6 @@ export default function CbomResultsPage() {
       </div>
     );
   }
-
-  const query = useQuery({
-    queryKey: ["cbom-conversation-data", team_id, scan_id],
-    queryFn: getCBOMScanData,
-  });
 
   if (query.isError) {
     return (

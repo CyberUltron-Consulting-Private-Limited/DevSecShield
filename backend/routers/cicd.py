@@ -422,7 +422,16 @@ async def update_cicd_integration(
                     scan_settings_dict["cbom"] = specific_scan_settings_dict["cbom"]
                     console.print(scan_settings_dict, style="bold yellow")
                     integration.scan_settings = scan_settings_dict
-            
+                if data.scan_settings.ai_bom is not None:
+                    specific_scan_settings_dict = data.scan_settings.model_dump()
+                    if integration.scan_settings is not None:
+                        scan_settings_dict = integration.scan_settings.copy() or {}
+                    else:
+                        scan_settings_dict = {}
+                    scan_settings_dict["ai_bom"] = specific_scan_settings_dict["ai_bom"]
+                    console.print(scan_settings_dict, style="bold yellow")
+                    integration.scan_settings = scan_settings_dict
+
 
             session.add(integration)
             session.commit()

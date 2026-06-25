@@ -1,4 +1,5 @@
 import json
+from enum import Enum
 from typing import Any, Dict
 
 from rich.console import Console
@@ -20,7 +21,7 @@ from helpers.context.schema import (
     MitreAtlasTactic,
     CryptographicAssetVulnerability,
 )
-from helpers.context.enums import CryptoAssetType, CryptoStrength
+from helpers.context.enums import CryptoAssetType, CryptoStrength, AIComponentType, AIRiskCategory, ModelProvider
 console = Console()
 
 def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | type[DependencyVulnerability] | type[MCPVulnerability]) -> dict:
@@ -115,6 +116,24 @@ def parse_vuln(data: type[BaseVulnerability] | type[CodebaseVulnerability] | typ
             crypto_strength : type[CryptoStrength] = dumped["crypto_strength"]
             dumped["crypto_strength"] = crypto_strength.value
             console.print(f"✅ Crypto strength parsed successfully",style="bold green")
+
+        if "component_type" in dumped:
+            console.print(f"⚠️ Component type found in dumped,parsing it...",style="bold yellow")
+            component_type : type[AIComponentType] = dumped["component_type"]
+            dumped["component_type"] = component_type.value
+            console.print(f"✅ Component type parsed successfully",style="bold green")
+
+        if "risk_category" in dumped:
+            console.print(f"⚠️ Risk category found in dumped,parsing it...",style="bold yellow")
+            risk_category : type[AIRiskCategory] = dumped["risk_category"]
+            dumped["risk_category"] = risk_category.value
+            console.print(f"✅ Risk category parsed successfully",style="bold green")
+
+        if "source" in dumped and isinstance(dumped["source"], Enum):
+            console.print(f"⚠️ Source found in dumped,parsing it...",style="bold yellow")
+            source : type[ModelProvider] = dumped["source"]
+            dumped["source"] = source.value
+            console.print(f"✅ Source parsed successfully",style="bold green")
 
         console.print(f"✅ Vulnerability parsed successfully",style="bold green")
         return dumped

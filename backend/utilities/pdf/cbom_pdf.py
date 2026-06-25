@@ -5,7 +5,7 @@ Generates a PDF report from CBOM scan results using reportlab.
 
 Input: a list of cryptographic vulnerability dicts (agent output), each with fields:
   title, algorithm_name, algorithm_type, crypto_strength, key_size, quantum_safe,
-  location, snippet, impact, compliance_controls, owasp_top_10, suggested_fix, source
+  location, snippet, impact, compliance_controls, owasp_top_10, suggested_fix
 """
 
 from __future__ import annotations
@@ -271,7 +271,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         story.append(Paragraph("Algorithm Type Distribution", heading_style))
         type_data = [["Algorithm Type", "Count"]]
         for alg_type, cnt in sorted(by_type.items(), key=lambda x: -x[1]):
-            type_data.append([_escape(alg_type.title()), str(cnt)])
+            type_data.append([alg_type.title(), str(cnt)])
         type_table = Table(type_data, colWidths=[3.5 * inch, 1.5 * inch])
         type_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A5F")),
@@ -309,19 +309,24 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         )
 
         for i, v in enumerate(sorted_vulns, start=1):
+            # Values destined for Paragraph flowables must be HTML-escaped
+            # (ReportLab parses Paragraph text as mini-markup).
             title = _escape(v.get("title") or v.get("algorithm_name") or f"Finding #{i}")
-            impact = (v.get("impact") or "unknown").strip().lower()
-            strength = (v.get("crypto_strength") or "unknown").strip()
-            alg_name = _escape(v.get("algorithm_name") or "—")
-            alg_type = _escape(v.get("algorithm_type") or "—")
-            key_size = v.get("key_size")
-            quantum_safe = v.get("quantum_safe")
-            location = _escape(v.get("location") or "—")
             snippet = _escape(v.get("snippet") or "")
             description = _escape(v.get("description") or "")
             suggested_fix = _escape(v.get("suggested_fix") or "")
-            source = _escape(v.get("source") or "")
-            compliance = v.get("compliance_controls") or []
+
+            # Values destined for plain Table cells must NOT be HTML-escaped:
+            # ReportLab draws raw string cells verbatim, so escaping here would
+            # render entities literally (e.g. "AES &amp; RSA").
+            impact = (v.get("impact") or "unknown").strip().lower()
+            strength = (v.get("crypto_strength") or "unknown").strip()
+            alg_name = str(v.get("algorithm_name") or "—")
+            alg_type = str(v.get("algorithm_type") or "—")
+            key_size = v.get("key_size")
+            quantum_safe = v.get("quantum_safe")
+            location = str(v.get("location") or "—")
+            compliance = v.get("compliance_controls") or {}
             owasp = v.get("owasp_top_10") or {}
 
             impact_col = _impact_color(impact)
@@ -346,12 +351,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ]))
 
             # Metadata grid
+            key_size_text = f"{key_size} bits" if key_size is not None else "—"
             meta_rows = [
                 ["Algorithm", alg_name, "Type", alg_type],
-                ["Key Size", str(key_size) + " bits" if key_size else "—",
-                 "Strength", strength.title()],
-                ["Quantum Status", _quantum_label(quantum_safe), "Source", source or "—"],
-                ["Location", location, "", ""],
+                ["Key Size", key_size_text, "Strength", strength.title()],
+                ["Quantum Status", _quantum_label(quantum_safe), "Location", location],
             ]
             meta_table = Table(meta_rows, colWidths=[1.0 * inch, 2.2 * inch, 1.0 * inch, 2.0 * inch])
             meta_table.setStyle(TableStyle([
@@ -387,10 +391,18 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 section.append(Paragraph(suggested_fix, normal_style))
 
             if compliance:
-                section.append(Spacer(1, 0.04 * inch))
-                section.append(Paragraph("<b>Compliance Controls:</b>", small_style))
-                controls_text = ", ".join(str(c) for c in compliance if c)
-                section.append(Paragraph(_escape(controls_text), normal_style))
+                # compliance_controls is serialized as {control_id: description}.
+                # Render the descriptions (values), matching the OWASP display,
+                # instead of the bare control IDs (dict keys).
+                if isinstance(compliance, dict):
+                    controls = [str(val) for val in compliance.values() if val]
+                else:
+                    controls = [str(c) for c in compliance if c]
+                if controls:
+                    controls_text = ", ".join(controls)
+                    section.append(Spacer(1, 0.04 * inch))
+                    section.append(Paragraph("<b>Compliance Controls:</b>", small_style))
+                    section.append(Paragraph(_escape(controls_text), normal_style))
 
             if owasp and isinstance(owasp, dict):
                 owasp_parts = []

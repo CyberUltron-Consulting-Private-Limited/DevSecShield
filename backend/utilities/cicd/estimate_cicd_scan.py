@@ -47,6 +47,8 @@ async def estimate_cicd_scan(
             task_result = simple_app.send_task(name="scan_worker.sbom_sca_estimation", kwargs=cicd_kwargs, queue="cicd_worker_queue")
         elif scan_type == "cbom":
             task_result = simple_app.send_task(name="scan_worker.cbom_estimation", kwargs=cicd_kwargs, queue="cicd_worker_queue")
+        elif scan_type == "ai_bom":
+            task_result = simple_app.send_task(name="scan_worker.ai_bom_estimation", kwargs=cicd_kwargs, queue="cicd_worker_queue")
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")
 

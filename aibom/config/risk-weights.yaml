@@ -9,6 +9,7 @@ flags:
   DATASET_NO_DEIDENT: 10
   MODEL_EU_AI_ACT_HIGH_RISK: 5
   MODEL_PHI_AT_INFERENCE: 4
+  UNSANCTIONED_COMPONENT: 6   # shadow-AI: discovered component not on allowlist
 
 # Score SCALE — locked BEFORE the Phase-4 heatmap so the dashboard never has to
 # retrofit it. We use Trusera-style 0-100 normalization plus low/med/high bands:

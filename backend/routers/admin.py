@@ -120,6 +120,7 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
                     "iac_scans_count": len([scan for scan in team.scans if scan.scan_type == "iac"]),
                     "sbom_sca_scans_count": len([scan for scan in team.scans if scan.scan_type == "sbom_sca"]),
                     "cbom_scans_count": len([scan for scan in team.scans if scan.scan_type == "cbom"]),
+                    "ai_bom_scans_count": len([scan for scan in team.scans if scan.scan_type == "ai_bom"]),
                 })
             
             return teams_data

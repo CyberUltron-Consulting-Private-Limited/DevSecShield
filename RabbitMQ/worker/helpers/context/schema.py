@@ -114,6 +114,29 @@ class CryptographicAssetVulnerability(BaseVulnerability):
     snippet : str = Field(description="The code or configuration snippet containing the cryptographic usage")
 
 
+# ========================================= AI-BOM Schemas =========================================
+
+class AIComponentVulnerability(BaseVulnerability):
+    # AI-BOM findings are LLM-application risks; the web-app OWASP Top 10 is
+    # rarely relevant and is not guided by the AI-BOM prompt (only
+    # owasp_top_10_llm is). Override the required BaseVulnerability field with a
+    # default so structured-output validation does not force the model to
+    # hallucinate web-OWASP entries. This override is scoped to the AI-BOM model
+    # only and does not relax the requirement on other BaseVulnerability
+    # subclasses (sast/iac/sbom_sca/cbom).
+    owasp_top_10 : list[OWASPTop10] = Field(default_factory=list, description="A list of OWASP top 10 (web) vulnerabilities that this component is related to; usually empty for AI/ML components — prefer owasp_top_10_llm")
+    component_name : str = Field(description="The name of the AI/ML component, e.g. gpt-4o, claude-3-5-sonnet, model.pkl, bert-base-uncased")
+    component_type : AIComponentType = Field(description="The type of the AI/ML component, e.g. local_model_file, external_provider, huggingface_model, ml_framework")
+    framework : str | None = Field(default=None, description="The framework or library the component is used through, e.g. langchain, transformers, pytorch, openai-sdk")
+    version : str | None = Field(default=None, description="The version of the AI/ML component or model, if applicable")
+    source : ModelProvider = Field(description="The provider or source of the AI/ML component, e.g. openai, anthropic, huggingface, local")
+    license : str | None = Field(default=None, description="The license of the AI/ML component or model, if applicable")
+    location : str = Field(description="The file path where the AI/ML component usage was detected")
+    snippet : str = Field(description="The code or configuration snippet containing the AI/ML component usage")
+    risk_category : AIRiskCategory = Field(description="The AI-specific risk category classification for this component")
+    owasp_top_10_llm : list[OWASPTop10LLM] = Field(default_factory=list, description="A list of OWASP Top 10 for LLM Applications vulnerabilities that this component is related to")
+
+
 
 
 

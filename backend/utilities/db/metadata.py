@@ -72,5 +72,14 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "cbom_file_used": start_scan_payload.cbom.cbom_file_used,
                 "scan_binaries": start_scan_payload.cbom.scan_binaries,
             }
+        case "ai_bom":
+            return {
+                "zip_file_used": start_scan_payload.ai_bom.zip_file_used,
+                "repo_url": start_scan_payload.ai_bom.repo_context.repo_url if start_scan_payload.ai_bom.repo_context else None,
+                "repo_type": start_scan_payload.ai_bom.repo_context.mode if start_scan_payload.ai_bom.repo_context else None,
+                "branch": start_scan_payload.ai_bom.repo_context.branch if start_scan_payload.ai_bom.repo_context else None,
+                "ai_bom_file_used": start_scan_payload.ai_bom.ai_bom_file_used,
+                "scan_binaries": start_scan_payload.ai_bom.scan_binaries,
+            }
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")

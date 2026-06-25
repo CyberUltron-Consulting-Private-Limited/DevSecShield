@@ -26,9 +26,7 @@ from aibom.emit.validate import validate_spdx
 from aibom.model.component import (
     DatasetComponent,
     FrameworkComponent,
-    InfraComponent,
     ModelComponent,
-    ServiceComponent,
 )
 from aibom.model.result import (
     REL_DEPENDS_ON,
@@ -283,13 +281,11 @@ def emit_spdx(result: ScanResult) -> dict[str, Any]:
     models = [c for c in result.components if isinstance(c, ModelComponent)]
     datasets = [c for c in result.components if isinstance(c, DatasetComponent)]
     libs = [c for c in result.components if isinstance(c, FrameworkComponent)]
-    # Service (inference vendor) + infra (deployment site) nodes are emitted as
-    # generic software_Package elements so served_by/deployed_at targets resolve.
-    others = [
-        c
-        for c in result.components
-        if isinstance(c, (ServiceComponent, InfraComponent))
-    ]
+    # Every other kind (services, infra/sites, and the full shadow-AI taxonomy:
+    # agents, tools, MCP servers, vector stores, …) is emitted as a generic
+    # software_Package so its edges resolve — no per-kind special-casing.
+    _core = (ModelComponent, DatasetComponent, FrameworkComponent)
+    others = [c for c in result.components if not isinstance(c, _core)]
     present = {c.bom_ref for c in result.components}
 
     root_ids: list[str] = []

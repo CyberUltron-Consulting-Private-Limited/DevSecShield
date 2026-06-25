@@ -15,9 +15,16 @@ def create_findings_in_mongo_db(
     try:
         if scan_results == None or scan_results == {}:
             console.print(f"No scan results found for scan id: {scan_id}",style="bold red")
-            return 
+            return
 
-        
+        # I-12: idempotent findings. A success status can be polled/re-run more than once
+        # (get_status_and_update_db is invoked from list, get_scan, start and background tasks),
+        # which would insert the same findings multiple times. Clear any existing findings for
+        # this scan_id BEFORE inserting so a re-poll/re-run never double-inserts. Applies to ALL
+        # scan types since it runs once, up front, for every code path below.
+        mongo_db["scan_findings"].delete_many({"scan_id": scan_id})
+
+
         if scan_type == "sast":
             results = scan_results["results"]
             to_insert = []
@@ -126,7 +133,7 @@ def create_findings_in_mongo_db(
             if len(to_insert) > 0:
                 mongo_db["scan_findings"].insert_many(to_insert)
         
-        elif scan_type == "cbom":
+        elif scan_type == "cbom" or scan_type == "ai_bom":
             results = scan_results["results"]
             to_insert = []
             for vulnerability in results:

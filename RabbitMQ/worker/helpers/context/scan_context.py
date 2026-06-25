@@ -5,6 +5,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 import json
 from helpers.context.s3_utils import download_zip_file, download_file
 import zipfile
@@ -36,14 +37,27 @@ def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
         return ""
 
 
+def _is_provider_url(url: str, host: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    hostname = hostname.lower()
+    return hostname == host or hostname.endswith("." + host)
+
 def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
+    return _is_provider_url(url, "github.com")
 
 def is_gitlab_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "gitlab.com" in url
+    return _is_provider_url(url, "gitlab.com")
 
 def is_bitbucket_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "bitbucket.org" in url
+    return _is_provider_url(url, "bitbucket.org")
 
 class GithubContext(BaseModel):
     mode : Literal["github"] = "github"

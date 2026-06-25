@@ -1,0 +1,272 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- aibom_rec@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-06-21 18:51:07
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x1133c2030
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 8 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> cicd_worker_queue exchange=cicd_worker_queue(direct) key=cicd_worker_queue
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-06-21 18:51:07,337: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-06-21 18:51:07,345: INFO/MainProcess] mingle: searching for neighbors
+[2026-06-21 18:51:08,423: INFO/MainProcess] mingle: all alone
+[2026-06-21 18:51:08,448: INFO/MainProcess] aibom_rec@Anshs-MacBook-Pro.local ready.
+[2026-06-21 18:51:47,581: INFO/MainProcess] Task scan_worker.ai_bom_estimation[4a5cb8b3-1be1-41c5-bd9b-22e9dc07ba1f] received
+[2026-06-21 18:51:47,674: WARNING/MainProcess] 📦 Cloning https://github.com/openai/openai-quickstart-python → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_3fv4ygxk Branch:master
+[2026-06-21 18:51:50,903: WARNING/MainProcess] AI-BOM estimation: 6 files, 0.02 MB across 28 extension types
+[2026-06-21 18:51:50,903: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-06-21 18:51:50,904: WARNING/MainProcess] Temp Dir does Exist
+[2026-06-21 18:51:50,904: WARNING/MainProcess] Removing temporary directory ...
+[2026-06-21 18:51:50,908: WARNING/MainProcess] Temporary directory removed successfully
+[2026-06-21 18:51:50,911: INFO/MainProcess] Task scan_worker.ai_bom_estimation[4a5cb8b3-1be1-41c5-bd9b-22e9dc07ba1f] succeeded in 3.3257537910249084s: 0.08102331207129373
+[2026-06-21 18:51:51,727: INFO/MainProcess] Task scan_worker.ai_bom[4bac3ccc-ac6e-43d4-b711-26f69c106746] received
+[2026-06-21 18:51:51,730: WARNING/MainProcess] 📦 Cloning https://github.com/openai/openai-quickstart-python → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_1wrl01fg Branch:master
+[2026-06-21 18:51:52,862: WARNING/MainProcess] Running AI-BOM source code scanner ...
+[2026-06-21 18:51:52,883: WARNING/MainProcess] AI-BOM Source Scanner: scanned 6 source/manifest files and 0 model files, found 
+9 raw detections
+[2026-06-21 18:51:52,883: WARNING/MainProcess] AI-BOM Source Scanner: 9 unique AI components after dedup
+[2026-06-21 18:51:52,883: WARNING/MainProcess] Source scanner found 9 AI component detections
+[2026-06-21 18:51:52,887: WARNING/MainProcess] Generated CycloneDX AI-BOM with 9 components
+[2026-06-21 18:51:52,888: WARNING/MainProcess] Getting AI Component Output Model ....
+[2026-06-21 18:51:52,889: WARNING/MainProcess] Getting Output Model ....
+[2026-06-21 18:51:52,914: WARNING/MainProcess] ✅ CVE cache HIT from MongoDB, count: 60
+[2026-06-21 18:51:52,917: WARNING/MainProcess] CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+[2026-06-21 18:51:52,918: WARNING/MainProcess] Creating Output Model ....
+[2026-06-21 18:51:52,929: WARNING/MainProcess] Final Vulnerability Model created successfully
+[2026-06-21 18:51:52,929: WARNING/MainProcess] Response Model created successfully
+[2026-06-21 18:51:52,930: WARNING/MainProcess] Output Model generated successfully
+[2026-06-21 18:51:52,930: WARNING/MainProcess] AI Component Output Model generated successfully
+[2026-06-21 18:51:52,995: WARNING/MainProcess] ✅ Map-reduce cache HIT for hash c97b18c66ada541f...
+[2026-06-21 18:51:52,997: WARNING/MainProcess] Vulnerabilities from LLM enrichment: 9
+[2026-06-21 18:51:52,997: WARNING/MainProcess]  🤖 Vulnerability #1: Hardcoded system prompt in README.md reveals training 
+configuration
+[2026-06-21 18:51:52,998: WARNING/MainProcess]  🤖 Vulnerability #2: Hardcoded system prompt in Flask example app reveals 
+training configuration
+[2026-06-21 18:51:52,998: WARNING/MainProcess]  🤖 Vulnerability #3: Hardcoded system prompt in chat‑basic example app reveals 
+training configuration
+[2026-06-21 18:51:52,998: WARNING/MainProcess]  🤖 Vulnerability #4: Hardcoded system prompt in assistant‑basic example reveals
+training configuration
+[2026-06-21 18:51:52,998: WARNING/MainProcess]  🤖 Vulnerability #5: Hardcoded system prompt in functions example reveals 
+training configuration
+[2026-06-21 18:51:52,999: WARNING/MainProcess]  🤖 Vulnerability #6: OpenAI SDK used without model card or lineage information
+[2026-06-21 18:51:52,999: WARNING/MainProcess]  🤖 Vulnerability #7: OpenAI SDK used without model card or lineage information
+[2026-06-21 18:51:53,000: WARNING/MainProcess]  🤖 Vulnerability #8: OpenAI SDK used without model card or lineage information
+[2026-06-21 18:51:53,000: WARNING/MainProcess]  🤖 Vulnerability #9: OpenAI SDK used without model card or lineage information
+[2026-06-21 18:51:53,002: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-06-21 18:51:53,002: WARNING/MainProcess] Temp Dir does Exist
+[2026-06-21 18:51:53,002: WARNING/MainProcess] Removing temporary directory ...
+[2026-06-21 18:51:53,006: WARNING/MainProcess] Temporary directory removed successfully
+[2026-06-21 18:51:53,009: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,009: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,009: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,010: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,011: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,012: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,013: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,014: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,015: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,015: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,015: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,015: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,016: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,017: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,017: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,017: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,017: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,018: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,018: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,018: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,018: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,018: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,018: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,019: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,020: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,021: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,022: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,023: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,023: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,023: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,023: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,023: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,023: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,024: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,025: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,025: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,025: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,025: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,025: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,026: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,027: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,028: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-06-21 18:51:53,029: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ⚠️ Owasp top 10 LLM found in dumped,parsing it...
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ✅ Owasp top 10 LLM parsed successfully
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ⚠️ Component type found in dumped,parsing it...
+[2026-06-21 18:51:53,030: WARNING/MainProcess] ✅ Component type parsed successfully
+[2026-06-21 18:51:53,031: WARNING/MainProcess] ⚠️ Risk category found in dumped,parsing it...
+[2026-06-21 18:51:53,031: WARNING/MainProcess] ✅ Risk category parsed successfully
+[2026-06-21 18:51:53,031: WARNING/MainProcess] ⚠️ Source found in dumped,parsing it...
+[2026-06-21 18:51:53,031: WARNING/MainProcess] ✅ Source parsed successfully
+[2026-06-21 18:51:53,031: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-06-21 18:51:53,037: INFO/MainProcess] Task scan_worker.ai_bom[4bac3ccc-ac6e-43d4-b711-26f69c106746] succeeded in 1.3105572500498965s: {'results': [{'title': 'Hardcoded system prompt in README.md reveals training configuration', 'description': 'The README.md file contains a hardcoded system prompt ("You are a helpful assistant.") which may expose internal instruction design and could be used to infer model behavior or embed sensitive guidance, constituting a data privacy and training‑config exposure risk.', 'impact': 'High', 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'Externalize prompts to a secure configuration store, avoid embedding sensitive instructions in source files, and review prompts for any confidential information before committing.', 'component_name': 'README.md', 'component_type': 'prompt_asset', 'framework': 'prompt', 'version': None, 'source': 'local', 'license': None, 'location': 'README.md', 'snippet': '{"role": "system", "content": "You are a helpful assistant."}', 'risk_category': 'data_privacy_training_config', 'owasp_top_10_llm': {...}, 'cves': {...}}, {'title': 'Hardcoded system prompt in...', ...}]}
+
+worker: Warm shutdown (MainProcess)
+
+worker: Warm shutdown (MainProcess)

@@ -24,6 +24,34 @@ risk_score_map = {
     "critical": 4,
 }
 
+# CBOM uses the app-wide 0-10 risk scale (consistent with SBOM/SAST dashboards),
+# NOT the 0-4 risk_score_map above. Unknown/missing impact maps to 0.
+CBOM_RISK_SCORE_MAP = {
+    "critical": 9,
+    "high": 7,
+    "medium": 5,
+    "low": 2,
+}
+
+
+def _cbom_risk_score(impact) -> float:
+    return CBOM_RISK_SCORE_MAP.get((impact or "").lower(), 0)
+
+
+# AI-BOM uses the app-wide 0-10 risk scale (consistent with the single-scan
+# AI-BOM dashboard in scan.py), NOT the 0-4 risk_score_map above. Unknown/missing
+# impact maps to 0. None-safe to avoid KeyError/AttributeError on bad impact.
+AI_BOM_RISK_SCORE_MAP = {
+    "critical": 9,
+    "high": 7,
+    "medium": 5,
+    "low": 2,
+}
+
+
+def _ai_bom_risk_score(impact) -> float:
+    return AI_BOM_RISK_SCORE_MAP.get((impact or "").lower(), 0)
+
 
 def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dict]:
     findings = []
@@ -149,17 +177,44 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "id": str(finding["_id"]),
                 "title": fd.get("title", ""),
                 "description": fd.get("description", ""),
-                "impact": fd.get("impact", "low"),
-                "risk_score": risk_score_map[fd.get("impact", "low").lower()],
+                "impact": fd.get("impact") or "low",
+                "risk_score": _cbom_risk_score(fd.get("impact")),
                 "status": finding.get("finding_status", "open"),
-                "compliance_controls": fd.get("compliance_controls", []),
-                "owasp_top_10": fd.get("owasp_top_10", []),
+                "compliance_controls": fd.get("compliance_controls") or [],
+                "owasp_top_10": fd.get("owasp_top_10") or [],
                 "suggested_fix": fd.get("suggested_fix", ""),
                 "algorithm_name": fd.get("algorithm_name", ""),
                 "algorithm_type": fd.get("algorithm_type", ""),
                 "crypto_strength": fd.get("crypto_strength", ""),
                 "key_size": fd.get("key_size"),
                 "quantum_safe": fd.get("quantum_safe", False),
+                "location": fd.get("location", ""),
+                "snippet": fd.get("snippet", ""),
+                "remediation": finding.get("remediation", None),
+            })
+
+    elif scan_type == "ai_bom":
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        for finding in findings_fetched:
+            fd = finding.get("finding_data", {})
+            findings.append({
+                "id": str(finding["_id"]),
+                "title": fd.get("title", ""),
+                "description": fd.get("description", ""),
+                "impact": fd.get("impact") or "low",
+                "risk_score": _ai_bom_risk_score(fd.get("impact")),
+                "status": finding.get("finding_status", "open"),
+                "compliance_controls": fd.get("compliance_controls", []),
+                "owasp_top_10": fd.get("owasp_top_10", []),
+                "owasp_top_10_llm": fd.get("owasp_top_10_llm", []),
+                "suggested_fix": fd.get("suggested_fix", ""),
+                "asset_name": fd.get("component_name", ""),
+                "asset_type": fd.get("component_type", ""),
+                "provider": fd.get("source", ""),
+                "framework": fd.get("framework", ""),
+                "version": fd.get("version", ""),
+                "license_type": fd.get("license", ""),
+                "risk_category": fd.get("risk_category", ""),
                 "location": fd.get("location", ""),
                 "snippet": fd.get("snippet", ""),
                 "remediation": finding.get("remediation", None),

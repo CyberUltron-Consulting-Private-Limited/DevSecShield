@@ -254,13 +254,147 @@ def report(
 
 @app.command()
 def discover(
-    target: str = typer.Argument(
-        None, help="Org / repo / container / cloud target to sweep for shadow AI."
+    root: pathlib.Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Repo / project directory to sweep for shadow AI.",
+    ),
+    level: int = typer.Option(
+        4, "--level", "-l", min=1, max=5,
+        help="Scan depth: 1 filesystem, 2 docker, 3 net/env, 4 cloud IaC, 5 live.",
+    ),
+    allowlist: pathlib.Path = typer.Option(
+        None, "--allowlist", "-a", exists=True, dir_okay=False,
+        help="Allowlist YAML; discovered components not on it are flagged.",
+    ),
+    output: pathlib.Path = typer.Option(
+        None, "--output", "-o", dir_okay=False, writable=True,
+        help="Write the ScanResult JSON here (feeds the dashboard).",
+    ),
+    findings: pathlib.Path = typer.Option(
+        None, "--findings", dir_okay=False, writable=True,
+        help="Write a shadow-AI findings report (.xlsx or .pdf).",
     ),
 ) -> None:
-    """Discover shadow AI (unsanctioned models/services) across a target. (stub)"""
-    _eprint(f"discover: {_NOT_IMPLEMENTED}")
-    raise typer.Exit(code=0)
+    """Sweep a target across scan levels and flag unsanctioned shadow AI."""
+    from aibom.scan.pipeline import scan_repo
+
+    result = scan_repo(root, level=level, allowlist=allowlist)
+    _write(json.dumps(result.to_dict(), indent=2) + "\n", output)
+
+    discovered = [c for c in result.components if (c.properties or {}).get(
+        "discovery:source") or c.kind not in
+        {"model", "dataset", "framework", "prompt", "service", "infra", "secret"}]
+    unsanctioned = [f for f in result.flags if f.code == "UNSANCTIONED_COMPONENT"]
+    _eprint(
+        f"# discovered {len(discovered)} AI component(s) at level {level}; "
+        f"{len(unsanctioned)} UNSANCTIONED; risk={result.scores.get('risk_total', 0)}"
+    )
+    for f in unsanctioned:
+        _eprint(f"#   UNSANCTIONED: {f.target}")
+
+    if findings is not None:
+        from aibom.deliverables.findings import write_findings
+
+        write_findings(result, findings)
+        _eprint(f"wrote findings report -> {findings}")
+    _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
+
+
+@app.command()
+def cedar(
+    root: pathlib.Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Repo / project directory to scan and project into Cedar.",
+    ),
+    level: int = typer.Option(
+        4, "--level", "-l", min=1, max=5,
+        help="Discovery depth (same levels as `discover`).",
+    ),
+    allowlist: pathlib.Path = typer.Option(
+        None, "--allowlist", "-a", exists=True, dir_okay=False,
+        help="Allowlist YAML; sets each entity's `sanctioned` attribute.",
+    ),
+    output: pathlib.Path = typer.Option(
+        pathlib.Path("entities.json"), "--output", "-o", dir_okay=False,
+        writable=True, help="Write the Cedar entities JSON here.",
+    ),
+    policy: pathlib.Path = typer.Option(
+        pathlib.Path("policies.cedar"), "--policy", "-p", dir_okay=False,
+        writable=True, help="Write the sample Cedar policy set here.",
+    ),
+) -> None:
+    """Project the inventory into Cedar entities + a sample runtime policy set.
+
+    Thin, OPTIONAL governance layer: the BOM says what AI exists; Cedar governs
+    what each component may do at runtime. Pure consumer of ``ScanResult``.
+    """
+    from aibom.governance.cedar import write_entities, write_policy
+    from aibom.scan.pipeline import scan_repo
+
+    result = scan_repo(root, level=level, allowlist=allowlist)
+    write_entities(result, output)
+    write_policy(policy)
+    _eprint(
+        f"wrote {len(result.components)} Cedar entities -> {output}; "
+        f"policy -> {policy}"
+    )
+    _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
+
+
+@app.command()
+def dashboard(
+    root: pathlib.Path = typer.Argument(
+        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        help="Repo / project directory to scan and visualize.",
+    ),
+    level: int = typer.Option(
+        4, "--level", "-l", min=1, max=5, help="Discovery depth (see `discover`).",
+    ),
+    allowlist: pathlib.Path = typer.Option(
+        None, "--allowlist", "-a", exists=True, dir_okay=False,
+        help="Allowlist YAML for shadow-AI sanctioned/unsanctioned status.",
+    ),
+    output: pathlib.Path = typer.Option(
+        pathlib.Path("dashboard-out"), "--output", "-o", file_okay=False,
+        help="Output directory for the self-contained dashboard + scan.json.",
+    ),
+    open_browser: bool = typer.Option(
+        False, "--open", help="Open the dashboard in the default browser.",
+    ),
+) -> None:
+    """Scan + map a repo and emit a self-contained dashboard rendering it.
+
+    Writes ``<output>/index.html`` (the SPA) and ``<output>/scan.json`` (a scored
+    ScanResult WITH compliance). Open index.html via a static server (the SPA
+    fetches the co-located scan.json). No localStorage; reload re-reads the file.
+    """
+    import importlib.resources as resources
+    import shutil
+
+    import aibom.compliance as compliance
+    from aibom.scan.pipeline import scan_repo
+
+    result = scan_repo(root, level=level, allowlist=allowlist)
+    compliance.run_all(result)  # so the dashboard's compliance panel is populated
+
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "scan.json").write_text(json.dumps(result.to_dict(), indent=2) + "\n")
+    src_html = resources.files("aibom").joinpath("dashboard", "index.html")
+    with resources.as_file(src_html) as html_path:
+        shutil.copyfile(html_path, output / "index.html")
+
+    index = output / "index.html"
+    _eprint(
+        f"wrote dashboard -> {index} (+ scan.json: {len(result.components)} "
+        f"components, risk={result.scores.get('risk_normalized', 0)}/100 "
+        f"{result.scores.get('risk_band', '')})"
+    )
+    _eprint(f"# serve it:  python -m http.server -d {output}  # then open :8000")
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(index.resolve().as_uri())
+    _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
 
 
 if __name__ == "__main__":

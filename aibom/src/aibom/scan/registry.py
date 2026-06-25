@@ -78,6 +78,11 @@ class Scanner(ABC):
     #: correctness independent of import/registration order.
     order: int = 100
 
+    #: scan LEVEL (depth). 1=filesystem (default), 2=docker, 3=network/env,
+    #: 4=cloud IaC, 5=live cloud. ``scan_repo(path, level=N)`` runs scanners with
+    #: ``level <= N`` — each level is a registry entry, no special-casing (D4).
+    level: int = 1
+
     def matches(self, root: Path) -> bool:
         """Whether this scanner has anything to do for ``root`` (default: yes)."""
         return True

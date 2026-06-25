@@ -19,9 +19,13 @@ class SastScanSettingsData(BaseModel):
 class CbomScanSettingsData(BaseModel):
     scan_binaries: bool = False
 
+class AiBomScanSettingsData(BaseModel):
+    scan_binaries: bool = False
+
 class CicdScanSettingsData(BaseModel):
     sast: SastScanSettingsData | None = None
     cbom: CbomScanSettingsData | None = None
+    ai_bom: AiBomScanSettingsData | None = None
 
 
 class UpdateCicdIntegrationData(BaseModel):

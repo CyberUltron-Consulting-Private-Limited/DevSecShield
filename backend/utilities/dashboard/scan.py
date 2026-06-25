@@ -1148,6 +1148,9 @@ def generate_scan_dashboard(
             
         elif scan_type == "cbom":
             # =========== CBOM Dashboard ===========================
+            # CBOM uses the app-wide 0-10 risk scale (consistent across all CBOM surfaces).
+            # critical=9, high=7, medium=5, low=2, unknown/missing=0.
+            cbom_risk_score_for_impact = {"critical": 9, "high": 7, "medium": 5, "low": 2}
             severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             algorithm_type_distribution = defaultdict(int)
             strength_distribution = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
@@ -1155,8 +1158,16 @@ def generate_scan_dashboard(
             owasp_top_10_metrics = defaultdict(int)
             compliance_controls_metrics = defaultdict(int)
             top_risks_entries = []
-            
-            total_crypto_assets = len(results)
+
+            # 'results' is the LLM-aggregated vulnerability list (a few rows), NOT the
+            # crypto asset inventory. The real inventory is the CycloneDX components in
+            # scan.scan_data['cbom_json']['components']. Use that count for the asset
+            # card, falling back to len(results) only when cbom_json is unavailable.
+            cbom_components = []
+            if scan and isinstance(scan.scan_data, dict):
+                cbom_components = (scan.scan_data.get("cbom_json") or {}).get("components") or []
+            total_crypto_vulnerabilities = len(results)
+            total_crypto_assets = len(cbom_components) if cbom_components else total_crypto_vulnerabilities
             total_weak = 0
             total_quantum_vulnerable = 0
             total_certificates = 0
@@ -1164,7 +1175,7 @@ def generate_scan_dashboard(
 
             for vulnerability in results:
                 # severity distribution
-                impact = vulnerability.get("impact", "Low")
+                impact = vulnerability.get("impact") or "Low"
                 impact_lower = impact.lower()
                 if impact_lower in severity_distribution:
                     severity_distribution[impact_lower] += 1
@@ -1199,15 +1210,15 @@ def generate_scan_dashboard(
                     total_keys += 1
                 
                 # owasp metrics
-                for key, value in vulnerability.get("owasp_top_10", {}).items():
+                for key, value in (vulnerability.get("owasp_top_10") or {}).items():
                     owasp_top_10_metrics[value] += 1
-                
+
                 # compliance controls
-                for key, value in vulnerability.get("compliance_controls", {}).items():
+                for key, value in (vulnerability.get("compliance_controls") or {}).items():
                     compliance_controls_metrics[value] += 1
-                
+
                 # top risks entries with full vulnerability info
-                risk_score = risk_score_for_impact.get(impact_lower, 2.5)
+                risk_score = cbom_risk_score_for_impact.get(impact_lower, 0)
                 top_risks_entries.append({
                     "algorithm_name": vulnerability.get("algorithm_name", vulnerability.get("title", "Unknown")),
                     "algorithm_type": algo_type,
@@ -1217,16 +1228,25 @@ def generate_scan_dashboard(
                     "risk_score": risk_score,
                 })
 
-            # Calculate quantum readiness score
+            # Calculate quantum readiness score.
+            # The quantum_readiness distribution is built per-vulnerability (its values
+            # sum to len(results) == total_crypto_vulnerabilities), so the score must be
+            # divided by that same population, not the (larger) asset inventory count.
+            quantum_readiness_denominator = sum(quantum_readiness.values())
             quantum_readiness_score = 0
-            if total_crypto_assets > 0:
-                quantum_readiness_score = round((quantum_readiness["quantum_safe"] / total_crypto_assets) * 100, 1)
+            if quantum_readiness_denominator > 0:
+                quantum_readiness_score = round((quantum_readiness["quantum_safe"] / quantum_readiness_denominator) * 100, 1)
 
-            # Average risk score
+            # Average risk score (0-10 scale, using the standard CBOM impact mapping)
             total_findings = sum(severity_distribution.values())
             if total_findings > 0:
-                weighted = (severity_distribution["critical"] * 4 + severity_distribution["high"] * 3 + severity_distribution["medium"] * 2 + severity_distribution["low"] * 1) / total_findings
-                average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+                weighted = (
+                    severity_distribution["critical"] * cbom_risk_score_for_impact["critical"]
+                    + severity_distribution["high"] * cbom_risk_score_for_impact["high"]
+                    + severity_distribution["medium"] * cbom_risk_score_for_impact["medium"]
+                    + severity_distribution["low"] * cbom_risk_score_for_impact["low"]
+                ) / total_findings
+                average_risk_score = min(10.0, max(0.0, weighted))
             else:
                 average_risk_score = 0.0
 
@@ -1249,6 +1269,7 @@ def generate_scan_dashboard(
             return {
                 "card_data": {
                     "total_crypto_assets": total_crypto_assets,
+                    "total_crypto_vulnerabilities": total_crypto_vulnerabilities,
                     "total_weak_algorithms": total_weak,
                     "total_quantum_vulnerable": total_quantum_vulnerable,
                     "total_certificates": total_certificates,
@@ -1261,6 +1282,160 @@ def generate_scan_dashboard(
                 "strength_distribution": strength_distribution,
                 "quantum_readiness": quantum_readiness,
                 "owasp_top_10_issues": dict(owasp_top_10_metrics),
+                "compliance_controls": dict(compliance_controls_metrics),
+                "top_risks": top_risks_list,
+                "remediation_actions_required": remediation_actions_required,
+                "remediation_metrics": remediation_metrics,
+            }
+
+        elif scan_type == "ai_bom":
+            # =========== AI-BOM Dashboard ===========================
+            model_component_types = {"local_model_file", "huggingface_model", "embedding_model"}
+
+            severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            asset_type_distribution = defaultdict(int)
+            provider_distribution = defaultdict(int)
+            license_distribution = defaultdict(int)
+            risk_category_distribution = defaultdict(int)
+            owasp_top_10_llm_issues = defaultdict(int)
+            compliance_controls_metrics = defaultdict(int)
+            top_risks_entries = []
+
+            total_ai_assets = len(results)
+            # Distinct entity sets (count UNIQUE entities, not detection rows).
+            # e.g. an OpenAI SDK imported in 4 files is ONE external provider, not 4.
+            distinct_external_providers: set = set()
+            distinct_models: set = set()
+            distinct_datasets: set = set()
+            total_high_risk_assets = 0
+            total_unlicensed_assets = 0
+            assets_with_license_and_card = 0
+
+            for asset in results:
+                # severity distribution
+                impact = asset.get("impact", "Low")
+                impact_lower = (impact or "low").lower()
+                if impact_lower in severity_distribution:
+                    severity_distribution[impact_lower] += 1
+
+                # asset type distribution (from component_type)
+                component_type = (asset.get("component_type") or "unknown").lower()
+                asset_type_distribution[component_type] += 1
+
+                # provider distribution (from source)
+                provider = asset.get("source") or "unknown"
+                provider_distribution[provider] += 1
+
+                # license distribution (from license)
+                license_type = asset.get("license") or "unknown"
+                license_distribution[license_type] += 1
+
+                # risk category distribution
+                risk_category = asset.get("risk_category") or "unknown"
+                risk_category_distribution[risk_category] += 1
+
+                # Distinct entity counts.
+                # asset_name comes from the worker field 'component_name'; provider
+                # from 'source' (ModelProvider value, e.g. openai/anthropic).
+                asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
+                if component_type in model_component_types:
+                    # distinct model by (provider, asset_name)
+                    distinct_models.add((provider, asset_name))
+                if component_type == "external_provider":
+                    # distinct provider among external_provider findings
+                    distinct_external_providers.add(provider)
+                if component_type == "dataset":
+                    # distinct dataset by asset_name
+                    distinct_datasets.add(asset_name)
+
+                # high-risk assets (Critical / High impact)
+                if impact_lower in ("critical", "high"):
+                    total_high_risk_assets += 1
+
+                # unlicensed assets (license missing / unknown)
+                lic = (asset.get("license") or "").lower().strip()
+                if not lic or lic == "unknown":
+                    total_unlicensed_assets += 1
+
+                # governance readiness: assets with both license and model card
+                has_license = bool(lic) and lic != "unknown"
+                has_card = bool(asset.get("model_card") or asset.get("card"))
+                if has_license and has_card:
+                    assets_with_license_and_card += 1
+
+                # owasp top 10 llm metrics
+                for key, value in (asset.get("owasp_top_10_llm") or {}).items():
+                    owasp_top_10_llm_issues[value] += 1
+
+                # compliance controls
+                for key, value in (asset.get("compliance_controls") or {}).items():
+                    compliance_controls_metrics[value] += 1
+
+                # top risks entries
+                top_risks_entries.append({
+                    "asset_name": asset.get("component_name", asset.get("title", "Unknown")),
+                    "asset_type": component_type,
+                    "provider": provider,
+                    "license_type": license_type,
+                    "impact": impact,
+                })
+
+            # Materialize distinct entity counts.
+            total_models = len(distinct_models)
+            total_datasets = len(distinct_datasets)
+            total_external_providers = len(distinct_external_providers)
+
+            # Governance readiness score
+            governance_readiness_score = 0.0
+            if total_ai_assets > 0:
+                governance_readiness_score = round((assets_with_license_and_card / total_ai_assets) * 100, 1)
+
+            # Average risk score (normalized 0-10 scale, same as cbom)
+            total_findings = sum(severity_distribution.values())
+            if total_findings > 0:
+                weighted = (severity_distribution["critical"] * 4 + severity_distribution["high"] * 3 + severity_distribution["medium"] * 2 + severity_distribution["low"] * 1) / total_findings
+                average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+            else:
+                average_risk_score = 0.0
+
+            # Top risks sorted by impact severity
+            impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+            top_risks_list = sorted(
+                top_risks_entries,
+                key=lambda x: impact_order.get((x.get("impact") or "low").lower(), 0),
+                reverse=True,
+            )[:10]
+
+            # Remediation metrics
+            findings = get_findings_for_scan_id(scan_id=scan_id)
+            remediation_metrics = get_remediation_metrics(findings)
+            status_metrics = get_issue_status_metrics(findings)
+
+            remediation_actions_required = {
+                "total_findings": len(findings),
+                "total_fixed": status_metrics.get("fixed", 0),
+                "total_in_progress": status_metrics.get("in_progress", 0),
+                "total_not_started": status_metrics.get("not_started", 0),
+                "total_ignored": status_metrics.get("ignored", 0),
+            }
+
+            return {
+                "card_data": {
+                    "total_ai_assets": total_ai_assets,
+                    "total_models": total_models,
+                    "total_datasets": total_datasets,
+                    "total_external_providers": total_external_providers,
+                    "total_high_risk_assets": total_high_risk_assets,
+                    "total_unlicensed_assets": total_unlicensed_assets,
+                    "governance_readiness_score": governance_readiness_score,
+                    "average_risk_score": round(average_risk_score * 10) / 10,
+                },
+                "severity_distribution": severity_distribution,
+                "asset_type_distribution": dict(asset_type_distribution),
+                "provider_distribution": dict(provider_distribution),
+                "license_distribution": dict(license_distribution),
+                "risk_category_distribution": dict(risk_category_distribution),
+                "owasp_top_10_llm_issues": dict(owasp_top_10_llm_issues),
                 "compliance_controls": dict(compliance_controls_metrics),
                 "top_risks": top_risks_list,
                 "remediation_actions_required": remediation_actions_required,
