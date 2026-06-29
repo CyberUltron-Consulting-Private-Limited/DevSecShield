@@ -6,6 +6,7 @@ here (mirrors :mod:`aibom.scan.scanners`).
 from aibom.cbom.scanners import (  # noqa: F401
     algorithm_scan,
     certificate_scan,
+    pqc_scan,
     protocol_scan,
     weak_algorithm_scan,
 )
@@ -13,6 +14,7 @@ from aibom.cbom.scanners import (  # noqa: F401
 __all__ = [
     "algorithm_scan",
     "certificate_scan",
+    "pqc_scan",
     "protocol_scan",
     "weak_algorithm_scan",
 ]

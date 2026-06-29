@@ -346,7 +346,7 @@
       "epic": "cbom-backend",
       "title": "PQC readiness mapping",
       "priority": 35,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "C1",
         "C4"
