@@ -395,7 +395,7 @@
       "epic": "cbom-frontend",
       "title": "CBOM charts (theme-consistent)",
       "priority": 38,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "C8"
       ],
