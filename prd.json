@@ -299,7 +299,7 @@
       "epic": "cbom-backend",
       "title": "Protocol / TLS scanner",
       "priority": 32,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "F3"
       ],
@@ -314,7 +314,7 @@
       "epic": "cbom-backend",
       "title": "CycloneDX crypto-asset emitter (hand-built)",
       "priority": 33,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "C1",
         "C2",
