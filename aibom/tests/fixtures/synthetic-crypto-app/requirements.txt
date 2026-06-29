@@ -1,0 +1,3 @@
+# Synthetic crypto app — crypto libraries the CBOM library scanner (C1) detects.
+cryptography==42.0.5   # pyca/cryptography (RSA, AES, DES, RC4, ECB, hashes)
+pyOpenSSL==24.1.0      # OpenSSL bindings (x509, TLS)

@@ -1,0 +1,41 @@
+{
+  "fixture": "synthetic-crypto-app",
+  "description": "Hand-labeled crypto ground truth — the CBOM ORACLE for precision/recall + the chart-data/contract tests. Categories mirror CycloneDX 1.6 crypto-asset assetTypes (algorithm | certificate | protocol | related-crypto-material). Every count below is exact.",
+  "algorithms": [
+    {"name": "RSA-2048", "primitive": "pke", "key_size": 2048, "mode": null, "weak": false, "quantum_vulnerable": true, "file": "crypto_app.py"},
+    {"name": "AES-256-GCM", "primitive": "ae", "key_size": 256, "mode": "GCM", "weak": false, "quantum_vulnerable": false, "file": "crypto_app.py"},
+    {"name": "SHA-256", "primitive": "hash", "key_size": 256, "mode": null, "weak": false, "quantum_vulnerable": false, "file": "crypto_app.py"},
+    {"name": "MD5", "primitive": "hash", "key_size": 128, "mode": null, "weak": true, "quantum_vulnerable": false, "file": "crypto_app.py"},
+    {"name": "DES", "primitive": "block-cipher", "key_size": 56, "mode": "CBC", "weak": true, "quantum_vulnerable": false, "file": "crypto_app.py"},
+    {"name": "RC4", "primitive": "stream-cipher", "key_size": null, "mode": null, "weak": true, "quantum_vulnerable": false, "file": "crypto_app.py"},
+    {"name": "AES-128-ECB", "primitive": "block-cipher", "key_size": 128, "mode": "ECB", "weak": true, "quantum_vulnerable": false, "file": "crypto_app.py"},
+    {"name": "RSA-1024", "primitive": "pke", "key_size": 1024, "mode": null, "weak": true, "quantum_vulnerable": true, "file": "crypto_app.py"}
+  ],
+  "certificates": [
+    {"name": "cert.pem", "self_signed": true, "subject": "CN=synthetic-crypto-app.test", "signature_algorithm": "sha256WithRSAEncryption", "key_size": 2048, "file": "cert.pem"}
+  ],
+  "protocols": [
+    {"name": "TLS", "version": "1.0", "weak": true, "cipher": "ECDHE-RSA-AES128-SHA", "file": "tls_config.py"}
+  ],
+  "related_crypto_material": [
+    {"name": "hardcoded-private-key", "kind": "private-key", "algorithm": "RSA-2048", "file": "crypto_app.py"}
+  ],
+  "weak_algorithms": ["MD5", "DES", "RC4", "AES-128-ECB", "RSA-1024"],
+  "strong_algorithms": ["RSA-2048", "AES-256-GCM", "SHA-256"],
+  "quantum_vulnerable": ["RSA-2048", "RSA-1024"],
+  "pqc_migration_targets": {
+    "RSA-2048": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)",
+    "RSA-1024": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+  },
+  "counts": {
+    "algorithms": 8,
+    "strong_algorithms": 3,
+    "weak_algorithms": 5,
+    "certificates": 1,
+    "self_signed_certificates": 1,
+    "protocols": 1,
+    "weak_protocols": 1,
+    "related_crypto_material": 1,
+    "quantum_vulnerable": 2
+  }
+}

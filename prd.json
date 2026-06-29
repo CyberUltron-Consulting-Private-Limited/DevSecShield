@@ -35,7 +35,7 @@
       "epic": "foundations",
       "title": "CBOM synthetic labeled fixture + manifest (crypto assets)",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependencies": [],
       "acceptanceCriteria": [
         "tests/fixtures/synthetic-crypto-app/ uses RSA-2048, AES-256-GCM, SHA-256 (strong) AND MD5, DES, RC4, ECB, RSA-1024 (weak); includes a self-signed cert.pem, a TLS 1.0 config, and a hardcoded private key",
