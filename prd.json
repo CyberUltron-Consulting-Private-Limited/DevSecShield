@@ -425,7 +425,7 @@
       "epic": "integration",
       "title": "Register AIBOM + CBOM as peer scanners (backend orchestration)",
       "priority": 50,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "A8",
         "C8"

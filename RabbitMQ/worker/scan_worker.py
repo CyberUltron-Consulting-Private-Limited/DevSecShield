@@ -620,39 +620,40 @@ try:
 
             state_update_writer = StateUpdateWriter(self)
 
-            # STEP [ 2 ] : =========== Initialize the agent , and run the agent ======================
+            # STEP [ 2 ] : ===== Resolve the input to a local directory, then run
+            # the reconciled clinithread-aibom CBOM engine via the native adapter
+            # (lanes intact: scanners flag -> scorer weights -> compliance queries
+            # the graph -> reporter renders). CBOMAgent is reused ONLY to clone /
+            # extract the input into a directory and to keep the existing bucket
+            # cleanup in `finally`. The adapter returns the CBOM run-object
+            # (results + cbom_json + duration_of_scan, plus the additive
+            # cbom_compliance/cbom_scores/cbom_distributions chart payload, and the
+            # legacy per-row keys the dashboard + findings pages already read).
+            from aibom.integrations.cbom_devsecshield import (
+                scan_crypto_to_devsecshield,
+            )
+
+            def _progress(pct: float, message: str) -> None:
+                state_update_writer.write_progress_percentage(pct)
+
             if repo_context:
                 agent = CBOMAgent(
                     context=repo_context,
                     scan_binaries=scan_binaries,
                     state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()
-                parsed_output = agent.to_dict_list(result)
-                cbom_json = agent.get_cyclonedx_cbom()
-                end_time = time.time()
-                duration_of_scan = end_time - start_time
-                return {
-                    "results": parsed_output,
-                    "cbom_json": cbom_json,
-                    "duration_of_scan": duration_of_scan,
-                }
+                return scan_crypto_to_devsecshield(
+                    str(agent.directory), level=4, progress=_progress
+                )
             elif zip_context:
                 agent = CBOMAgent(
                     zip_context=zip_context,
                     scan_binaries=scan_binaries,
                     state_update_writer=state_update_writer,
                 )
-                result = agent.run_agent()
-                parsed_output = agent.to_dict_list(result)
-                cbom_json = agent.get_cyclonedx_cbom()
-                end_time = time.time()
-                duration_of_scan = end_time - start_time
-                return {
-                    "results": parsed_output,
-                    "cbom_json": cbom_json,
-                    "duration_of_scan": duration_of_scan,
-                }
+                return scan_crypto_to_devsecshield(
+                    str(agent.directory), level=4, progress=_progress
+                )
             elif file_context:
                 agent = CBOMAgent(
                     cbom_file_context=file_context,
