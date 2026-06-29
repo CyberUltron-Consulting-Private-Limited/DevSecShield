@@ -441,7 +441,7 @@
       "epic": "integration",
       "title": "Scanner-list + trigger UI for both (theme-consistent)",
       "priority": 51,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "I1",
         "A13",
