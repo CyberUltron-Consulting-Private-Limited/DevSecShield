@@ -1,0 +1,37 @@
+# Risk weights for the CBOM scorer (config-driven; edit without touching code).
+#
+# A peer of risk-weights.yaml for the crypto lane. The CBOM scanners EMIT flags
+# (C5 weak-crypto, C6 quantum-vulnerable, the C8 expired-certificate); this file
+# WEIGHTS them into a per-component severity. Per-component flags STACK exactly
+# as in the AIBOM scorer: the scorer sums every flag raised against a crypto
+# asset, then maps the stacked raw weight to a severity band. So an RSA-1024 key
+# that is BOTH weak-by-size (8) AND quantum-vulnerable (4) sums to 12 -> high.
+
+default: 1          # weight for any flag not listed below
+
+flags:
+  # ── weak crypto -> HIGH (a present-day break; SARIF error) ──
+  WEAK_ALGORITHM: 8       # MD5/SHA-1/DES/3DES/RC4/RC2/Blowfish (deprecated corpus)
+  WEAK_CIPHER_MODE: 8     # ECB — leaks plaintext structure
+  WEAK_KEY_SIZE: 8        # RSA/DSA/DH below the 2048-bit floor
+  WEAK_PROTOCOL: 8        # TLS < 1.2 / SSL (RFC 8996)
+  EXPIRED_CERTIFICATE: 8  # an X.509 certificate past notValidAfter
+  # ── quantum-vulnerable -> MEDIUM (a future exposure to migrate; SARIF warning) ──
+  QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
+
+# Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
+# A crypto asset with no flags scores 0 -> low (the inventory floor; a strong
+# RSA-2048-without-the-q-v-flag, AES-GCM, SHA-256, a valid certificate).
+severity:
+  critical: 13      # >= 13 -> critical (heavy stacking, e.g. expired+weak cert = 16)
+  high: 8           # >= 8  -> high     (any weak crypto, or an expired certificate)
+  medium: 4         # >= 4  -> medium   (quantum-vulnerable but otherwise strong)
+  low: 1            # >= 1  -> low
+
+# Global 0-100 score SCALE (same LOCKED formula as the AIBOM scorer):
+#   risk_normalized = min(100, round(risk_total / max_raw * 100, 1))
+# `max_raw` omitted -> auto-computed as the sum of the flag weights above.
+scale:
+  bands:
+    low: 33         # 0-33  -> low
+    medium: 66      # 34-66 -> medium;  67-100 -> high

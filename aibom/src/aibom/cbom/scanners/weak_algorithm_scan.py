@@ -9,14 +9,17 @@ the pure predicate in :mod:`aibom.cbom.weakness`. It computes no risk and emits
 no components: the C8 scorer WEIGHTS these flags; the C4 emitter ignores them.
 
 Flagged: MD5/SHA-1/DES/3DES/RC4/RC2/Blowfish (deprecated corpus), RSA/DSA/DH
-keys below 2048 bits, ECB cipher mode, and TLS < 1.2 / SSL protocols. Strong
-assets (RSA-2048+, AES-GCM, SHA-256, TLS 1.2+) are left unflagged.
+keys below 2048 bits, ECB cipher mode, TLS < 1.2 / SSL protocols, and X.509
+certificates past their notValidAfter date. Strong assets (RSA-2048+, AES-GCM,
+SHA-256, TLS 1.2+, valid certificates) are left unflagged.
 """
 
 from __future__ import annotations
 
+from datetime import date
+
 from aibom.cbom.registry import cbom_register
-from aibom.cbom.weakness import weak_finding
+from aibom.cbom.weakness import cert_expiry_finding, weak_finding
 from aibom.scan.registry import ScanContext, Scanner
 
 
@@ -29,8 +32,13 @@ class WeakCryptoScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
+        # A single reference date for the whole scan keeps every cert-expiry
+        # decision consistent within one run.
+        today = date.today()
         for comp in ctx.components:
-            finding = weak_finding(comp)
+            # Algorithm/mode/key/protocol weakness OR certificate expiry — a
+            # crypto asset is at most one of these kinds, so one flag per asset.
+            finding = weak_finding(comp) or cert_expiry_finding(comp, today)
             if finding is None:
                 continue
             code, severity, message = finding

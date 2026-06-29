@@ -114,3 +114,66 @@ def test_cbom_certificate_scanner_not_in_aibom_registry() -> None:
     from aibom.scan.registry import SCANNERS
 
     assert not any(s.name == "crypto_certificate" for s in SCANNERS)
+
+
+# --------------------------------------------------------------------------- #
+# C8 — expired-certificate detection (the cert-expiry weakness flag).
+# --------------------------------------------------------------------------- #
+from datetime import date  # noqa: E402
+
+from aibom.cbom.weakness import EXPIRED_CERTIFICATE, cert_expiry_finding  # noqa: E402
+from aibom.model.component import CryptoAssetComponent  # noqa: E402
+
+
+def _cert(ref: str, name: str, not_after: str | None) -> CryptoAssetComponent:
+    props = {"crypto:assetType": "certificate"}
+    if not_after is not None:
+        props["crypto:notValidAfter"] = not_after
+    return CryptoAssetComponent(bom_ref=ref, name=name, properties=props)
+
+
+def test_expired_cert_is_flagged_high() -> None:
+    comp = _cert("c1", "old.pem", "2000-01-01T00:00:00Z")
+    finding = cert_expiry_finding(comp, date(2026, 6, 29))
+    assert finding is not None
+    code, severity, _ = finding
+    assert code == EXPIRED_CERTIFICATE
+    assert severity == "error"  # SARIF error == High
+
+
+def test_valid_cert_is_not_flagged() -> None:
+    comp = _cert("c2", "good.pem", "2099-01-01T00:00:00Z")
+    assert cert_expiry_finding(comp, date(2026, 6, 29)) is None
+
+
+def test_cert_expiring_today_is_not_yet_expired() -> None:
+    # notValidAfter == today is still valid (expiry is strict past-tense).
+    comp = _cert("c3", "edge.pem", "2026-06-29T23:59:59Z")
+    assert cert_expiry_finding(comp, date(2026, 6, 29)) is None
+
+
+def test_cert_without_expiry_is_not_flagged() -> None:
+    assert cert_expiry_finding(_cert("c4", "noexp.pem", None), date(2026, 6, 29)) is None
+
+
+def test_malformed_expiry_never_raises() -> None:
+    comp = _cert("c5", "junk.pem", "not-a-date")
+    assert cert_expiry_finding(comp, date(2026, 6, 29)) is None
+
+
+def test_non_certificate_asset_is_ignored() -> None:
+    comp = CryptoAssetComponent(
+        bom_ref="a1",
+        name="MD5",
+        properties={"crypto:assetType": "algorithm"},
+    )
+    assert cert_expiry_finding(comp, date(2026, 6, 29)) is None
+
+
+def test_fixture_cert_is_valid_so_unflagged_in_pipeline() -> None:
+    # The fixture cert.pem is valid (notAfter 2027); scan_crypto raises no
+    # EXPIRED_CERTIFICATE flag for it.
+    from aibom.cbom.pipeline import scan_crypto
+
+    result = scan_crypto(_FX)
+    assert not [f for f in result.flags if f.code == EXPIRED_CERTIFICATE]

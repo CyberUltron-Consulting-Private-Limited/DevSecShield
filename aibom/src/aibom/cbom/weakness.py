@@ -22,6 +22,8 @@ acceptance criterion "weak crypto -> high".
 
 from __future__ import annotations
 
+from datetime import date
+
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, WEAK_ALGORITHMS
 from aibom.model.component import AIComponent
 
@@ -30,6 +32,8 @@ WEAK_ALGORITHM = "WEAK_ALGORITHM"
 WEAK_CIPHER_MODE = "WEAK_CIPHER_MODE"
 WEAK_KEY_SIZE = "WEAK_KEY_SIZE"
 WEAK_PROTOCOL = "WEAK_PROTOCOL"
+# An X.509 certificate past its notValidAfter date (C8: "expired cert -> high").
+EXPIRED_CERTIFICATE = "EXPIRED_CERTIFICATE"
 
 WEAK_CRYPTO_CODES = frozenset(
     {WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL}
@@ -155,11 +159,56 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
     return None
 
 
+def _cert_not_after_date(raw: str) -> date | None:
+    """Parse a certificate ``crypto:notValidAfter`` value to a date.
+
+    C2 captures it as an ISO-8601 ``YYYY-MM-DDThh:mm:ssZ`` string; only the
+    date is needed for an expiry comparison. Returns ``None`` (never raises) on a
+    malformed value, so a garbled cert can never crash the scan.
+    """
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+def cert_expiry_finding(
+    component: AIComponent, today: date
+) -> tuple[str, str, str] | None:
+    """Return an ``EXPIRED_CERTIFICATE`` finding if the cert is past expiry, else None.
+
+    Pure: depends only on the component's ``crypto:notValidAfter`` property and
+    the supplied ``today`` reference date (the scanner passes ``date.today()``;
+    tests pass a fixed date so the predicate stays deterministic). SARIF
+    ``error`` (== High impact), matching the criterion "expired cert -> high".
+    A certificate with no parseable expiry, or one still valid, is not flagged.
+    """
+    if component.kind != "crypto_asset":
+        return None
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "certificate":
+        return None
+    not_after = _cert_not_after_date(props.get("crypto:notValidAfter", ""))
+    if not_after is None or not_after >= today:
+        return None
+    return (
+        EXPIRED_CERTIFICATE,
+        _SEV,
+        f"Expired X.509 certificate {component.name}: notValidAfter "
+        f"{not_after.isoformat()} is in the past; rotate/reissue and re-pin "
+        f"trust anchors before relying on it.",
+    )
+
+
 __all__ = [
     "WEAK_ALGORITHM",
     "WEAK_CIPHER_MODE",
     "WEAK_KEY_SIZE",
     "WEAK_PROTOCOL",
+    "EXPIRED_CERTIFICATE",
     "WEAK_CRYPTO_CODES",
     "weak_finding",
+    "cert_expiry_finding",
 ]
