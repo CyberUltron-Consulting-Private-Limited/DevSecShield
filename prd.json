@@ -471,7 +471,7 @@
       "epic": "integration",
       "title": "E2E click-to-result for both scanners",
       "priority": 53,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "I2",
         "I3"

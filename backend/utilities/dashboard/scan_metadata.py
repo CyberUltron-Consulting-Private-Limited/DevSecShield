@@ -120,8 +120,25 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
 
         # Extract cbom_json from scan_data (follows IAC dependency_diagram pattern)
         cbom_json = None
-        if scan.scan_data and isinstance(scan.scan_data, dict) and "cbom_json" in scan.scan_data:
-            cbom_json = scan.scan_data["cbom_json"]
+        # Additive chart/compliance payload produced by the reconciled aibom CBOM
+        # lane (I1). The GET-scan `data` field only carries the findings LIST, and
+        # the CbomCryptoCharts (C9) read `cbom_distributions`/`cbom_compliance`
+        # from scan_metadata — so surface them here, mirroring the ai_bom branch.
+        # Absent on legacy worker CBOM scans (produced before the reconcile), in
+        # which case the C9 charts simply don't render and the legacy
+        # CbomDashboardCharts take over.
+        cbom_distributions = None
+        cbom_compliance = None
+        cbom_scores = None
+        if scan.scan_data and isinstance(scan.scan_data, dict):
+            if "cbom_json" in scan.scan_data:
+                cbom_json = scan.scan_data["cbom_json"]
+            if "cbom_distributions" in scan.scan_data:
+                cbom_distributions = scan.scan_data["cbom_distributions"]
+            if "cbom_compliance" in scan.scan_data:
+                cbom_compliance = scan.scan_data["cbom_compliance"]
+            if "cbom_scores" in scan.scan_data:
+                cbom_scores = scan.scan_data["cbom_scores"]
 
         return {
             "repo_url": repo_url,
@@ -130,6 +147,9 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "cbom_file_used": cbom_file_used,
             "scan_binaries": scan_binaries,
             "cbom_json": cbom_json,
+            "cbom_distributions": cbom_distributions,
+            "cbom_compliance": cbom_compliance,
+            "cbom_scores": cbom_scores,
         }
 
     elif scan_type == "ai_bom":
