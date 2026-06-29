@@ -1,0 +1,563 @@
+{
+ "ai_bom_json": {
+  "bomFormat": "CycloneDX",
+  "components": [
+   {
+    "bom-ref": "modelref-all-minilm-l6-v2",
+    "licenses": [
+     {
+      "license": {
+       "id": "Apache-2.0"
+      }
+     }
+    ],
+    "modelCard": {
+     "modelParameters": {
+      "approach": {
+       "type": "self-supervised"
+      },
+      "architectureFamily": "transformer",
+      "modelArchitecture": "MiniLM (BERT-family)",
+      "task": "sentence-embedding"
+     }
+    },
+    "name": "all-MiniLM-L6-v2",
+    "pedigree": {
+     "ancestors": [
+      {
+       "name": "MiniLM (distillation teacher)",
+       "type": "machine-learning-model"
+      }
+     ]
+    },
+    "properties": [
+     {
+      "name": "model:reference_type",
+      "value": "usage"
+     }
+    ],
+    "publisher": "sentence-transformers",
+    "type": "machine-learning-model"
+   },
+   {
+    "bom-ref": "modelref-claude-3-5-sonnet-20241022",
+    "licenses": [
+     {
+      "license": {
+       "name": "LicenseRef-proprietary"
+      }
+     }
+    ],
+    "modelCard": {
+     "modelParameters": {
+      "architectureFamily": "transformer",
+      "modelArchitecture": "Claude (proprietary)",
+      "task": "chat/completion"
+     }
+    },
+    "name": "claude-3-5-sonnet-20241022",
+    "properties": [
+     {
+      "name": "model:reference_type",
+      "value": "usage"
+     }
+    ],
+    "publisher": "Anthropic",
+    "type": "machine-learning-model"
+   },
+   {
+    "bom-ref": "modelref-gpt-4o",
+    "licenses": [
+     {
+      "license": {
+       "name": "LicenseRef-proprietary"
+      }
+     }
+    ],
+    "modelCard": {
+     "modelParameters": {
+      "architectureFamily": "transformer",
+      "modelArchitecture": "GPT (proprietary)",
+      "task": "chat/completion"
+     }
+    },
+    "name": "gpt-4o",
+    "properties": [
+     {
+      "name": "model:reference_type",
+      "value": "usage"
+     }
+    ],
+    "publisher": "OpenAI",
+    "type": "machine-learning-model"
+   },
+   {
+    "bom-ref": "lib-anthropic",
+    "licenses": [
+     {
+      "license": {
+       "id": "MIT"
+      }
+     }
+    ],
+    "name": "anthropic",
+    "purl": "pkg:pypi/anthropic",
+    "type": "library"
+   },
+   {
+    "bom-ref": "lib-chromadb",
+    "licenses": [
+     {
+      "license": {
+       "id": "Apache-2.0"
+      }
+     }
+    ],
+    "name": "chromadb",
+    "purl": "pkg:pypi/chromadb@0.5.0",
+    "type": "library",
+    "version": "0.5.0"
+   },
+   {
+    "bom-ref": "lib-langchain",
+    "licenses": [
+     {
+      "license": {
+       "id": "MIT"
+      }
+     }
+    ],
+    "name": "langchain",
+    "purl": "pkg:pypi/langchain",
+    "type": "library"
+   },
+   {
+    "bom-ref": "lib-numpy",
+    "licenses": [
+     {
+      "license": {
+       "id": "BSD-3-Clause"
+      }
+     }
+    ],
+    "name": "numpy",
+    "purl": "pkg:pypi/numpy@1.26.4",
+    "type": "library",
+    "version": "1.26.4"
+   },
+   {
+    "bom-ref": "lib-openai",
+    "licenses": [
+     {
+      "license": {
+       "id": "Apache-2.0"
+      }
+     }
+    ],
+    "name": "openai",
+    "purl": "pkg:pypi/openai",
+    "type": "library"
+   },
+   {
+    "bom-ref": "lib-pydantic",
+    "licenses": [
+     {
+      "license": {
+       "id": "MIT"
+      }
+     }
+    ],
+    "name": "pydantic",
+    "purl": "pkg:pypi/pydantic@2.7.0",
+    "type": "library",
+    "version": "2.7.0"
+   },
+   {
+    "bom-ref": "lib-requests",
+    "licenses": [
+     {
+      "license": {
+       "id": "Apache-2.0"
+      }
+     }
+    ],
+    "name": "requests",
+    "purl": "pkg:pypi/requests@2.31.0",
+    "type": "library",
+    "version": "2.31.0"
+   },
+   {
+    "bom-ref": "lib-torch",
+    "licenses": [
+     {
+      "license": {
+       "id": "BSD-3-Clause"
+      }
+     }
+    ],
+    "name": "torch",
+    "purl": "pkg:pypi/torch@2.2.0",
+    "type": "library",
+    "version": "2.2.0"
+   },
+   {
+    "bom-ref": "secret-6363250126",
+    "name": "openai_api_key",
+    "properties": [
+     {
+      "name": "discovery:source",
+      "value": "app.py"
+     },
+     {
+      "name": "secret:kind",
+      "value": "openai_api_key"
+     },
+     {
+      "name": "secret:masked",
+      "value": "sk-FAK\u2026(47 chars)"
+     }
+    ],
+    "type": "data"
+   },
+   {
+    "bom-ref": "modelfile-model.safetensors",
+    "hashes": [
+     {
+      "alg": "SHA-256",
+      "content": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     }
+    ],
+    "name": "model.safetensors",
+    "properties": [
+     {
+      "name": "model:weight_file",
+      "value": "true"
+     }
+    ],
+    "type": "machine-learning-model"
+   }
+  ],
+  "dependencies": [
+   {
+    "dependsOn": [
+     "lib-chromadb"
+    ],
+    "ref": "modelref-all-minilm-l6-v2"
+   },
+   {
+    "dependsOn": [
+     "lib-anthropic"
+    ],
+    "ref": "modelref-claude-3-5-sonnet-20241022"
+   },
+   {
+    "dependsOn": [
+     "lib-openai"
+    ],
+    "ref": "modelref-gpt-4o"
+   }
+  ],
+  "metadata": {
+   "component": {
+    "name": "synthetic-ai-app",
+    "type": "application"
+   },
+   "properties": [
+    {
+     "name": "regulatory:disclaimer",
+     "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+    }
+   ],
+   "timestamp": "2026-06-21T00:00:00Z",
+   "tools": [
+    {
+     "name": "clinithread-aibom",
+     "version": "0.1.0"
+    }
+   ]
+  },
+  "serialNumber": "urn:uuid:2a40cc01-cea4-54e1-a71a-03db2edd28e0",
+  "specVersion": "1.6",
+  "version": 1
+ },
+ "results": [
+  {
+   "compliance_controls": [],
+   "component_name": "openai_api_key",
+   "component_type": "external_provider",
+   "description": "Hardcoded openai_api_key detected in app.py (sk-FAK\u2026(47 chars)); move it to a secret manager / env var.",
+   "framework": null,
+   "impact": "Critical",
+   "license": null,
+   "location": "app.py",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM02": "LLM02:2025 - Sensitive Information Disclosure"
+   },
+   "risk_category": "model_theft_exposure",
+   "snippet": "",
+   "source": "openai",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "openai_api_key",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "all-MiniLM-L6-v2",
+   "component_type": "local_model_file",
+   "description": "Inventoried AI component (model).",
+   "framework": null,
+   "impact": "Low",
+   "license": "Apache-2.0",
+   "location": "",
+   "model_card": {
+    "approach_type": "self-supervised",
+    "architecture_family": "transformer",
+    "model_architecture": "MiniLM (BERT-family)",
+    "pedigree_ancestors": [
+     {
+      "name": "MiniLM (distillation teacher)"
+     }
+    ],
+    "task": "sentence-embedding"
+   },
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM08": "LLM08:2025 - Vector and Embedding Weaknesses"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "local",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "all-MiniLM-L6-v2",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "anthropic",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "anthropic",
+   "impact": "Low",
+   "license": "MIT",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM03": "LLM03:2025 - Supply Chain"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "anthropic",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "anthropic",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "chromadb",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "chromadb",
+   "impact": "Low",
+   "license": "Apache-2.0",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM08": "LLM08:2025 - Vector and Embedding Weaknesses"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "chromadb",
+   "version": "0.5.0"
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "claude-3-5-sonnet-20241022",
+   "component_type": "local_model_file",
+   "description": "Inventoried AI component (model).",
+   "framework": null,
+   "impact": "Low",
+   "license": "LicenseRef-proprietary",
+   "location": "",
+   "model_card": {
+    "architecture_family": "transformer",
+    "model_architecture": "Claude (proprietary)",
+    "task": "chat/completion"
+   },
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "anthropic",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "claude-3-5-sonnet-20241022",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "gpt-4o",
+   "component_type": "local_model_file",
+   "description": "Inventoried AI component (model).",
+   "framework": null,
+   "impact": "Low",
+   "license": "LicenseRef-proprietary",
+   "location": "",
+   "model_card": {
+    "architecture_family": "transformer",
+    "model_architecture": "GPT (proprietary)",
+    "task": "chat/completion"
+   },
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "openai",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "gpt-4o",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "langchain",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "langchain",
+   "impact": "Low",
+   "license": "MIT",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM03": "LLM03:2025 - Supply Chain",
+    "LLM06": "LLM06:2025 - Excessive Agency"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "langchain",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "model.safetensors",
+   "component_type": "external_provider",
+   "description": "Inventoried AI component (model_file).",
+   "framework": null,
+   "impact": "Low",
+   "license": null,
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "model.safetensors",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "numpy",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "numpy",
+   "impact": "Low",
+   "license": "BSD-3-Clause",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "numpy",
+   "version": "1.26.4"
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "openai",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "openai",
+   "impact": "Low",
+   "license": "Apache-2.0",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM03": "LLM03:2025 - Supply Chain"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "openai",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "openai",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "pydantic",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "pydantic",
+   "impact": "Low",
+   "license": "MIT",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "pydantic",
+   "version": "2.7.0"
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "requests",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "requests",
+   "impact": "Low",
+   "license": "Apache-2.0",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "requests",
+   "version": "2.31.0"
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "torch",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "torch",
+   "impact": "Low",
+   "license": "BSD-3-Clause",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "torch",
+   "version": "2.2.0"
+  }
+ ]
+}
