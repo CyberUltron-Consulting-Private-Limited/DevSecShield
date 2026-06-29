@@ -61,7 +61,8 @@ def test_clinical_imaging_flagship_and_subcategory_verdicts() -> None:
     nist = _verdicts(report, "nist_rmf")
     assert nist["GV-2"] == "pass" and nist["MP-1"] == "pass" and nist["ME-2"] == "pass"
     # process subcategories -> not_bom_evidenceable (distinct from a generic na)
-    assert nist["MG-1"] == "not_bom_evidenceable" and nist["GV-1"] == "not_bom_evidenceable"
+    assert nist["MG-1"] == "not_bom_evidenceable"
+    assert nist["GV-1"] == "not_bom_evidenceable"
 
 
 def test_coverage_excludes_non_applicable_from_denominator() -> None:

@@ -55,7 +55,8 @@ def test_flags_stack_per_component() -> None:
 def test_severity_is_not_flat() -> None:
     # The whole point: not every finding is "low".
     dist = _severity_dist("scoring-calibration")
-    assert len({b for b, n in dist.items() if n}) >= 3, f"distribution too flat: {dict(dist)}"
+    nonzero_bands = {b for b, n in dist.items() if n}
+    assert len(nonzero_bands) >= 3, f"distribution too flat: {dict(dist)}"
 
 
 def test_chroma_distribution_no_longer_all_low() -> None:

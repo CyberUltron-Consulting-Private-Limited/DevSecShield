@@ -1,0 +1,111 @@
+name: CBOM Regression Gates
+
+# Locks the CBOM (cryptography BOM) half of the pipeline, mirroring
+# aibom-gates.yml. Blocks merges on the regressions we never want back:
+#   (a) crypto detection (algorithm / certificate / protocol / weak-algo / PQC)
+#       dropping below the synthetic ground-truth and the benchmark true-miss gate,
+#   (b) any CBOM results-page chart being able to go EMPTY (the chart-data
+#       contract) or the normalizer flattening the carried-through distributions,
+#   (c) compliance tri-state collapsing OUT_OF_SCOPE into FAIL, and
+#   (d) the hand-built CycloneDX 1.6 crypto-asset BOM drifting from its golden.
+#
+# The benchmark oracle is the FROZEN cbomkit-theia snapshot committed under
+# bench/cbom/ci_baseline/ — no docker, no network, only OUR offline/deterministic
+# crypto scanner is exercised per-PR. The full LIVE benchmark vs IBM cbomkit-theia
+# runs on cbom-nightly.yml.
+
+on:
+  push:
+    branches: [main, develop, module_1, ansh]
+    paths:
+      - "aibom/src/aibom/cbom/**"
+      - "aibom/tests/test_cbom_*.py"
+      - "aibom/tests/test_crypto_fixture_manifest.py"
+      - "aibom/tests/fixtures/synthetic-crypto-app/**"
+      - "bench/cbom/**"
+      - ".github/workflows/cbom-gates.yml"
+  pull_request:
+    branches: [main, develop, module_1, ansh]
+    paths:
+      - "aibom/src/aibom/cbom/**"
+      - "aibom/tests/test_cbom_*.py"
+      - "aibom/tests/test_crypto_fixture_manifest.py"
+      - "aibom/tests/fixtures/synthetic-crypto-app/**"
+      - "bench/cbom/**"
+      - ".github/workflows/cbom-gates.yml"
+
+jobs:
+  cbom-gates:
+    name: CBOM regression gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aibom
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install aibom (+ test deps)
+        run: uv sync --all-extras --dev || uv sync
+
+      # Gate (a): crypto detection on the synthetic ground-truth manifest. The
+      # algorithm / certificate / related-crypto-material / protocol scanners must
+      # find exactly the planted strong+weak assets; the weak-algo and PQC-readiness
+      # mappings must classify MD5/DES/RC4/ECB/RSA-1024 weak and RSA/ECC as
+      # quantum-vulnerable. A detection regression on the committed fixture fails.
+      - name: Gate A — crypto detection vs synthetic ground-truth
+        run: >-
+          AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
+          tests/test_crypto_fixture_manifest.py
+          tests/test_cbom_algorithm_scan.py
+          tests/test_cbom_certificate_scan.py
+          tests/test_cbom_protocol_scan.py
+          tests/test_cbom_weak_algorithm_scan.py
+          tests/test_cbom_pqc_scan.py -v
+
+      # Gate (b): chart-data contract — the CBOM results-page charts (crypto
+      # distributions / weak-vs-strong / PQC readiness / compliance / severity)
+      # must carry non-empty arrays, and the normalizer must carry every
+      # distribution through to the API response without flattening. Any empty or
+      # dropped chart dimension fails the build (C9/C10 regression guard).
+      - name: Gate B — chart-data contract + normalizer carry-through (no empty charts)
+        run: >-
+          AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
+          tests/test_cbom_chart_data_contract.py
+          tests/test_cbom_normalize.py -v
+
+      # Golden lock: the hand-built CycloneDX 1.6 crypto-asset BOM (algorithm /
+      # certificate / protocol / related-crypto-material components with
+      # nistQuantumSecurityLevel) must match the committed golden. Unintended BOM
+      # drift fails the build.
+      - name: Gate C — golden lock (CycloneDX 1.6 crypto-asset)
+        run: AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest tests/test_cbom_cyclonedx_emit.py -v
+
+      # Gate (d): compliance tri-state — OUT_OF_SCOPE / NOT_BOM_EVIDENCEABLE must
+      # never silently become FAIL. The scorer/severity bands and the DevSecShield
+      # adapter mapping are locked here too.
+      - name: Gate D — compliance tri-state + scorer + adapter (out-of-scope != fail)
+        run: >-
+          AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
+          tests/test_cbom_compliance.py
+          tests/test_cbom_scorer.py
+          tests/test_cbom_devsecshield_adapter.py -v
+
+      # Gate (e): benchmark true-miss gate (hermetic) + crypto recall. Ours vs the
+      # FROZEN cbomkit-theia oracle on the synthetic fixture must have ZERO
+      # true-positive misses (FP-triaged) AND our-unique > 0.
+      - name: Gate E — benchmark true-miss + crypto recall (hermetic / synthetic)
+        run: AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest tests/test_cbom_benchmark_gate.py -v
+
+      # Gate (f): the same true-miss gate on 2 representative REAL repos (pyjwt,
+      # pyopenssl) cloned at a pinned SHA, diffed vs the frozen cbomkit-theia
+      # snapshots. The full 4-repo LIVE benchmark runs on cbom-nightly.yml.
+      - name: Gate F — true-miss gate on representative repos (pinned SHA)
+        run: bash ../bench/cbom/ci_repos.sh

@@ -1,8 +1,8 @@
 """CHART-DATA-CONTRACT — prevents the empty-results-page-chart regression.
 
 The AI-BOM results page renders three charts the engine must feed:
-  * OWASP donut          <- dashboard.owasp_top_10_llm_issues  (from finding.owasp_top_10_llm)
-  * Compliance Controls  <- dashboard.compliance_controls      (from ai_bom_compliance fails)
+  * OWASP donut          <- dashboard.owasp_top_10_llm_issues (finding.owasp_top_10_llm)
+  * Compliance Controls  <- dashboard.compliance_controls (from ai_bom_compliance fails)
   * Risk Metrics radar   <- dashboard.severity_distribution    (from finding.impact)
 
 These were empty because ``normalize()`` flattened ``owasp_top_10_llm`` to ``[]``.
@@ -42,7 +42,8 @@ def _dashboard_arrays(fixture: str) -> dict:
 
     _RISK = {"critical": 9, "high": 7, "medium": 5, "low": 2}
     owasp, severity = Counter(), Counter()
-    asset_types, providers, licenses, risk_categories = Counter(), Counter(), Counter(), Counter()
+    asset_types, providers = Counter(), Counter()
+    licenses, risk_categories = Counter(), Counter()
     risk_per_finding: list[int] = []
     for f in findings:
         for _key, label in (f.get("owasp_top_10_llm") or {}).items():

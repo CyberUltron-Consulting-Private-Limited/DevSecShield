@@ -63,7 +63,10 @@ def test_chroma_medical_frameworks_out_of_scope_not_fail() -> None:
 
 def test_attestation_flips_not_evidenceable_to_pass_with_evidence() -> None:
     base = run_all(scan_repo(_fx("synthetic-clinical-samd"), level=4))["gmlp"]
-    nbe = [q["id"] for q in base["requirements"] if q["verdict"] == "not_bom_evidenceable"]
+    nbe = [
+        q["id"] for q in base["requirements"]
+        if q["verdict"] == "not_bom_evidenceable"
+    ]
     assert nbe, "expected >=1 process (not_bom_evidenceable) requirement"
 
     r2 = scan_repo(_fx("synthetic-clinical-samd"), level=4)

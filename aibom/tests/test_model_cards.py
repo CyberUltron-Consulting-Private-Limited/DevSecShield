@@ -10,8 +10,6 @@ import os
 import sys
 import types
 
-import pytest
-
 from aibom.scan.parsers import model_card_enrich
 from aibom.scan.pipeline import scan_repo
 
@@ -25,7 +23,10 @@ def _fx(name: str) -> str:
 def test_all_minilm_card_populates_via_kb_no_llm() -> None:
     # No card_llm set -> KB only (deterministic, no network).
     result = scan_repo(_fx("synthetic-ai-app"), level=1)
-    minilm = [c for c in result.components if c.kind == "model" and "minilm" in c.name.lower()]
+    minilm = [
+        c for c in result.components
+        if c.kind == "model" and "minilm" in c.name.lower()
+    ]
     assert minilm, "all-MiniLM-L6-v2 reference must be detected"
     card = minilm[0].model_card
     assert card.approach_type == "self-supervised"

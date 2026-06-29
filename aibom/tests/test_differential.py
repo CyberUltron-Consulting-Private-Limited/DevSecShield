@@ -53,7 +53,8 @@ THRESHOLDS = {"provider": 0.90, "framework": 0.90, "model": 0.70}
 PROVIDERS = {
     "openai", "anthropic", "cohere", "mistral", "mistralai", "google", "googleai",
     "google-generativeai", "google.generativeai", "generativeai", "vertexai", "vertex",
-    "bedrock", "aws-bedrock", "aws bedrock", "azure-openai", "azure openai", "azureopenai",
+    "bedrock", "aws-bedrock", "aws bedrock", "azure-openai", "azure openai",
+    "azureopenai",
     "together", "together ai", "togetherai", "ollama", "huggingface", "hugging-face",
     "huggingface-transformers", "transformers", "sentence-transformers", "xenova",
     "replicate", "ai21", "groq", "fireworks", "deepseek", "perplexity", "ai-sdk",
@@ -74,7 +75,7 @@ def _norm(name: str) -> str:
     if not name:
         return ""
     n = name.strip().lower()
-    n = re.sub(r"^@[^/]+/", "", n)   # @chroma-core/openai -> openai ; @ai-sdk/openai -> openai
+    n = re.sub(r"^@[^/]+/", "", n)   # @chroma-core/openai -> openai (strip ns)
     n = n.split("/")[-1]            # huggingface/transformers -> transformers
     return n.replace("_", "-").strip()
 
@@ -108,12 +109,14 @@ def _our(fixture: str) -> dict[str, set[str]]:
 
 
 def _trusera(fixture: str) -> dict[str, set[str]]:
-    d = json.load(open(os.path.join(ORACLES, "trusera", f"{fixture}.json")))
+    with open(os.path.join(ORACLES, "trusera", f"{fixture}.json")) as fh:
+        d = json.load(fh)
     return _sets(c.get("name", "") for c in d.get("components", []))
 
 
 def _cisco(fixture: str) -> dict[str, set[str]]:
-    d = json.load(open(os.path.join(ORACLES, "cisco", f"{fixture}.json")))["aibom_analysis"]
+    with open(os.path.join(ORACLES, "cisco", f"{fixture}.json")) as fh:
+        d = json.load(fh)["aibom_analysis"]
     names = [
         it.get("name") or it.get("identifier") or ""
         for src in d["sources"].values()

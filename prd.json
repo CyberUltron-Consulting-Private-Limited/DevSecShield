@@ -517,7 +517,7 @@
       "epic": "benchmark",
       "title": "Regression lock + CI gates",
       "priority": 62,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "A13",
         "C10",

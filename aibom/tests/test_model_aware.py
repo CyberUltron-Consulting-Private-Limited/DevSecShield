@@ -25,9 +25,12 @@ def test_synthetic_libs_resolve_and_zero_library_unlicensed() -> None:
     for lib in ("numpy", "torch", "requests", "pydantic", "chromadb"):
         assert lib in fw, f"library {lib} not detected"
         assert fw[lib].licenses, f"library {lib} should resolve to a known license"
-    library_unlicensed = [c for c in r.components if c.kind == "framework" and not c.licenses]
+    library_unlicensed = [
+        c for c in r.components if c.kind == "framework" and not c.licenses
+    ]
     assert library_unlicensed == [], (
-        f"library-unlicensed must be 0 on synthetic: {[c.name for c in library_unlicensed]}"
+        f"library-unlicensed must be 0 on synthetic: "
+        f"{[c.name for c in library_unlicensed]}"
     )
 
 
@@ -54,10 +57,10 @@ def test_models_seen_by_graph_query_zero_orphans() -> None:
             continue  # chroma clone is gitignored; skip in CI
         r = scan_repo(path, level=4)
         models = [c for c in r.components if c.kind == "model"]
-        assert models, f"{fx}: NO model component visible to a graph query (the keystone defect)"
+        assert models, f"{fx}: no model component visible to a graph query (keystone)"
         endpoints = {e.src for e in r.edges} | {e.dst for e in r.edges}
         orphans = [m for m in models if m.bom_ref not in endpoints]
-        assert orphans == [], f"{fx}: orphan model nodes: {[m.name for m in orphans][:10]}"
+        assert orphans == [], f"{fx}: orphans: {[m.name for m in orphans][:10]}"
 
 
 def test_usage_vs_catalog_tagged() -> None:
@@ -65,6 +68,8 @@ def test_usage_vs_catalog_tagged() -> None:
     models = [c for c in r.components if c.kind == "model"]
     for m in models:
         rt = (m.properties or {}).get("model:reference_type")
-        assert rt in ("usage", "catalog"), f"model {m.name} missing usage/catalog tag: {rt}"
+        assert rt in ("usage", "catalog"), f"model {m.name} bad usage/catalog tag: {rt}"
     # synthetic app actually USES its models -> all usage
-    assert all((m.properties or {}).get("model:reference_type") == "usage" for m in models)
+    assert all(
+        (m.properties or {}).get("model:reference_type") == "usage" for m in models
+    )

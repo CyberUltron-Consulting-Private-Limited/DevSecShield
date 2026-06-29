@@ -116,7 +116,9 @@ def test_findings_are_the_component_inventory() -> None:
     # The 5 shadow UNSANCTIONED components surface as >= Medium-impact findings
     # (UNSANCTIONED_COMPONENT=6 -> medium under the recalibrated scorer; stacking
     # with other flags may elevate further, but never below medium).
-    flagged = [f for f in out["results"] if f["impact"] in ("Medium", "High", "Critical")]
+    flagged = [
+        f for f in out["results"] if f["impact"] in ("Medium", "High", "Critical")
+    ]
     assert len(flagged) >= 5
 
 

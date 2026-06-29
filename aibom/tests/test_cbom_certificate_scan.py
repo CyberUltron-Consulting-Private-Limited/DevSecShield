@@ -153,7 +153,8 @@ def test_cert_expiring_today_is_not_yet_expired() -> None:
 
 
 def test_cert_without_expiry_is_not_flagged() -> None:
-    assert cert_expiry_finding(_cert("c4", "noexp.pem", None), date(2026, 6, 29)) is None
+    finding = cert_expiry_finding(_cert("c4", "noexp.pem", None), date(2026, 6, 29))
+    assert finding is None
 
 
 def test_malformed_expiry_never_raises() -> None:
