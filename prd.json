@@ -1,7 +1,7 @@
 {
   "feature": "Fix AI BOM and build/fix CBOM in DevSecShield end-to-end (backend + frontend)",
   "branchName": "fix/devsecshield-aibom-cbom",
-  "notes": "RECONCILED 2026-06-29: the AIBOM track (F1,F2,F4,A1-A13,B1) is ALREADY built + CI-locked this session — those stories are passes:true; Ralph starts at F3. CBOM (F3,C1-C10) = RECONCILE the existing worker cbom_agent into the aibom/ lane design (not build fresh). Stories are right-sized for one context window each. Ralph picks the lowest-priority-number story with passes:false whose dependencies are all passes:true. Honor the Ruflo memory contract (lanes, Bedrock-only LLM, no-OSS-in-product, tri-state compliance, match-don't-invent).",
+  "notes": "RECONCILED 2026-06-29: the AIBOM track (F1,F2,F4,A1-A13,B1) is ALREADY built + CI-locked this session \u2014 those stories are passes:true; Ralph starts at F3. CBOM (F3,C1-C10) = RECONCILE the existing worker cbom_agent into the aibom/ lane design (not build fresh). Stories are right-sized for one context window each. Ralph picks the lowest-priority-number story with passes:false whose dependencies are all passes:true. Honor the Ruflo memory contract (lanes, Bedrock-only LLM, no-OSS-in-product, tri-state compliance, match-don't-invent).",
   "userStories": [
     {
       "id": "F1",
@@ -15,7 +15,7 @@
         "expected_assets.json states exact ground truth: 3 model references, 3 providers, 1 framework, 1 secret, 1 model file, 5 resolved library licenses",
         "A test loads the manifest and asserts its internal consistency"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "F2",
@@ -28,7 +28,7 @@
         "tests/fixtures/synthetic-clinical-samd/ has a chest-X-ray model with a model card (architecture, AUROC), a trained_on edge to a de-identified dataset, a deployed_at site, and an intended-use statement",
         "Enough graph facts exist for GMLP/EU/FDA checks to produce real pass/fail later"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "F3",
@@ -41,7 +41,7 @@
         "tests/fixtures/synthetic-crypto-app/ uses RSA-2048, AES-256-GCM, SHA-256 (strong) AND MD5, DES, RC4, ECB, RSA-1024 (weak); includes a self-signed cert.pem, a TLS 1.0 config, and a hardcoded private key",
         "expected_crypto.json manifest lists exact ground truth per asset category (algorithm/certificate/protocol/related-crypto-material) and which are weak/quantum-vulnerable"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "F4",
@@ -51,11 +51,11 @@
       "passes": true,
       "dependencies": [],
       "acceptanceCriteria": [
-        "aibom/enrich/ defines a provider interface for model-name/model-card enrichment with a DETERMINISTIC default backed by a known-model knowledge base (regex/AST + KB lookups) — no runtime LLM, no service credentials",
+        "aibom/enrich/ defines a provider interface for model-name/model-card enrichment with a DETERMINISTIC default backed by a known-model knowledge base (regex/AST + KB lookups) \u2014 no runtime LLM, no service credentials",
         "The interface allows a future LLM provider (Anthropic API or Bedrock) to be added later without touching callers; product code calls no LLM",
         "Tests assert KB-only enrichment works with no network or credentials"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A1",
@@ -70,7 +70,7 @@
         "scan/ registry entry detects sk-*, sk-ant-*, hf_*, AKIA*, and high-entropy key assignments; emits HARDCODED_SECRET flag severity high",
         "Detects the planted key in the synthetic fixture exactly once; none in the clinical fixture"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A2",
@@ -86,7 +86,7 @@
         "A model name in a provider's supported-model registry is tagged catalog, not used; dedupe applied",
         "On chroma the model count drops from the inflated ~46 toward the true used count; a graph query returns the model nodes"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A3",
@@ -101,12 +101,12 @@
         "model--served_by-->provider, model--depends_on-->framework, model--trained_on-->dataset edges are created where evidence exists",
         "Graph-integrity test: zero orphan model nodes; the AI Supply-Chain Graph renders correctly"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A4",
       "epic": "aibom-backend",
-      "title": "License resolver split (libs vs model refs) — fix 53 unlicensed",
+      "title": "License resolver split (libs vs model refs) \u2014 fix 53 unlicensed",
       "priority": 13,
       "passes": true,
       "dependencies": [
@@ -117,7 +117,7 @@
         "Model references get a distinct 'model-license-unknown' finding (or known-model license), never counted as 'unlicensed'",
         "On the synthetic fixture unlicensed-count is 0; on chroma it drops to true unknowns and governance lifts off 0%"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A5",
@@ -131,14 +131,14 @@
       ],
       "acceptanceCriteria": [
         "all-MiniLM-L6-v2 card populates approach/task/architectureFamily/modelArchitecture/lineage from the KB (no LLM)",
-        "Unknown models leave '—' gracefully with no LLM call; the provider interface allows an LLM fallback to be added later if a customer requires it"
+        "Unknown models leave '\u2014' gracefully with no LLM call; the provider interface allows an LLM fallback to be added later if a customer requires it"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A6",
       "epic": "aibom-backend",
-      "title": "Scorer recalibration (flag stacking + severity bands) — fix all-low risk",
+      "title": "Scorer recalibration (flag stacking + severity bands) \u2014 fix all-low risk",
       "priority": 15,
       "passes": true,
       "dependencies": [
@@ -151,7 +151,7 @@
         "Calibration: hardcoded secret->high/critical; unsanctioned external model w/o card->medium; unknown-license lib->medium; vector store->low/info",
         "Synthetic fixture yields >=1 finding in EACH severity band; chroma is no longer all-low"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A7",
@@ -167,7 +167,7 @@
         "Pure finding-type->LLM0x mapper + ScanResult.owasp distribution (ChromaDB->LLM08, hardcoded secret->LLM02, unknown-license dep->LLM03, agent w/ tools->LLM06, endpoint w/o rate limit->LLM10)",
         "Synthetic fixture asserts the expected categories; chroma shows non-empty OWASP {LLM03, LLM08, ...}"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A8",
@@ -183,7 +183,7 @@
         "normalize -> API response carries per-finding severity, the OWASP distribution, compliance {framework->verdict + per-requirement}, and the asset-type/provider/license/risk-category/risk-per-finding distributions",
         "A test asserts none of these are dropped (the flattening regression cannot recur)"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A9",
@@ -201,7 +201,7 @@
         "Verdicts are OUT_OF_SCOPE / NOT_BOM_EVIDENCEABLE / pass-fail; coverage%=pass/(pass+fail), others counted separately",
         "Clinical fixture yields real pass/fail across GMLP/EU/FDA; chroma shows GMLP/FDA/HIPAA as OUT_OF_SCOPE (not fail), NIST + supply-chain as pass/fail"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A10",
@@ -216,7 +216,7 @@
         "A requirement can be satisfied by an uploaded attestation, flipping NOT_BOM_EVIDENCEABLE -> pass-with-evidence",
         "Data path + minimal UI affordance; a test asserts the flip"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A11",
@@ -231,7 +231,7 @@
         "Asset Types, Providers, License Distribution, Risk Categories charts bind to the populated fields using the existing DevSecShield chart library + severity palette",
         "Verify in browser using dev-browser skill: all four render non-empty on a chroma scan"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A12",
@@ -246,7 +246,7 @@
         "Risk Scores per Finding, OWASP LLM Top 10, Compliance Controls, Risk by Component charts bind to populated fields, matching theme",
         "Verify in browser: all four render non-empty; OWASP shows {LLM03, LLM08, ...}; Compliance shows tri-state"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "A13",
@@ -262,7 +262,7 @@
         "Scanning the synthetic fixture (>=1 finding/severity, >=1 OWASP category, >=1 compliance gap) asserts the API carries non-empty severity[]/owasp[]/compliance[] + all distributions AND the rendered charts are non-empty",
         "The build fails if any chart can go empty"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "C1",
@@ -277,7 +277,7 @@
         "scan/ registry entry detects crypto libraries (cryptography/pyca, pycryptodome, openssl bindings, hashlib) and algorithm references (RSA, AES, SHA-2, ECDSA, MD5, DES, RC4) with key size/mode/curve where present",
         "On the synthetic crypto fixture all manifest algorithms are detected"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C2",
@@ -292,7 +292,7 @@
         "Detects .pem/.crt/.key, x509 certs (with validity/expiry), and related crypto material (private/public/secret keys, IV, salt) including the hardcoded private key",
         "Certificate expiry is captured"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C3",
@@ -307,7 +307,7 @@
         "Detects TLS/SSH protocol usage with version + cipher suites; flags the TLS 1.0 config",
         "Protocol assets carry version and cipher detail"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C4",
@@ -324,7 +324,7 @@
         "Emits CycloneDX 1.6 crypto-asset components: assetType algorithm/certificate/protocol/related-crypto-material with cryptographicProperties and nistQuantumSecurityLevel",
         "Output validates against the bundled CycloneDX 1.6 schema"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C5",
@@ -339,7 +339,7 @@
         "Flags MD5, SHA-1, DES, 3DES, RC4, RSA<2048, ECB mode, TLS<1.2 with appropriate severity (weak crypto -> high)",
         "Synthetic fixture's weak assets are all flagged; strong assets are not"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C6",
@@ -355,7 +355,7 @@
         "Quantum-vulnerable RSA/ECC/DH are graded via nistQuantumSecurityLevel and tagged with migration targets ML-KEM/ML-DSA/SLH-DSA (FIPS 203/204/205)",
         "Findings note the NIST 2030 deprecation / 2035 disallow timeline"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C7",
@@ -371,7 +371,7 @@
         "Maps findings to NIST SP 1800-38B (PQC readiness), SP 800-57 (key/cert mgmt), OMB M-23-02 (crypto inventory); optional CRA/DORA",
         "Uses the same tri-state verdict model as AIBOM"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C8",
@@ -388,7 +388,7 @@
         "Severity: weak crypto -> high; quantum-vulnerable -> medium; expired cert -> high; per-asset flags stack",
         "normalize -> API carries algorithm/weak/PQC/cert-expiry/protocol distributions + compliance (no flatten)"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C9",
@@ -403,14 +403,14 @@
         "Algorithm distribution, weak-crypto findings, PQC readiness gauge (nistQuantumSecurityLevel), certificate-expiry, and protocol/TLS charts bind to populated fields using the existing DevSecShield theme + chart library",
         "Verify in browser: all render non-empty on the crypto fixture"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "C10",
       "epic": "cbom-frontend",
       "title": "CBOM chart-data-contract tests",
       "priority": 39,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "C9"
       ],
@@ -418,7 +418,7 @@
         "Scanning the crypto fixture asserts the API carries non-empty algorithm/weak/PQC/cert/protocol arrays AND charts render non-empty",
         "Build fails if any CBOM chart can go empty"
       ],
-      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design — do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
     },
     {
       "id": "I1",
@@ -455,7 +455,7 @@
     {
       "id": "I3",
       "epic": "integration",
-      "title": "Export — CycloneDX downloads + reports (existing pattern)",
+      "title": "Export \u2014 CycloneDX downloads + reports (existing pattern)",
       "priority": 52,
       "passes": false,
       "dependencies": [
@@ -491,11 +491,11 @@
         "I1"
       ],
       "acceptanceCriteria": [
-        "bench/ harness live-runs Trusera (deterministic, no LLM) + Cisco (needs its own LLM key — oracle-only) + ours on >=10 real repos; builds a canonical-key normalizer to compare across schemas",
+        "bench/ harness live-runs Trusera (deterministic, no LLM) + Cisco (needs its own LLM key \u2014 oracle-only) + ours on >=10 real repos; builds a canonical-key normalizer to compare across schemas",
         "Per-repo + aggregate diff matrix; every oracle-only finding triaged as real-miss (fix) or documented false positive",
         "Gate: true-positive misses = 0 across all repos; OurUnique > 0"
       ],
-      "reconcileNote": "ALREADY LANDED this session (AIBOM track) — implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
     },
     {
       "id": "B2",
