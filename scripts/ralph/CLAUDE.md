@@ -8,7 +8,11 @@ You are ONE iteration of an autonomous loop with a FRESH context. Do exactly one
 
 ## Step 2 — Select ONE story
 - Choose the story with the lowest `priority` number where `passes:false` AND every id in its `dependencies` has `passes:true`.
-- State the chosen story id + title. If all stories are `passes:true`, output `<promise>COMPLETE</promise>` and stop.
+- State the chosen story id + title.
+- COMPLETION: only when EVERY story is `passes:true` AND the full BACKEND suite
+  (aibom unit + chart-data-contract + compliance tri-state + ruff + mypy) and the
+  FRONTEND (typecheck/build + dev-browser verification of the AIBOM and CBOM results
+  pages) are GREEN, output exactly `<promise>COMPLETE and tested from frontend and backend</promise>` and stop. Otherwise pick the next story.
 
 ## Step 3 — Implement only that story
 - Scope discipline: implement ONLY this story. Do not expand or pull in other stories — Ralph handles those next iteration.
