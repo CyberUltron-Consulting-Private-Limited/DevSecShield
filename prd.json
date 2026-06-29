@@ -269,7 +269,7 @@
       "epic": "cbom-backend",
       "title": "Crypto algorithm + library scanner",
       "priority": 30,
-      "passes": false,
+      "passes": true,
       "dependencies": [
         "F3"
       ],

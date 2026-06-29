@@ -67,6 +67,8 @@ ComponentKind = Literal[
     "evaluation",
     # model artifacts
     "model_file",
+    # cryptographic inventory (CBOM — CycloneDX 1.6 crypto-asset)
+    "crypto_asset",
 ]
 
 
@@ -432,6 +434,22 @@ class ModelFileComponent(_BaseComponent):
     kind: Literal["model_file"] = "model_file"
 
 
+class CryptoAssetComponent(_BaseComponent):
+    """A cryptographic asset (CBOM — CycloneDX 1.6 ``cryptographic-asset``).
+
+    Covers all four CycloneDX crypto-asset categories (algorithm, certificate,
+    protocol, related-crypto-material). The crypto-specific detail — assetType,
+    primitive, key size, mode, curve, certificate validity, protocol version,
+    weak/quantum-vulnerable flags — lives entirely in namespaced ``crypto:``
+    ``properties`` (per the repo convention: no invented top-level spec keys).
+    The C4 emitter reads those ``crypto:`` properties to build the CycloneDX
+    ``cryptoProperties`` block. Scanners EMIT these components; the scorer
+    weights, the checks query, the emitter renders — nothing crosses lanes.
+    """
+
+    kind: Literal["crypto_asset"] = "crypto_asset"
+
+
 class NotebookComponent(_BaseComponent):
     """A discovered notebook (.ipynb)."""
 
@@ -501,6 +519,7 @@ AIComponent = Annotated[
     | RerankerComponent
     | EmbeddingModelComponent
     | ModelFileComponent
+    | CryptoAssetComponent
     | NotebookComponent
     | ContainerComponent
     | CloudServiceComponent
@@ -536,6 +555,7 @@ KIND_TO_CDX: dict[str, str] = {
     "reranker": "application",
     "embedding_model": "machine-learning-model",
     "model_file": "machine-learning-model",
+    "crypto_asset": "cryptographic-asset",
     "notebook": "file",
     "container": "container",
     "cloud_service": "application",
@@ -616,6 +636,7 @@ __all__ = [
     "RerankerComponent",
     "EmbeddingModelComponent",
     "ModelFileComponent",
+    "CryptoAssetComponent",
     "NotebookComponent",
     "ContainerComponent",
     "CloudServiceComponent",
