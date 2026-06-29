@@ -7,8 +7,11 @@ runs each matching scanner over a shared
 :class:`~aibom.scan.registry.ScanContext`, and assembles a ``ScanResult``.
 
 It does NOT call the AIBOM scorer or the OWASP-LLM mapper — those are AIBOM
-concerns. The CBOM scorer/severity layer lands in C8; until then ``scores`` and
-``compliance`` are empty seams.
+concerns. The CBOM scorer/severity layer lands in C8; until then ``scores`` is an
+empty seam. The ``compliance`` seam is filled here (C7): after inventory, the
+crypto-regulatory frameworks (NIST SP 1800-38B / SP 800-57, OMB M-23-02, EU
+CRA / DORA) are mapped onto the graph with the same tri-state verdict model as
+the AIBOM lane.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from pathlib import Path
 
 # Importing the CBOM scanners package self-registers every CBOM scanner.
 import aibom.cbom.scanners  # noqa: F401
+from aibom.cbom.compliance import run_cbom_compliance
 from aibom.cbom.registry import ordered_cbom_scanners
 from aibom.model.component import MetadataComponent
 from aibom.model.result import ScanResult
@@ -46,6 +50,7 @@ def scan_crypto(path: str | Path, level: int = 1) -> ScanResult:
         properties=ctx.properties,
     )
     result.sort()
+    run_cbom_compliance(result)  # C7: fill the compliance seam (tri-state, graph-only)
     return result
 
 
