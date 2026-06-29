@@ -1,0 +1,10 @@
+# Cloned upstream repos (large; the nightly clones them at the pinned SHA).
+repos/
+# Regenerable scratch (run.sh repopulates it). The FROZEN cbomkit oracle
+# snapshots (ci_baseline/*.cbomkit.cdx.json) are the committed baseline; the
+# diff matrix lives in report.md + state/benchmark.json.
+out/
+# scratch
+__pycache__/
+*.pyc
+*.bak
