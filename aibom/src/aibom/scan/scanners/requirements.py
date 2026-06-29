@@ -1,16 +1,41 @@
-"""Scanner: ``requirements.txt`` -> framework/library components.
+"""Scanner: ``requirements.txt`` + ``pyproject.toml`` -> framework components.
 
-Adds one ``framework`` component per declared dependency. Edges from the model
-to these frameworks (``depends_on``) are added by the model-repo scanner, which
-runs after this one and can see the components added here.
+Adds one ``framework`` component per declared dependency (and per project's own
+package name), each with its license resolved (deterministic manifest) by the
+parser. ``pyproject.toml`` is the modern default for AI/agent repos — a
+``requirements.txt``-only scanner finds nothing in MCP servers, autogen, trl, etc.
+For a monorepo (e.g. the MCP reference servers, one pyproject per ``src/<server>``)
+EVERY pyproject under the root is parsed, bounded for safety.
+
+A dependency whose license could NOT be resolved (genuinely unknown — not in the
+manifest) is flagged ``FRAMEWORK_NO_LICENSE`` (advisory): a concluded license per
+component is an FDA §524B / NTIA SBOM minimum element and a NIST governance signal.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from aibom.scan.parsers.requirements import parse_requirements
+from aibom.scan.parsers.requirements import parse_pyproject, parse_requirements
 from aibom.scan.registry import ScanContext, Scanner, register
+
+# don't descend into vendored / build / virtualenv trees when collecting manifests
+_SKIP_DIRS = frozenset({
+    ".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build",
+    ".next", ".mypy_cache", ".pytest_cache", ".tox", "site-packages", "vendor",
+})
+_MAX_MANIFESTS = 200  # backstop against pathological monorepos
+
+
+def _pyprojects(root: Path) -> list[Path]:
+    out: list[Path] = []
+    for p in sorted(root.rglob("pyproject.toml")):
+        if any(part in _SKIP_DIRS for part in p.relative_to(root).parts):
+            continue
+        out.append(p)
+        if len(out) >= _MAX_MANIFESTS:
+            break
+    return out
 
 
 @register
@@ -19,11 +44,34 @@ class RequirementsScanner(Scanner):
     order = 10  # produce frameworks before the model-repo scanner links to them
 
     def matches(self, root: Path) -> bool:
-        return (root / "requirements.txt").is_file()
+        return (root / "requirements.txt").is_file() or any(
+            True for _ in root.rglob("pyproject.toml")
+        )
 
     def scan(self, ctx: ScanContext) -> None:
-        for framework in parse_requirements(ctx.root / "requirements.txt"):
+        frameworks = list(parse_requirements(ctx.root / "requirements.txt"))
+        root_pp = (ctx.root / "pyproject.toml").resolve()
+        for pp in _pyprojects(ctx.root):
+            # the repo's OWN package name is the subject, not a dependency; a
+            # sub-package's name (monorepo member, e.g. an MCP server) IS inventory.
+            frameworks.extend(parse_pyproject(pp, include_self=pp.resolve() != root_pp))
+        seen: set[str] = set()
+        for framework in frameworks:
+            if framework.bom_ref in seen:  # de-dup across manifests
+                continue
+            seen.add(framework.bom_ref)
             ctx.add_component(framework)
+            if not framework.licenses:
+                ctx.add_flag(
+                    "FRAMEWORK_NO_LICENSE",
+                    framework.bom_ref,
+                    severity="note",
+                    message=(
+                        f"No concluded license for {framework.name!r}; could not "
+                        "resolve from the SPDX manifest. Add a declared license "
+                        "(SBOM minimum element / governance signal)."
+                    ),
+                )
 
 
 __all__ = ["RequirementsScanner"]

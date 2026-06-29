@@ -33,8 +33,13 @@ _IMAGE_RE = re.compile(r"(?:image:\s*|FROM\s+)([\w./-]+(?::[\w.-]+)?)", re.IGNOR
 
 
 def _compose_files(root: Path) -> list[Path]:
-    names = {"dockerfile", "docker-compose.yml", "docker-compose.yaml",
-             "compose.yml", "compose.yaml"}
+    names = {
+        "dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+    }
     return sorted(p for p in root.iterdir() if p.is_file() and p.name.lower() in names)
 
 
@@ -58,14 +63,18 @@ class DockerScanner(Scanner):
                         if ref in seen:
                             break
                         seen.add(ref)
-                        props = {"discovery:source": path.name,
-                                 "discovery:image": image}
+                        props = {
+                            "discovery:source": path.name,
+                            "discovery:image": image,
+                        }
                         comp = (
-                            VectorStoreComponent(bom_ref=ref, name=label,
-                                                 properties=props)
+                            VectorStoreComponent(
+                                bom_ref=ref, name=label, properties=props
+                            )
                             if kind == "vector_store"
-                            else ContainerComponent(bom_ref=ref, name=label,
-                                                    properties=props)
+                            else ContainerComponent(
+                                bom_ref=ref, name=label, properties=props
+                            )
                         )
                         ctx.add_component(comp)
                         break

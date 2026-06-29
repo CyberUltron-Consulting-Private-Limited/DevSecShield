@@ -1,0 +1,143 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "8fe1fc92-8d0e-42fa-9fb3-c13f20089cc5",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:38:50Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T05:39:34Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "aws-ia/terraform-aws-bedrock": {
+        "source_name": "aws-ia/terraform-aws-bedrock",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock",
+        "components": {
+          "model": [
+            {
+              "name": "amazon.titan-text-express-v1",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf",
+              "line_number": 1468,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 0.95,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "amazon.titan-text-express-v1",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'amazon.titan-text-express-v1' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf",
+                    "start_line": 1468,
+                    "end_line": 1468,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "terraform_variable": "custom_model_id",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf"
+                ]
+              },
+              "instance_id": "amazon.titan-text-express-v1_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf_1468",
+              "confidence": 0.95
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 1,
+          "last_generated_at": "2026-06-26T05:39:34Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/aws-ia/terraform-aws-bedrock",
+          "source_ref_version": "4b74b7dd5110292cb34ca911448581153484f13f",
+          "elapsed_s": 43.14,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 1,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "model": 1
+      },
+      "total_relationships": 0,
+      "risk_score": 10,
+      "risk_severity": "low"
+    },
+    "risk": {
+      "score": 10,
+      "severity": "low",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf",
+          "line_number": 1468,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf",
+                "start_line": 1468,
+                "end_line": 1468,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

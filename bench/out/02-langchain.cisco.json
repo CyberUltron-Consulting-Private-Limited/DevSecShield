@@ -1,0 +1,1096 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "1fdb11a7-325c-4c5b-be2a-575be4638787",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T06:08:29Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T06:21:19Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "langchain-ai/langchain": {
+        "source_name": "langchain-ai/langchain",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+        "components": {
+          "dependency": [
+            {
+              "name": "langchain-core",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock",
+              "line_number": 1041,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "1.4.8",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'langchain-core' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock",
+                    "start_line": 1041,
+                    "end_line": 1041,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "1.4.8",
+                "manifest": "uv.lock",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock"
+                ]
+              },
+              "instance_id": "langchain-core_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock_1041",
+              "confidence": 1.0
+            },
+            {
+              "name": "langsmith",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock",
+              "line_number": 1232,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "0.8.18",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'langsmith' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock",
+                    "start_line": 1232,
+                    "end_line": 1232,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.8.18",
+                "manifest": "uv.lock",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock"
+                ]
+              },
+              "instance_id": "langsmith_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/uv.lock_1232",
+              "confidence": 1.0
+            }
+          ],
+          "model": [
+            {
+              "name": "gpt-5.4-mini",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+              "line_number": 59,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "gpt-5.4-mini",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-5.4-mini' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                    "start_line": 59,
+                    "end_line": 59,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "4",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/caches.py",
+                    "line": 169,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/configurable.py",
+                    "line": 501,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 3,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/caches.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/configurable.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py"
+                ],
+                "consolidated_count": 3
+              },
+              "instance_id": "gpt-5.4-mini_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py_59",
+              "confidence": 1.0
+            },
+            {
+              "name": "claude-sonnet-4-5-20250929",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/rate_limiters.py",
+              "line_number": 109,
+              "framework": "anthropic",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "claude-sonnet-4-5-20250929",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'claude-sonnet-4-5-20250929' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/rate_limiters.py",
+                    "start_line": 109,
+                    "end_line": 109,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://docs.anthropic.com/en/docs/about-claude/models",
+                "provider": "anthropic",
+                "family": "claude-sonnet-4",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                    "line": 608,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py",
+                    "line": 2930,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 3,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/rate_limiters.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py"
+                ],
+                "consolidated_count": 3
+              },
+              "instance_id": "claude-sonnet-4-5-20250929_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/rate_limiters.py_109",
+              "confidence": 1.0
+            },
+            {
+              "name": "anthropic:claude-haiku-4-5-20251001",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/callbacks/usage.py",
+              "line_number": 27,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "anthropic:claude-haiku-4-5-20251001",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'anthropic:claude-haiku-4-5-20251001' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/callbacks/usage.py",
+                    "start_line": 27,
+                    "end_line": 27,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=anthropic%3Aclaude-haiku-4-5-20251001",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/callbacks/usage.py"
+                ]
+              },
+              "instance_id": "anthropic:claude-haiku-4-5-20251001_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/callbacks/usage.py_27",
+              "confidence": 0.4
+            },
+            {
+              "name": "model-name",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py",
+              "line_number": 2429,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "model-name",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'model-name' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py",
+                    "start_line": 2429,
+                    "end_line": 2429,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=model-name",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py"
+                ]
+              },
+              "instance_id": "model-name_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py_2429",
+              "confidence": 0.4
+            },
+            {
+              "name": "openai:gpt-5.5",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/output_parsers/string.py",
+              "line_number": 22,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "openai:gpt-5.5",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'openai:gpt-5.5' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/output_parsers/string.py",
+                    "start_line": 22,
+                    "end_line": 22,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "5",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/messages/utils.py",
+                    "line": 1279,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/callbacks/usage.py",
+                    "line": 26,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                    "line": 607,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 4,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/messages/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/callbacks/usage.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/output_parsers/string.py"
+                ],
+                "consolidated_count": 4
+              },
+              "instance_id": "openai:gpt-5.5_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/output_parsers/string.py_22",
+              "confidence": 1.0
+            },
+            {
+              "name": "claude-3-haiku-20240307",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/prompts/few_shot.py",
+              "line_number": 374,
+              "framework": "anthropic",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": "claude-3-haiku-20240307",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'claude-3-haiku-20240307' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/prompts/few_shot.py",
+                    "start_line": 374,
+                    "end_line": 374,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://docs.anthropic.com/en/docs/about-claude/models",
+                "provider": "anthropic",
+                "family": "claude-3",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/prompts/few_shot.py"
+                ]
+              },
+              "instance_id": "claude-3-haiku-20240307_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/prompts/few_shot.py_374",
+              "confidence": 1.0
+            },
+            {
+              "name": "claude-sonnet-4-6",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+              "line_number": 58,
+              "framework": "anthropic",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": "claude-sonnet-4-6",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'claude-sonnet-4-6' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                    "start_line": 58,
+                    "end_line": 58,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://docs.anthropic.com/en/docs/about-claude/models",
+                "provider": "anthropic",
+                "family": "claude-sonnet-4",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py"
+                ]
+              },
+              "instance_id": "claude-sonnet-4-6_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py_58",
+              "confidence": 1.0
+            },
+            {
+              "name": "llama3.1",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py",
+              "line_number": 1856,
+              "framework": "ollama",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": "llama3.1",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'llama3.1' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py",
+                    "start_line": 1856,
+                    "end_line": 1856,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=llama3.1",
+                "provider": "ollama",
+                "family": "1",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py"
+                ]
+              },
+              "instance_id": "llama3.1_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py_1856",
+              "confidence": 1.0
+            },
+            {
+              "name": "claude-2",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/history.py",
+              "line_number": 139,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": "claude-2",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'claude-2' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/history.py",
+                    "start_line": 139,
+                    "end_line": 139,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=claude-2",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/history.py"
+                ]
+              },
+              "instance_id": "claude-2_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/history.py_139",
+              "confidence": 0.4
+            }
+          ],
+          "agent": [
+            {
+              "name": "RunnableBranch",
+              "component_type": "agent",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/branch.py",
+              "line_number": 43,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.5,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'RunnableBranch' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/branch.py",
+                    "start_line": 43,
+                    "end_line": 43,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "discovery": "structural_react_loop",
+                "structural_signature_id": "structural.react_loop",
+                "react_loop_start_line": 320,
+                "react_loop_end_line": 369,
+                "react_loop_rationale": "for loop in method 'stream' (lines 320\u2013369) has 6 calls / 4 distinct callees with a conditional branch and an LLM-like call name.",
+                "class_start_line": 43,
+                "class_end_line": 457,
+                "qualified_name": "RunnableBranch",
+                "agent_evidence": {
+                  "pattern": "react_loop",
+                  "definition_file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/branch.py",
+                  "definition_start_line": 43,
+                  "definition_end_line": 457,
+                  "evidence_snippet": "            for idx, branch in enumerate(self.branches):\n                condition, runnable = branch\n\n                expression_value = condition.invoke(\n                    input,\n                    config=patch_config(\n                        config,\n                        callbacks=run_manager.get_child(tag=f\"condition:{idx + 1}\"),\n                    ),\n                )\n\n                if expression_value:\n                    for chunk in runnable.stream(\n                        input,\n                        config=patch_config(\n                            config,\n                            callbacks=run_manager.get_child(tag=f\"branch:{idx + 1}\"),\n                        ),\n                        **kwargs,\n                    ):\n                        yield chunk\n                        if final_output_supported:\n                            if final_output is None:\n                                final_output = chunk\n                            else:\n                                try:\n                                    final_output = final_output + chunk  # type: ignore[operator]\n                                except TypeError:\n                                    final_output = None\n                                    final_output_supported = False\n                    break\n            else:\n                for chunk in self.default.stream(\n                    input,\n                    config=patch_config(\n                        config,\n                        callbacks=run_manager.get_child(tag=\"branch:default\"),\n                    ),\n                    **kwargs,\n                ):\n                    yield chunk\n                    if final_output_supported:\n                        if final_output is None:\n                            final_output = chunk\n                        else:\n                            try:\n                                final_output = final_output + chunk  # type: ignore[operator]\n                            except TypeError:\n                                final_output = None\n                                final_output_supported = False",
+                  "justification": "Structural scanner detected an iterative control-flow loop in class 'RunnableBranch' between lines 320-369, with multiple distinct callees, a conditional branch, and at least one LLM-like invocation hint. Rationale: for loop in method 'stream' (lines 320\u2013369) has 6 calls / 4 distinct callees with a conditional branch and an LLM-like call name."
+                },
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/branch.py"
+                ]
+              },
+              "instance_id": "RunnableBranch_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/branch.py_43",
+              "confidence": 0.5
+            },
+            {
+              "name": "RunnableRetry",
+              "component_type": "agent",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/retry.py",
+              "line_number": 48,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.5,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'RunnableRetry' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/retry.py",
+                    "start_line": 48,
+                    "end_line": 48,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "discovery": "structural_react_loop",
+                "structural_signature_id": "structural.react_loop",
+                "react_loop_start_line": 186,
+                "react_loop_end_line": 194,
+                "react_loop_rationale": "for loop in method '_invoke' (lines 186\u2013194) has 4 calls / 3 distinct callees with a conditional branch and an LLM-like call name.",
+                "class_start_line": 48,
+                "class_end_line": 376,
+                "qualified_name": "RunnableRetry",
+                "agent_evidence": {
+                  "pattern": "react_loop",
+                  "definition_file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/retry.py",
+                  "definition_start_line": 48,
+                  "definition_end_line": 376,
+                  "evidence_snippet": "        for attempt in self._sync_retrying(reraise=True):\n            with attempt:\n                result = super().invoke(\n                    input_,\n                    self._patch_config(config, run_manager, attempt.retry_state),\n                    **kwargs,\n                )\n            if attempt.retry_state.outcome and not attempt.retry_state.outcome.failed:\n                attempt.retry_state.set_result(result)",
+                  "justification": "Structural scanner detected an iterative control-flow loop in class 'RunnableRetry' between lines 186-194, with multiple distinct callees, a conditional branch, and at least one LLM-like invocation hint. Rationale: for loop in method '_invoke' (lines 186\u2013194) has 4 calls / 3 distinct callees with a conditional branch and an LLM-like call name."
+                },
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/retry.py"
+                ]
+              },
+              "instance_id": "RunnableRetry_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/retry.py_48",
+              "confidence": 0.5
+            },
+            {
+              "name": "RunnableWithFallbacks",
+              "component_type": "agent",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+              "line_number": 37,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.5,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'RunnableWithFallbacks' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                    "start_line": 37,
+                    "end_line": 37,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "discovery": "structural_react_loop",
+                "structural_signature_id": "structural.react_loop",
+                "react_loop_start_line": 186,
+                "react_loop_end_line": 207,
+                "react_loop_rationale": "for loop in method 'invoke' (lines 186\u2013207) has 6 calls / 6 distinct callees with a conditional branch and an LLM-like call name.",
+                "class_start_line": 37,
+                "class_end_line": 645,
+                "qualified_name": "RunnableWithFallbacks",
+                "agent_evidence": {
+                  "pattern": "react_loop",
+                  "definition_file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                  "definition_start_line": 37,
+                  "definition_end_line": 645,
+                  "evidence_snippet": "        for runnable in self.runnables:\n            try:\n                if self.exception_key and last_error is not None:\n                    input[self.exception_key] = last_error  # type: ignore[index]\n                child_config = patch_config(config, callbacks=run_manager.get_child())\n                with set_config_context(child_config) as context:\n                    output = context.run(\n                        runnable.invoke,\n                        input,\n                        config,\n                        **kwargs,\n                    )\n            except self.exceptions_to_handle as e:\n                if first_error is None:\n                    first_error = e\n                last_error = e\n            except BaseException as e:\n                run_manager.on_chain_error(e)\n                raise\n            else:\n                run_manager.on_chain_end(output)\n                return output",
+                  "justification": "Structural scanner detected an iterative control-flow loop in class 'RunnableWithFallbacks' between lines 186-207, with multiple distinct callees, a conditional branch, and at least one LLM-like invocation hint. Rationale: for loop in method 'invoke' (lines 186\u2013207) has 6 calls / 6 distinct callees with a conditional branch and an LLM-like call name."
+                },
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py"
+                ]
+              },
+              "instance_id": "RunnableWithFallbacks_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py_37",
+              "confidence": 0.5
+            },
+            {
+              "name": "RunnableSequence",
+              "component_type": "agent",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py",
+              "line_number": 3063,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.5,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Agent 'RunnableSequence' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py",
+                    "start_line": 3063,
+                    "end_line": 3063,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "discovery": "structural_react_loop",
+                "structural_signature_id": "structural.react_loop",
+                "react_loop_start_line": 3474,
+                "react_loop_end_line": 3484,
+                "react_loop_rationale": "for loop in method 'ainvoke' (lines 3474\u20133484) has 7 calls / 6 distinct callees with a conditional branch and an LLM-like call name.",
+                "class_start_line": 3063,
+                "class_end_line": 3849,
+                "qualified_name": "RunnableSequence",
+                "agent_evidence": {
+                  "pattern": "react_loop",
+                  "definition_file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py",
+                  "definition_start_line": 3063,
+                  "definition_end_line": 3849,
+                  "evidence_snippet": "            for i, step in enumerate(self.steps):\n                # mark each step as a child run\n                config = patch_config(\n                    config, callbacks=run_manager.get_child(f\"seq:step:{i + 1}\")\n                )\n                with set_config_context(config) as context:\n                    if i == 0:\n                        part = functools.partial(step.ainvoke, input_, config, **kwargs)\n                    else:\n                        part = functools.partial(step.ainvoke, input_, config)\n                    input_ = await coro_with_context(part(), context, create_task=True)",
+                  "justification": "Structural scanner detected an iterative control-flow loop in class 'RunnableSequence' between lines 3474-3484, with multiple distinct callees, a conditional branch, and at least one LLM-like invocation hint. Rationale: for loop in method 'ainvoke' (lines 3474\u20133484) has 7 calls / 6 distinct callees with a conditional branch and an LLM-like call name."
+                },
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py"
+                ]
+              },
+              "instance_id": "RunnableSequence_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py_3063",
+              "confidence": 0.5
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 15,
+          "last_generated_at": "2026-06-26T06:21:19Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/langchain-ai/langchain",
+          "source_ref_version": "57c83d44bc8ae89a189ad521b9756cfac996039c",
+          "elapsed_s": 769.02,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 15,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "dependency": 2,
+        "model": 9,
+        "agent": 4
+      },
+      "total_relationships": 0,
+      "risk_score": 30,
+      "risk_severity": "medium"
+    },
+    "risk": {
+      "score": 30,
+      "severity": "medium",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py",
+          "line_number": 2429,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py",
+                "start_line": 2429,
+                "end_line": 2429,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+          "line_number": 58,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/fallbacks.py",
+                "start_line": 58,
+                "end_line": 58,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/history.py",
+          "line_number": 139,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/history.py",
+                "start_line": 139,
+                "end_line": 139,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

@@ -1,24 +1,45 @@
 # Risk weights for the AI-BOM scorer (config-driven; edit without touching code).
-# The scorer sums the weight of every flag a scan raises into ScanResult.scores.
-# This is intentionally trivial for now — the seam matters more than the math.
+#
+# Per-component flags STACK: the scorer sums the weight of every flag raised
+# against a component, then maps that stacked raw weight to a SEVERITY band
+# (critical/high/medium/low) via the `severity:` thresholds below. So an
+# unsanctioned external model (6) that is ALSO model-license-unknown (2) sums to
+# 8 -> high, even though either flag alone is lower.
 
 default: 1          # weight for any flag not listed below
 
 flags:
-  MODEL_NO_LICENSE: 8
-  DATASET_NO_DEIDENT: 10
-  MODEL_EU_AI_ACT_HIGH_RISK: 5
-  MODEL_PHI_AT_INFERENCE: 4
-  UNSANCTIONED_COMPONENT: 6   # shadow-AI: discovered component not on allowlist
+  # ── critical-tier (a single flag is already critical) ──
+  HARDCODED_SECRET: 14          # a leaked credential in source -> critical
+  DATASET_NO_DEIDENT: 12        # PHI training data not de-identified -> critical
+  # ── high-tier ──
+  MODEL_NO_LICENSE: 8           # a carded model with no concluded license
+  MODEL_PHI_AT_INFERENCE: 8     # model sees PHI at inference (HIPAA BAA needed)
+  # ── medium-tier ──
+  UNSANCTIONED_COMPONENT: 6     # shadow-AI: component not on the allowlist
+  MODEL_EU_AI_ACT_HIGH_RISK: 6  # declared EU AI Act high-risk
+  FRAMEWORK_NO_LICENSE: 5       # a library whose license could not be resolved
+  DATASET_DECLARED_NOT_FOUND: 4 # provenance gap (declared dataset missing)
+  # ── low-tier ──
+  SERVICE_REF_COLLISION: 3
+  SITE_REF_COLLISION: 3
+  MODEL_LICENSE_UNKNOWN: 2      # model with no known license — SOFT (not a library)
 
-# Score SCALE — locked BEFORE the Phase-4 heatmap so the dashboard never has to
-# retrofit it. We use Trusera-style 0-100 normalization plus low/med/high bands:
+# Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
+# A component with no flags scores 0 -> low (the inventory floor; e.g. a licensed
+# library, or a vector store with nothing misconfigured).
+severity:
+  critical: 13      # >= 13 -> critical (a leaked secret=14, or heavy stacking)
+  high: 8           # >= 8  -> high     (no-license model, un-de-identified data=12)
+  medium: 4         # >= 4  -> medium   (unsanctioned=6, unknown-license library=5)
+  low: 1            # >= 1  -> low       (model-license-unknown=2; 0 -> low / info)
+
+# Global 0-100 score SCALE (LOCKED formula — see aibom/CLAUDE.md):
 #   risk_normalized = min(100, round(risk_total / max_raw * 100, 1))
-# max_raw is the calibration ceiling = "every defined flag tripped once" -> 100.
-# Omit max_raw to auto-compute it as the sum of the flag weights above.
-# bands are inclusive upper bounds ON THE 0-100 normalized score.
+# `max_raw` omitted -> auto-computed as the sum of the flag weights above
+# ("every defined flag tripped once" -> 100). Bands are inclusive upper bounds on
+# the 0-100 normalized score for the OVERALL scan risk_band.
 scale:
-  max_raw: 27       # 8 + 10 + 5 + 4 (sum of the flag weights above)
   bands:
     low: 33         # 0-33  -> low
     medium: 66      # 34-66 -> medium;  67-100 -> high

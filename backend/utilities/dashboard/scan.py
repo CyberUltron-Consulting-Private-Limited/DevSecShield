@@ -1339,7 +1339,11 @@ def generate_scan_dashboard(
                 # from 'source' (ModelProvider value, e.g. openai/anthropic).
                 asset_name = asset.get("component_name") or asset.get("title") or "Unknown"
                 if component_type in model_component_types:
-                    # distinct model by (provider, asset_name)
+                    # distinct model by (provider, asset_name). Catalog-only model
+                    # references (supported-model registries, not models the app
+                    # uses) are already excluded upstream by the aibom adapter's
+                    # _inventory(), so this is the verified true count, not the
+                    # catalog over-count.
                     distinct_models.add((provider, asset_name))
                 if component_type == "external_provider":
                     # distinct provider among external_provider findings
@@ -1352,9 +1356,18 @@ def generate_scan_dashboard(
                 if impact_lower in ("critical", "high"):
                     total_high_risk_assets += 1
 
-                # unlicensed assets (license missing / unknown)
+                # unlicensed assets = LIBRARIES with a genuinely-unknown license.
+                # Excluded: model references (a model with no resolved license is the
+                # softer, distinct "model-license-unknown" finding) AND external
+                # providers/services (a hosted API — OpenAI, AWS Bedrock, Ollama — is
+                # not a licensable software package, so it is never a true "unknown").
+                # Counting either inflated this metric beyond genuine library unknowns.
                 lic = (asset.get("license") or "").lower().strip()
-                if not lic or lic == "unknown":
+                if (
+                    (not lic or lic == "unknown")
+                    and component_type not in model_component_types
+                    and component_type != "external_provider"
+                ):
                     total_unlicensed_assets += 1
 
                 # governance readiness: assets with both license and model card
@@ -1379,6 +1392,22 @@ def generate_scan_dashboard(
                     "license_type": license_type,
                     "impact": impact,
                 })
+
+            # Compliance Controls panel: AI-BOM findings carry no per-control
+            # data (compliance is framework-level), so aggregate the framework
+            # result (ai_bom_compliance) into per-framework FAIL counts — the
+            # same evidence the ComplianceCoverage chart uses. Falls back to
+            # whatever findings did carry (above) if the framework result is absent.
+            _scan_data = scan.scan_data if scan else (scan_results if isinstance(scan_results, dict) else {})
+            _ai_bom_compliance = _scan_data.get("ai_bom_compliance") if isinstance(_scan_data, dict) else None
+            if isinstance(_ai_bom_compliance, dict):
+                for _fw_key, _fw in _ai_bom_compliance.items():
+                    if _fw_key == "disclaimer" or not isinstance(_fw, dict):
+                        continue
+                    _fail = _fw.get("fail") or 0
+                    if _fail:
+                        _label = _fw.get("title") or _fw_key
+                        compliance_controls_metrics[_label] += int(_fail)
 
             # Materialize distinct entity counts.
             total_models = len(distinct_models)

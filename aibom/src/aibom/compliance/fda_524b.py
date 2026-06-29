@@ -13,11 +13,13 @@ from aibom.compliance.base import (
     PASS,
     CheckResult,
     Requirement,
+    clinical_models,
     datasets,
     depends_on_frameworks,
     frameworks,
     has_license,
     models,
+    register_applicability,
     register_check,
     register_manual,
 )
@@ -30,20 +32,37 @@ def _r(rid: str, title: str, source: str) -> Requirement:
     return Requirement(rid, _FW, title, source)
 
 
-R1 = _r("524B-1", "Component name + version",
-        "NTIA minimum elements (component name, version)")
-R2 = _r("524B-2", "Component hash + algorithm",
-        "NTIA minimum elements (hash)")
-R3 = _r("524B-3", "Dependency relationships present",
-        "NTIA minimum elements (dependency relationship)")
-R4 = _r("524B-4", "Unique identifier (purl) per library",
-        "NTIA minimum elements (unique identifier)")
-R5 = _r("524B-5", "Concluded license per component",
-        "NTIA minimum elements (license) / §524B")
-R6 = _r("524B-6", "Device class / SaMD classification asserted",
-        "§524B cyber-device premarket")
-R7 = _r("524B-7", "SBOM author + timestamp + machine-readable format",
-        "NTIA minimum elements (author, timestamp, format)")
+R1 = _r(
+    "524B-1",
+    "Component name + version",
+    "NTIA minimum elements (component name, version)",
+)
+R2 = _r("524B-2", "Component hash + algorithm", "NTIA minimum elements (hash)")
+R3 = _r(
+    "524B-3",
+    "Dependency relationships present",
+    "NTIA minimum elements (dependency relationship)",
+)
+R4 = _r(
+    "524B-4",
+    "Unique identifier (purl) per library",
+    "NTIA minimum elements (unique identifier)",
+)
+R5 = _r(
+    "524B-5",
+    "Concluded license per component",
+    "NTIA minimum elements (license) / §524B",
+)
+R6 = _r(
+    "524B-6",
+    "Device class / SaMD classification asserted",
+    "§524B cyber-device premarket",
+)
+R7 = _r(
+    "524B-7",
+    "SBOM author + timestamp + machine-readable format",
+    "NTIA minimum elements (author, timestamp, format)",
+)
 
 
 @register_check(R1)
@@ -116,8 +135,10 @@ def _device_class(r: ScanResult, req: Requirement) -> CheckResult:
     bad = [m.bom_ref for m in ms if not m.model_card.device_class]
     if bad:
         return FAIL(f"{len(bad)} model(s) assert no device class", bad)
-    return PASS("every model asserts its device class / SaMD classification",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "every model asserts its device class / SaMD classification",
+        [m.bom_ref for m in ms],
+    )
 
 
 @register_check(R7)
@@ -130,7 +151,21 @@ def _metadata(r: ScanResult, req: Requirement) -> CheckResult:
     )
 
 
-register_manual(_r("524B-8", "Vulnerability referencing (VEX)",
-                   "FDA premarket cyber guidance (VEX)"),
-                "VEX/CVE data is not modelled in the AI-BOM graph (advisory: "
-                "provide a VEX document alongside the SBOM)")
+register_manual(
+    _r(
+        "524B-8",
+        "Vulnerability referencing (VEX)",
+        "FDA premarket cyber guidance (VEX)",
+    ),
+    "VEX/CVE data is not modelled in the AI-BOM graph (advisory: "
+    "provide a VEX document alongside the SBOM)",
+)
+
+# §524B governs "cyber DEVICES" — medical-device software (SaMD). A generic AI
+# artifact with no clinical/medical-device model is out_of_scope, NOT fail.
+register_applicability(
+    _FW,
+    lambda r: bool(clinical_models(r)),
+    "FDA §524B applies to cyber medical devices (SaMD); "
+    "this artifact has no clinical/medical-device model",
+)

@@ -17,8 +17,11 @@ from aibom.scan.registry import ScanContext, Scanner, register
 _HOSTS = {
     "api.openai.com": ("cloud_service", "OpenAI API", "OpenAI"),
     "api.anthropic.com": ("cloud_service", "Anthropic API", "Anthropic"),
-    "generativelanguage.googleapis.com": ("cloud_service", "Google Gemini API",
-                                          "Google"),
+    "generativelanguage.googleapis.com": (
+        "cloud_service",
+        "Google Gemini API",
+        "Google",
+    ),
     "api.cohere.ai": ("cloud_service", "Cohere API", "Cohere"),
     "api.mistral.ai": ("cloud_service", "Mistral API", "Mistral"),
     "openai.azure.com": ("cloud_service", "Azure OpenAI", "Microsoft"),
@@ -66,11 +69,13 @@ class NetEnvScanner(Scanner):
                     seen.add(ref)
                     props = {"discovery:source": path.name, "discovery:host": host}
                     comp = (
-                        EndpointComponent(bom_ref=ref, name=label, publisher=vendor,
-                                          properties=props)
+                        EndpointComponent(
+                            bom_ref=ref, name=label, publisher=vendor, properties=props
+                        )
                         if kind == "endpoint"
-                        else CloudServiceComponent(bom_ref=ref, name=label,
-                                                   publisher=vendor, properties=props)
+                        else CloudServiceComponent(
+                            bom_ref=ref, name=label, publisher=vendor, properties=props
+                        )
                     )
                     ctx.add_component(comp)
 

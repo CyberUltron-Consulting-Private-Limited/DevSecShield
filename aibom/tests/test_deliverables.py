@@ -35,7 +35,19 @@ def test_xlsx_has_summary_and_framework_sheets(tmp_path: pathlib.Path) -> None:
     hipaa = wb["HIPAA"]
     assert hipaa.max_row == 14  # header + 13 requirements
     verdicts = {hipaa.cell(row=i, column=4).value for i in range(2, 15)}
-    assert verdicts <= {"PASS", "FAIL", "NA"}
+    # Tri-state contract: HIPAA applies on the clinical fixture (PHI in scope), so
+    # its 13 rows are graph-evidenced PASS/FAIL or process-evidence
+    # NOT_BOM_EVIDENCEABLE — never a generic NA.
+    assert verdicts <= {
+        "PASS", "PASS_WITH_EVIDENCE", "FAIL",
+        "OUT_OF_SCOPE", "NOT_BOM_EVIDENCEABLE", "NA",
+    }
+    assert "NOT_BOM_EVIDENCEABLE" in verdicts  # HIPAA has process-evidence rows
+    # The Summary surfaces out-of-scope + not-evidenceable as their OWN columns.
+    assert [c.value for c in wb["Summary"][3]] == [
+        "Framework", "Pass", "Fail", "Out of Scope", "Not Evidenceable", "N/A",
+        "Coverage",
+    ]
 
 
 def test_pdf_is_a_pdf(tmp_path: pathlib.Path) -> None:
@@ -77,8 +89,9 @@ def test_pdf_includes_source_citation(tmp_path: pathlib.Path) -> None:
     assert "Annex IV" in text  # a Requirement.source citation rendered in the PDF
 
 
-def test_deliverables_reflect_na_coverage(tmp_path: pathlib.Path) -> None:
-    """A no-PHI scan -> HIPAA coverage 'N/A' surfaces in the xlsx summary."""
+def test_deliverables_reflect_out_of_scope_coverage(tmp_path: pathlib.Path) -> None:
+    """A no-PHI scan -> HIPAA is OUT_OF_SCOPE (coverage 'N/A'), and that out-of-scope
+    count surfaces as its own column in the xlsx summary (never folded into fail)."""
     from openpyxl import load_workbook
 
     r = scan_repo(_EX / "no-phi-model")
@@ -86,6 +99,9 @@ def test_deliverables_reflect_na_coverage(tmp_path: pathlib.Path) -> None:
     out = tmp_path / "matrix.xlsx"
     get_writer("xlsx")(r.compliance, out, r.subject.name)
     summary = load_workbook(out)["Summary"]
-    rows = {row[0]: row[4] for row in summary.iter_rows(min_row=4, values_only=True)
+    # cols: Framework, Pass, Fail, Out of Scope, Not Evidenceable, N/A, Coverage
+    rows = {row[0]: row for row in summary.iter_rows(min_row=4, values_only=True)
             if row[0]}
-    assert rows["HIPAA"] == "N/A"
+    assert rows["HIPAA"][6] == "N/A"          # coverage label (0 applicable)
+    assert rows["HIPAA"][2] == 0              # not a fail
+    assert rows["HIPAA"][3] == 13             # all 13 HIPAA rows out-of-scope

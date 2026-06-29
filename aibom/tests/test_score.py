@@ -25,14 +25,18 @@ def test_default_weights_file_exists_and_loads() -> None:
 
 
 def test_score_sums_flag_weights() -> None:
+    # Recalibrated weights: EU-high-risk=6, PHI-at-inference=8 (flags STACK per
+    # component); their sum on one model lands it in the critical severity band.
     r = _result_with_flags("MODEL_EU_AI_ACT_HIGH_RISK", "MODEL_PHI_AT_INFERENCE")
     score_result(r)
-    assert r.scores["risk_total"] == 5.0 + 4.0
+    assert r.scores["risk_total"] == 6.0 + 8.0
     assert r.scores["by_flag"] == {
-        "MODEL_EU_AI_ACT_HIGH_RISK": 5.0,
-        "MODEL_PHI_AT_INFERENCE": 4.0,
+        "MODEL_EU_AI_ACT_HIGH_RISK": 6.0,
+        "MODEL_PHI_AT_INFERENCE": 8.0,
     }
-    assert r.scores["by_component"]["model-x"] == 9.0
+    assert r.scores["by_component"]["model-x"] == 14.0
+    # per-component severity from the stacked weight (14 >= critical threshold)
+    assert r.scores["component_severity"]["model-x"] == "critical"
     assert r.scores["flag_count"] == 2
 
 

@@ -1,0 +1,14 @@
+# Ralph learnings (append-only). Newest at bottom.
+
+CONTEXT (read first):
+- Root cause of most AIBOM dashboard bugs is ONE defect: the pipeline isn't model-aware. The model-reference scanner emits models the graph/compliance/license/scorer/model-card layers don't read. Fixing A2 (canonical model node) + A3 (graph edges) clears "no model component", the 53 false-unlicensed (A4), and the broken supply-chain graph together. Sequence these early.
+- Empty charts are a data-plumbing failure: severity/OWASP/compliance/distributions are computed but the normalizer flattens them before the API/charts. A8 carries them through; A13 contract tests keep them fixed.
+- "46 models" on chroma is catalog over-counting (provider supported-model lists), not real usage. A2 dedupe (used-vs-catalog) must bring it to the true count; the B1 benchmark oracles confirm truth.
+- Compliance N/A is partly a bug (models not graph-wired) and partly correct (Chroma is not a clinical device; GMLP is out-of-scope, not fail). A9 introduces the tri-state.
+- The PRODUCT ships NO runtime LLM (MVP): enrichment is deterministic (known-model KB + regex/AST), behind a provider interface so an LLM (Anthropic API or Bedrock) can be added later only if a customer requires it. Claude Code's OAuth login (the agent) is separate. Product ships no OSS BOM tool; oracles (Trusera/Cisco/CBOMkit) are bench/ only.
+- CBOM = CycloneDX 1.6 crypto-asset (ECMA-424): 4 categories (algorithm/certificate/protocol/related-crypto-material) + nistQuantumSecurityLevel. Weak algos to flag: MD5, SHA-1, DES, 3DES, RC4, RSA<2048, ECB. PQC targets: ML-KEM/ML-DSA/SLH-DSA (FIPS 203/204/205); NIST deprecates RSA/ECC after 2030, disallows 2035.
+
+PRIOR-SESSION STATE (2026-06; standalone aibom/ uv package — read the ruflo aibom/state/* keys):
+- A1-A13 AIBOM work + B1 (Cisco+Trusera benchmark, true-misses=0) + B3 (CI gates: aibom-gates.yml + aibom-nightly.yml) are ALREADY IMPLEMENTED in the standalone aibom/ package and verified, but live UNCOMMITTED in the working tree (large dual-session diff). Ruflo keys: aibom/state/{model-aware,scorer,charts,compliance,benchmark,regression-lock,model-cards,modelref-license,owasp-mapper,dashboard}.
+- Net-new remaining: the CBOM C-series (C1-C10) in the aibom/ architecture, plus integration (I-series) wiring of CBOM as a peer scanner. A worker-side CBOM exists at RabbitMQ/worker/helpers/tools/cbom_agent/ (different codebase; see ruflo cbom-hardening) — reconcile vs the aibom/ architecture before building C-stories.
+- BEFORE running the loop: reconcile/commit the uncommitted AIBOM work and mark its stories passes:true, or the loop will redo completed work and collide with the working tree.

@@ -61,9 +61,15 @@ def get_cors_origins() -> list[str]:
     """Get allowed CORS origins from environment variable."""
     origins_str = os.getenv("CORS_ORIGINS", "")
     if not origins_str:
-        # Default to localhost for development
-        console.print("[bold yellow]⚠ CORS_ORIGINS not set, defaulting to localhost[/bold yellow]")
-        return ["http://localhost:3000", "http://localhost:4000", "http://127.0.0.1:3000", "http://127.0.0.1:4000"]
+        # Default to localhost for development plus production frontend
+        console.print("[bold yellow]⚠ CORS_ORIGINS not set, defaulting to localhost + production[/bold yellow]")
+        return [
+            "http://localhost:3000",
+            "http://localhost:4000",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:4000",
+            "https://devsecshield.zeroshield.ai",
+        ]
     return [origin.strip() for origin in origins_str.split(",") if origin.strip()]
 
 CORS_ALLOWED_ORIGINS = get_cors_origins()
@@ -90,7 +96,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, middleware=[
     Middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=CORS_ALLOWED_ORIGINS,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],

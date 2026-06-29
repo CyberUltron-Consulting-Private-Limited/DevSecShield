@@ -27,7 +27,7 @@ from aibom.model.component import AIComponent, MetadataComponent
 # Edge relationship vocabulary (small, explicit; extend as scanners grow).
 REL_TRAINED_ON = "trained_on"
 REL_DEPENDS_ON = "depends_on"
-REL_SERVED_BY = "served_by"      # model -> inference service (carries service:baa)
+REL_SERVED_BY = "served_by"  # model -> inference service (carries service:baa)
 REL_DEPLOYED_AT = "deployed_at"  # model -> site (carries version/validation/drift)
 
 # Flag severities == SARIF result levels (so flags map 1:1 to SARIF `level`).
@@ -84,6 +84,9 @@ class ScanResult:
     flags: list[Flag] = field(default_factory=list)
     scores: dict[str, Any] = field(default_factory=dict)
     compliance: dict[str, Any] = field(default_factory=dict)
+    #: OWASP Top 10 for LLM Applications (2025) distribution {code: count},
+    #: written by :mod:`aibom.owasp` from the components + flags.
+    owasp: dict[str, Any] = field(default_factory=dict)
     properties: dict[str, str] = field(default_factory=dict)
 
     # --- graph helpers -------------------------------------------------- #
@@ -97,11 +100,7 @@ class ScanResult:
 
     def out_edges(self, ref: str, rel: str | None = None) -> list[Edge]:
         """Edges leaving ``ref`` (optionally filtered to a relationship type)."""
-        return [
-            e
-            for e in self.edges
-            if e.src == ref and (rel is None or e.rel == rel)
-        ]
+        return [e for e in self.edges if e.src == ref and (rel is None or e.rel == rel)]
 
     def neighbors(self, ref: str, rel: str | None = None) -> list[AIComponent]:
         """Components reachable from ``ref`` via its out-edges (resolved, dedup)."""
@@ -131,6 +130,7 @@ class ScanResult:
             "flags": [asdict(f) for f in self.flags],
             "scores": self.scores,
             "compliance": self.compliance,
+            "owasp": self.owasp,
             "properties": self.properties,
         }
 

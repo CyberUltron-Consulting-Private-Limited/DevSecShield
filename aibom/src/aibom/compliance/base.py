@@ -45,11 +45,16 @@ __all__ = [
     "Check",
     "register_check",
     "register_manual",
+    "register_applicability",
+    "applicability_for",
     "checks_for",
     "PASS",
     "FAIL",
     "NA",
+    "OUT_OF_SCOPE",
+    "NOT_EVIDENCEABLE",
     "models",
+    "clinical_models",
     "datasets",
     "frameworks",
     "services",
@@ -63,7 +68,14 @@ __all__ = [
     "has_license",
 ]
 
-Verdict = Literal["pass", "fail", "na"]
+Verdict = Literal[
+    "pass",  # graph-evidenced satisfied
+    "pass_with_evidence",  # satisfied by an uploaded attestation (counts as pass)
+    "fail",  # the graph shows the requirement unmet
+    "out_of_scope",  # the framework does NOT apply to this artifact
+    "not_bom_evidenceable",  # process evidence a BOM scan cannot see (attestable)
+    "na",  # truly neither of the above (rare)
+]
 
 
 @dataclass(frozen=True)
@@ -107,16 +119,40 @@ def checks_for(framework: str) -> list[tuple[Requirement, Check]]:
 
 
 def register_manual(requirement: Requirement, note: str) -> None:
-    """Register a requirement that the AI-BOM graph cannot evidence -> always NA.
+    """Register a requirement whose evidence is PROCESS, not in the BOM.
 
-    Honest per the coverage rule: a manual/process-evidence obligation is
-    reported as not-applicable-to-the-BOM (excluded from coverage) with an
-    advisory note, never a false pass or fail.
+    Returns ``not_bom_evidenceable`` (excluded from coverage, reported as its own
+    count) — honest: never a false pass/fail, and DISTINCT from a generic ``na``.
+    An uploaded attestation for this requirement flips it to ``pass_with_evidence``
+    (see :func:`aibom.compliance.engine.run_framework`).
     """
 
     @register_check(requirement)
     def _manual(r: ScanResult, req: Requirement) -> CheckResult:
-        return NA(note)
+        return NOT_EVIDENCEABLE(note)
+
+
+# --------------------------------------------------------------------------- #
+# Framework APPLICABILITY (out-of-scope gate). A framework whose predicate is
+# False does not apply to the artifact -> ALL its requirements are out_of_scope
+# (NOT fail, NOT generic na). e.g. GMLP/§524B on a vector DB with no clinical model.
+# --------------------------------------------------------------------------- #
+
+_APPLICABILITY: dict[str, tuple[Callable[[ScanResult], bool], str]] = {}
+
+
+def register_applicability(
+    framework: str, predicate: Callable[[ScanResult], bool], out_of_scope_reason: str
+) -> None:
+    """Register a framework's applicability predicate + its out-of-scope reason."""
+    _APPLICABILITY[framework] = (predicate, out_of_scope_reason)
+
+
+def applicability_for(
+    framework: str,
+) -> tuple[Callable[[ScanResult], bool], str] | None:
+    """The (predicate, reason) for a framework, or None if it always applies."""
+    return _APPLICABILITY.get(framework)
 
 
 # --------------------------------------------------------------------------- #
@@ -136,6 +172,16 @@ def NA(evidence: str, refs: list[str] | None = None) -> CheckResult:
     return CheckResult("na", evidence, tuple(refs or ()))
 
 
+def OUT_OF_SCOPE(evidence: str, refs: list[str] | None = None) -> CheckResult:
+    """The framework does not apply to this artifact (NOT a fail, NOT a generic NA)."""
+    return CheckResult("out_of_scope", evidence, tuple(refs or ()))
+
+
+def NOT_EVIDENCEABLE(evidence: str, refs: list[str] | None = None) -> CheckResult:
+    """Process evidence a BOM scan cannot see (attestable -> pass_with_evidence)."""
+    return CheckResult("not_bom_evidenceable", evidence, tuple(refs or ()))
+
+
 # --------------------------------------------------------------------------- #
 # Shared GRAPH helpers (read-only; NO flags). Checks compose these.
 # --------------------------------------------------------------------------- #
@@ -143,6 +189,28 @@ def NA(evidence: str, refs: list[str] | None = None) -> CheckResult:
 
 def models(r: ScanResult) -> list[ModelComponent]:
     return [c for c in r.components if isinstance(c, ModelComponent)]
+
+
+def clinical_models(r: ScanResult) -> list[ModelComponent]:
+    """Models that are CLINICAL / medical-AI (SaMD) — the applicability anchor for
+    GMLP / FDA §524B. A model qualifies if it carries any ``clinical:`` /
+    ``regulatory:`` graph property OR a clinical model-card field (intended use,
+    modality, device class, FDA product code). Generic embedding / LLM model
+    references (e.g. chroma's) carry none -> those frameworks are out_of_scope.
+    """
+    out: list[ModelComponent] = []
+    for m in models(r):
+        props = m.properties or {}
+        mc = m.model_card
+        if (
+            any(k.startswith(("clinical:", "regulatory:")) for k in props)
+            or mc.intended_use
+            or mc.modality
+            or mc.device_class
+            or mc.fda_product_code
+        ):
+            out.append(m)
+    return out
 
 
 def datasets(r: ScanResult) -> list[DatasetComponent]:

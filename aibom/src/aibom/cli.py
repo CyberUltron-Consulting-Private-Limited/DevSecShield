@@ -67,11 +67,19 @@ def _write(payload: str, output: pathlib.Path | None) -> None:
 @app.command()
 def scan(
     path: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / model project directory to scan.",
     ),
     output: pathlib.Path = typer.Option(
-        None, "--output", "-o", dir_okay=False, writable=True,
+        None,
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
         help="Write the ScanResult JSON here instead of stdout.",
     ),
     indent: int = typer.Option(2, help="JSON indentation."),
@@ -96,15 +104,25 @@ def scan(
 @app.command()
 def emit(
     path: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / model project directory to scan and emit a BOM for.",
     ),
     fmt: str = typer.Option(
-        "cyclonedx", "--format", "-f",
+        "cyclonedx",
+        "--format",
+        "-f",
         help="BOM format: cyclonedx | spdx | sarif.",
     ),
     output: pathlib.Path = typer.Option(
-        None, "--output", "-o", dir_okay=False, writable=True,
+        None,
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
         help="Write the BOM here instead of stdout.",
     ),
 ) -> None:
@@ -137,7 +155,10 @@ def emit(
 @app.command()
 def validate(
     bom: pathlib.Path = typer.Argument(
-        ..., exists=True, dir_okay=False, readable=True,
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
         help="Path to a CycloneDX 1.6 / SPDX 3.0 / SARIF JSON file to validate.",
     ),
 ) -> None:
@@ -171,15 +192,25 @@ _NOT_IMPLEMENTED = "not yet implemented in phase 1"
 @app.command()
 def map(  # noqa: A001 - 'map' is the documented subcommand name
     path: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / model project directory to scan and map to compliance.",
     ),
     framework: str = typer.Option(
-        "all", "--framework", "-F",
+        "all",
+        "--framework",
+        "-F",
         help="fda524b | euaiact | gmlp | hipaa | nist | all.",
     ),
     output: pathlib.Path = typer.Option(
-        None, "--output", "-o", dir_okay=False, writable=True,
+        None,
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
         help="Write the compliance JSON here instead of stdout.",
     ),
     indent: int = typer.Option(2, help="JSON indentation."),
@@ -219,14 +250,25 @@ def map(  # noqa: A001 - 'map' is the documented subcommand name
 @app.command()
 def report(
     path: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / model project directory to scan and report on.",
     ),
     fmt: str = typer.Option(
-        "pdf", "--format", "-f", help="Deliverable: xlsx | pdf | docx.",
+        "pdf",
+        "--format",
+        "-f",
+        help="Deliverable: xlsx | pdf | docx.",
     ),
     output: pathlib.Path = typer.Option(
-        None, "--output", "-o", dir_okay=False, writable=True,
+        None,
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
         help="Output file (default: compliance.<ext>).",
     ),
 ) -> None:
@@ -255,23 +297,42 @@ def report(
 @app.command()
 def discover(
     root: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / project directory to sweep for shadow AI.",
     ),
     level: int = typer.Option(
-        4, "--level", "-l", min=1, max=5,
+        4,
+        "--level",
+        "-l",
+        min=1,
+        max=5,
         help="Scan depth: 1 filesystem, 2 docker, 3 net/env, 4 cloud IaC, 5 live.",
     ),
     allowlist: pathlib.Path = typer.Option(
-        None, "--allowlist", "-a", exists=True, dir_okay=False,
+        None,
+        "--allowlist",
+        "-a",
+        exists=True,
+        dir_okay=False,
         help="Allowlist YAML; discovered components not on it are flagged.",
     ),
     output: pathlib.Path = typer.Option(
-        None, "--output", "-o", dir_okay=False, writable=True,
+        None,
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
         help="Write the ScanResult JSON here (feeds the dashboard).",
     ),
     findings: pathlib.Path = typer.Option(
-        None, "--findings", dir_okay=False, writable=True,
+        None,
+        "--findings",
+        dir_okay=False,
+        writable=True,
         help="Write a shadow-AI findings report (.xlsx or .pdf).",
     ),
 ) -> None:
@@ -281,9 +342,13 @@ def discover(
     result = scan_repo(root, level=level, allowlist=allowlist)
     _write(json.dumps(result.to_dict(), indent=2) + "\n", output)
 
-    discovered = [c for c in result.components if (c.properties or {}).get(
-        "discovery:source") or c.kind not in
-        {"model", "dataset", "framework", "prompt", "service", "infra", "secret"}]
+    discovered = [
+        c
+        for c in result.components
+        if (c.properties or {}).get("discovery:source")
+        or c.kind
+        not in {"model", "dataset", "framework", "prompt", "service", "infra", "secret"}
+    ]
     unsanctioned = [f for f in result.flags if f.code == "UNSANCTIONED_COMPONENT"]
     _eprint(
         f"# discovered {len(discovered)} AI component(s) at level {level}; "
@@ -303,24 +368,44 @@ def discover(
 @app.command()
 def cedar(
     root: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / project directory to scan and project into Cedar.",
     ),
     level: int = typer.Option(
-        4, "--level", "-l", min=1, max=5,
+        4,
+        "--level",
+        "-l",
+        min=1,
+        max=5,
         help="Discovery depth (same levels as `discover`).",
     ),
     allowlist: pathlib.Path = typer.Option(
-        None, "--allowlist", "-a", exists=True, dir_okay=False,
+        None,
+        "--allowlist",
+        "-a",
+        exists=True,
+        dir_okay=False,
         help="Allowlist YAML; sets each entity's `sanctioned` attribute.",
     ),
     output: pathlib.Path = typer.Option(
-        pathlib.Path("entities.json"), "--output", "-o", dir_okay=False,
-        writable=True, help="Write the Cedar entities JSON here.",
+        pathlib.Path("entities.json"),
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
+        help="Write the Cedar entities JSON here.",
     ),
     policy: pathlib.Path = typer.Option(
-        pathlib.Path("policies.cedar"), "--policy", "-p", dir_okay=False,
-        writable=True, help="Write the sample Cedar policy set here.",
+        pathlib.Path("policies.cedar"),
+        "--policy",
+        "-p",
+        dir_okay=False,
+        writable=True,
+        help="Write the sample Cedar policy set here.",
     ),
 ) -> None:
     """Project the inventory into Cedar entities + a sample runtime policy set.
@@ -335,8 +420,7 @@ def cedar(
     write_entities(result, output)
     write_policy(policy)
     _eprint(
-        f"wrote {len(result.components)} Cedar entities -> {output}; "
-        f"policy -> {policy}"
+        f"wrote {len(result.components)} Cedar entities -> {output}; policy -> {policy}"
     )
     _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
 
@@ -344,22 +428,40 @@ def cedar(
 @app.command()
 def dashboard(
     root: pathlib.Path = typer.Argument(
-        ..., exists=True, file_okay=False, dir_okay=True, readable=True,
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
         help="Repo / project directory to scan and visualize.",
     ),
     level: int = typer.Option(
-        4, "--level", "-l", min=1, max=5, help="Discovery depth (see `discover`).",
+        4,
+        "--level",
+        "-l",
+        min=1,
+        max=5,
+        help="Discovery depth (see `discover`).",
     ),
     allowlist: pathlib.Path = typer.Option(
-        None, "--allowlist", "-a", exists=True, dir_okay=False,
+        None,
+        "--allowlist",
+        "-a",
+        exists=True,
+        dir_okay=False,
         help="Allowlist YAML for shadow-AI sanctioned/unsanctioned status.",
     ),
     output: pathlib.Path = typer.Option(
-        pathlib.Path("dashboard-out"), "--output", "-o", file_okay=False,
+        pathlib.Path("dashboard-out"),
+        "--output",
+        "-o",
+        file_okay=False,
         help="Output directory for the self-contained dashboard + scan.json.",
     ),
     open_browser: bool = typer.Option(
-        False, "--open", help="Open the dashboard in the default browser.",
+        False,
+        "--open",
+        help="Open the dashboard in the default browser.",
     ),
 ) -> None:
     """Scan + map a repo and emit a self-contained dashboard rendering it.

@@ -234,6 +234,13 @@ class ModelRepoScanner(Scanner):
         )
         ctx.properties = _bom_properties(card)
 
+        # Link the model to each weight FILE (emitted as its own component by the
+        # model-file scanner, which runs first) via a depends_on edge.
+        for wf in find_model_files(root):
+            ref = f"modelfile-{wf.name.lower()}"
+            if ctx.has_ref(ref):
+                ctx.add_edge(model.bom_ref, REL_DEPENDS_ON, ref)
+
         # Edges: trained_on (declared datasets). A declared ref that resolves to
         # no component is a provenance gap -> flag it (advisory) rather than drop
         # the relationship silently.
@@ -269,16 +276,22 @@ class ModelRepoScanner(Scanner):
         # so the HIPAA check can verify a PHI model is served by a BAA'd vendor).
         if card.served_by:
             _link_node(
-                ctx, model.bom_ref, _service_node(card.served_by),
-                REL_SERVED_BY, "SERVICE_REF_COLLISION",
+                ctx,
+                model.bom_ref,
+                _service_node(card.served_by),
+                REL_SERVED_BY,
+                "SERVICE_REF_COLLISION",
             )
 
         # Edges: deployed_at each site (each node carries version/last_validated/
         # drift_status for multi-site governance).
         for site_spec in card.deployed_at:
             _link_node(
-                ctx, model.bom_ref, _site_node(site_spec),
-                REL_DEPLOYED_AT, "SITE_REF_COLLISION",
+                ctx,
+                model.bom_ref,
+                _site_node(site_spec),
+                REL_DEPLOYED_AT,
+                "SITE_REF_COLLISION",
             )
 
         # Flags (semantic findings; scoring happens later).

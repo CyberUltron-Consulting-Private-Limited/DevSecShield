@@ -17,6 +17,7 @@ from aibom.compliance.base import (
     Requirement,
     is_deidentified,
     models,
+    register_applicability,
     register_check,
     register_manual,
     trained_datasets,
@@ -25,14 +26,26 @@ from aibom.model.result import ScanResult
 
 _FW = "eu_ai_act_annexIV"
 
+# Annex IV technical documentation applies to any AI SYSTEM (a model is present).
+# An artifact with no AI model at all is out_of_scope; with models, its data-
+# governance / lineage requirements resolve to pass/fail on the graph.
+register_applicability(
+    _FW,
+    lambda r: bool(models(r)),
+    "EU AI Act Annex IV applies to AI systems; this artifact has no AI model",
+)
+
 
 def _r(rid: str, title: str, source: str) -> Requirement:
     return Requirement(rid, _FW, title, source)
 
 
 R1 = _r("EUAIACT-1", "Intended purpose documented", "Annex IV §1")
-R2 = _r("EUAIACT-2", "Training data declared (>=1 trained_on dataset)",
-        "Annex IV §2 / Art 10")
+R2 = _r(
+    "EUAIACT-2",
+    "Training data declared (>=1 trained_on dataset)",
+    "Annex IV §2 / Art 10",
+)
 R3 = _r("EUAIACT-3", "Known dataset bias documented", "Art 10(2)(f-g)")
 R4 = _r("EUAIACT-4", "Data preparation / preprocessing documented", "Art 10(2)(b-c)")
 R5 = _r("EUAIACT-5", "Accuracy / robustness metrics", "Annex IV §3 / Art 15")
@@ -95,8 +108,7 @@ def _preprocessing(r: ScanResult, req: Requirement) -> CheckResult:
     ]
     if bad:
         return FAIL(f"{len(bad)} model(s) lack documented data preprocessing", bad)
-    return PASS("data preparation / preprocessing documented",
-                [m.bom_ref for m in ms])
+    return PASS("data preparation / preprocessing documented", [m.bom_ref for m in ms])
 
 
 @register_check(R5)
@@ -107,8 +119,9 @@ def _accuracy(r: ScanResult, req: Requirement) -> CheckResult:
     bad = [m.bom_ref for m in ms if not m.model_card.performance_metrics]
     if bad:
         return FAIL(f"{len(bad)} model(s) report no accuracy metrics", bad)
-    return PASS("every model reports accuracy/robustness metrics",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "every model reports accuracy/robustness metrics", [m.bom_ref for m in ms]
+    )
 
 
 @register_check(R6)
@@ -129,8 +142,9 @@ def _fairness(r: ScanResult, req: Requirement) -> CheckResult:
     ]
     if bad:
         return FAIL(f"{len(bad)} model(s) assess no groups at risk", bad)
-    return PASS("every model assesses fairness / groups at risk",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "every model assesses fairness / groups at risk", [m.bom_ref for m in ms]
+    )
 
 
 @register_check(R7)
@@ -174,8 +188,9 @@ def _model_card(r: ScanResult, req: Requirement) -> CheckResult:
     ]
     if bad:
         return FAIL(f"{len(bad)} model(s) lack a technical description", bad)
-    return PASS("every model has a technical model-card description",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "every model has a technical model-card description", [m.bom_ref for m in ms]
+    )
 
 
 @register_check(R10)
@@ -183,15 +198,10 @@ def _lineage(r: ScanResult, req: Requirement) -> CheckResult:
     ms = models(r)
     if not ms:
         return NA("no model component")
-    bad = [
-        m.bom_ref
-        for m in ms
-        if not (m.version and m.model_card.pedigree_ancestors)
-    ]
+    bad = [m.bom_ref for m in ms if not (m.version and m.model_card.pedigree_ancestors)]
     if bad:
         return FAIL(f"{len(bad)} model(s) lack version + pedigree lineage", bad)
-    return PASS("every model has version + pedigree lineage",
-                [m.bom_ref for m in ms])
+    return PASS("every model has version + pedigree lineage", [m.bom_ref for m in ms])
 
 
 @register_check(R11)
@@ -208,21 +218,34 @@ def _high_risk(r: ScanResult, req: Requirement) -> CheckResult:
         return FAIL(
             f"{len(bad)} model(s) not classified high-risk (Annex I / MDR)", bad
         )
-    return PASS("every model asserts its high-risk classification",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "every model asserts its high-risk classification", [m.bom_ref for m in ms]
+    )
 
 
 # Narrative / process Annex-IV obligations -> NA (advisory).
-register_manual(_r("EUAIACT-12", "Foreseeable misuse described", "Annex IV §2(a)"),
-                "foreseeable-misuse analysis is narrative, not BOM-modelled")
-register_manual(_r("EUAIACT-13", "Data-flow / architecture diagram", "Annex IV §2(b)"),
-                "data-flow diagrams are documentation, not BOM-modelled")
-register_manual(_r("EUAIACT-14", "Human oversight measures (Art 14)", "Art 14"),
-                "human-oversight measures are narrative; the model_card carries "
-                "a human_oversight signal but Annex IV requires a described measure")
-register_manual(_r("EUAIACT-15", "Logging / record-keeping (Art 12)", "Art 12"),
-                "automatic event logging is a runtime capability, not BOM-modelled")
-register_manual(_r("EUAIACT-16", "Risk-management system (Art 9)", "Art 9"),
-                "the risk-management system is process evidence, not BOM-modelled")
-register_manual(_r("EUAIACT-17", "Post-market monitoring plan (Art 72)", "Art 72"),
-                "the post-market monitoring plan is documentation, not BOM-modelled")
+register_manual(
+    _r("EUAIACT-12", "Foreseeable misuse described", "Annex IV §2(a)"),
+    "foreseeable-misuse analysis is narrative, not BOM-modelled",
+)
+register_manual(
+    _r("EUAIACT-13", "Data-flow / architecture diagram", "Annex IV §2(b)"),
+    "data-flow diagrams are documentation, not BOM-modelled",
+)
+register_manual(
+    _r("EUAIACT-14", "Human oversight measures (Art 14)", "Art 14"),
+    "human-oversight measures are narrative; the model_card carries "
+    "a human_oversight signal but Annex IV requires a described measure",
+)
+register_manual(
+    _r("EUAIACT-15", "Logging / record-keeping (Art 12)", "Art 12"),
+    "automatic event logging is a runtime capability, not BOM-modelled",
+)
+register_manual(
+    _r("EUAIACT-16", "Risk-management system (Art 9)", "Art 9"),
+    "the risk-management system is process evidence, not BOM-modelled",
+)
+register_manual(
+    _r("EUAIACT-17", "Post-market monitoring plan (Art 72)", "Art 72"),
+    "the post-market monitoring plan is documentation, not BOM-modelled",
+)

@@ -4,6 +4,7 @@ CycloneDX 1.6, SPDX 3.0.1 and SARIF 2.1.0 are all validated against schemas
 bundled under ``aibom/schemas/``. A document that fails its schema is a build
 failure, never a warning.
 """
+
 import json
 import pathlib
 from functools import cache

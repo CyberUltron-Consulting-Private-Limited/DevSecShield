@@ -28,15 +28,17 @@ def test_scan_produces_components_edges_flags_and_score() -> None:
     assert kinds.count("model") == 1
     assert kinds.count("dataset") == 1
     assert kinds.count("framework") == 5
+    assert kinds.count("model_file") == 1  # the model.safetensors weight artifact
 
     # The trained_on edge (model -> dataset) is present.
     trained = result.out_edges("model-chestxr-cnn", REL_TRAINED_ON)
     assert [e.dst for e in trained] == ["dataset-chestxr-train"]
-    # depends_on edges to every framework are present.
-    depends = result.out_edges("model-chestxr-cnn", REL_DEPENDS_ON)
-    assert {e.dst for e in depends} == {
+    # depends_on edges to every framework AND the weight file are present.
+    depends = {e.dst for e in result.out_edges("model-chestxr-cnn", REL_DEPENDS_ON)}
+    assert depends >= {
         "lib-numpy", "lib-pydicom", "lib-safetensors", "lib-torch", "lib-torchvision"
     }
+    assert "modelfile-model.safetensors" in depends
 
     # At least one flag, and the scorer produced a positive risk score.
     assert result.flags

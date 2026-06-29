@@ -2342,6 +2342,11 @@ export interface AiBomScanMetadata {
   ai_bom_file_used?: boolean
   scan_binaries?: boolean
   ai_bom_json?: Record<string, unknown>
+  ai_bom_compliance?: Record<string, unknown>
+  ai_bom_graph?: { nodes?: unknown[]; edges?: unknown[] }
+  ai_bom_scores?: Record<string, unknown>
+  ai_bom_spdx?: Record<string, unknown>
+  ai_bom_sarif?: Record<string, unknown>
   error_message?: string
 }
 

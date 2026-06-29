@@ -1,0 +1,379 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:3ab8c3ef-a8ad-4cca-abfb-5ea7a28229a7",
+  "metadata": {
+    "timestamp": "2026-06-26T05:38:45.770117+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "11"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "11"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "0.22"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "9e526232-1f3e-439d-90bc-b3858b2f6d5c",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/train_script.py:32"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "9c2bf48f-75d0-47e6-b773-a11f4eebccf4",
+      "type": "machine-learning-model",
+      "name": "model_quint8_avx2.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_quint8_avx2.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-quint8-avx2.onnx"
+    },
+    {
+      "bom-ref": "5f0beba7-7863-4a36-a080-ce44fbac872d",
+      "type": "machine-learning-model",
+      "name": "model_O2.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_O2.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-o2.onnx"
+    },
+    {
+      "bom-ref": "a83a9422-c083-47f6-9c6e-23469d2e1637",
+      "type": "machine-learning-model",
+      "name": "model_qint8_arm64.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_qint8_arm64.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-qint8-arm64.onnx"
+    },
+    {
+      "bom-ref": "686f77c9-09c9-46dc-8ab4-32c577fe845b",
+      "type": "machine-learning-model",
+      "name": "model_O3.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_O3.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-o3.onnx"
+    },
+    {
+      "bom-ref": "ac315deb-94a4-40b2-8394-2ddc4c3b0310",
+      "type": "machine-learning-model",
+      "name": "model_O4.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_O4.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-o4.onnx"
+    },
+    {
+      "bom-ref": "15b6fcbb-1b7b-4740-98c5-3e8396be8ec6",
+      "type": "machine-learning-model",
+      "name": "model_qint8_avx512.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_qint8_avx512.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-qint8-avx512.onnx"
+    },
+    {
+      "bom-ref": "91f66498-41eb-4a07-a22f-707d3ae7cf4e",
+      "type": "machine-learning-model",
+      "name": "model.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model.onnx"
+    },
+    {
+      "bom-ref": "e7c1447f-fa77-4778-96b4-ff33e2a687fc",
+      "type": "machine-learning-model",
+      "name": "model_qint8_avx512_vnni.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_qint8_avx512_vnni.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-qint8-avx512-vnni.onnx"
+    },
+    {
+      "bom-ref": "ea8ef782-fae1-4608-9e9f-6bda53283cda",
+      "type": "machine-learning-model",
+      "name": "model_O1.onnx",
+      "description": "ONNX Runtime unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/onnx/model_O1.onnx"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ONNX Runtime"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model-o1.onnx"
+    },
+    {
+      "bom-ref": "bb3578e0-acff-4bd9-be18-0ef86cebe789",
+      "type": "machine-learning-model",
+      "name": "model.safetensors",
+      "description": "HuggingFace unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/model.safetensors"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model.safetensors"
+    }
+  ]
+}

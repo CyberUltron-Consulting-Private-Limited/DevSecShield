@@ -17,15 +17,17 @@ def _v(report: dict, framework: str) -> dict[str, str]:
     return {q["id"]: q["verdict"] for q in report[framework]["requirements"]}
 
 
-def test_no_phi_fixture_hipaa_is_all_na() -> None:
+def test_no_phi_fixture_hipaa_is_all_out_of_scope() -> None:
     report = run_all(scan_repo(_EX / "no-phi-model"))
     hipaa = report["hipaa"]
-    assert hipaa["pass"] == 0 and hipaa["fail"] == 0 and hipaa["na"] == 13
+    assert hipaa["pass"] == 0 and hipaa["fail"] == 0
+    # No PHI -> the framework is OUT_OF_SCOPE (distinct from a generic na).
+    assert hipaa["out_of_scope"] == 13 and hipaa["na"] == 0
     assert hipaa["coverage"] is None  # 0 applicable -> NOT 0.0
-    assert all(v == "na" for v in _v(report, "hipaa").values())
+    assert all(v == "out_of_scope" for v in _v(report, "hipaa").values())
 
 
-def test_removing_phi_property_makes_hipaa_na() -> None:
+def test_removing_phi_property_makes_hipaa_out_of_scope() -> None:
     r = scan_repo(_EX / "clinical-imaging")
     model = next(c for c in r.components if c.kind == "model")
     assert (model.properties or {}).get("clinical:processes_phi") == "true"
@@ -35,7 +37,7 @@ def test_removing_phi_property_makes_hipaa_na() -> None:
     ds.has_sensitive_personal_information = "no"
     report = run_all(r)
     assert report["hipaa"]["coverage"] is None
-    assert all(v == "na" for v in _v(report, "hipaa").values())
+    assert all(v == "out_of_scope" for v in _v(report, "hipaa").values())
 
 
 def test_dropping_served_by_edge_fails_hipaa_baa() -> None:

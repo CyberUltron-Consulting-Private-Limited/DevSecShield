@@ -34,8 +34,7 @@ R_GV2 = _r("GV-2", "Govern: serving vendor accountability (BAA-bound)", "GOVERN"
 R_GV3 = _r("GV-3", "Govern: workforce diversity + competency", "GOVERN")
 R_GV4 = _r("GV-4", "Govern: risk-aware organizational culture", "GOVERN")
 # --- MAP ------------------------------------------------------------------- #
-R_MP1 = _r("MP-1", "Map: system context, components + data lineage established",
-           "MAP")
+R_MP1 = _r("MP-1", "Map: system context, components + data lineage established", "MAP")
 R_MP2 = _r("MP-2", "Map: intended purpose + categorization", "MAP")
 R_MP3 = _r("MP-3", "Map: data provenance characterized", "MAP")
 R_MP4 = _r("MP-4", "Map: risks + benefits to impacted groups characterized", "MAP")
@@ -66,8 +65,10 @@ def _gv2(r: ScanResult, req: Requirement) -> CheckResult:
     ]
     if bad:
         return FAIL(f"{len(bad)} model(s) lack a BAA-bound serving vendor", bad)
-    return PASS("every model is served by an accountable BAA-bound vendor",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "every model is served by an accountable BAA-bound vendor",
+        [m.bom_ref for m in ms],
+    )
 
 
 @register_check(R_MP1)
@@ -75,15 +76,13 @@ def _mp1(r: ScanResult, req: Requirement) -> CheckResult:
     ms = models(r)
     if not ms:
         return NA("no model component")
-    bad = [
-        m.bom_ref
-        for m in ms
-        if not (m.version and trained_datasets(r, m))
-    ]
+    bad = [m.bom_ref for m in ms if not (m.version and trained_datasets(r, m))]
     if bad:
         return FAIL(f"{len(bad)} model(s) lack version or data lineage", bad)
-    return PASS("system context: components versioned + data lineage mapped",
-                [m.bom_ref for m in ms])
+    return PASS(
+        "system context: components versioned + data lineage mapped",
+        [m.bom_ref for m in ms],
+    )
 
 
 @register_check(R_MP3)
@@ -143,8 +142,11 @@ def _me3(r: ScanResult, req: Requirement) -> CheckResult:
 
 
 # Organizational / process subcategories the AI-BOM cannot evidence -> NA.
-register_manual(R_GV1, "AI risk-management policies + accountability are "
-                "organizational evidence, not BOM-modelled")
+register_manual(
+    R_GV1,
+    "AI risk-management policies + accountability are "
+    "organizational evidence, not BOM-modelled",
+)
 register_manual(R_GV3, "workforce diversity/competency is organizational evidence")
 register_manual(R_GV4, "risk-aware culture is organizational evidence")
 register_manual(R_MP2, "intended-purpose categorization is documentation evidence")

@@ -52,6 +52,15 @@ _FALLBACK_DEFAULT = 1.0
 # Default scale if the YAML omits a `scale:` block (max_raw None -> auto-cap).
 _FALLBACK_BANDS: dict[str, float] = {"low": 33.0, "medium": 66.0}
 
+# Default per-component SEVERITY thresholds (inclusive lower bounds on the
+# component's STACKED raw flag-weight) if the YAML omits a `severity:` block.
+_FALLBACK_SEVERITY: dict[str, float] = {
+    "critical": 12.0,
+    "high": 8.0,
+    "medium": 4.0,
+    "low": 1.0,
+}
+
 
 def _mtime_ns(path: str | None) -> int | None:
     """Modification time of the weights file (cache-busting key); None if absent."""
@@ -146,6 +155,38 @@ def risk_band(normalized: float, weights_path: str | None = None) -> str:
     return "high"
 
 
+@lru_cache(maxsize=8)
+def _load_severity_cached(
+    path: str | None, _mtime: int | None
+) -> tuple[tuple[str, float], ...]:
+    p = Path(path) if path else _DEFAULT_WEIGHTS_PATH
+    sev: dict[str, float] = {}
+    if p.is_file():
+        data = yaml.safe_load(p.read_text()) or {}
+        if isinstance(data, dict) and isinstance(data.get("severity"), dict):
+            sev = {str(k): float(v) for k, v in data["severity"].items()}
+    if not sev:
+        sev = dict(_FALLBACK_SEVERITY)
+    return tuple(sorted(sev.items(), key=lambda kv: kv[1], reverse=True))
+
+
+def _load_severity(path: str | None = None) -> tuple[tuple[str, float], ...]:
+    """Per-component severity thresholds (band -> min stacked weight), high first."""
+    return _load_severity_cached(path, _mtime_ns(path))
+
+
+def component_severity(raw: float, weights_path: str | None = None) -> str:
+    """Map a component's STACKED raw flag-weight to critical/high/medium/low.
+
+    Inclusive lower bounds from the YAML ``severity:`` block; a component with no
+    flags (raw 0) is ``low`` — the inventory floor (clean library / vector store).
+    """
+    for band, threshold in _load_severity(weights_path):  # high -> low
+        if raw >= threshold:
+            return band
+    return "low"
+
+
 def score_result(result: ScanResult, weights_path: str | None = None) -> ScanResult:
     """Compute ``result.scores`` from ``result.flags`` (in place) and return it."""
     weights = dict(load_weights(weights_path))
@@ -160,12 +201,18 @@ def score_result(result: ScanResult, weights_path: str | None = None) -> ScanRes
         total += w
 
     normalized = normalize_score(total, weights_path)
+    # Per-component severity from the STACKED weight (flags stack per component).
+    component_severity_map = {
+        ref: component_severity(raw, weights_path) for ref, raw in by_component.items()
+    }
     scores: dict[str, Any] = {
         "risk_total": total,  # raw internal sum
         "risk_normalized": normalized,  # 0-100 (Trusera-style), defined scale
         "risk_band": risk_band(normalized, weights_path),  # low / medium / high
         "by_flag": dict(sorted(by_flag.items())),
         "by_component": dict(sorted(by_component.items())),
+        # bom_ref -> critical/high/medium/low (stacked); absent ref -> low (no flags)
+        "component_severity": dict(sorted(component_severity_map.items())),
         "flag_count": len(result.flags),
     }
     result.scores = scores
@@ -177,5 +224,6 @@ __all__ = [
     "score_result",
     "normalize_score",
     "risk_band",
+    "component_severity",
     "_DEFAULT_WEIGHTS_PATH",
 ]

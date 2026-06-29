@@ -48,8 +48,13 @@ def write_pdf(compliance: dict[str, Any], path: Path, subject: str) -> None:
     for fw, title in FRAMEWORK_TITLES.items():
         b = compliance[fw]
         summary.append(
-            [title, str(b["pass"]), str(b["fail"]), str(b["na"]),
-             coverage_label(b["coverage"])]
+            [
+                title,
+                str(b["pass"]),
+                str(b["fail"]),
+                str(b["na"]),
+                coverage_label(b["coverage"]),
+            ]
         )
     t = Table(summary, hAlign="LEFT")
     t.setStyle(

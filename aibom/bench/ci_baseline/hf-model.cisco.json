@@ -1,0 +1,472 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "d22ed641-9c52-49a5-b4c4-c95af4ba55f4",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:58:12Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T05:58:12Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "sentence-transformers/all-MiniLM-L6-v2": {
+        "source_name": "sentence-transformers/all-MiniLM-L6-v2",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model",
+        "components": {
+          "model_artifact": [
+            {
+              "name": "pytorch_model.bin",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/pytorch_model.bin",
+              "line_number": 0,
+              "framework": "pytorch",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'pytorch_model.bin' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/pytorch_model.bin",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_format": "pytorch",
+                "file_size_bytes": 133,
+                "file_extension": ".bin",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/pytorch_model.bin"
+                ]
+              },
+              "instance_id": "pytorch_model.bin_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/pytorch_model.bin_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "tf_model.h5",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/tf_model.h5",
+              "line_number": 0,
+              "framework": "tensorflow",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'tf_model.h5' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/tf_model.h5",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_format": "tensorflow",
+                "file_size_bytes": 133,
+                "file_extension": ".h5",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/tf_model.h5"
+                ]
+              },
+              "instance_id": "tf_model.h5_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/tf_model.h5_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "model.safetensors",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/model.safetensors",
+              "line_number": 0,
+              "framework": "safetensors",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'model.safetensors' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/model.safetensors",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_format": "safetensors",
+                "file_size_bytes": 133,
+                "file_extension": ".safetensors",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/model.safetensors"
+                ]
+              },
+              "instance_id": "model.safetensors_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/model.safetensors_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "model_artifact",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+              "line_number": 66,
+              "framework": "model-weights",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Serialized model weights or export",
+              "text": "xm.save(self.model.state_dict(), os.path.join(output_path, \"pytorch_model.bin\"))",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'model_artifact' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "start_line": 66,
+                    "end_line": 66,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "line": 160,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "line": 165,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 3,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py"
+                ],
+                "consolidated_count": 3
+              },
+              "instance_id": "model_artifact_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py_66",
+              "confidence": 0.9
+            },
+            {
+              "name": "openvino_model_qint8_quantized.bin",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model_qint8_quantized.bin",
+              "line_number": 0,
+              "framework": "pytorch",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'openvino_model_qint8_quantized.bin' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model_qint8_quantized.bin",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_format": "pytorch",
+                "file_size_bytes": 133,
+                "file_extension": ".bin",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model_qint8_quantized.bin"
+                ]
+              },
+              "instance_id": "openvino_model_qint8_quantized.bin_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model_qint8_quantized.bin_0",
+              "confidence": 1.0
+            },
+            {
+              "name": "openvino_model.bin",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model.bin",
+              "line_number": 0,
+              "framework": "pytorch",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'openvino_model.bin' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model.bin",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_format": "pytorch",
+                "file_size_bytes": 133,
+                "file_extension": ".bin",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model.bin"
+                ]
+              },
+              "instance_id": "openvino_model.bin_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/openvino_model.bin_0",
+              "confidence": 1.0
+            }
+          ],
+          "training_run": [
+            {
+              "name": "training_run",
+              "component_type": "training_run",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+              "line_number": 81,
+              "framework": "pytorch/tensorflow",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Model training execution",
+              "text": "optimizer = AdamW(params=model.parameters(), lr=2e-5, correct_bias=True)",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Training run 'training_run' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "start_line": 81,
+                    "end_line": 81,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "line": 83,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "line": 93,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py",
+                    "line": 153,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 4,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py"
+                ],
+                "consolidated_count": 4
+              },
+              "instance_id": "training_run_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.py_81",
+              "confidence": 0.9
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 7,
+          "last_generated_at": "2026-06-26T05:58:12Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+          "source_ref_version": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 7,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "model_artifact": 6,
+        "training_run": 1
+      },
+      "total_relationships": 0,
+      "risk_score": 0,
+      "risk_severity": "info"
+    },
+    "risk": {
+      "score": 0,
+      "severity": "info",
+      "flags": []
+    },
+    "errors": []
+  }
+}
