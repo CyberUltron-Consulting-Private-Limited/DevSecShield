@@ -225,3 +225,46 @@ progress.aibom-reconcile.txt (reference only).
 - FOLLOW-ON for C2/C3 implementers: extend this same rule-corpus model to Go/Rust/JS/Java/C — the symbol
   resolution + arg-binding skeleton is language-agnostic; only the per-language AST front-end differs. Reuse
   `_display_name/_refine_key/_slug` from algorithm_scan for naming PARITY so refs collide & dedup cleanly.
+
+## C2 (BUILD) — landed 2026-06-30 — Java + Go crypto-API scanner (call-expression model)
+- NEW `aibom/cbom/scanners/jvm_go_crypto_scan.py` (`crypto_jvm_go`, order=9, between AST=8 and
+  regex=10). Python has a real `ast` module (C1); Java/Go DON'T (and vendoring a third-party grammar
+  would break the no-OSS-tooling rule), so C2 is a clean-room **call-expression extractor**: strip
+  comments (KEEP string literals — JCA transformation strings live in them), follow simple intra-file
+  variable bindings, resolve algo+keysize+mode+curve+padding the SAME way C1 does. Same detection-rule
+  model (symbol fixes the primitive CONTEXT, args supply params); only the per-language front-end differs.
+- LIBRARY→ASSET maps implemented (R2 corpus): JCA/JCE (`Cipher/MessageDigest/Signature/Mac/KeyGenerator/
+  KeyPairGenerator/SecretKeyFactory.getInstance`), BouncyCastle (engine classes + block-mode wrappers +
+  digests + signers), Go stdlib `crypto/*` + `golang.org/x/crypto/{chacha20poly1305,bcrypt,argon2,scrypt,
+  pbkdf2}`. Capabilities a flat regex can't: transformation split `AES/GCM/NoPadding`→algo+mode+padding;
+  `SHA384withECDSA`→ECDSA signature; `KeyPairGenerator.getInstance("RSA")`+`kpg.initialize(2048)`→RSA-2048
+  (cross-statement var bind); `new GCMBlockCipher(new AESEngine())`→AES-GCM (nested consume); Go
+  `block:=aes.NewCipher` + `cipher.NewGCM(block)`→AES-GCM (block→mode var bind); `rsa.GenerateKey(rand,2048)`
+  size; `ecdsa.GenerateKey(elliptic.P384())` curve.
+- KEY GOTCHAS for C3 (JS/TS/C/Rust/.NET — same skeleton):
+  1. Track EXPLICIT key size separately from the algo-table DEFAULT. `_display_name` only folds the
+     explicit one (else 3DES→"3DES-168-CBC"). `_Asset` stores `explicit_size`; `resolved_size` (explicit
+     or table default) is the `crypto:keySize` PROPERTY. Mirror the regex scanner's split exactly.
+  2. Dedup is by (display-name, file). A cipher-RSA and a signature-RSA in the SAME file collapse to one
+     "RSA" (first wins) — don't write a test that asserts a context that loses the dedup. (Fixed by making
+     the Java signature ECDSA so it doesn't collide with the OAEP cipher-RSA.)
+  3. Only attach a `crypto:mode` to a symmetric primitive — JCA's "RSA/ECB/OAEP..." has a bogus "ECB"
+     field; gate on `algo_info(key).primitive in {block-cipher,stream-cipher,ae}`.
+  4. Go reuses the var name `block` across functions → bind a mode wrapper to the NEAREST PRECEDING block
+     of the same name by source position, not a dict (else GCM leaks onto the 3DES block).
+  5. EMIT the same `crypto-algo-{slug(name)}-{slug(file)}` refs + run BEFORE the regex scanner so it
+     defers via `ctx.has_ref`; reuse `_display_name/_refine_key/_slug` from algorithm_scan for ref parity.
+     `crypto:detectionMethod="call-expr"` (vs C1's "ast"); per-language `crypto:detectedBy` library label.
+- LANE DISCIPLINE kept: EMIT-only (algorithm assets + provenance props). No weak-flagging (C6), no PQC
+  grading (C7), no CycloneDX serialization (C9). `crypto:padding` from the JCA 3rd field is captured (free
+  param, like C1's pyca padding) but NOT flagged — WEAK_PADDING is C16.
+- FIXTURE `tests/fixtures/synthetic-crypto-jvm-go/{CryptoApp.java,crypto_app.go}` (every asset arg-bound) +
+  `tests/test_cbom_jvm_go_crypto_scan.py` (16 tests, real pipeline, no mocks).
+- GATES: 16 C2 tests pass; full CBOM/crypto subset 100%; full aibom suite = only the 2 PRE-EXISTING AIBOM
+  chroma differential failures (test_differential chroma-provider/framework, unrelated to CBOM — C1 already
+  proved them pre-existing). ruff+mypy clean on new file. bench `00-synthetic` gate unchanged: 0 true-miss,
+  our-unique=10 (Python-only repos → the Java/Go scanner emits nothing there, zero perturbation). frontend
+  `tsc --noEmit` exit 0 — NO frontend change needed (new assets ride the existing scan-meta→results
+  contract as more algorithm components in the existing distributions; the CBOM-viz browser gate belongs to
+  F1-F3, which depend on I1, not C2). Backend was not started, so no live dev-browser render (additive
+  contract + tsc-clean is the proof, same as C1).

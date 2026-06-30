@@ -61,7 +61,7 @@
       "dependencies": [
         "C1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Extend AST crypto-API scanner to Java + Go (BouncyCastle/JCA, crypto + x/crypto) with library->asset maps"
     },
     {
