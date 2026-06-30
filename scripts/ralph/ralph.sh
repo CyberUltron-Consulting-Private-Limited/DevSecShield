@@ -1,12 +1,13 @@
 #!/bin/bash
 # Ralph Wiggum - Long-running AI agent loop
-# Usage: ./ralph.sh [--tool amp|claude] [max_iterations]
+# Usage: ./ralph.sh [--tool amp|claude] [--min min_iterations] [max_iterations]
 
 set -e
 
 # Parse arguments
 TOOL="amp"  # Default to amp for backwards compatibility
 MAX_ITERATIONS=10
+MIN_ITERATIONS=1   # completion promise is ignored before this iteration
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -16,6 +17,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --tool=*)
       TOOL="${1#*=}"
+      shift
+      ;;
+    --min)
+      MIN_ITERATIONS="$2"
+      shift 2
+      ;;
+    --min=*)
+      MIN_ITERATIONS="${1#*=}"
       shift
       ;;
     *)
@@ -79,7 +88,7 @@ if [ ! -f "$PROGRESS_FILE" ]; then
   echo "---" >> "$PROGRESS_FILE"
 fi
 
-echo "Starting Ralph - Tool: $TOOL - Max iterations: $MAX_ITERATIONS"
+echo "Starting Ralph - Tool: $TOOL - Min iterations: $MIN_ITERATIONS - Max iterations: $MAX_ITERATIONS"
 
 for i in $(seq 1 $MAX_ITERATIONS); do
   echo ""
@@ -95,12 +104,17 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     OUTPUT=$(claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || true
   fi
   
-  # Check for completion signal (the loop's completion-promise)
+  # Check for completion signal (the loop's completion-promise).
+  # Ignore the promise until the minimum-iterations floor is reached.
   if echo "$OUTPUT" | grep -q "<promise>COMPLETE and tested from frontend and backend</promise>"; then
-    echo ""
-    echo "Ralph completed all tasks!"
-    echo "Completed at iteration $i of $MAX_ITERATIONS"
-    exit 0
+    if [ "$i" -ge "$MIN_ITERATIONS" ]; then
+      echo ""
+      echo "Ralph completed all tasks!"
+      echo "Completed at iteration $i of $MAX_ITERATIONS (min $MIN_ITERATIONS)"
+      exit 0
+    else
+      echo "Promise seen at iteration $i but below min ($MIN_ITERATIONS) — continuing to harden/extend."
+    fi
   fi
   
   echo "Iteration $i complete. Continuing..."
