@@ -35,3 +35,31 @@ progress.aibom-reconcile.txt (reference only).
   be slow; a long iteration with advancing CPU + file writes is NOT stuck. Restart-then-verify; don't
   thrash. If a gate times out under load, note it and retry rather than declaring a product defect.
 ---
+
+## R1 (RESEARCH) — landed 2026-06-30 — IBM CBOMkit / cbomkit-theia / Sonar-Cryptography
+- Studied PUBLIC SPEC/BEHAVIOR ONLY (docs + arch blog + CycloneDX schema; no source read/paste). Sources in
+  docs/cbom-research/LEDGER.md (10 rows, each URL-cited). Key learnings:
+  - Sonar-Cryptography = AST builder-DSL: entry point is a crypto function-call/ctor; captures algo/keysize/
+    mode/padding/curve from the ARGUMENTS (parameter binding); detection-context carries primitive "kind";
+    enricher adds an OID per algorithm; CROSS-CALL rule dependencies compose multi-function schemes
+    (key-size from a separate init() linked to the cipher; "AES/CBC/PKCS5Padding" split into algo+mode+pad).
+    Languages: Java(JCA/JCE/BouncyCastle) + Python(pyca) + Go; runs on sonar-java/python/go ASTs (does NOT
+    parse itself). Reorganizer rules fix library-specific tree artifacts (internal, not a capability).
+  - cbomkit-theia = Go FILESYSTEM/image scanner (NOT source). Plugins: certificates(x509 parse), secrets
+    (gitleaks key material), opensslconf(TLS+ciphers from config), java.security(reads jdk.tls.disabledAlgorithms
+    and CROSS-REFS the CBOM -> confidence 0-1 / executability), problematic-CA(known-bad issuer flag), vex.
+    Enrich-mode (input CBOM + filesystem findings) vs generate-mode. Our scan_crypto already unifies
+    source+filesystem in ONE pass -> we don't need their two-phase merge.
+- GAP-LIST vs our lane -> 4 NEW build stories appended to prd.json (each traces to a ledger gap row):
+  - C10 OID enrichment (algorithm->OID KB; emit cryptoProperties.oid) — Sonar enricher; we emit no OID today.
+  - C11 environment-restriction executability (java.security jdk.tls.disabledAlgorithms + openssl.cnf ->
+    crypto:executable=false + crypto:confidence + DISABLED_BY_POLICY) — theia; we have no config-restriction model.
+  - C12 cert trust analysis (known-bad-CA KB -> UNTRUSTED_CA; self-signed-in-prod severity) — theia problematic-CA;
+    C4 has no issuer-trust check.
+  - C13 cross-call dataflow linker (link separately-defined keysize/curve to the consuming cipher; split
+    composed transformation strings) — Sonar rule-dependencies; our regex lane has NO dataflow (its #1 edge).
+  - B1 dependencies extended to [C9,C10,C11,C12,C13] so the differential gate measures every new capability
+    before the B2 CI lock. Rows 5/6/9/10 confirm current-lane PARITY (cert/secrets/single-pass-aggregate/
+    compliance) — no new work needed there.
+- The remaining R-stories (R2 weak/AST detail, R3 cert/protocol/material, R4 PQC, R5 compliance) are still
+  open and will deepen these; R1 deliberately scoped to the CBOMkit-family architecture + gap-list only.
