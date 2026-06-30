@@ -86,3 +86,30 @@ progress.aibom-reconcile.txt (reference only).
   CryptoRule corpus rather than adding yet another parallel regex list — the per-library map table in the
   ledger is the corpus content. Keep EMIT-only lane discipline (scanner emits crypto:detectedBy/padding props;
   WEAK_PADDING flagging weight stays in scorer/weakness.py, not the scanner).
+
+## R3 (RESEARCH) — landed 2026-06-30 — cert/protocol/related-material depth + weakness catalogs
+- Studied PUBLIC SPEC/BEHAVIOR ONLY (NIST SP 800-131A, RFC 9325/7465/8996 TLS, RFC 9142 SSH KEX, Mozilla
+  Server-Side TLS, OWASP WSTG weak-encryption + Password/Cryptographic Storage cheat sheets, CWE
+  327/329/330/338/323/321/916/759/760, CycloneDX 1.6 cryptoProperties; testssl.sh/sslyze/ssh-audit as
+  BEHAVIORAL verdict oracles — no source read/paste). Ledger rows 14–18 + R3 narrative in
+  docs/cbom-research/LEDGER.md, each URL-cited.
+- EVIDENCE GAP (verified against weakness.py): the lane raises only 5 findings — WEAK_ALGORITHM,
+  WEAK_CIPHER_MODE(ECB), WEAK_KEY_SIZE(<2048 *asymmetric algorithm* assets only), WEAK_PROTOCOL(TLS<1.2),
+  EXPIRED_CERTIFICATE. So:
+  - Cert (row14): MD5/SHA-1-signed cert + RSA-1024 cert PASS clean (WEAK_KEY_SIZE gates assetType=="algorithm",
+    skips certs); no near-expiry band. → folds into C4 (+self-signed-in-prod severity rides C12).
+  - Protocol (rows15-16): cipher-suite strings captured but only the *version* graded — anon/EXPORT/RC4/3DES/
+    no-PFS suite on TLS1.2 reads clean; SSH usage seen but NO KEX/cipher/MAC tokens, NO IPsec/IKE. → C5.
+  - Related-material (row17): hardcoded iv/nonce/salt/secret_key EMITTED but ZERO weakness flags; NO insecure-RNG
+    corpus anywhere (rules.py has no RNG patterns). → C6 (R3 supplies per-language RNG corpus + material→finding
+    predicates STATIC_IV/HARDCODED_KEY/WEAK_RNG).
+  - KDF work-factor (row18): salt recorded as material but PBKDF2 iters / bcrypt cost / scrypt N / Argon2 mem
+    NEVER read — wholly new dimension. → C17 (NEW).
+- BACKLOG DELTA: only ONE new build story warranted (rows 14-17 just deepen existing C4/C5/C6 with URL-cited
+  catalogs = implementer checklists). Appended **C17** (priority 28, deps [R3,C1]); extended **B1 deps to
+  include C17**. prd.json now 28 stories, all deps resolve, next eligible = R4.
+- GOTCHA for the C4/C5/C6/C17 implementers: keep EMIT-only lane discipline — the scanners capture the params
+  (crypto:signatureAlgorithm / crypto:cipherSuites / crypto:iterations·costFactor·memoryKiB / materialKind);
+  the weakness VERDICTS (WEAK_CERT_SIGNATURE, WEAK_CIPHER_SUITE, WEAK_SSH_ALGORITHM, WEAK_RNG, STATIC_IV,
+  HARDCODED_KEY, WEAK_KDF_PARAMS, MISSING_SALT) live in weakness.py/rules.py and are WEIGHTED by the C8 scorer,
+  never raised in the scanner. WEAK_KEY_SIZE currently gates assetType=="algorithm" — C4 must add a cert path.

@@ -7,7 +7,7 @@
       "title": "Research IBM CBOMkit / cbomkit-theia + Sonar-Cryptography: architecture, detection model, CycloneDX output; write ledger + gap-list vs our lane" },
     { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": true,
       "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model" },
-    { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": false,
+    { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": true,
       "title": "Research certificate/protocol/related-crypto-material depth + weakness catalogs (weak primitives, ECB, static IV/nonce, hardcoded keys, weak RNG, cert weaknesses)" },
     { "id": "R4", "priority": 4, "dependencies": ["R1"], "passes": false,
       "title": "Research PQC grading + standards (CNSA 2.0, FIPS 203/204/205, NIST PQC migration, nistQuantumSecurityLevel, quantum-vulnerable classification)" },
@@ -39,7 +39,7 @@
       "title": "Frontend: PQC readiness gauge + quantum-vulnerable list + migration-roadmap panel" },
     { "id": "F3", "priority": 18, "dependencies": ["I1"], "passes": false,
       "title": "Frontend: expanded compliance tri-state matrix + options sidebar controls (level/frameworks/language toggles)" },
-    { "id": "B1", "priority": 19, "dependencies": ["C9","C10","C11","C12","C13","C14","C15","C16"], "passes": false,
+    { "id": "B1", "priority": 19, "dependencies": ["C9","C10","C11","C12","C13","C14","C15","C16","C17"], "passes": false,
       "title": "Extend bench/cbom oracles (add Sonar-Cryptography and/or cryptobom-forge as oracles) + refresh frozen baselines + differential gate (true-miss==0, our-unique>0)" },
     { "id": "B2", "priority": 20, "dependencies": ["F1","F2","F3","B1"], "passes": false,
       "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner" },
@@ -56,6 +56,8 @@
     { "id": "C15", "priority": 26, "dependencies": ["R2","C3"], "passes": false,
       "title": "High-level construction decomposition (clean-room re R2 row 12 / libsodium+Fernet+JWT): expand crypto_secretbox/box/sign/pwhash + Fernet + JWT alg into constituent primitive crypto-assets + a relatedTo edge to the construction asset" },
     { "id": "C16", "priority": 27, "dependencies": ["R2","C1"], "passes": false,
-      "title": "Padding-scheme capture (clean-room re R2 row 13 / Sonar transformation split + CycloneDX algorithmProperties.padding): extract_padding (JCA 3rd field, pyca padding.*, WebCrypto RSA-OAEP, .NET RSAEncryptionPadding) -> crypto:padding + WEAK_PADDING flag for PKCS1v1.5/NoPadding" }
+      "title": "Padding-scheme capture (clean-room re R2 row 13 / Sonar transformation split + CycloneDX algorithmProperties.padding): extract_padding (JCA 3rd field, pyca padding.*, WebCrypto RSA-OAEP, .NET RSAEncryptionPadding) -> crypto:padding + WEAK_PADDING flag for PKCS1v1.5/NoPadding" },
+    { "id": "C17", "priority": 28, "dependencies": ["R3","C1"], "passes": false,
+      "title": "KDF / password-hashing work-factor scanner (clean-room re R3 row 18 / OWASP Password Storage + CWE-916/759/760): detect PBKDF2/bcrypt/scrypt/Argon2/pwhash calls, bind iteration/cost/memory/salt params, emit KDF algorithm asset with crypto:iterations/costFactor/memoryKiB; raise WEAK_KDF_PARAMS below OWASP floors (PBKDF2<600k or HMAC-SHA1, bcrypt<10, scrypt N<2^17, Argon2 mem<19MiB/non-id) + MISSING_SALT (CWE-759/760)" }
   ]
 }
