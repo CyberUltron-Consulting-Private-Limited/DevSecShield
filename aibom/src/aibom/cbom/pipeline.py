@@ -25,9 +25,30 @@ import aibom.cbom.scanners  # noqa: F401
 from aibom.cbom.compliance import run_cbom_compliance
 from aibom.cbom.registry import ordered_cbom_scanners
 from aibom.cbom.scorer import score_crypto
-from aibom.model.component import MetadataComponent
+from aibom.model.component import AIComponent, MetadataComponent
 from aibom.model.result import ScanResult
 from aibom.scan.registry import ScanContext
+
+
+def _dedup_by_ref(components: list[AIComponent]) -> list[AIComponent]:
+    """Collapse components that share a ``bom_ref`` to the richest one.
+
+    Two CBOM scanners can legitimately detect the same logical asset — the AST
+    scanner (C1) and the line-regex scanner emit identical
+    ``crypto-algo-{name}-{file}`` refs for the same usage. Keeping the component
+    with the most ``properties`` preserves the argument-bound (richer) detection
+    while guaranteeing the emitted BOM has no duplicate refs (a determinism +
+    schema-validity invariant). Ties keep the first occurrence (stable)."""
+    best: dict[str, AIComponent] = {}
+    order: list[str] = []
+    for comp in components:
+        ref = comp.bom_ref
+        if ref not in best:
+            best[ref] = comp
+            order.append(ref)
+        elif len(comp.properties or {}) > len(best[ref].properties or {}):
+            best[ref] = comp
+    return [best[ref] for ref in order]
 
 
 def scan_crypto(path: str | Path, level: int = 1) -> ScanResult:
@@ -45,9 +66,10 @@ def scan_crypto(path: str | Path, level: int = 1) -> ScanResult:
         if scanner.level <= level and scanner.matches(root):
             scanner.scan(ctx)
 
+    components = _dedup_by_ref(ctx.components)
     result = ScanResult(
         subject=ctx.subject or MetadataComponent(name=root.name),
-        components=sorted(ctx.components, key=lambda c: (c.kind, c.bom_ref)),
+        components=sorted(components, key=lambda c: (c.kind, c.bom_ref)),
         edges=ctx.edges,
         flags=ctx.flags,
         properties=ctx.properties,

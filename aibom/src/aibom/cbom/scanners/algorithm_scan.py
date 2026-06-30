@@ -274,15 +274,26 @@ class CryptoAlgorithmScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         for label, src in _detect_libraries(ctx.root):
+            ref = f"crypto-lib-{_slug(label)}"
+            if ctx.has_ref(ref):
+                continue
             ctx.add_component(
                 FrameworkComponent(
-                    bom_ref=f"crypto-lib-{_slug(label)}",
+                    bom_ref=ref,
                     name=label,
                     properties={"crypto:role": "library", "discovery:source": src},
                 )
             )
 
         for asset in _detect_assets(ctx.root):
+            # The AST scanner (order 8) owns Python algorithm detection with
+            # argument binding; defer to any ref it already emitted so the regex
+            # pass only adds usages the AST could not see (e.g. an algorithm named
+            # in a non-Python file or a string literal). This keeps the emitted
+            # inventory duplicate-free *before* the flag/PQC scanners run.
+            ast_ref = f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}"
+            if ctx.has_ref(ast_ref):
+                continue
             props: dict[str, str] = {
                 "crypto:assetType": "algorithm",
                 "crypto:primitive": asset.info.get("primitive", "unknown"),

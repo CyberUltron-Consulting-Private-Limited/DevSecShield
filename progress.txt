@@ -187,3 +187,41 @@ progress.aibom-reconcile.txt (reference only).
   (test_compliance_never_reads_flags). C22 needs its OWN 3000-bit predicate.
 - Pure research iteration: only docs/cbom-research/LEDGER.md + prd.json changed. No code/build/browser gate.
   prd integrity re-verified: 33 stories, 0 dangling deps, 0 priority dupes, next eligible = C1.
+
+## C1 (BUILD) — landed 2026-06-30 — Python-AST crypto-API scanner + detection-rule model
+- NEW `aibom/cbom/scanners/ast_crypto_scan.py` (`crypto_ast`, order=8): a true Python `ast`-based scanner
+  with a data-driven rule corpus keyed by the RESOLVED CALL SYMBOL (last 1-2 dotted segments). The symbol
+  fixes the primitive CONTEXT; the call ARGUMENTS supply the params. Buys 3 things the line-regex can't:
+  (1) cross-statement constant-following (`RSA_BITS=3072` then `key_size=RSA_BITS` → RSA-3072 via a
+  module/function const map + a small literal evaluator that folds `b"\x00"*16` / `a+b`);
+  (2) nested-call binding (`Cipher(algorithms.AES(k), modes.CBC(iv))` → AES+CBC; `padding.OAEP` arg →
+  scope-bound `crypto:padding`; PBKDF2 `iterations=` kwarg → `crypto:iterations`);
+  (3) related-crypto-material from a LITERAL IV/nonce/salt bound to a mode/KDF call.
+- LANE DISCIPLINE kept: scanner EMITs only (algorithm + related-material assets + rich props:
+  crypto:detectedBy / detectionContext / detectionMethod=ast / confidence / padding / iterations). No
+  scoring/flagging here (weak=C5/C6, PQC=C7, emit=C4).
+- DEDUP DESIGN (the key gotcha): two scanners emitting the same component would DOUBLE the
+  weak/pqc FLAG scanners (they iterate ctx.components mid-pipeline, BEFORE any pipeline dedup → 11 weak
+  flags vs 6). Fix = the later regex scanner (order 10) DEFERS to AST-emitted refs via `ctx.has_ref(ref)`
+  for both libs and algos, so it only adds usages AST can't see (e.g. tls_config.py's "AES" inside a
+  cipher-suite STRING literal — AST can't read string literals; regex still catches it). Belt-and-suspenders:
+  `pipeline._dedup_by_ref` collapses any same-ref dups to the richest (more properties) before building the
+  ScanResult. DO NOT make the regex scanner "skip .py" — the oracle DEPENDS on regex finding the
+  tls_config string-literal AES (test_strong_algorithms_in_the_fixture_are_not_flagged).
+- ORACLE EXTENSION: `synthetic-crypto-app/expected_crypto.json` related_crypto_material 1→2 (added the
+  static-CBC-IV `modes.CBC(b"\x00"*8)` in weak_des — a genuine new true-positive). Touched 2 tests that
+  assumed a single related-material (test_cbom_cyclonedx_emit::test_related_crypto_material_kind now checks
+  the SET of kinds; cert test's len==count picks up the bumped count). manifest-consistency test is
+  internal (doesn't scan) so it just needed the count bump.
+- NEW dedicated fixture `tests/fixtures/synthetic-crypto-ast/ast_crypto_app.py` (every asset resolvable
+  ONLY by argument binding) + `tests/test_cbom_ast_crypto_scan.py` (11 tests, TDD, real pipeline, no mocks).
+- GATES: full aibom suite 326 passed / 2 failed; the 2 are the PRE-EXISTING AIBOM chroma differential
+  (test_differential chroma-provider/framework) — proved pre-existing by `git stash` (still fail without my
+  changes). All CBOM/crypto pass. ruff+mypy clean on changed files. bench `00-synthetic` regenerated →
+  13 crypto-assets (+IV), true_misses=[]. frontend `tsc --noEmit` exit 0 (no frontend code touched — C1's
+  new props ride the existing scan-meta→results contract as properties[]; cbom_distributions keys
+  unchanged). Backend (:8000) was DOWN so no live dev-browser render; additive-contract + tsc-clean is the
+  proof, and the dedicated CBOM-viz browser gate belongs to F1-F3 (which depend on I1, not C1).
+- FOLLOW-ON for C2/C3 implementers: extend this same rule-corpus model to Go/Rust/JS/Java/C — the symbol
+  resolution + arg-binding skeleton is language-agnostic; only the per-language AST front-end differs. Reuse
+  `_display_name/_refine_key/_slug` from algorithm_scan for naming PARITY so refs collide & dedup cleanly.

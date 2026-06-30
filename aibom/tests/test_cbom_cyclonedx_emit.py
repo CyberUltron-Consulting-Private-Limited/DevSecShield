@@ -177,9 +177,14 @@ def test_certificate_properties_carry_subject_and_validity() -> None:
 
 
 def test_related_crypto_material_kind() -> None:
-    [mat] = _by_asset_type(_bom())["related-crypto-material"]
-    relp = mat["cryptoProperties"]["relatedCryptoMaterialProperties"]
-    assert relp["type"] == "private-key"
+    materials = _by_asset_type(_bom())["related-crypto-material"]
+    kinds = {
+        m["cryptoProperties"]["relatedCryptoMaterialProperties"]["type"]
+        for m in materials
+    }
+    # the hardcoded private key plus the static CBC IV the AST scanner inventories
+    assert "private-key" in kinds
+    assert "initialization-vector" in kinds
 
 
 # --------------------------------------------------------------------------- #

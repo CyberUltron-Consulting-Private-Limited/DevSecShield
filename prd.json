@@ -52,7 +52,7 @@
       "dependencies": [
         "R2"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room AST crypto-API scanner core + detection-rule model (Python first): emit algorithm/related-material components with params (keysize/mode/padding/curve)"
     },
     {

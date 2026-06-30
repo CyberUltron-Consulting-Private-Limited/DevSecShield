@@ -18,7 +18,8 @@
     {"name": "TLS", "version": "1.0", "weak": true, "cipher": "ECDHE-RSA-AES128-SHA", "file": "tls_config.py"}
   ],
   "related_crypto_material": [
-    {"name": "hardcoded-private-key", "kind": "private-key", "algorithm": "RSA-2048", "file": "crypto_app.py"}
+    {"name": "hardcoded-private-key", "kind": "private-key", "algorithm": "RSA-2048", "file": "crypto_app.py"},
+    {"name": "static-cbc-iv", "kind": "initialization-vector", "algorithm": "DES", "file": "crypto_app.py"}
   ],
   "weak_algorithms": ["MD5", "DES", "RC4", "AES-128-ECB", "RSA-1024"],
   "strong_algorithms": ["RSA-2048", "AES-256-GCM", "SHA-256"],
@@ -35,7 +36,7 @@
     "self_signed_certificates": 1,
     "protocols": 1,
     "weak_protocols": 1,
-    "related_crypto_material": 1,
+    "related_crypto_material": 2,
     "quantum_vulnerable": 2
   }
 }
