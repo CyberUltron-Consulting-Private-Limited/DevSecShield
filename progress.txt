@@ -113,3 +113,37 @@ progress.aibom-reconcile.txt (reference only).
   the weakness VERDICTS (WEAK_CERT_SIGNATURE, WEAK_CIPHER_SUITE, WEAK_SSH_ALGORITHM, WEAK_RNG, STATIC_IV,
   HARDCODED_KEY, WEAK_KDF_PARAMS, MISSING_SALT) live in weakness.py/rules.py and are WEIGHTED by the C8 scorer,
   never raised in the scanner. WEAK_KEY_SIZE currently gates assetType=="algorithm" — C4 must add a cert path.
+
+## R4 (RESEARCH) — landed 2026-06-30 — PQC grading + standards (CNSA 2.0 / FIPS 203·204·205 / NIST migration)
+- Studied PUBLIC SPEC/BEHAVIOR ONLY (CycloneDX 1.6 cryptoProperties schema + crypto-algorithm inventory use
+  case; NIST FIPS 203/204/205 final + PQC project & FAQ; NSA CNSA 2.0 FAQ + timeline guides; NIST IR 8547;
+  NIST SP 800-208 stateful-HBS; IETF draft-kwiatkowski-tls-ecdhe-mlkem + JEP 527 hybrids; Grover-on-AES).
+  Ledger rows 19-23 + R4 narrative in docs/cbom-research/LEDGER.md, each URL-cited. No source read/paste.
+- KEY CORRECTION for the C7 implementer: `nistQuantumSecurityLevel` is the NIST PQC category **0-6**, NOT a
+  binary. CycloneDX's own example = AES-128-GCM is level **1** (RSA-vs-quantum = 0). Today pqc.py sets it to
+  0 ONLY for quantum-vulnerable asymmetric and sets it on NOTHING else, so AES-256/SHA-384/ML-KEM-1024 are
+  ungraded. C7 must grade ALL algorithm assets: symmetric/hash via a strength->category map; PQC via a
+  param-set KB (ML-KEM-512/768/1024=Cat1/3/5; ML-DSA-44/65/87=Cat2/3/5; SLH-DSA-128/192/256=Cat1/3/5).
+- algorithm_scan today detects the PQC FAMILY token only (Kyber/ML-KEM, Dilithium/ML-DSA, SPHINCS+/SLH-DSA,
+  lines 104-106). C7 must CAPTURE THE PARAM-SET SUFFIX (-512/-768/-1024, -44/-65/-87, 128s/192f) or it can't
+  decide the category OR CNSA-2.0 sufficiency (CNSA 2.0 mandates the Cat-5 sets ONLY; excludes 512/768/44/65).
+- pqc.py's migration timeline is ONE FLAT STRING for every asset. CNSA 2.0 is CATEGORY-PHASED: SW/FW-signing
+  exclusive 2030 (ML-DSA-87/LMS/XMSS); web·cloud·OS·niche 2033; network/VPN 2030; hard 2027 NSS-acquisition
+  gate. IR 8547 = deprecate 2030 / disallow 2035. C7 builds a CNSA-2.0 timeline KB {useCase->(prefer,
+  exclusive, requiredAlgs)} + a roadmap aggregator (groups vulnerable/below-floor assets by target+deadline,
+  feeds the F2 panel).
+- BACKLOG DELTA: rows 19/20/22/23(a)(b) DEEPEN existing C7 (its title already names these) — no new story.
+  TWO new build stories appended (prd.json now 30, all deps resolve):
+  - **C18** (pri 29, deps [R4,C7]) — quantum-weakened symmetric/hash (Grover/sub-CNSA-2.0 floor) +
+    harvest-now-decrypt-later. Grover only HALVES symmetric (AES-128->~64-bit), so this is NOT Shor-broken;
+    keep these out of `quantum_vulnerable=True` (that's reserved for asymmetric). Verdicts go in weakness.py.
+  - **C19** (pri 30, deps [R4,C7,C8]) — CNSA 2.0 tri-state compliance framework (graph-queried), distinct
+    from the generic R5/C8 frameworks (R5's list OMITS CNSA 2.0). Needs C8's tri-state infra first.
+  - **B1 deps extended** to include C18,C19 so the differential gate measures them before the B2 CI lock.
+- GOTCHA for C7/C18/C19 implementers: hybrid named groups (X25519MLKEM768 / SecP256r1MLKEM768 /
+  X448MLKEM1024) currently MIS-READ as plain X25519 -> false-positive quantum-vulnerable. C7's hybrid corpus
+  must mark crypto:pqcHybrid=true + overall NOT quantum-vulnerable. LMS/XMSS/HSS (SP 800-208) are
+  firmware-signing-scope ONLY (stamp crypto:scope=firmware-signing); they are a DISTINCT family from SLH-DSA.
+- This was a pure research iteration: only docs/cbom-research/LEDGER.md + prd.json changed. No code/build/
+  browser gate (those are BUILD-story gates). prd integrity re-verified: 30 stories, 0 dangling deps, 0
+  priority dupes, next eligible = R5.

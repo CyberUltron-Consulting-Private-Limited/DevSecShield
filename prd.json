@@ -9,7 +9,7 @@
       "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model" },
     { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": true,
       "title": "Research certificate/protocol/related-crypto-material depth + weakness catalogs (weak primitives, ECB, static IV/nonce, hardcoded keys, weak RNG, cert weaknesses)" },
-    { "id": "R4", "priority": 4, "dependencies": ["R1"], "passes": false,
+    { "id": "R4", "priority": 4, "dependencies": ["R1"], "passes": true,
       "title": "Research PQC grading + standards (CNSA 2.0, FIPS 203/204/205, NIST PQC migration, nistQuantumSecurityLevel, quantum-vulnerable classification)" },
     { "id": "R5", "priority": 5, "dependencies": ["R1"], "passes": false,
       "title": "Research compliance frameworks (NIST SP 1800-38B/C, SP 800-57, FIPS 140-3, OMB M-23-02, EU CRA, DORA, PCI-DSS 4.0 crypto, BSI TR-02102); map each to graph-queryable checks" },
@@ -39,7 +39,7 @@
       "title": "Frontend: PQC readiness gauge + quantum-vulnerable list + migration-roadmap panel" },
     { "id": "F3", "priority": 18, "dependencies": ["I1"], "passes": false,
       "title": "Frontend: expanded compliance tri-state matrix + options sidebar controls (level/frameworks/language toggles)" },
-    { "id": "B1", "priority": 19, "dependencies": ["C9","C10","C11","C12","C13","C14","C15","C16","C17"], "passes": false,
+    { "id": "B1", "priority": 19, "dependencies": ["C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"], "passes": false,
       "title": "Extend bench/cbom oracles (add Sonar-Cryptography and/or cryptobom-forge as oracles) + refresh frozen baselines + differential gate (true-miss==0, our-unique>0)" },
     { "id": "B2", "priority": 20, "dependencies": ["F1","F2","F3","B1"], "passes": false,
       "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner" },
@@ -58,6 +58,10 @@
     { "id": "C16", "priority": 27, "dependencies": ["R2","C1"], "passes": false,
       "title": "Padding-scheme capture (clean-room re R2 row 13 / Sonar transformation split + CycloneDX algorithmProperties.padding): extract_padding (JCA 3rd field, pyca padding.*, WebCrypto RSA-OAEP, .NET RSAEncryptionPadding) -> crypto:padding + WEAK_PADDING flag for PKCS1v1.5/NoPadding" },
     { "id": "C17", "priority": 28, "dependencies": ["R3","C1"], "passes": false,
-      "title": "KDF / password-hashing work-factor scanner (clean-room re R3 row 18 / OWASP Password Storage + CWE-916/759/760): detect PBKDF2/bcrypt/scrypt/Argon2/pwhash calls, bind iteration/cost/memory/salt params, emit KDF algorithm asset with crypto:iterations/costFactor/memoryKiB; raise WEAK_KDF_PARAMS below OWASP floors (PBKDF2<600k or HMAC-SHA1, bcrypt<10, scrypt N<2^17, Argon2 mem<19MiB/non-id) + MISSING_SALT (CWE-759/760)" }
+      "title": "KDF / password-hashing work-factor scanner (clean-room re R3 row 18 / OWASP Password Storage + CWE-916/759/760): detect PBKDF2/bcrypt/scrypt/Argon2/pwhash calls, bind iteration/cost/memory/salt params, emit KDF algorithm asset with crypto:iterations/costFactor/memoryKiB; raise WEAK_KDF_PARAMS below OWASP floors (PBKDF2<600k or HMAC-SHA1, bcrypt<10, scrypt N<2^17, Argon2 mem<19MiB/non-id) + MISSING_SALT (CWE-759/760)" },
+    { "id": "C18", "priority": 29, "dependencies": ["R4","C7"], "passes": false,
+      "title": "Quantum-weakened symmetric/hash + harvest-now-decrypt-later (clean-room re R4 row 21 / Grover + CNSA 2.0 symmetric-hash floor + NIST PQC FAQ): weakness.py raises QUANTUM_WEAKENED_SYMMETRIC (Low) for symmetric/hash below the CNSA-2.0 floor (AES-128/3DES->AES-256, SHA-1/SHA-256-for-storage->SHA-384+) and HARVEST_NOW_DECRYPT_LATER (Medium) on a confidentiality asset reachable from a quantum-vulnerable key-establishment edge; scanner enriches the category, scorer weights the verdict" },
+    { "id": "C19", "priority": 30, "dependencies": ["R4","C7","C8"], "passes": false,
+      "title": "CNSA 2.0 tri-state PQC compliance framework (clean-room re R4 row 23(c) / NSA CNSA 2.0 FAQ): graph-queried checks (key-establishment==ML-KEM-1024, signatures==ML-DSA-87, firmware-signing in {ML-DSA-87,LMS,XMSS}, symmetric==AES-256, hashing in {SHA-384,SHA-512}); coverage = pass/(pass+fail); per-category 2027/2030/2033 deadline annotation; distinct from the generic R5/C8 frameworks" }
   ]
 }
