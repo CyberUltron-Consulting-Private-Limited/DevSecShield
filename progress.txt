@@ -147,3 +147,43 @@ progress.aibom-reconcile.txt (reference only).
 - This was a pure research iteration: only docs/cbom-research/LEDGER.md + prd.json changed. No code/build/
   browser gate (those are BUILD-story gates). prd integrity re-verified: 30 stories, 0 dangling deps, 0
   priority dupes, next eligible = R5.
+
+## R5 (RESEARCH) — landed 2026-06-30 — compliance frameworks → graph-queryable checks
+- Studied PUBLIC SPEC/BEHAVIOR ONLY (NIST CSRC: FIPS 140-3 + SP 800-140C/D + SP 800-131A Rev.2 + FIPS
+  197/180-4/186-5/198-1 + SP 800-186 + 800-38-series + 800-90A + SP 800-57 Pt.1 Rev.5; NCCoE SP 1800-38 B/C
+  drafts; PCI SSC glossary + doc library + SSL/early-TLS guide; BSI TR-02102-1 & -2 v2026-01 official PDFs;
+  OMB M-23-02; EUR-Lex Reg (EU) 2024/2847 CRA & 2022/2554 DORA). Ledger rows 24–28 + R5 narrative in
+  docs/cbom-research/LEDGER.md, each URL-cited. No source read/paste.
+- VERIFIED current lane (cbom/compliance.py, C7) ships 5 frameworks {nist_1800_38b, nist_800_57,
+  omb_m_23_02, eu_cra, eu_dora}; single asymmetric floor _MIN_ASYMMETRIC_BITS=2048. R5's named list is 8.
+- FINDINGS:
+  - NIST 1800-38C (row 27): interop/PERFORMANCE lab testing = MANUAL → NO new framework. 38B already mapped
+    by PQC-1/2/3 (confirmed). Recorded as a NEGATIVE finding so no later iteration spawns a phantom
+    nist_1800_38c story.
+  - Existing 5 anchors (row 28): re-confirmed vs primary sources — no new work.
+  - FIPS 140-3 (row 24) ABSENT → C20. Key nuance: FIPS 140-3 lists no algos itself (SP 800-140C/D + 131A);
+    lane has a weak-LIST but no positive APPROVED allow-list. Subtleties to encode as DATA: Ed25519/Ed448
+    APPROVED (FIPS 186-5) but X25519/X448 KAS NOT; ChaCha20-Poly1305 NOT FIPS-approved; SHA-1 disallowed for
+    signature GENERATION only (legacy verify OK); ECB never approved for general-data confidentiality;
+    approved curves P-256/384/521.
+  - PCI-DSS 4.0.1 (row 25) ABSENT → C21. "Strong Cryptography" = >=112-bit EFFECTIVE strength (algorithm-
+    specific, RSA-2048~=112-bit, not a single numeric threshold); SSL/early-TLS prohibited as a control since
+    2018-06-30 (→TLS 1.2+); future-dated reqs mandatory since 2025-03-31. v4.0.1 PDF is license-gated — pin
+    exact sub-req numbers (3.5.1/4.2.1/8.3.2) from the licensed PDF before shipping C21.
+  - BSI TR-02102 (row 26) ABSENT — HIGHEST-VALUE gap → C22. HEADLINE: RSA/DH >= 3000-bit floor, STRICTER than
+    NIST-2048 → a repo passing nist_800_57 KM-2 can FAIL BSI. MUST be a SEPARATE undersized_keys_bsi predicate
+    (not the shared 2048 helper) so the two frameworks can legitimately disagree on RSA-2048. Also: Brainpool-
+    only curve list in TR-1 (P-curves only in TR-2/TLS), SHA>=256 hash floor (SHA-224/SHA3-224 flagged), AES-
+    only symmetric, TLS-PFS mandate. Two-table trap: Table 1.1=2800 (raw 120-bit) vs Table 1.2=3000 (operative
+    floor) — use 3000.
+- BACKLOG DELTA: 3 new build stories appended (prd.json now 33, all deps resolve, 0 dup priorities):
+  C20 (pri 31, deps [R5,C7]) FIPS 140-3; C21 (pri 32, deps [R5,C7]) PCI-DSS 4.0; C22 (pri 33, deps [R5,C7])
+  BSI TR-02102. B1 deps extended to include C20,C21,C22 so the differential gate measures them before B2.
+- GOTCHA for C20/C21/C22 implementers: REUSE the C7 graph helpers (algorithms/certificates/protocols/
+  quantum_vulnerable/weak_algorithms/weak_protocols/self_signed_certs/hardcoded_key_material/ecb_modes/
+  undersized_keys) + the AIBOM tri-state runner (register_check/register_applicability/run_framework +
+  _has_crypto applicability). Add each new fw STRING to CBOM_FRAMEWORKS; the shared base._CHECK_REGISTRY is
+  keyed by fw string so engine.run_all (AIBOM-only) won't pick them up. KEEP the never-reads-flags invariant
+  (test_compliance_never_reads_flags). C22 needs its OWN 3000-bit predicate.
+- Pure research iteration: only docs/cbom-research/LEDGER.md + prd.json changed. No code/build/browser gate.
+  prd integrity re-verified: 33 stories, 0 dangling deps, 0 priority dupes, next eligible = C1.
