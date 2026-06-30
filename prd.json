@@ -5,7 +5,7 @@
   "userStories": [
     { "id": "R1", "priority": 1, "dependencies": [], "passes": true,
       "title": "Research IBM CBOMkit / cbomkit-theia + Sonar-Cryptography: architecture, detection model, CycloneDX output; write ledger + gap-list vs our lane" },
-    { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": false,
+    { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": true,
       "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model" },
     { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": false,
       "title": "Research certificate/protocol/related-crypto-material depth + weakness catalogs (weak primitives, ECB, static IV/nonce, hardcoded keys, weak RNG, cert weaknesses)" },
@@ -39,7 +39,7 @@
       "title": "Frontend: PQC readiness gauge + quantum-vulnerable list + migration-roadmap panel" },
     { "id": "F3", "priority": 18, "dependencies": ["I1"], "passes": false,
       "title": "Frontend: expanded compliance tri-state matrix + options sidebar controls (level/frameworks/language toggles)" },
-    { "id": "B1", "priority": 19, "dependencies": ["C9","C10","C11","C12","C13"], "passes": false,
+    { "id": "B1", "priority": 19, "dependencies": ["C9","C10","C11","C12","C13","C14","C15","C16"], "passes": false,
       "title": "Extend bench/cbom oracles (add Sonar-Cryptography and/or cryptobom-forge as oracles) + refresh frozen baselines + differential gate (true-miss==0, our-unique>0)" },
     { "id": "B2", "priority": 20, "dependencies": ["F1","F2","F3","B1"], "passes": false,
       "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner" },
@@ -50,6 +50,12 @@
     { "id": "C12", "priority": 23, "dependencies": ["R1","C4"], "passes": false,
       "title": "Certificate trust analysis (clean-room re R1 row 8 / theia problematic-CA): known-bad/distrusted-CA KB -> UNTRUSTED_CA flag; self-signed-in-prod severity in the cert lane" },
     { "id": "C13", "priority": 24, "dependencies": ["R1","C2"], "passes": false,
-      "title": "Cross-call crypto dataflow linker (clean-room re R1 row 2 / Sonar rule-dependencies): link a separately-defined key size/curve to the cipher/signature that consumes the same variable; split composed transformation strings (AES/CBC/PKCS5Padding) into algorithm+mode+padding" }
+      "title": "Cross-call crypto dataflow linker (clean-room re R1 row 2 / Sonar rule-dependencies): link a separately-defined key size/curve to the cipher/signature that consumes the same variable; split composed transformation strings (AES/CBC/PKCS5Padding) into algorithm+mode+padding" },
+    { "id": "C14", "priority": 25, "dependencies": ["R2","C1"], "passes": false,
+      "title": "Library-keyed detection-context rule model (clean-room re R2 row 11 / Sonar engine): data-driven (library, symbol)->{primitive_context, algorithm, param_extractors} corpus; resolve primitive ROLE from the entry-point (MessageDigest vs Signature), stamp crypto:detectedBy=<library> + confidence" },
+    { "id": "C15", "priority": 26, "dependencies": ["R2","C3"], "passes": false,
+      "title": "High-level construction decomposition (clean-room re R2 row 12 / libsodium+Fernet+JWT): expand crypto_secretbox/box/sign/pwhash + Fernet + JWT alg into constituent primitive crypto-assets + a relatedTo edge to the construction asset" },
+    { "id": "C16", "priority": 27, "dependencies": ["R2","C1"], "passes": false,
+      "title": "Padding-scheme capture (clean-room re R2 row 13 / Sonar transformation split + CycloneDX algorithmProperties.padding): extract_padding (JCA 3rd field, pyca padding.*, WebCrypto RSA-OAEP, .NET RSAEncryptionPadding) -> crypto:padding + WEAK_PADDING flag for PKCS1v1.5/NoPadding" }
   ]
 }

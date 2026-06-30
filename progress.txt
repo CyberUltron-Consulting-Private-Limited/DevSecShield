@@ -63,3 +63,26 @@ progress.aibom-reconcile.txt (reference only).
     compliance) — no new work needed there.
 - The remaining R-stories (R2 weak/AST detail, R3 cert/protocol/material, R4 PQC, R5 compliance) are still
   open and will deepen these; R1 deliberately scoped to the CBOMkit-family architecture + gap-list only.
+
+## R2 (RESEARCH) — landed 2026-06-30 — multi-language detection rule model + per-library API→asset maps
+- Studied PUBLIC SPEC/BEHAVIOR ONLY (Sonar DETECTION_RULE_STRUCTURE/LANGUAGE_SUPPORT, CBOMkit arch blog, MDN
+  WebCrypto, Node/.NET/RustCrypto/libsodium API docs; no source read/paste). Ledger rows 11–13 + the full
+  per-library API→asset map table are in docs/cbom-research/LEDGER.md ("## R2" section).
+- KEY DESIGN: Sonar = language-agnostic RULES (data) + per-language AST translators. The entry-point library
+  SYMBOL fixes the primitive CONTEXT/kind (cipher/digest/signature/mac/key-agree/kdf/protocol) — NOT the algo
+  token. Our clean-room rule model = a `CryptoRule{library, lang_scope, symbol_pattern, primitive_context,
+  algorithm_key?, param_extractors}` corpus; same "SHA-256" resolves to a HASH under MessageDigest.getInstance
+  but a SIGNATURE under Signature.getInstance("SHA256withRSA"). Stamp crypto:detectedBy=<library> + confidence.
+- GAP vs current lane: our scanners/algorithm_scan.py `_ALGO_PATTERNS` is a FLAT library-agnostic regex list —
+  no library attribution, no per-entry-point primitive-role disambiguation, no padding capture, no high-level-
+  construction decomposition. → 3 NEW build stories appended to prd.json:
+  - C14 library-keyed detection-context rule model (Sonar engine) — deps [R2,C1].
+  - C15 high-level construction decomposition (libsodium crypto_secretbox/box/sign/pwhash + Fernet + JWT →
+    primitive assets + relatedTo edge) — deps [R2,C3]. Today a libsodium/Fernet call inventories NOTHING.
+  - C16 padding-scheme capture (extract_padding: JCA 3rd field / pyca padding.* / WebCrypto RSA-OAEP /
+    .NET RSAEncryptionPadding → crypto:padding + WEAK_PADDING for PKCS1v1.5/NoPadding) — deps [R2,C1].
+  - B1 deps extended to [C9–C16] so the differential gate measures every new capability before the B2 CI lock.
+- GOTCHA for the C-implementers: when you build C14, refactor rules.py's flat regex into the data-driven
+  CryptoRule corpus rather than adding yet another parallel regex list — the per-library map table in the
+  ledger is the corpus content. Keep EMIT-only lane discipline (scanner emits crypto:detectedBy/padding props;
+  WEAK_PADDING flagging weight stays in scorer/weakness.py, not the scanner).

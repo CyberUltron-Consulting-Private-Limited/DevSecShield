@@ -18,6 +18,9 @@ BOM tool. OSS tools appear only as benchmark oracles in `bench/cbom/`.
 | 8 | **Problematic-CA trust analysis** — flags certificates issued by known untrusted / problematic certificate authorities. | cbomkit-theia (problematic-CA plugin) | https://pqca.org/blog/2026/pqca-cbomkit-architecture/ | A clean-room **known-bad-CA KB** (distrusted/compromised issuer CN + key-fingerprint list) queried by the cert lane; emits `UNTRUSTED_CA` + extends C4 with self-signed-in-prod severity. | C4 covers expiry/weak-sig/keysize/self-signed but **has no issuer-trust check** — a cert from a distrusted CA passes today. | **C12 (NEW)** | pending |
 | 9 | **CBOM enrichment vs generation + source/filesystem aggregation** — theia *enriches* a source CBOM with filesystem findings (sonar source scan → theia filesystem enrich), or *generates* a filesystem-only CBOM; output is CycloneDX 1.6. | CBOMkit (overall) + cbomkit-theia | https://pqca.org/blog/2026/pqca-cbomkit-architecture/ | `scan_crypto` already unifies source-AST + filesystem (certs/keys) inventory in **one deterministic pass** → one hand-built CycloneDX 1.6 — no two-tool merge; the C4 emitter is the single render lane. | Architectural parity already met (single-pass beats two-phase merge); informs C9 dependency-graph hardening (`cryptoRefArray`). | C9 (existing) | covered-by-backlog |
 | 10 | **CBOM compliance evaluation** — the full `cbomkit` app evaluates a stored CBOM against compliance policy via REST and visualizes it. | CBOMkit (full app) | https://pqca.org/blog/2026/pqca-cbomkit-architecture/ ; https://research.ibm.com/blog/quantum-safe-cbomkit | Tri-state graph-queried compliance (`cbom/compliance.py`, 5 frameworks today) + the C8/R5 expansion, evaluated in-process not via their REST policy engine. | Covered + expanded by C8/R5. | C8 (existing) | covered-by-backlog |
+| 11 | **Library-keyed detection-context model** — a detection rule's entry point is a *specific library symbol* (e.g. JCA `Cipher.getInstance` vs `MessageDigest.getInstance` vs `Signature.getInstance`), and the entry point itself fixes the **primitive context / kind** (cipher / digest / signature / MAC / key-agree / KDF / protocol) — the algorithm token alone does not. Rules are data, decoupled from language; a new language adds only an AST translator, not new rules. | Sonar-Cryptography (engine + JCA rule set: Cipher/MessageDigest/Signature/Mac/KeyGenerator/KeyPairGenerator) | https://github.com/cbomkit/sonar-cryptography/blob/main/docs/DETECTION_RULE_STRUCTURE.md ; https://github.com/cbomkit/sonar-cryptography/blob/main/docs/LANGUAGE_SUPPORT.md ; https://pqca.org/blog/2026/pqca-cbomkit-architecture/ | A clean-room **data-driven rule corpus** keyed by `(library, symbol_pattern) → {primitive_context, algorithm_key?, param_extractors}` (the R2 per-library map below). The scanner resolves the primitive ROLE from the entry-point class, not the algorithm table, and stamps each asset `crypto:detectedBy=<library>` + a confidence. | **Flat, library-agnostic regex.** `_ALGO_PATTERNS` matches a generic `AES`/`SHA-256` token regardless of which library/entry-point produced it: no library attribution, no per-entry-point primitive-role disambiguation (a `MessageDigest("SHA-256")` digest vs a `Signature("SHA256withRSA")` signature read the same), no per-library confidence. | **C14 (NEW)** | pending |
+| 12 | **High-level construction → primitive decomposition** — a single high-level API expands to a *suite* of primitives; the inventory should record both the construction and its constituents (Sonar models multi-function schemes / library constructions, not just bare algorithm tokens). | Sonar-Cryptography (construction rules) + libsodium/NaCl + pyca Fernet behavioral spec | https://github.com/cbomkit/sonar-cryptography/blob/main/docs/DETECTION_RULE_STRUCTURE.md ; https://doc.libsodium.org/secret-key_cryptography/secretbox ; https://cryptography.io/en/latest/fernet/ | A clean-room **construction-expansion table**: `crypto_secretbox`→{XSalsa20, Poly1305}, `crypto_box`→{X25519, XSalsa20, Poly1305}, `crypto_sign`→{Ed25519}, `crypto_pwhash`→{Argon2}, Fernet→{AES-128-CBC, HMAC-SHA256}; emit the construction asset + each primitive asset + a `relatedTo` edge. Folds the existing `JWT_ALG_MAP` into the same lane. | We emit only the **bare token** when one is spelled out; a libsodium `crypto_secretbox`/`crypto_box`/`crypto_sign` or a `Fernet(...)` call inventories **nothing** (no XSalsa20/Poly1305/X25519/Ed25519/Argon2 asset, no construction edge). | **C15 (NEW)** | pending |
+| 13 | **Padding-scheme capture** — a transformation/parameter object carries the padding scheme (`AES/CBC/PKCS5Padding`, `RSA/ECB/OAEPWithSHA-256AndMGF1Padding`, pyca `padding.OAEP`/`padding.PKCS1v15`, WebCrypto `RSA-OAEP`); padding is a first-class crypto property and a weakness signal (RSA PKCS#1 v1.5 encryption, `NoPadding` on a block cipher). | Sonar-Cryptography (transformation split: algorithm + mode + **padding**) + CycloneDX 1.6 `algorithmProperties.padding` | https://github.com/cbomkit/sonar-cryptography/blob/main/docs/DETECTION_RULE_STRUCTURE.md ; CycloneDX 1.6 `cryptoProperties.algorithmProperties.padding` | A clean-room **padding extractor** (`extract_padding(line)`) covering JCA transformation 3rd field, pyca `padding.*`, WebCrypto `RSA-OAEP`/`RSASSA-PKCS1-v1_5`, .NET `RSAEncryptionPadding`/`PaddingMode`; emit `crypto:padding` and a `WEAK_PADDING` informational flag for PKCS#1 v1.5 encryption / `NoPadding`. | We capture key size / mode / curve but **not padding** — `cryptoProperties.algorithmProperties.padding` is never set and PKCS#1 v1.5 / `NoPadding` weaknesses are invisible. | **C16 (NEW)** | pending |
 
 ## Rules
 - No reading-and-pasting OSS source. Learn from docs, papers, schema, and observed output only.
@@ -34,3 +37,58 @@ These four are appended to `prd.json` as build stories C10–C13 (each depends o
 story). B1 (extend oracles + baselines) now also depends on C10–C13 so the differential gate measures every
 new capability before the CI lock (B2). Architectural parity rows (5/6/9/10) confirm the current lane already
 matches or exceeds the oracle; only the gap rows (2/3/7/8) spawn new build work.
+
+## R2 — multi-language detection rule model + per-library API→asset maps (landed 2026-06-30)
+
+Studied PUBLIC SPEC/BEHAVIOR ONLY (Sonar-Cryptography `DETECTION_RULE_STRUCTURE.md` / `LANGUAGE_SUPPORT.md`,
+the CBOMkit arch blog, MDN WebCrypto, Node/`.NET`/RustCrypto/libsodium public API docs — no source read/paste).
+
+### The clean-room rule model we will encode (the C1–C3 / C14 backbone)
+
+Sonar's engine is **language-agnostic rules + per-language AST translators**: a rule names an *entry-point
+library symbol*, and the entry point — not the algorithm token — fixes the primitive **context/kind**
+(cipher / digest / signature / MAC / key-agree / KDF / DRBG / protocol); params (key size, mode, padding,
+curve) bind from the call's arguments. Our clean-room design re-implements this WITHOUT an AST-DSL port:
+
+- **Rule corpus = data** (`rules.py`): a list of `CryptoRule{library, lang_scope, symbol_pattern,
+  primitive_context, algorithm_key?, param_extractors}`. The algorithm may be fixed by the symbol
+  (`hashlib.md5`→md5) or read from an argument (`Cipher.getInstance("AES/CBC/PKCS5Padding")`→algo+mode+pad).
+- **Detection = match symbol_pattern on a code line, then bind params** (today line-regex; C13 adds intra-file
+  dataflow for cross-statement binding; C1's AST upgrade is the longer arc). The primitive *role* comes from
+  the rule's `primitive_context`, so the same `"SHA-256"` token resolves to a **hash** under
+  `MessageDigest.getInstance` but to a **signature** component under `Signature.getInstance("SHA256withRSA")`.
+- **Provenance**: every asset is stamped `crypto:detectedBy=<library>` + a confidence, so benchmark parity
+  can attribute a miss/extra to a specific library rule (and C11's executability layer can down-weight).
+
+### Per-library API→asset map (the corpus content C2/C3/C14 implement — original, distilled from public API docs)
+
+| library / lang | entry-point symbols (examples) | primitive context | params on the call |
+|---|---|---|---|
+| **JCA/JCE** (Java) | `Cipher.getInstance(T)`, `MessageDigest.getInstance`, `Signature.getInstance`, `Mac.getInstance`, `KeyGenerator/KeyPairGenerator.getInstance`, `SecureRandom`, `SSLContext.getInstance("TLSv1.2")` | cipher/digest/signature/mac/keygen/drbg/protocol | transformation string `algo/mode/padding`; key size from `init(int)` |
+| **BouncyCastle** (Java) | engine classes `AESEngine`/`DESedeEngine`/`RSAEngine`/`ChaCha7539Engine`, mode wrappers `CBCBlockCipher`/`GCMBlockCipher`, `SHA256Digest`/`SHA1Digest`, `Ed25519Signer`, `HMac` | from the class itself | constructor / `.init` args |
+| **pyca/cryptography** (Python) | `ciphers.algorithms.AES/ChaCha20/TripleDES`, `ciphers.modes.GCM/CBC/ECB`, `hashes.SHA256/MD5`, `asymmetric.rsa/ec/ed25519/x25519/dh`, `padding.OAEP/PKCS1v15`, `kdf.*`, `hmac.HMAC`, `Fernet` | by hazmat sub-module | key size (`rsa.generate_private_key(..., 2048)`), curve, mode object, padding object |
+| **Go stdlib + x/crypto** | `crypto/aes`,`crypto/des`,`crypto/rsa`,`crypto/ecdsa`,`crypto/ed25519`,`crypto/sha256`,`cipher.NewGCM`/`NewCBCEncrypter`, `golang.org/x/crypto/{chacha20poly1305,bcrypt,argon2,nacl}` | by package path | `rsa.GenerateKey(rand,2048)`, mode constructor |
+| **Node `crypto`** | `createHash('sha256')`, `createCipheriv('aes-256-gcm',…)`, `createHmac`, `createSign('RSA-SHA256')`, `generateKeyPair('rsa',{modulusLength})`, `createDiffieHellman` | by factory fn | algorithm-string literal (`aes-256-gcm` carries algo+keysize+mode), `modulusLength` |
+| **WebCrypto** (`crypto.subtle`) | `.encrypt/.sign/.deriveKey/.generateKey({name:"AES-GCM"\|"RSA-OAEP"\|"ECDSA"\|"ECDH"\|"RSASSA-PKCS1-v1_5"\|"RSA-PSS"\|"HMAC"\|"PBKDF2", hash, namedCurve, modulusLength})` | by the `name` field | `name`→algo(+mode/padding), `namedCurve` P-256/P-384/P-521, `modulusLength`, `hash` |
+| **.NET** `System.Security.Cryptography` | `Aes.Create()`, `RSA.Create()`, `ECDsa.Create`, `SHA256.Create`, `HMACSHA256`, `RandomNumberGenerator`, `TripleDES`, `MD5`, `RSACryptoServiceProvider`, `RSAEncryptionPadding.OaepSHA256` | by class | `KeySize`, `CipherMode`, `PaddingMode`, `RSAEncryptionPadding` |
+| **RustCrypto / ring** (Rust) | crate-keyed: `aes`, `aes-gcm`, `chacha20poly1305`, `rsa`, `ed25519-dalek`, `p256`, `sha2`, `hmac`, `ring::aead`, `ring::signature`, `ring::digest`, `ring::rand` | by crate / module path | type-param key size, AEAD type |
+| **OpenSSL/BoringSSL** (C/C++) | `EVP_aes_256_gcm`, `EVP_sha256`, `RSA_generate_key`, `EVP_EncryptInit_ex`, `EVP_DigestSignInit`, `EC_KEY_new_by_curve_name(NID_…)` | by EVP fn family | algo+keysize+mode in the EVP fn name; curve NID |
+| **libsodium/NaCl** | `crypto_secretbox`, `crypto_box`, `crypto_sign`, `crypto_pwhash`, `crypto_aead_*` | construction (decomposes) | fixed primitive suite (table below) |
+
+### R2 gap-list summary (capabilities beyond the current C1–C3 language coverage)
+
+1. **Library-keyed detection-context model** (Sonar engine) → **C14**: rebuild detection as a data-driven
+   `(library, symbol)→{primitive_context, algorithm, param_extractors}` corpus; resolve primitive ROLE from
+   the entry-point (not the algo table); stamp `crypto:detectedBy` + confidence. Our flat regex can't.
+2. **High-level construction decomposition** (libsodium / Fernet / JWT) → **C15**: expand a construction into
+   its primitive assets + a `relatedTo` edge (`crypto_secretbox`→XSalsa20+Poly1305, `crypto_box`→X25519+
+   XSalsa20+Poly1305, `crypto_sign`→Ed25519, `crypto_pwhash`→Argon2, Fernet→AES-128-CBC+HMAC-SHA256). Today a
+   libsodium/Fernet call inventories nothing.
+3. **Padding-scheme capture** (Sonar transformation split + CycloneDX `algorithmProperties.padding`) → **C16**:
+   `extract_padding` (JCA 3rd field, pyca `padding.*`, WebCrypto `RSA-OAEP`, .NET `RSAEncryptionPadding`);
+   emit `crypto:padding` + `WEAK_PADDING` flag (PKCS#1 v1.5 encryption / `NoPadding`). We never capture padding.
+
+C14/C15/C16 are appended to `prd.json` (each depends on the relevant existing inventory story). **B1's deps are
+extended to include C14–C16** so the differential gate measures these before the B2 CI lock. The per-library
+map above is the corpus content C2/C3/C14 implement — these rows are clean-room design (public API behavior),
+not copied detection rules.
