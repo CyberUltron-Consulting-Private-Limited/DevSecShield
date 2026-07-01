@@ -22,6 +22,7 @@ acceptance criterion "weak crypto -> high".
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, WEAK_ALGORITHMS
@@ -52,11 +53,19 @@ WEAK_RNG = "WEAK_RNG"
 STATIC_IV = "STATIC_IV"
 REUSED_NONCE = "REUSED_NONCE"
 HARDCODED_KEY = "HARDCODED_KEY"
+# C13 cipher-suite / SSH-algo / IKE-transform negotiation weakness. Distinct from
+# WEAK_PROTOCOL (which flags the *version*: TLS < 1.2 / SSH-1.x / IKEv1) — this
+# flags the negotiated *primitives* a protocol carries in its
+# ``crypto:cipherSuite`` bag even on a modern version (e.g. TLS 1.2 that still
+# offers RC4 / 3DES / NULL / anon / EXPORT suites, an SSH server that keeps
+# ssh-rsa / diffie-hellman-group1-sha1 / arcfour, or an IKE proposal on a weak
+# MODP DH group). See :func:`cipher_suite_findings`.
+WEAK_CIPHER_SUITE = "WEAK_CIPHER_SUITE"
 
 WEAK_CRYPTO_CODES = frozenset(
     {
         WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL,
-        WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY,
+        WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY, WEAK_CIPHER_SUITE,
     }
 )
 
@@ -273,6 +282,149 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
     return findings
 
 
+# --------------------------------------------------------------------------- #
+# C13 — cipher-suite / SSH-algo / IKE-transform negotiation weakness catalog.
+#
+# A clean-room predicate over the ``crypto:cipherSuite`` bag the C3/C5 protocol
+# scanner emits (TLS OpenSSL/IANA suite names, SSH kex/host-key/cipher/MAC
+# tokens, or strongSwan/IKE transform proposals). Each token is classified
+# against a corpus of primitives disallowed by modern baselines (PCI-DSS 4.0,
+# NIST SP 800-52r2, BSI TR-02102), every class carrying a public attack/CVE
+# name. The predicate is a peer of :func:`weak_finding` — the scanner EMITS the
+# tokens, this QUERIES them; the C8 scorer WEIGHTS the resulting flag.
+#
+# SCOPE (matches the C5/C6 zero-frozen-delta discipline): the HARD breaks are
+# flagged here — NULL / anonymous / EXPORT / RC4 / RC2 / DES / 3DES ciphers, MD5
+# MACs, weak SSH kex+host-key+cipher+MAC, and weak (≤1536-bit) IKE MODP DH
+# groups. Plain CBC-mode-with-SHA-1 TLS suites (Lucky13/BEAST) are a documented
+# softer tier deferred to a follow-up so the frozen ``synthetic-crypto-app``
+# oracle (whose only suite is ``ECDHE-RSA-AES128-SHA``, CBC-SHA1) stays at zero
+# delta — exactly how C6 deferred WEAK_PADDING off ``rsa_pkcs1v15_sign``.
+# --------------------------------------------------------------------------- #
+
+# A cipherSuite value is a bag of tokens joined by ``, `` (TLS/IKE) or ``:``
+# (OpenSSL CipherString). Split on either so every token is classified alone.
+_SUITE_TOKEN_SPLIT = re.compile(r"[,:]\s*|\s+")
+
+# Token-class matchers. Each is a compiled regex evaluated against the LOWERCASED
+# token; boundaries (``(?:^|[_-])`` … ``(?:[_-]|$)``) keep a fragment like ``des``
+# from matching inside ``aes`` / ``ides`` and ``rc2`` from ``rc256``. Order is
+# irrelevant — every matching class contributes its rationale (weaknesses stack
+# within a suite, e.g. ``3des-md5-modp1024`` = SWEET32 + MD5 + Logjam).
+_NULL_CIPHER = re.compile(r"(?:^|[_-])e?null(?:[_-]|$)")
+_ANON_KX = re.compile(r"(?:^|[_-])(?:adh|aecdh|anon)(?:[_-]|$)")
+_EXPORT_GRADE = re.compile(r"(?:^|[_-])exp(?:ort)?(?:40|56|1024)?(?:[_-]|$)")
+_RC4_STREAM = re.compile(r"(?:^|[_-])(?:rc4|arcfour(?:128|256)?)(?:[-_@]|$)")
+_RC2_BLOCK = re.compile(r"(?:^|[_-])rc2(?:[_-]|$)")
+# 3DES first (superset of the ``des`` fragment), so single-DES only fires on the
+# genuinely 56-bit cipher, never on a Triple-DES token.
+_TRIPLE_DES = re.compile(r"(?:3des|des[-_]?ede3?|des[-_]?cbc3|desede)")
+_SINGLE_DES = re.compile(r"(?:^|[_-])des(?:40|56)?(?:[-_](?:cbc|ede))?(?:[_-]|$)")
+_MD5_MAC = re.compile(r"(?:^|[_-])(?:hmac[-_])?md5(?:[-_]96)?(?:[-_@]|$)")
+# Weak IKE/IPsec MODP Diffie-Hellman groups (768/1024/1536-bit = DH group
+# 1/2/5) — Logjam CVE-2015-4000. modp2048+ (group 14+) is not flagged.
+_WEAK_MODP = re.compile(r"(?:^|[_-])modp[-_]?(?:768|1024|1536)(?:[_-]|$)")
+# SSH-only weak primitives (evaluated only when protocolType == "ssh").
+_SSH_DSS_HOSTKEY = re.compile(r"(?:^|[_-])ssh-dss(?:[_-]|$)")
+_SSH_RSA_SHA1_HOSTKEY = re.compile(r"^ssh-rsa$")  # SHA-1 sig; rsa-sha2-* is fine
+_SSH_WEAK_KEX = re.compile(
+    r"diffie-hellman-group(?:1|-exchange)-sha1|diffie-hellman-group1-sha1"
+)
+_SSH_WEAK_CIPHER = re.compile(r"(?:^|[_-])(?:blowfish|cast128)(?:[-_]cbc)?(?:[_-]|$)")
+_SSH_WEAK_MAC = re.compile(r"(?:^|[_-])umac-64(?:[-_@]|$)")
+
+
+def _suite_token_attacks(token: str, ptype: str) -> list[str]:
+    """Return the attack/CVE rationale(s) that make a single suite token weak.
+
+    ``token`` is a raw cipherSuite entry (already prose-free — the scanner strips
+    comments before emitting). ``ptype`` is the ``crypto:protocolType`` so the
+    SSH-only host-key/kex/cipher/MAC rules apply only to SSH assets. An empty
+    list means the token is acceptable under the modern baselines.
+    """
+    t = token.strip().lower()
+    if not t:
+        return []
+    reasons: list[str] = []
+    if _NULL_CIPHER.search(t):
+        reasons.append("NULL cipher — no encryption/integrity")
+    if _ANON_KX.search(t):
+        reasons.append("anonymous key exchange — unauthenticated, enables MITM")
+    if _EXPORT_GRADE.search(t):
+        reasons.append("EXPORT-grade key strength — FREAK/Logjam "
+                       "(CVE-2015-0204/CVE-2015-4000)")
+    if _RC4_STREAM.search(t):
+        reasons.append("RC4 stream cipher — biased keystream, prohibited by RFC 7465")
+    if _RC2_BLOCK.search(t):
+        reasons.append("RC2 — weak 40/64-bit export-era block cipher")
+    if _TRIPLE_DES.search(t):
+        reasons.append("Triple-DES 64-bit block cipher — SWEET32 (CVE-2016-2183)")
+    elif _SINGLE_DES.search(t):
+        reasons.append("single DES — 56-bit key, brute-forceable")
+    if _MD5_MAC.search(t):
+        reasons.append("MD5 MAC/PRF — collision-broken digest")
+    if _WEAK_MODP.search(t):
+        reasons.append("weak MODP DH group (≤1536-bit, group 1/2/5) — Logjam")
+    if ptype == "ssh":
+        if _SSH_DSS_HOSTKEY.search(t):
+            reasons.append("ssh-dss host key — 1024-bit DSA, weak")
+        if _SSH_RSA_SHA1_HOSTKEY.search(t):
+            reasons.append("ssh-rsa host key — SHA-1 signature; use rsa-sha2-256/512")
+        if _SSH_WEAK_KEX.search(t):
+            reasons.append("weak SSH kex — DH group 1 / SHA-1")
+        if _SSH_WEAK_CIPHER.search(t):
+            reasons.append(
+                "64-bit-block SSH cipher (Blowfish/CAST-128) — SWEET32-class"
+            )
+        if _SSH_WEAK_MAC.search(t):
+            reasons.append("UMAC-64 — truncated 64-bit MAC")
+    return reasons
+
+
+def cipher_suite_findings(component: AIComponent) -> list[tuple[str, str, str]]:
+    """Return a ``WEAK_CIPHER_SUITE`` finding if a protocol offers weak suites (C13).
+
+    Pure predicate over the emitted ``crypto:cipherSuite`` bag on a *protocol*
+    crypto-asset. Tokenizes the bag, classifies each token via
+    :func:`_suite_token_attacks`, and if any are weak returns ONE aggregated
+    High-severity finding naming the offending tokens + attacks (one flag per
+    asset keeps the count/chart contract clean, mirroring ``weak_finding``).
+    Returns an empty list for any non-protocol component or a clean suite, so the
+    scanner can call it on every asset unconditionally. Never re-scans source.
+    """
+    if component.kind != "crypto_asset":
+        return []
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "protocol":
+        return []
+    bag = props.get("crypto:cipherSuite", "")
+    if not bag:
+        return []
+    ptype = props.get("crypto:protocolType", "")
+    # Preserve first-seen token order; dedupe so a repeated token is named once.
+    weak: dict[str, list[str]] = {}
+    for raw in _SUITE_TOKEN_SPLIT.split(bag):
+        tok = raw.strip()
+        if not tok or tok in weak:
+            continue
+        attacks = _suite_token_attacks(tok, ptype)
+        if attacks:
+            weak[tok] = attacks
+    if not weak:
+        return []
+    detail = "; ".join(f"{tok} ({', '.join(reasons)})" for tok, reasons in weak.items())
+    return [
+        (
+            WEAK_CIPHER_SUITE,
+            _SEV,
+            f"Weak cryptographic suite(s) on {component.name}: {detail}. Disable "
+            f"these and offer only AEAD suites (TLS 1.2+ ECDHE + AES-GCM/"
+            f"ChaCha20-Poly1305; SSH curve25519 + aes-gcm + hmac-sha2; IKEv2 "
+            f"aes-gcm + modp2048+/ECP) per PCI-DSS 4.0 / NIST SP 800-52r2.",
+        )
+    ]
+
+
 def _sig_digest_is_broken(sig_alg: str) -> bool:
     """A certificate signatureAlgorithm built on a collision-broken digest."""
     low = sig_alg.lower()
@@ -402,9 +554,11 @@ __all__ = [
     "STATIC_IV",
     "REUSED_NONCE",
     "HARDCODED_KEY",
+    "WEAK_CIPHER_SUITE",
     "WEAK_CRYPTO_CODES",
     "weak_finding",
     "cert_expiry_finding",
     "certificate_findings",
     "material_misuse_findings",
+    "cipher_suite_findings",
 ]

@@ -22,6 +22,7 @@ from aibom.cbom.registry import cbom_register
 from aibom.cbom.weakness import (
     cert_expiry_finding,
     certificate_findings,
+    cipher_suite_findings,
     material_misuse_findings,
     weak_finding,
 )
@@ -57,6 +58,10 @@ class WeakCryptoScanner(Scanner):
             # C6: related-crypto-material misuse (weak RNG / static IV / reused
             # nonce / hardcoded key) — pure predicate over the emitted props.
             findings.extend(material_misuse_findings(comp))
+            # C13: cipher-suite / SSH-algo / IKE-transform negotiation weakness —
+            # pure predicate over the emitted crypto:cipherSuite bag (stacks onto
+            # a weak-version protocol, e.g. IKEv1 + 3des-md5-modp1024).
+            findings.extend(cipher_suite_findings(comp))
             for code, severity, message in findings:
                 ctx.add_flag(code, comp.bom_ref, severity=severity, message=message)
 

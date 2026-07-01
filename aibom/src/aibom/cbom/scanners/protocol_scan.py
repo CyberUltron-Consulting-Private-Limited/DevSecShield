@@ -75,6 +75,31 @@ _SSH_USE = re.compile(
     _F,
 )
 _SSH_VERSION = re.compile(r"\bSSH-(2\.0|1\.\d{1,2})\b")
+# SSH negotiated primitives — kex / host-key / cipher / MAC identifiers, as they
+# appear in an ``ssh_config``/``sshd_config`` ``Ciphers``/``KexAlgorithms``/
+# ``MACs``/``HostKeyAlgorithms`` line or a paramiko/asyncssh preferred-algorithm
+# list. A curated allow-list (never a broad hyphen pattern) so it captures only
+# real SSH algorithm tokens — the strong ones too, for inventory — and cannot
+# mis-capture arbitrary hyphenated words. The C13 weakness predicate
+# (:func:`aibom.cbom.weakness.cipher_suite_findings`) decides which are weak.
+_SSH_ALGO = re.compile(
+    r"\b(?:"
+    # kex
+    r"diffie-hellman-group(?:1|14|16|18|-exchange)(?:-sha(?:1|256|512))?|"
+    r"curve25519-sha256(?:@libssh\.org)?|ecdh-sha2-nistp(?:256|384|521)|"
+    r"sntrup761x25519-sha512(?:@openssh\.com)?|"
+    # host keys
+    r"ssh-rsa|ssh-dss|ssh-ed25519|rsa-sha2-(?:256|512)|"
+    r"ecdsa-sha2-nistp(?:256|384|521)|"
+    # ciphers
+    r"(?:aes(?:128|192|256)|3des|blowfish|cast128|arcfour(?:128|256)?)"
+    r"(?:-(?:cbc|ctr|gcm))?(?:@openssh\.com)?|arcfour|chacha20-poly1305@openssh\.com|"
+    # MACs
+    r"(?:hmac-(?:md5|sha1|sha2-256|sha2-512|ripemd160)|umac-(?:64|128))"
+    r"(?:-etm)?(?:-96)?(?:@openssh\.com)?"
+    r")\b",
+    _F,
+)
 
 # IPsec / IKE. Config files are matched by name; source is matched by a narrow
 # marker set (strongSwan/libreswan tooling, an explicit IKE version, or an
@@ -265,6 +290,12 @@ class ProtocolScanner(Scanner):
             # SSH-2.0 is the current, strong wire protocol.
             props["crypto:strength"] = "weak" if version.startswith("1.") else "strong"
             name = f"SSH {version}"
+        # Negotiated kex/host-key/cipher/MAC tokens (for the C13 weakness
+        # predicate). Stored in the SAME crypto:cipherSuite bag as TLS suites /
+        # IKE transforms so C9's cryptoRefArray emission stays uniform.
+        algos = sorted({m.group(0) for m in _SSH_ALGO.finditer(code)})
+        if algos:
+            props["crypto:cipherSuite"] = ", ".join(algos)
         ctx.add_component(
             CryptoAssetComponent(
                 bom_ref=f"crypto-protocol-ssh-{_slug(rel)}", name=name, properties=props

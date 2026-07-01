@@ -225,7 +225,7 @@
       "dependencies": [
         "C5"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room cipher-suite & SSH/IPsec-negotiation weakness catalog (R3): WEAK_CIPHER_SUITE predicate over emitted protocol cipher-suite/SSH-algo/IKEv2-transform tokens \u2014 NULL/anon/EXPORT/RC4/DES/3DES/CBC-SHA1 (SWEET32/FREAK/Logjam/Lucky13) + weak SSH kex/host-key/cipher + weak IKEv2 transforms, with attack-named rationale; extends weakness.py (predicate separate from C5 emission)"
     },
     {

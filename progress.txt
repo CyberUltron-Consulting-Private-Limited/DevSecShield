@@ -503,3 +503,39 @@ progress.aibom-reconcile.txt (reference only).
   (chroma-provider/chroma-framework recall 0.5<0.9) are unrelated to CBOM — confirmed identical with C6
   stashed. `uv run` interpreter (system py 3.9 breaks `str | None`).
 - Next selectable after C6 = C13 (11.5, dep C5: cipher-suite & SSH/IPsec-negotiation weakness catalog).
+
+## C13 (build, DONE) — cipher-suite / SSH-algo / IKE-transform negotiation weakness catalog
+- SCOPE (ledger row 108): a PURE predicate `weakness.py::cipher_suite_findings` over the emitted
+  `crypto:cipherSuite` bag (mirrors how `weak_finding` is a predicate separate from the emitter). NEW flag
+  `WEAK_CIPHER_SUITE` (High). Orthogonal to `WEAK_PROTOCOL` (which flags the VERSION): a TLS 1.2 asset that
+  still offers RC4 gets the SUITE flag, never the version flag. Wired into `weak_algorithm_scan.py` (order 40),
+  added to `WEAK_CRYPTO_CODES` (auto-threads normalize `_weakness_distribution` + the charts contract — no
+  normalize/chart edit, chart-data-contract test stayed green), + `crypto-risk-weights.yaml` weight 8.
+- CORPUS = boundary-anchored token matchers, each carrying a public attack/CVE name: NULL, anon (ADH/AECDH/
+  aNULL), EXPORT (FREAK/Logjam), RC4/arcfour (RFC7465), RC2, 3DES (SWEET32) checked BEFORE single-DES so the
+  `des` fragment never fires on Triple-DES, MD5 MAC, weak MODP DH (768/1024/1536 = group1/2/5 Logjam), + SSH-
+  ONLY (gated on protocolType==ssh): ssh-dss, exact `ssh-rsa` (SHA-1 hostkey), group1-sha1 kex, blowfish/
+  cast128, umac-64. Tokenize on `[,:]` + whitespace; ONE aggregated finding per asset (keeps count/chart clean).
+- EMISSION DELTA (the only scanner change): `protocol_scan.py::_emit_ssh` now captures SSH kex/host-key/cipher/
+  MAC tokens into `crypto:cipherSuite` via a CURATED allow-list `_SSH_ALGO` (never a broad hyphen pattern — it
+  captures only real SSH algo identifiers so it can't mis-grab arbitrary hyphenated words; gated on the existing
+  `_SSH_USE`). Without this, "weak SSH" was un-analyzable (SSH previously emitted version only). TLS/IPsec needed
+  NO emission change — their suites/transforms were already in `crypto:cipherSuite` (C3/C5).
+- REGEX GOTCHA (cost a run): a char-class `[_-@]` is a DESCENDING range (`_`=0x5F > `@`=0x40) → `re.PatternError:
+  bad character range`. Put the dash first/last: `[-_@]`. (`[_-]` is fine — trailing `-` is literal.) Fixed in
+  _RC4_STREAM/_MD5_MAC/_SSH_WEAK_MAC.
+- FROZEN ZERO-DELTA (C5/C6 discipline, PROVEN by 2 regression tests): plain CBC-SHA1 (Lucky13/BEAST) is DEFERRED
+  — the corpus matches DES/RC4/NULL/EXPORT/anon/3DES/MD5, NOT a bare `-SHA` MAC — so the benchmark oracle
+  `synthetic-crypto-app` (whose ONLY suite is `ECDHE-RSA-AES128-SHA`, no hard-break token) gains NO flag → the
+  3 at-risk frozen tests (weak-flag count==6, manifest-count, scorer band "TLS 1.0"==high) stay green untouched.
+  This exactly mirrors how C6 deferred WEAK_PADDING off `rsa_pkcs1v15_sign`. The NON-oracle `ipsec.conf`
+  (`3des-md5-modp1024`) DOES gain the flag (correct TP) — no count/band test exists on synthetic-crypto-protocols
+  so nothing breaks. Benchmark true-miss==0 preserved (flags add no components; diff.py is component-based).
+- GATE: full cbom/crypto suite 237 passed (225→237, +12 new) + benchmark_gate + chart-data-contract + scorer +
+  frozen weak_algorithm_scan + ruff + mypy(20 files) all green. `uv run` interpreter (system py 3.9 breaks
+  `str | None`). Scorer loads the SOURCE `aibom/config/crypto-risk-weights.yaml` (editable install redirects
+  resources.files("aibom") → src; the site-packages copy is unused — verified empirically).
+- NO frontend this iteration: WEAK_CIPHER_SUITE rides the EXISTING WEAK_CRYPTO_CODES→weakness-distribution→charts
+  contract; surfacing the cipher-suite breakdown distinctly is F1's scope (C5/C6/C11 precedent).
+- Next selectable after C13 = C16 (11.8, dep C1: weak-asymmetric-padding WEAK_PADDING, deferred from C6) or
+  C7 (12, dep R4: PQC readiness).
