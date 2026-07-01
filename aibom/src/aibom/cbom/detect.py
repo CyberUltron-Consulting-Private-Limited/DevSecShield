@@ -170,7 +170,106 @@ PYTHON_RULES: tuple[CryptoRule, ...] = (
     CryptoRule(_PY, _STDLIB, "hmac", "HMAC|new", "hmac", ()),
 )
 
-RULES_BY_LANG: dict[str, tuple[CryptoRule, ...]] = {_PY: PYTHON_RULES}
+# --------------------------------------------------------------------------- #
+# Java rule table (C2). Two Java crypto surfaces:
+#   * JCA/JCE — algorithm names are embedded in ``getInstance("...")`` /
+#     ``"...withRSA"`` STRING arguments, so they are recovered by the language-
+#     scoped literal lane :data:`JAVA_LITERALS` below (not a receiver binding).
+#   * Bouncy Castle low-level API — concrete engine/digest/signer CLASSES
+#     (``new AESEngine()``, ``new SHA256Digest()``, ``new Ed25519Signer()``),
+#     matched here as free-constructor rules (``receiver=None``). These class
+#     spellings are what the flat token corpus could not see.
+# --------------------------------------------------------------------------- #
+_JAVA = "java"
+_BC = "Bouncy Castle"
+
+
+def _bc_rule(method: str, key: str, roles: tuple[str, ...] = ()) -> CryptoRule:
+    """A Bouncy Castle free-constructor rule (``new <Class>(...)``)."""
+    return CryptoRule(_JAVA, _BC, None, method, key, roles)
+
+
+JAVA_RULES: tuple[CryptoRule, ...] = (
+    # --- BouncyCastle symmetric engines ---
+    _bc_rule(r"(?:AESEngine|AESFastEngine|AESLightEngine)", "aes"),
+    _bc_rule(r"DESEngine", "des"),
+    _bc_rule(r"DESedeEngine", "3des"),
+    _bc_rule(r"RC2Engine", "rc2"),
+    _bc_rule(r"RC4Engine", "rc4"),
+    _bc_rule(r"BlowfishEngine", "blowfish"),
+    _bc_rule(r"(?:ChaChaEngine|ChaCha7539Engine)", "chacha20"),
+    # --- BouncyCastle asymmetric engines ---
+    _bc_rule(r"(?:RSAEngine|RSABlindedEngine)", "rsa"),
+    # --- BouncyCastle digests ---
+    _bc_rule(r"MD5Digest", "md5"),
+    _bc_rule(r"SHA1Digest", "sha1"),
+    _bc_rule(r"(?:SHA256Digest|SHA224Digest)", "sha256"),
+    _bc_rule(r"SHA384Digest", "sha384"),
+    _bc_rule(r"SHA512Digest", "sha512"),
+    _bc_rule(r"(?:SHA3Digest|SHA3_256Digest)", "sha3_256"),
+    _bc_rule(r"Blake2bDigest", "blake2b"),
+    _bc_rule(r"Blake2sDigest", "blake2s"),
+    # --- BouncyCastle signers / key-agreement / MAC ---
+    _bc_rule(r"(?:Ed25519Signer|Ed25519KeyPairGenerator)", "ed25519"),
+    _bc_rule(r"(?:Ed448Signer|Ed448KeyPairGenerator)", "ed448"),
+    _bc_rule(r"ECDSASigner", "ecdsa"),
+    _bc_rule(r"(?:X25519Agreement|X25519KeyPairGenerator)", "x25519"),
+    _bc_rule(r"HMac", "hmac"),
+    # --- BouncyCastle PQC (FIPS 203/204 spellings) ---
+    _bc_rule(r"(?:MLKEMEngine|KyberEngine|MLKEMKeyPairGenerator)", "kyber"),
+    _bc_rule(r"(?:MLDSAEngine|DilithiumEngine|MLDSAKeyPairGenerator)", "dilithium"),
+    _bc_rule(r"(?:SLHDSAEngine|SPHINCSPlusEngine)", "sphincs+"),
+)
+
+
+# --------------------------------------------------------------------------- #
+# Go rule table (C2). ``crypto/*`` stdlib is package.method-shaped
+# (``aes.NewCipher``, ``rsa.GenerateKey(_, 2048)``, ``ecdsa.GenerateKey(P256)``);
+# ``golang.org/x/crypto`` adds bcrypt/argon2/scrypt/chacha20poly1305/blake2*. The
+# stdlib block-cipher constructors (``aes.NewCipher``/``des.NewCipher``) are the
+# real gap — the token corpus never bound them (no ``AES(`` / ``getInstance``).
+# Go decouples the mode (``cipher.NewGCM``) from the block cipher, so a Go asset
+# is inventoried per PRIMITIVE (mode is left to a future cross-line pass).
+# --------------------------------------------------------------------------- #
+_GO = "go"
+_GOSTD = "Go crypto (stdlib)"
+_GOX = "golang.org/x/crypto"
+
+GO_RULES: tuple[CryptoRule, ...] = (
+    # --- stdlib block / stream ciphers ---
+    CryptoRule(_GO, _GOSTD, "aes", "NewCipher", "aes", (ROLE_LITERAL_KEY,)),
+    CryptoRule(_GO, _GOSTD, "des", "NewCipher", "des"),
+    CryptoRule(_GO, _GOSTD, "des", "NewTripleDESCipher", "3des"),
+    CryptoRule(_GO, _GOSTD, "rc4", "NewCipher", "rc4"),
+    # --- stdlib hashes ---
+    CryptoRule(_GO, _GOSTD, "md5", r"(?:New|Sum)", "md5"),
+    CryptoRule(_GO, _GOSTD, "sha1", r"(?:New|Sum)", "sha1"),
+    CryptoRule(_GO, _GOSTD, "sha256", r"(?:New|New224|Sum256|Sum224)", "sha256"),
+    CryptoRule(_GO, _GOSTD, "sha512", r"(?:New|New384|Sum512|Sum384)", "sha512"),
+    CryptoRule(_GO, _GOSTD, "sha3", r"(?:New256|New384|New512|Sum256)", "sha3_256"),
+    # --- stdlib asymmetric ---
+    CryptoRule(_GO, _GOSTD, "rsa", "GenerateKey", "rsa", (ROLE_KEY_SIZE,)),
+    CryptoRule(_GO, _GOSTD, "dsa", r"(?:GenerateKey|GenerateParameters)", "dsa"),
+    CryptoRule(_GO, _GOSTD, "ecdsa", "GenerateKey", "ecdsa", (ROLE_CURVE,)),
+    CryptoRule(_GO, _GOSTD, "ed25519", r"(?:GenerateKey|NewKeyFromSeed)", "ed25519"),
+    # --- golang.org/x/crypto ---
+    CryptoRule(_GO, _GOX, "bcrypt",
+               r"(?:GenerateFromPassword|CompareHashAndPassword)", "bcrypt"),
+    CryptoRule(_GO, _GOX, "argon2", r"(?:IDKey|Key)", "argon2"),
+    CryptoRule(_GO, _GOX, "scrypt", "Key", "scrypt"),
+    CryptoRule(_GO, _GOX, "chacha20poly1305", r"(?:New|NewX)", "chacha20-poly1305"),
+    CryptoRule(_GO, _GOX, "chacha20", "NewUnauthenticatedCipher", "chacha20"),
+    CryptoRule(_GO, _GOX, "pbkdf2", "Key", "pbkdf2"),
+    CryptoRule(_GO, _GOX, "hkdf", r"(?:New|Expand|Extract)", "hkdf"),
+    CryptoRule(_GO, _GOX, "blake2b", r"(?:New256|New384|New512|New)", "blake2b"),
+    CryptoRule(_GO, _GOX, "blake2s", r"(?:New256|New128|New)", "blake2s"),
+)
+
+RULES_BY_LANG: dict[str, tuple[CryptoRule, ...]] = {
+    _PY: PYTHON_RULES,
+    _JAVA: JAVA_RULES,
+    _GO: GO_RULES,
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -221,6 +320,34 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 # --------------------------------------------------------------------------- #
+# Language-scoped literal lanes (C2). JCA/JCE embeds the algorithm in a
+# ``getInstance("...")`` / ``"...withRSA"`` STRING argument, so these Java-only
+# spellings are matched by token — but ONLY on ``java`` sources, so they never
+# perturb the frozen Python corpus (the global :data:`LITERAL_PATTERNS` above are
+# unchanged). Same ``(key, pattern)`` shape as the global lane.
+# --------------------------------------------------------------------------- #
+JAVA_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # JCA signature spellings "<digest>with<pke>" + getInstance("RSA"). No leading
+    # \b: the spelling is preceded by a digit (``SHA256withRSA``), which is not a
+    # word boundary — a leading \b would never fire.
+    ("rsa", re.compile(r"with(?:RSA|RSAandMGF1)\b|getInstance\(\s*\"RSA", _F)),
+    ("ecdsa", re.compile(r"withECDSA\b|getInstance\(\s*\"EC(?:DSA)?[\"/]", _F)),
+    ("dsa", re.compile(r"withDSA\b|getInstance\(\s*\"DSA[\"/]", _F)),
+    ("dh", re.compile(r"getInstance\(\s*\"(?:DH|DiffieHellman)\"", _F)),
+    # getInstance("DES...") but NOT "DESede" (the latter is 3DES, matched below)
+    ("des", re.compile(r"getInstance\(\s*\"DES(?:/|\")", _F)),
+    ("3des", re.compile(r"getInstance\(\s*\"DESede", _F)),
+    # JCA MAC spelling "HmacSHA256" / "HmacMD5"
+    ("hmac", re.compile(r"\bHmac(?:SHA\d*|MD5)\b", _F)),
+    ("pbkdf2", re.compile(r"\bPBKDF2With", _F)),
+)
+
+LITERAL_BY_LANG: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
+    _JAVA: JAVA_LITERALS,
+}
+
+
+# --------------------------------------------------------------------------- #
 # Prose stripping (docstrings / block + line comments are never scanned).
 # --------------------------------------------------------------------------- #
 _TRIPLE_QUOTE = re.compile(r'""".*?"""|\'\'\'.*?\'\'\'', re.S)
@@ -230,6 +357,11 @@ _C_LINE_COMMENT = re.compile(r"//.*$")
 _IMPORT_RE = re.compile(
     r"^\s*(?:import|from|require|use|using|#include|require_once)\b", re.I
 )
+# A grouped-import path entry (Go ``import (\n  "crypto/aes"\n )``): a line that is
+# only a path-like quoted string (optionally aliased). These are LIBRARY signals,
+# not usage — scanning them would mint an info-less detection that precedes and
+# shadows the real call site (e.g. "crypto/ecdsa" before ecdsa.GenerateKey(P256)).
+_BARE_IMPORT_PATH = re.compile(r'^\s*(?:[A-Za-z_.]\w*\s+)?"[^"]*/[^"]*"\s*$')
 
 
 def _blank(match: re.Match[str]) -> str:
@@ -425,7 +557,7 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
         line = work.strip()
-        if not line or _IMPORT_RE.search(line):
+        if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work):
             continue  # imports are LIBRARY signals, handled by the scanner
         per_line: dict[str, Detection] = {}
 
@@ -449,7 +581,7 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
         explicit_ks = extract_key_size(line)
         mode = extract_mode(line)
         curve = extract_curve(line)
-        for key, pat in LITERAL_PATTERNS:
+        for key, pat in (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ())):
             if not pat.search(line):
                 continue
             lit = Detection(
@@ -482,8 +614,12 @@ __all__ = [
     "CryptoRule",
     "Detection",
     "PYTHON_RULES",
+    "JAVA_RULES",
+    "GO_RULES",
     "RULES_BY_LANG",
     "LITERAL_PATTERNS",
+    "JAVA_LITERALS",
+    "LITERAL_BY_LANG",
     "detect_crypto",
     "split_calls",
     "build_symbols",

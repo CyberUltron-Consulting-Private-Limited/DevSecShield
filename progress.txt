@@ -223,3 +223,51 @@ progress.aibom-reconcile.txt (reference only).
 - Their uncommitted files stay uncommitted on the shared tree; your commit (staging only your paths) leaves
   `__init__.py` = HEAD-clean, so your committed tree is self-consistent (algorithm_scan imports detect; the
   5 original scanners register) and green regardless of their in-flight C2/C3 work.
+
+## C2 (build, DONE) — clean-room Java + Go crypto-API detection (JCA/BouncyCastle + crypto/x-crypto)
+- FOLLOWED C1's MODEL, did NOT add a scanner file: C2 extends `detect.py` rule TABLES (per the
+  AGENTS.md "extend the rule table" rule), not `scanners/`. Added `JAVA_RULES` (BouncyCastle
+  free-constructor rules `new *Engine()/*Digest/*Signer` incl. ML-KEM/ML-DSA/SLH-DSA spellings) +
+  `GO_RULES` (crypto/* stdlib + golang.org/x/crypto) to `RULES_BY_LANG`, plus a NEW language-scoped
+  literal lane `JAVA_LITERALS` (`LITERAL_BY_LANG={java:...}`) for JCA `getInstance("...")` /
+  `<digest>with<pke>` STRING-embedded algos. The global `LITERAL_PATTERNS` were left UNTOUCHED so the
+  frozen Python `synthetic-crypto-app` emit/benchmark stayed byte-identical (verified: same 9 algos,
+  same 4 libs, benchmark gate green).
+- WHY the language-scoped lane: JCA embeds the algorithm in a string arg (`getInstance("RSA")`,
+  `"SHA256withRSA"`) — it does NOT fit the receiver.method(fixed-key) model, so it's a `(key, regex)`
+  literal, but scoping it to `java` protects the Python corpus. `detect_crypto` now iterates
+  `(*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))`.
+- TWO REAL BUGS my fixture surfaced + fixed (both would've mislabeled real repos):
+  (1) `withRSA`/`withECDSA` had a LEADING `\b` that never fired — the spelling is preceded by a DIGIT
+      (`SHA256withRSA`), which is not a word boundary. Dropped the leading `\b` (kept the trailing one).
+      Symptom: ecdsa silently undetected from `SHA256withECDSA`.
+  (2) Go GROUPED imports (`import (\n  "crypto/ecdsa"\n)`) are NOT `import`-prefixed lines, so
+      `detect_crypto`'s import-skip missed them and SCANNED the path strings — `"crypto/ecdsa"` minted an
+      info-less ecdsa detection that PRECEDED and shadowed the real `ecdsa.GenerateKey(P256())`, dropping
+      the P256 curve (dedup keeps first-seen per (name,file)). FIX: added `_BARE_IMPORT_PATH` (a line that
+      is only a path-like quoted string, optionally aliased) to the skip. Also fixes md5/rc4-from-import.
+- LIBRARY→ASSET MAP done two ways: (a) per-API `Detection.library` (JCA/JCE vs Bouncy Castle vs Go
+  stdlib vs golang.org/x/crypto) tested directly; (b) `rules.CRYPTO_IMPORT_MODULES` gained Go/Java import
+  roots (crypto/*, golang.org/x/crypto, javax.crypto, java.security, org.bouncycastle) so the
+  framework-component lane inventories them from `import` lines. NOTE: Go GROUPED imports aren't seen by
+  `_detect_libraries` (`_IMPORT_RE` needs the `import` keyword on the line) → Go library components rely on
+  single-line imports; manifest-based Go/Java library detection (pom/go.mod) is C12's job, not C2.
+- FIXED a PRE-EXISTING greedy-match bug my Java fixture exposed: the generic Python `"crypto"` import key
+  (for `from Crypto import AES`) matched `javax.crypto`/`crypto/aes` → mislabeled Java as `PyCryptodome`.
+  Tightened `_detect_libraries`'s lookbehind to `(?<![a-z0-9_./])` so a bare root can't match across a
+  `.`/`/` path boundary. Frozen Python fixture libs UNCHANGED (still cryptography/pyOpenSSL/hashlib/ssl).
+- GO MODE IS DECOUPLED from the block cipher (`aes.NewCipher` then a separate `cipher.NewGCM(block)`), so
+  Go assets are inventoried PER PRIMITIVE (no mode) — attributing a `cipher.NewGCM`→AES would be a guess
+  (GCM's block could be DES). Documented as a future cross-line pass; Java JCA transformation strings DO
+  carry the mode (`AES/GCM` → AES-GCM) via the existing `extract_mode`.
+- CryptoRule method ALTERNATIONS must be `(?:A|B)` not `A|B` — `__post_init__` wraps method in
+  `\b{method}\b`, so a bare `New|Sum` becomes `\bNew|Sum\b` (wrong precedence). Use non-capturing groups.
+- FIXTURE: `tests/fixtures/synthetic-crypto-jvm-go/{Crypto.java,crypto.go}` (kept the frozen
+  synthetic-crypto-app oracle untouched — several tests assert its counts). Tests:
+  `tests/test_cbom_detect_jvm_go.py` (9). GATE: full cbom suite (13 files) + benchmark gate green; ruff +
+  mypy clean on detect.py/rules.py/algorithm_scan.py + the test.
+- TWO-WRITER HAZARD (HIT AGAIN, same as C1): the parallel Ralph's uncommitted `web_native_crypto_scan.py`
+  (C3) imports a not-yet-written `jvm_go_crypto_scan` → `scanners/__init__.py` ImportError on ALL cbom
+  collection. Ran the gate against the clean HEAD `__init__.py` (`cp __init__.py /tmp; git checkout HEAD --
+  __init__.py; test; cp back`) and committed ONLY my paths (never `git add -A`). My committed tree =
+  HEAD-clean `__init__.py` (5 original scanners) + my detect/rules/scanner edits → self-consistent & green.

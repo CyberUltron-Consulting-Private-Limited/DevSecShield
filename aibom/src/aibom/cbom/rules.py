@@ -263,6 +263,22 @@ CRYPTO_IMPORT_MODULES: dict[str, str] = {
     "nacl": "PyNaCl",
     "jwt": "PyJWT",
     "jose": "python-jose",
+    # Go (C2) — stdlib crypto/* import roots + golang.org/x/crypto.
+    "crypto/aes": "Go crypto (stdlib)",
+    "crypto/des": "Go crypto (stdlib)",
+    "crypto/rc4": "Go crypto (stdlib)",
+    "crypto/rsa": "Go crypto (stdlib)",
+    "crypto/ecdsa": "Go crypto (stdlib)",
+    "crypto/ed25519": "Go crypto (stdlib)",
+    "crypto/elliptic": "Go crypto (stdlib)",
+    "crypto/tls": "Go crypto (stdlib)",
+    "crypto/x509": "Go crypto (stdlib)",
+    "golang.org/x/crypto": "golang.org/x/crypto",
+    # Java (C2) — JCA/JCE import roots + Bouncy Castle.
+    "javax.crypto": "JCA/JCE (javax.crypto)",
+    "java.security": "JCA/JCE (java.security)",
+    "org.bouncycastle": "Bouncy Castle",
+    "bouncycastle": "Bouncy Castle",
 }
 
 # --------------------------------------------------------------------------- #

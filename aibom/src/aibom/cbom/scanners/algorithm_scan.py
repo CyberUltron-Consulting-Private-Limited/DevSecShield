@@ -173,7 +173,11 @@ def _detect_libraries(root: Path) -> list[tuple[str, str]]:
                 continue
             low = line.lower()
             for module, label in CRYPTO_IMPORT_MODULES.items():
-                if re.search(rf"(?<![a-z0-9_]){re.escape(module)}(?![a-z0-9_])", low):
+                # The lookbehind rejects a preceding "." / "/" so a generic root
+                # (e.g. the Python "crypto" key for ``from Crypto import AES``) can
+                # NOT match across a package path — ``javax.crypto`` / ``crypto/aes``
+                # only match their own explicit multi-segment keys (C2).
+                if re.search(rf"(?<![a-z0-9_./]){re.escape(module)}(?![a-z0-9_])", low):
                     found.setdefault(label, rel)
     return sorted(found.items())
 
