@@ -666,3 +666,38 @@ progress.aibom-reconcile.txt (reference only).
 - Next selectable after C15 = C8 (13, deps R5+C15 both now true: expanded tri-state frameworks pci_dss_4/
   fips_140_3/bsi_tr_02102/nist_1800_38c — now UNBLOCKED, queries strength.py's securityStrengthBits +
   APPROVED_ALGORITHMS) or C9 (14, deps C1-C7 all true: CycloneDX hardening).
+
+## C8 (build, DONE) — expanded tri-state compliance frameworks (pci_dss_4/fips_140_3/bsi_tr_02102/nist_1800_38c)
+- SCOPE (ledger rows 188-191): CBOM_FRAMEWORKS 5→9. Pure check-assembly in compliance.py querying the
+  GRAPH (crypto: props incl. C15 securityStrengthBits + C7 nistQuantumSecurityLevel), never flags. Each
+  fw = 3 graph checks + 1 register_manual. Reuses existing helpers exactly per the R5 reuse map; the only
+  new graph-queries are `under_strength(r,min_bits)` (reads crypto:securityStrengthBits, family-normalized)
+  + `non_approved_algorithms(r,fw)` (inverts C15 is_approved_algorithm) + `quantum_safe_mechanisms(r)`
+  (crypto:hybrid OR PQC family). `undersized_keys` is now PARAMETERIZED (min_bits, default 2048 keeps KM-2).
+- THE KEY DESIGN INSIGHT — the BSI RSA≥3000/EC≥250 floor collapses to ONE strength axis: BSI-2 =
+  under_strength(120). RSA-3072→128b (pass), RSA-2048→112b (FAIL), P-256→128b (pass), P-224→112b (fail).
+  This EXACTLY reproduces BSI's family-specific modulus floors via the C15 comparable-strength map WITHOUT a
+  family-aware key-size check that would false-flag EC (whose keySize is a curve, not an IF modulus). Proven
+  by test_bsi_120_bit_floor_is_stricter_than_fips: RSA-2048 passes FIPS-2 (2048 floor) but fails BSI-2 (120b).
+- ROOT-CAUSE BUG FOUND + FIXED (weakness.py, shared predicate): FALCON-512/ML-KEM-768 store their NIST
+  PARAMETER SET in crypto:keySize (512/768), and BOTH weak_finding check#3 AND compliance.undersized_keys
+  applied the 2048-bit RSA MODULUS floor to it → a 128-bit-secure NIST PQC signature was flagged
+  "undersized asymmetric key" (WEAK_KEY_SIZE) + weak. Fixed at root: guard the modulus floor by PQC family
+  NAME (`_is_pqc_name` in weakness.py; `canonical_algorithm_family in _PQC_FAMILIES` in compliance). NAME-based
+  (not qsl-based) BECAUSE scanner order: weak_algorithm_scan=40 runs BEFORE pqc_scan=50, so qsl isn't stamped
+  at flag-emit time — the name is always present. No frozen test asserts FALCON=WEAK_KEY_SIZE (the WEAK_KEY_SIZE
+  unit test uses RSA-1536; the weakness-distribution test uses the app fixture, no FALCON). This also silently
+  corrected KM-1/CRA-1/DORA-2 which would have mis-counted FALCON if ever run on the pqc fixture.
+- VERDICT MATRIX (real pipeline, both fixtures): app(weak): PCI/FIPS/BSI all 3-fail + 1 nbe (cov 0.0);
+  nist_1800_38c QR-1/QR-2 pass, QR-3 fail (no PQC adopted). pqc(strong): PCI cov=1.0; FIPS-1 fail (FALCON not
+  FIPS-std), FIPS-2/3 pass; BSI-1 fail (FALCON), BSI-2 fail (RSA-2048<120b), BSI-3 pass; QR all pass (hybrid).
+- FRONTEND: NONE (F3 surfaces the expanded compliance matrix; normalize.py carries result.compliance verbatim
+  so all 9 frameworks thread through the scan-metadata→compliance-matrix contract additively — precedent
+  C7/C13/C15 enrichment-only iterations). No worker/aibom runtime change → no worker restart needed.
+- GATE: new test_cbom_compliance_expanded.py (24 incl. FALCON regression + parameterized-floor + allowlist-
+  inversion + lane-purity + coverage) + full cbom/crypto/compliance/normalize/chart/benchmark suite green +
+  test_cbom_benchmark_gate (true-miss==0 — compliance adds NO components) + emit-and-validate + ruff + mypy
+  (2 files) clean. `.venv/bin/python` (system py 3.9 breaks `str | None`). The 2 AIBOM test_differential.py
+  chroma-provider/framework recall failures are PRE-EXISTING (crewai detection; unrelated to CBOM/crypto).
+- Next selectable after C8 = C14 (13.5, deps C7+C8 both true now: CNSA 2.0 quantum-readiness framework) or
+  C9 (14, deps C1-C7: CycloneDX hardening).

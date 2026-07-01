@@ -98,6 +98,21 @@ _MODE_SUFFIXES = ("-GCM", "-CBC", "-ECB", "-CTR", "-CFB", "-OFB", "-XTS", "-CCM"
 # disallow RSA/DSA/DH below 2048.
 _MIN_ASYMMETRIC_BITS = 2048
 
+# PQC / stateful-hash signature + KEM families whose ``crypto:keySize`` carries a
+# NIST *parameter set* (FALCON-512, ML-KEM-768), NOT an integer-factorization /
+# discrete-log modulus — so the 2048-bit RSA floor must NOT apply to them (a
+# 128-bit-secure FALCON-512 is not an "undersized RSA key"). Matched by name so
+# the guard is order-independent of the C7 nistQuantumSecurityLevel enrichment.
+_PQC_NAME_TOKENS = (
+    "ML-KEM", "MLKEM", "KYBER", "ML-DSA", "MLDSA", "DILITHIUM",
+    "SLH-DSA", "SPHINCS", "FALCON", "FN-DSA", "XMSS", "LMS", "HSS", "HYBRID",
+)
+
+
+def _is_pqc_name(name: str) -> bool:
+    upper = name.upper()
+    return any(tok in upper for tok in _PQC_NAME_TOKENS)
+
 # Per-protocol-family rationale for a WEAK_PROTOCOL finding, so the message names
 # the right deprecated version + migration target instead of a TLS-only string.
 _WEAK_PROTOCOL_RATIONALE: dict[str, str] = {
@@ -195,7 +210,11 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
         )
 
     # 3) Sub-2048-bit asymmetric key (a strong-named RSA/DSA/DH with a small key).
-    if props.get("crypto:primitive") in ("pke", "signature", "key-agree"):
+    #    Excludes PQC/stateful-hash families, whose keySize is a parameter set, not
+    #    a modulus — FALCON-512 is a 128-bit-secure signature, not a weak RSA key.
+    if props.get("crypto:primitive") in ("pke", "signature", "key-agree") and (
+        not _is_pqc_name(name)
+    ):
         bits = _key_size(props)
         if bits is not None and bits < _MIN_ASYMMETRIC_BITS:
             return (

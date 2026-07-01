@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from aibom.cbom.strength import canonical_algorithm_family, is_approved_algorithm
 from aibom.cbom.weakness import WEAK_PROTOCOL, weak_finding
 from aibom.compliance.base import (
     ADVISORY_DISCLAIMER,
@@ -57,6 +58,10 @@ CBOM_FRAMEWORKS = [
     "omb_m_23_02",
     "eu_cra",
     "eu_dora",
+    "pci_dss_4",
+    "fips_140_3",
+    "bsi_tr_02102",
+    "nist_1800_38c",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -119,21 +124,78 @@ def weak_algorithms(r: ScanResult) -> list[AIComponent]:
 _MIN_ASYMMETRIC_BITS = 2048
 
 
-def undersized_keys(r: ScanResult) -> list[AIComponent]:
-    """Asymmetric algorithm assets below the 2048-bit floor.
+def undersized_keys(
+    r: ScanResult, min_bits: int = _MIN_ASYMMETRIC_BITS
+) -> list[AIComponent]:
+    """Asymmetric algorithm assets whose modulus is below ``min_bits``.
 
     Queried straight off the graph (``crypto:primitive`` + ``crypto:keySize``),
     not via ``weak_finding`` — that predicate emits ONE code per asset and the
     deprecated-corpus match (e.g. RSA-1024 → ``WEAK_ALGORITHM``) would mask the
     orthogonal key-size dimension this check measures.
+
+    The floor is parameterized (C8): NIST SP 800-57 / FIPS 140-3 use the default
+    2048-bit RSA floor; a stricter framework passes a higher ``min_bits``. Only
+    an integer ``crypto:keySize`` is measured — an EC asset carries its curve in
+    ``crypto:curve`` (keySize unset), so raising the floor never false-flags a
+    curve whose comparable strength this modulus check does not model (that is
+    the strength-graded :func:`under_strength`'s job).
     """
     out: list[AIComponent] = []
     for c in algorithms(r):
         props = c.properties or {}
         if props.get("crypto:primitive") not in ("pke", "signature", "key-agree"):
             continue
+        # A PQC / stateful-hash asset carries its parameter set in keySize, not an
+        # IF/DL modulus — the classical modulus floor must not false-flag it.
+        if canonical_algorithm_family(c) in _PQC_FAMILIES:
+            continue
         raw = props.get("crypto:keySize")
-        if raw and raw.isdigit() and int(raw) < _MIN_ASYMMETRIC_BITS:
+        if raw and raw.isdigit() and int(raw) < min_bits:
+            out.append(c)
+    return out
+
+
+def under_strength(r: ScanResult, min_bits: int) -> list[AIComponent]:
+    """Algorithm assets graded below ``min_bits`` of comparable strength (C15/C8).
+
+    Reads the C15 graph fact ``crypto:securityStrengthBits`` (SP 800-57 Table 2
+    comparable strength), so it is family-normalized: RSA-2048 → 112, P-256 →
+    128, 3DES → 112, MD5 → 64. This is the correct floor for a *security-level*
+    requirement (PCI "strong cryptography" ≥ 112-bit, BSI TR-02102-1 ≥ 120-bit)
+    because the number already folds modulus / curve / primitive into one axis —
+    an ungraded asset (``securityStrengthBits`` absent) is skipped, never
+    counted as a fail the inventory cannot substantiate.
+    """
+    out: list[AIComponent] = []
+    for c in algorithms(r):
+        raw = (c.properties or {}).get("crypto:securityStrengthBits")
+        if raw and raw.isdigit() and int(raw) < min_bits:
+            out.append(c)
+    return out
+
+
+#: Canonical family tokens (from C15's ``canonical_algorithm_family``) that name a
+#: quantum-safe / PQC mechanism — the positive readiness signal QR-3 / crypto-
+#: agility checks query alongside the ``crypto:hybrid`` graph fact.
+_PQC_FAMILIES = frozenset(
+    {"ml-kem", "ml-dsa", "slh-dsa", "falcon", "lms", "hss", "xmss", "hybrid"}
+)
+
+
+def quantum_safe_mechanisms(r: ScanResult) -> list[AIComponent]:
+    """Algorithm assets that are a PQC / hybrid (quantum-safe) mechanism.
+
+    A positive crypto-agility signal read straight off the graph: an asset marked
+    ``crypto:hybrid=true`` (a classical+PQC key-agreement) or whose canonical
+    family is a NIST/stateful-hash PQC scheme. Never reads flags.
+    """
+    out: list[AIComponent] = []
+    for c in algorithms(r):
+        if (c.properties or {}).get("crypto:hybrid") == "true":
+            out.append(c)
+            continue
+        if canonical_algorithm_family(c) in _PQC_FAMILIES:
             out.append(c)
     return out
 
@@ -632,6 +694,339 @@ register_manual(
 
 
 # --------------------------------------------------------------------------- #
+# Allowlist inversion (C8/C15): the FIPS / BSI approved-algorithm frameworks pass
+# iff every classifiable algorithm asset is on the framework's allowlist. A
+# ``False`` from is_approved_algorithm (C15) is a compliance failure; ``None``
+# (unclassifiable family / non-algorithm) is skipped — never counted as a fail.
+# --------------------------------------------------------------------------- #
+
+
+def non_approved_algorithms(r: ScanResult, framework: str) -> list[AIComponent]:
+    return [
+        c for c in algorithms(r) if is_approved_algorithm(framework, c) is False
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# PCI-DSS 4.0.1 — "strong cryptography" for stored + transmitted account data.
+# PCI defines strong cryptography as NIST-approved with ≥ 112-bit effective key
+# strength; early TLS/SSL is disallowed for open-network transmission.
+# --------------------------------------------------------------------------- #
+
+_FW_PCI = "pci_dss_4"
+_S_PCI = "PCI-DSS v4.0.1 Req.3/4"
+
+#: PCI "strong cryptography" effective-strength floor (bits).
+_PCI_STRENGTH_FLOOR = 112
+
+R_PCI1 = _req(
+    "PCI-1", _FW_PCI, "Strong cryptography only (≥ 112-bit effective strength)", _S_PCI
+)
+R_PCI2 = _req(
+    "PCI-2",
+    _FW_PCI,
+    "Strong cryptography over open networks (no early TLS/SSL)",
+    _S_PCI,
+)
+R_PCI3 = _req(
+    "PCI-3", _FW_PCI, "No hardcoded key material (Req 3.6/3.7 key management)", _S_PCI
+)
+R_PCI4 = _req(
+    "PCI-4", _FW_PCI, "Key-management lifecycle: dual control + split knowledge", _S_PCI
+)
+
+
+@register_check(R_PCI1)
+def _pci1(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    weak = under_strength(r, _PCI_STRENGTH_FLOOR)
+    if weak:
+        return FAIL(
+            f"{len(weak)} algorithm(s) below PCI 'strong cryptography' "
+            f"({_PCI_STRENGTH_FLOOR}-bit effective strength; PCI-DSS 4.0 Glossary)",
+            _refs(weak),
+        )
+    return PASS(
+        f"all algorithms meet the {_PCI_STRENGTH_FLOOR}-bit strong-crypto floor",
+        _refs(algorithms(r)),
+    )
+
+
+@register_check(R_PCI2)
+def _pci2(r: ScanResult, req: Requirement) -> CheckResult:
+    if not protocols(r):
+        return PASS("no transport protocols inventoried")
+    weak = weak_protocols(r)
+    if weak:
+        return FAIL(
+            f"{len(weak)} weak transport protocol(s) (early TLS/SSL disallowed for "
+            f"open-network transmission of account data; PCI-DSS 4.0 Req 4.2.1)",
+            _refs(weak),
+        )
+    return PASS("all transport protocols use strong cryptography", _refs(protocols(r)))
+
+
+@register_check(R_PCI3)
+def _pci3(r: ScanResult, req: Requirement) -> CheckResult:
+    hardcoded = hardcoded_key_material(r)
+    if hardcoded:
+        return FAIL(
+            f"{len(hardcoded)} hardcoded key/secret(s) in source (PCI-DSS 4.0 Req 3.7 "
+            f"requires keys stored in the fewest possible locations, never in code)",
+            _refs(hardcoded),
+        )
+    return PASS("no hardcoded key material detected")
+
+
+register_manual(
+    R_PCI4,
+    "cryptographic key-management lifecycle (dual control, split knowledge, "
+    "documented key-custodian procedures; PCI-DSS 4.0 Req 3.7) is operational "
+    "evidence not visible in a crypto inventory",
+)
+
+
+# --------------------------------------------------------------------------- #
+# FIPS 140-3 — only FIPS-approved security functions (SP 800-140C), approved key
+# sizes (SP 800-131A), no disallowed algorithm/mode. The approved-algorithm
+# ALLOWLIST is C15 data; this framework inverts it.
+# --------------------------------------------------------------------------- #
+
+_FW_FIPS = "fips_140_3"
+_S_FIPS = "FIPS 140-3 / SP 800-140C / SP 800-131A"
+
+R_FIPS1 = _req(
+    "FIPS-1", _FW_FIPS, "Only FIPS-approved security functions in use", _S_FIPS
+)
+R_FIPS2 = _req(
+    "FIPS-2", _FW_FIPS, "Approved key sizes (asymmetric ≥ 2048-bit)", _S_FIPS
+)
+R_FIPS3 = _req(
+    "FIPS-3", _FW_FIPS, "No disallowed algorithm or ECB mode (SP 800-131A)", _S_FIPS
+)
+R_FIPS4 = _req(
+    "FIPS-4", _FW_FIPS, "CMVP-validated cryptographic module (certificate)", _S_FIPS
+)
+
+
+@register_check(R_FIPS1)
+def _fips1(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    unapproved = non_approved_algorithms(r, _FW_FIPS)
+    if unapproved:
+        return FAIL(
+            f"{len(unapproved)} algorithm(s) not FIPS-approved security functions "
+            f"(SP 800-140C allowlist; e.g. DES/3DES/RC4/MD5/plain-DSA/ChaCha20/FALCON)",
+            _refs(unapproved),
+        )
+    return PASS(
+        "all algorithms are FIPS-approved security functions", _refs(algorithms(r))
+    )
+
+
+@register_check(R_FIPS2)
+def _fips2(r: ScanResult, req: Requirement) -> CheckResult:
+    small = undersized_keys(r, _MIN_ASYMMETRIC_BITS)
+    if small:
+        return FAIL(
+            f"{len(small)} asymmetric key(s) below the FIPS 2048-bit floor "
+            f"(SP 800-131A)",
+            _refs(small),
+        )
+    return PASS("no undersized asymmetric keys detected")
+
+
+@register_check(R_FIPS3)
+def _fips3(r: ScanResult, req: Requirement) -> CheckResult:
+    bad = weak_algorithms(r) + ecb_modes(r)
+    if bad:
+        return FAIL(
+            f"{len(bad)} disallowed algorithm/mode in use (deprecated primitive or "
+            f"ECB mode; SP 800-131A)",
+            _refs(bad),
+        )
+    return PASS("no disallowed algorithms or ECB modes detected")
+
+
+register_manual(
+    R_FIPS4,
+    "a CMVP module-validation certificate (the algorithm running inside a "
+    "FIPS-validated boundary) is process/attestation evidence not derivable from "
+    "source",
+)
+
+
+# --------------------------------------------------------------------------- #
+# BSI TR-02102-1 — German federal crypto recommendations: stricter than FIPS. The
+# approved-mechanism allowlist is C15 data (AES-only symmetric, no ChaCha20/FALCON)
+# and the effective-strength floor is 120-bit (RSA ≥ 3000, EC ≥ 250 comparable).
+# --------------------------------------------------------------------------- #
+
+_FW_BSI = "bsi_tr_02102"
+_S_BSI = "BSI TR-02102-1"
+
+#: BSI TR-02102-1 effective-strength floor (bits) — stricter than FIPS/NIST. The
+#: RSA ≥ 3000 / EC ≥ 250 modulus floors collapse to this single comparable-
+#: strength axis (RSA-3072 → 128-bit, P-256 → 128-bit; RSA-2048 → 112-bit fails).
+_BSI_STRENGTH_FLOOR = 120
+
+R_BSI1 = _req("BSI-1", _FW_BSI, "Only BSI-approved mechanisms in use", _S_BSI)
+R_BSI2 = _req(
+    "BSI-2", _FW_BSI, "≥ 120-bit effective strength (RSA ≥ 3000, EC ≥ 250)", _S_BSI
+)
+R_BSI3 = _req("BSI-3", _FW_BSI, "No weak algorithm or ECB mode", _S_BSI)
+R_BSI4 = _req(
+    "BSI-4", _FW_BSI, "Key lifecycle: defined crypto-periods + key renewal", _S_BSI
+)
+
+
+@register_check(R_BSI1)
+def _bsi1(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    unapproved = non_approved_algorithms(r, _FW_BSI)
+    if unapproved:
+        return FAIL(
+            f"{len(unapproved)} algorithm(s) not a BSI TR-02102-1 approved mechanism "
+            f"(AES-only symmetric; no ChaCha20/FALCON/deprecated primitives)",
+            _refs(unapproved),
+        )
+    return PASS("all algorithms are BSI-approved mechanisms", _refs(algorithms(r)))
+
+
+@register_check(R_BSI2)
+def _bsi2(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    weak = under_strength(r, _BSI_STRENGTH_FLOOR)
+    if weak:
+        return FAIL(
+            f"{len(weak)} algorithm(s) below the BSI {_BSI_STRENGTH_FLOOR}-bit "
+            f"effective-strength floor (RSA ≥ 3000 / EC ≥ 250; TR-02102-1)",
+            _refs(weak),
+        )
+    return PASS(
+        f"all algorithms meet the BSI {_BSI_STRENGTH_FLOOR}-bit floor",
+        _refs(algorithms(r)),
+    )
+
+
+@register_check(R_BSI3)
+def _bsi3(r: ScanResult, req: Requirement) -> CheckResult:
+    bad = weak_algorithms(r) + ecb_modes(r)
+    if bad:
+        return FAIL(
+            f"{len(bad)} weak algorithm/mode in use (deprecated primitive or ECB)",
+            _refs(bad),
+        )
+    return PASS("no weak algorithms or ECB modes detected")
+
+
+register_manual(
+    R_BSI4,
+    "defined cryptographic key-periods + renewal cadence (BSI TR-02102-1 §keys) is "
+    "operational key-lifecycle policy not modelled in a crypto inventory",
+)
+
+
+# --------------------------------------------------------------------------- #
+# NIST SP 1800-38C — Quantum-Readiness: discovery + migration. A crypto inventory
+# IS the discovery deliverable (QR-1/QR-2); crypto-agility is the readiness signal
+# (QR-3); PQC interoperability/performance testing is the process step (QR-4).
+# --------------------------------------------------------------------------- #
+
+_FW_QR = "nist_1800_38c"
+_S_QR = "NIST SP 1800-38C"
+
+R_QR1 = _req(
+    "QR-1", _FW_QR, "Cryptographic discovery: every algorithm primitive identified",
+    _S_QR,
+)
+R_QR2 = _req(
+    "QR-2", _FW_QR, "Quantum-vulnerable assets discovered + risk-graded", _S_QR
+)
+R_QR3 = _req(
+    "QR-3", _FW_QR, "Crypto-agility: quantum-safe / hybrid mechanism adopted", _S_QR
+)
+R_QR4 = _req(
+    "QR-4", _FW_QR, "PQC interoperability + performance testing in the environment",
+    _S_QR,
+)
+
+
+@register_check(R_QR1)
+def _qr1(r: ScanResult, req: Requirement) -> CheckResult:
+    algos = algorithms(r)
+    if not algos:
+        return FAIL("no cryptographic algorithms discovered")
+    unidentified = [
+        c
+        for c in algos
+        if (c.properties or {}).get("crypto:primitive", "unknown") == "unknown"
+    ]
+    if unidentified:
+        return FAIL(
+            f"{len(unidentified)} discovered algorithm(s) with an unidentified "
+            f"primitive (discovery incomplete)",
+            _refs(unidentified),
+        )
+    return PASS(
+        f"cryptographic discovery identified the primitive of {len(algos)} "
+        f"algorithm(s)",
+        _refs(algos),
+    )
+
+
+@register_check(R_QR2)
+def _qr2(r: ScanResult, req: Requirement) -> CheckResult:
+    qv = quantum_vulnerable(r)
+    if not qv:
+        return PASS("no quantum-vulnerable assets discovered")
+    ungraded = [
+        c
+        for c in qv
+        if (c.properties or {}).get("crypto:nistQuantumSecurityLevel") is None
+    ]
+    if ungraded:
+        return FAIL(
+            f"{len(ungraded)} quantum-vulnerable asset(s) discovered but not "
+            f"risk-graded (nistQuantumSecurityLevel)",
+            _refs(ungraded),
+        )
+    return PASS(
+        f"{len(qv)} quantum-vulnerable asset(s) discovered + risk-graded", _refs(qv)
+    )
+
+
+@register_check(R_QR3)
+def _qr3(r: ScanResult, req: Requirement) -> CheckResult:
+    qv = quantum_vulnerable(r)
+    if not qv:
+        return PASS("no quantum-vulnerable cryptography requiring migration")
+    adopted = quantum_safe_mechanisms(r)
+    if adopted:
+        return PASS(
+            f"{len(adopted)} quantum-safe / hybrid mechanism(s) adopted while "
+            f"{len(qv)} quantum-vulnerable asset(s) migrate (crypto-agility)",
+            _refs(adopted),
+        )
+    return FAIL(
+        f"{len(qv)} quantum-vulnerable asset(s) in use with no quantum-safe / hybrid "
+        f"mechanism adopted (no crypto-agility; ML-KEM/ML-DSA/SLH-DSA/hybrid)",
+        _refs(qv),
+    )
+
+
+register_manual(
+    R_QR4,
+    "interoperability + performance testing of PQC (or hybrid) in the target "
+    "environment is a validation activity outside a static crypto inventory",
+)
+
+
+# --------------------------------------------------------------------------- #
 # Runner — assemble ``ScanResult.compliance`` for the CBOM frameworks.
 # --------------------------------------------------------------------------- #
 
@@ -671,4 +1066,8 @@ __all__ = [
     "hardcoded_key_material",
     "policy_disabled_algorithms",
     "disabled_but_used",
+    "undersized_keys",
+    "under_strength",
+    "quantum_safe_mechanisms",
+    "non_approved_algorithms",
 ]

@@ -116,7 +116,7 @@
         "R5",
         "C15"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Expanded tri-state compliance frameworks from R5 (graph-queried, coverage = pass/(pass+fail)): add pci_dss_4 (PCI-DSS 4.0.1), fips_140_3 (approved-algo allowlist), bsi_tr_02102 (stricter floors + 120-bit level), nist_1800_38c (quantum discovery); reuse existing helpers + C15 strength/allowlist; parameterize the key floor; register_manual for CMVP/key-lifecycle/interop-test"
     },
     {
