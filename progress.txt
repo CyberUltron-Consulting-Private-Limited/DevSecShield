@@ -268,3 +268,57 @@ progress.aibom-reconcile.txt (reference only).
   contract as more algorithm components in the existing distributions; the CBOM-viz browser gate belongs to
   F1-F3, which depend on I1, not C2). Backend was not started, so no live dev-browser render (additive
   contract + tsc-clean is the proof, same as C1).
+
+## C3 (BUILD) — landed 2026-07-01 — JS/TS + C/C++ + Rust + .NET crypto-API scanner
+- NEW `aibom/cbom/scanners/native_crypto_scan.py` (`crypto_native`, order=9). Closes the four
+  language families Sonar-Cryptography does NOT cover, using the SAME clean-room call-expression model as
+  C2 (symbol fixes the primitive context; call args / algorithm-object fields supply params). REUSES C2's
+  `_Asset/_build/_canon/_strip_comments/_iter_files/_dedup` + algorithm_scan's `_slug` for ref/name parity.
+- FIVE library front-ends (crypto:detectedBy labels are the test discriminator, since detectionMethod is
+  "call-expr" like C2): Node.js `crypto` (OpenSSL cipher-spec string `aes-256-gcm`→algo+size+mode via
+  `_parse_cipher_spec`; `generateKeyPair("rsa",{modulusLength})`/`("ec",{namedCurve})`; createHash/Hmac/
+  Sign), WebCrypto (algorithm-object `name:` field → `_WEBCRYPTO_NAMES` map incl. RSA-OAEP/RSA-PSS/
+  RSASSA-PKCS1-v1_5 padding, ECDSA/ECDH curve, subtle.digest), OpenSSL/BoringSSL C/C++ (EVP_<algo>_<bits>_
+  <mode> name-encoded regex + chacha20_poly1305 special-case; EVP_ + legacy SHA1_Init digests;
+  RSA_generate_key_ex 2nd-arg size; EC_KEY_new_by_curve_name(NID_) curve), RustCrypto (CamelCase types
+  Aes256Gcm/ChaCha20Poly1305/Sha256/RsaPrivateKey::new(rng,2048)/p256), ring (SCREAMING constants
+  AES_256_GCM/CHACHA20_POLY1305/ECDSA_P256_SHA256/ED25519/RSA_PKCS1_*), .NET (RSA.Create(2048),
+  ECCurve.NamedCurves.nistP*, CipherMode.ECB bound to same-file AES asset, Rfc2898DeriveBytes→PBKDF2).
+- KEY GOTCHA #1 (the real one): the order-10 line-regex scanner ALSO scans .js/.ts/.c/.rs and its aes
+  pattern matches `AES-256` inside a Node `"aes-256-gcm"` spec BUT drops the 256 (256 is NOT in
+  `_KEY_SIZE_RE`'s modulus set 512/1024/2048/3072/4096) → it emits a COARSER `AES-GCM` under a DIFFERENT
+  bom-ref than C3's richer `AES-256-GCM`, so `ctx.has_ref` (exact-ref) does NOT dedupe them → double count.
+  FIX: additive `ScanContext.reserved_refs: set[str]` consulted by `has_ref`; C3 reserves the de-sized ref
+  (`re.sub(r"-(?:\d{2,4})(?=-|$)","",name)` → AES-256-GCM→AES-GCM) its richer asset subsumes, so the regex
+  pass defers. reserved_refs is EMPTY for every other scanner → provably zero behavior change (registry.py
+  change is purely additive). This is the general answer for ANY future scanner that folds a param the
+  line-regex can't — do NOT instead make the regex fold AES key size (C1 design deliberately distinguishes
+  AES variants by MODE not size, per the oracle; changing it would shift goldens).
+- KEY GOTCHA #2 (dedup): C3 dedups by (display-name, file). RustCrypto and ring share display names
+  (both → "AES-256-GCM", "Ed25519", "ECDSA"), so combining them in one .rs file collapses ring's assets
+  under RustCrypto (first wins) and makes ring un-attributable. SPLIT the fixture: `rustcrypto_app.rs` +
+  `ring_app.rs`. Same reason WebCrypto RSA-OAEP was split out of the Node file (a same-file bare Node "RSA"
+  from createSign would collapse the OAEP-padded WebCrypto "RSA"). One library per fixture file.
+- KEY GOTCHA #3 (`createDecipheriv` lowercase c): Node's decrypt fn is `createDecipheriv` (deCIPHER,
+  lowercase 'c') while encrypt is `createCipheriv` (capital C). A `create(?:De)?Cipher` regex MISSES the
+  decrypt form → the token fell through to the coarse regex scanner. Enumerate all four:
+  `create(?:Cipheriv|Cipher|Decipheriv|Decipher)`.
+- PRECISION: ring's SCREAMING tokens (AES_256_GCM/SHA256) are gated on `ring::` being imported in the file
+  (else a user's unrelated `const SHA256` would inventory). Note the ORDER-10 regex scanner still catches a
+  bare `SHA256` identifier independently — that's pre-existing, not C3, and SHA-256 is strong so it's benign
+  (test asserts C3 specifically emits nothing, not that the whole scan is empty).
+- LANE DISCIPLINE kept: EMIT-only. `.cs` is NOT in LANGUAGE_EXTENSIONS so .NET is C3-EXCLUSIVE (no regex
+  fallback, no ref collision). Padding (WebCrypto OAEP, ring PKCS1-v1_5) captured as a free `crypto:padding`
+  prop but NOT flagged — WEAK_PADDING is C16.
+- FIXTURE `tests/fixtures/synthetic-crypto-native/` (crypto_app.js, webcrypto.ts, crypto.c,
+  rustcrypto_app.rs, ring_app.rs, CryptoApp.cs) + `tests/test_cbom_native_crypto_scan.py` (17 tests, real
+  pipeline, no mocks). 47 crypto-assets emitted from the fixture.
+- GATES: 17 C3 tests pass; full CBOM/crypto subset 173/173 green; full aibom suite = only the 2 PRE-EXISTING
+  AIBOM chroma differential failures (test_differential chroma-provider/framework — proven pre-existing in
+  C1/C2, unrelated to CBOM). ruff+mypy clean on changed files. bench `00-synthetic` gate unchanged (0
+  true-miss, 13 crypto-assets — the new langs emit nothing on Python-only repos, zero perturbation). frontend
+  `tsc --noEmit` exit 0 (no frontend touched — new assets ride the existing scan-meta→results contract as
+  more algorithm components; the CBOM-viz browser gate belongs to F1-F3 which depend on I1, not C3).
+- GOTCHA for future iters: do NOT `git stash` in the PARENT repo to "prove pre-existing failures" — it
+  silently reverts ALL uncommitted work (I had to `git stash pop` to recover). The chroma failures are
+  already documented pre-existing; don't re-prove.

@@ -30,6 +30,14 @@ class ScanContext:
         self.flags: list[Flag] = []
         self.subject: MetadataComponent | None = None
         self.properties: dict[str, str] = {}
+        #: bom-refs a richer scanner has claimed on behalf of a coarser one that
+        #: runs later, so the later scanner defers even when it would compute a
+        #: DIFFERENT ref for the same logical asset. Populated only by scanners
+        #: that fold a parameter the later pass cannot (e.g. the C3 call-expr
+        #: scanner folds an AES key size the line-regex scanner drops, so it
+        #: reserves the de-sized ``AES-GCM`` ref its ``AES-256-GCM`` subsumes).
+        #: Empty for every existing scanner → no behavior change.
+        self.reserved_refs: set[str] = set()
 
     # --- mutation helpers (the scanner-facing API) ---------------------- #
 
@@ -64,7 +72,9 @@ class ScanContext:
         return [c for c in self.components if c.kind == kind]
 
     def has_ref(self, ref: str) -> bool:
-        return any(c.bom_ref == ref for c in self.components)
+        return ref in self.reserved_refs or any(
+            c.bom_ref == ref for c in self.components
+        )
 
 
 class Scanner(ABC):

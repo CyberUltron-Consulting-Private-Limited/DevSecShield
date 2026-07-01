@@ -70,7 +70,7 @@
       "dependencies": [
         "C1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Extend AST crypto-API scanner to JS/TS (Node crypto/WebCrypto) + C/C++ (OpenSSL) + Rust (ring/RustCrypto) + .NET"
     },
     {
