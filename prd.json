@@ -5,7 +5,7 @@
   "userStories": [
     { "id": "R1", "priority": 1, "dependencies": [], "passes": true,
       "title": "Research IBM CBOMkit / cbomkit-theia + Sonar-Cryptography: architecture, detection model, CycloneDX output; write ledger + gap-list vs our lane" },
-    { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": false,
+    { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": true,
       "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model" },
     { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": false,
       "title": "Research certificate/protocol/related-crypto-material depth + weakness catalogs (weak primitives, ECB, static IV/nonce, hardcoded keys, weak RNG, cert weaknesses)" },
@@ -46,6 +46,8 @@
     { "id": "C11", "priority": 10.5, "dependencies": ["C5"], "passes": false,
       "title": "Clean-room crypto-policy config-file scanner (R1): parse java.security (jdk.tls.disabledAlgorithms/crypto.policy) + openssl.cnf (CipherString/MinProtocol) into protocol/policy crypto-assets + disabled-but-used compliance cross-ref (cbomkit-theia javasecurity/opensslconf technique)" },
     { "id": "C10", "priority": 14.5, "dependencies": ["C9"], "passes": false,
-      "title": "Clean-room algorithm/curve->OID enrichment (R1): deterministic OID knowledge-base injected into CycloneDX cryptoProperties.oid at emit-time (sonar-cryptography Enrichment-stage technique); no OSS code" }
+      "title": "Clean-room algorithm/curve->OID enrichment (R1): deterministic OID knowledge-base injected into CycloneDX cryptoProperties.oid at emit-time (sonar-cryptography Enrichment-stage technique); no OSS code" },
+    { "id": "C12", "priority": 8.7, "dependencies": ["C3"], "passes": false,
+      "title": "Clean-room multi-ecosystem dependency-MANIFEST crypto-library scanner (R2): parse pom.xml/build.gradle + go.mod + package.json + Cargo.toml + *.csproj/packages.config into crypto:role=library assets via a CRYPTO_DEP_COORDINATES map (Maven/Go/npm/crate/NuGet), extending the Python-only _detect_libraries" }
   ]
 }

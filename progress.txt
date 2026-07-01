@@ -57,3 +57,32 @@ progress.aibom-reconcile.txt (reference only).
   C10=14.5 (dep C9). Selection logic (lowest-priority passes:false with deps met) handles non-int fine.
 - Next selectable after R1: R2 (research multi-language AST detection). R3/R4/R5 also unblocked by R1.
 ---
+
+## R2 (research, DONE) — multi-language AST crypto-API detection + library/API→asset maps + rule model
+- RESEARCH story = NO product code touched → build gate N/A. Gate met = 10 new ledger rows (per-ecosystem
+  technique rows) + the clean-room DETECTION-RULE MODEL design + R2 gap-list + 1 appended BUILD story (C12)
+  + prd.json still valid JSON. Validated with the json.load + next-selectable one-liner (23 stories, R2 True,
+  next = R3).
+- KEYSTONE DESIGN (in LEDGER.md "R2 clean-room DETECTION-RULE MODEL"): replace `algorithm_scan._ALGO_PATTERNS`
+  (flat `(key, line-regex)` tuple, no receiver/arg semantics) with a frozen `CryptoRule` data RECORD keyed by
+  (lang, library, receiver, method, ordered arg_roles) + a bounded 3-step-per-file match: prose-strip+call-split
+  → data-flow-lite symbol table (name→literal/keysize/mode, last-assignment-wins, intra-file) → rule apply. This
+  is OUR data structure learned from sonar-cryptography's BEHAVIOR (their fluent DetectionRuleBuilder), never
+  their source. C1 implements the model + Python table; C2 adds Java(JCA+BouncyCastle)+Go(stdlib+x/crypto);
+  C3 adds JS/WebCrypto + C/C++(OpenSSL EVP+libsodium) + Rust(RustCrypto+ring, incl ml-kem/ml-dsa) + .NET.
+- CONCRETE API SURFACES captured per ecosystem (evidence URLs in ledger): JCA engine-classes + transformation
+  string `algo/mode/padding` + `<digest>with<pke>` signature names; BouncyCastle `*Engine/*BlockCipher/*Digest/
+  *Signer`; Go `crypto/aes.NewCipher`+`cipher.NewGCM`+`rsa.GenerateKey(_,2048)`+`elliptic.P256`+x/crypto
+  bcrypt/argon2/chacha20poly1305; Node OpenSSL strings (`aes-256-gcm`) + WebCrypto `{name,hash,namedCurve,
+  modulusLength}` algobj; OpenSSL EVP `EVP_aes_256_gcm`/`EVP_sha256` + libsodium `crypto_secretbox/pwhash`;
+  Rust `Aes256Gcm`/`ring::aead::AES_256_GCM`/`Sha256`/ml-kem; .NET `Aes.Create/RSACryptoServiceProvider/
+  TripleDES/DES/RC2/Rijndael` (needs `.cs/.vb/.fs` added to LANGUAGE_EXTENSIONS — the ONLY lang-detect change).
+- REUSE INSIGHT: Node OpenSSL names == C/C++ EVP names, so ONE `TRANSFORM_STRING` splitter serves both. .NET
+  weak classes normalize to existing `rules.WEAK_ALGORITHMS` keys → C5 weakness lane needs no change.
+- OURUNIQUE-BY-DESIGN (bench/cbom, not misses): C/C++ (sonar issue #374, no C/C++), JS/WebCrypto, Rust
+  (incl PQC ml-kem/ml-dsa), .NET — none in sonar-cryptography's Java/Python/Go tree.
+- APPENDED C12 (priority 8.7, dep C3): multi-ecosystem dependency-MANIFEST crypto-library scanner (pom.xml/
+  build.gradle/go.mod/package.json/Cargo.toml/*.csproj → `crypto:role=library` via a CRYPTO_DEP_COORDINATES
+  map). Current `_detect_libraries` is Python-only (requirements*.txt/pyproject.toml + imports).
+- Next selectable after R2: R3 (cert/protocol/related-material depth + weakness catalogs). R4/R5 also open.
+---
