@@ -20,6 +20,7 @@ itself satisfy FDA / EU AI Act / HIPAA obligations.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from typing import Any
 
@@ -346,6 +347,12 @@ def _algorithm_properties(props: dict[str, str]) -> dict[str, Any]:
     level = _nist_quantum_level(props)
     if level is not None:
         algo["nistQuantumSecurityLevel"] = level
+    # C15: the classical (non-quantum) comparable security strength in bits
+    # (SP 800-57 Table 2), stamped on the asset by the strength scanner.
+    strength = props.get("crypto:securityStrengthBits")
+    if strength is not None:
+        with contextlib.suppress(ValueError):
+            algo["classicalSecurityLevel"] = int(strength)
     return algo
 
 

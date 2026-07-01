@@ -244,7 +244,7 @@
       "dependencies": [
         "C7"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room classical security-strength grade + approved-algorithm allowlist (R5): enrichment pass (parallel to C7 pqc grading) emitting crypto:securityStrengthBits per algorithm asset via SP 800-57 Table-2 comparable-strength map (AES-128->128/RSA-2048->112/RSA-3072->128/P-256->128/SHA-256->128), + APPROVED_ALGORITHM(framework) allowlist sets (FIPS-140-3/BSI) queried by C8; scanners EMIT, compliance QUERIES; no framework logic here"
     },
     {

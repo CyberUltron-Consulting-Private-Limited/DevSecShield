@@ -59,12 +59,14 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         f"Inventoried crypto asset ({props.get('crypto:assetType') or comp.kind})."
     )
     nqsl = props.get("crypto:nistQuantumSecurityLevel")
+    ssb = props.get("crypto:securityStrengthBits")
     return {
         "title": comp.name,
         "impact": _impact_for(comp, result),
         "asset_type": props.get("crypto:assetType"),
         "primitive": props.get("crypto:primitive"),
         "key_size": props.get("crypto:keySize"),
+        "security_strength_bits": int(ssb) if ssb is not None else None,
         "mode": props.get("crypto:mode"),
         "curve": props.get("crypto:curve"),
         "protocol_version": props.get("crypto:protocolVersion"),

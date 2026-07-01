@@ -621,3 +621,48 @@ progress.aibom-reconcile.txt (reference only).
   framework recall failures are PRE-EXISTING (re-confirmed: fail identically with C7 stashed) — unrelated to CBOM.
 - Next selectable after C7 = C15 (12.8, dep C7: classical securityStrengthBits + approved-algo allowlist)
   or C14 (13.5, dep C7+C8: CNSA 2.0 compliance framework — now unblocked, needs C8 too).
+
+## C15 (build, DONE) — classical security-strength grade + approved-algorithm allowlist
+- SCOPE (ledger row 192): the CLASSICAL-adversary peer of C7's PQC grading. Emits
+  `crypto:securityStrengthBits` per algorithm asset (SP 800-57 Table 2 comparable strength) + owns the
+  FIPS-140-3 / BSI-TR-02102-1 `APPROVED_ALGORITHM` allowlist SETS that C8 will query. New pure module
+  `cbom/strength.py` + scanner `scanners/strength_scan.py` (order=55, AFTER pqc=50) — mirrors the
+  pqc.py/pqc_scan.py split exactly. Scanners EMIT, compliance QUERIES; NO framework logic in strength.py
+  (only standards-derived constants). No frontend (F3 surfaces it; C7/C13/C16 enrichment-only precedent).
+- KEY DESIGN — the two graders never disagree: `security_strength_bits` REUSES C7's `nist_quantum_level`
+  for quantum-SAFE assets via a category->bits anchor map {1/2->128, 3/4->192, 5->256}, which by
+  construction reproduces SP 800-57 Table 2 (AES-256->256, SHA-384->192-collision, ML-KEM-768->192,
+  ML-DSA-87->256). Quantum-VULNERABLE public keys grade from modulus/curve (RSA-2048->112, RSA-1024->80,
+  RSA-3072->128, P-256->128) INDEPENDENT of their qsl=0. Legacy sub-cat-1 primitives (DES->56, 3DES->112,
+  RC4->128, MD5->64, SHA-1->80) grade via a name-family fallback. `None` = ungradeable (bare MAC/KDF) ->
+  property omitted (same honesty contract as nist_quantum_level). Order 55 matters: pqc(50) must have
+  stamped nistQuantumSecurityLevel first so the anchor path works.
+- STRENGTH IS A FACT NOT A VERDICT (proven by a test): 3DES grades 112 (>=112 floor) yet is NOT
+  FIPS/BSI approved and trips the C5 weak-flag. C8 will AND strength>=floor WITH no-weak-flag WITH
+  allowlist-membership — so the number alone never green-lights a broken primitive. This keeps the
+  lane split clean: strength.py grades comparable strength; weakness.py/deny-list carry "broken".
+- ALLOWLIST: `canonical_algorithm_family(component)` normalizes the DISPLAY NAME (not a stored canonical
+  key — the scanner doesn't persist rules.py's key) to a family token via an ORDERED token table
+  (composite/PQC before substring: ML-DSA/SLH-DSA/ECDSA/EdDSA before DSA; 3DES before DES; ECDH/X25519
+  before DH; SHA-2/3 before SHA-1). `APPROVED_ALGORITHMS = {fips_140_3, bsi_tr_02102}` are frozenset
+  family-token sets (SP 800-140C approved fns surviving SP 800-131A transitions; BSI stricter = AES-only
+  symmetric so chacha20 excluded). `is_approved_algorithm(fw, comp)` -> True/False/None(out-of-scope).
+  FIPS excludes des/3des/rc4/rc2/blowfish/md5/sha1/dsa(removed in 186-5)/chacha20/poly1305/scrypt/argon2/
+  bcrypt/falcon(not yet FIPS-std); approves aes/sha2/sha3/rsa/ecdsa/eddsa/dh/ecdh/hmac/cmac/hkdf/pbkdf2/
+  ml-kem/ml-dsa/slh-dsa/lms/hss/xmss/hybrid.
+- FIXTURE REALITY (caught empirically): synthetic-crypto-app's AES assets scan as "AES-ECB"/"AES-GCM"/
+  "AES" WITHOUT a key size (size not on the same source line) -> nist anchor None -> strength None
+  (honest). So the POSITIVE grade tests drive synthetic-crypto-pqc (AES-256/SHA-384/RSA-2048/ML-KEM-768/
+  ML-DSA-87/LMS all sized) and the LEGACY tests drive synthetic-crypto-app (MD5/RC4/RSA-1024/3DES-CBC).
+- CDX: emitter maps `crypto:securityStrengthBits` -> `algorithmProperties.classicalSecurityLevel`
+  (integer, minimum 0 — verified present in bundled bom-1.6.schema.json). Coexists with nistQuantumSecurityLevel
+  (RSA-2048 renders classicalSecurityLevel=112 AND nistQuantumSecurityLevel=0). emit_and_validate clean.
+  ruff SIM105: used `contextlib.suppress(ValueError)` not try/except/pass.
+- GATE: new test_cbom_security_strength.py (18) + broad cbom/crypto/chart/compliance/normalize suite 323
+  passed + test_cbom_benchmark_gate (true-miss==0 — enrichment adds NO components) + chart-data-contract +
+  ruff + mypy(4 files) all green. `.venv/bin/python` (system py 3.9 breaks `str | None`). The 2 AIBOM
+  test_differential.py chroma-provider/framework failures are PRE-EXISTING (re-confirmed identical with
+  C15 stashed) — unrelated to CBOM.
+- Next selectable after C15 = C8 (13, deps R5+C15 both now true: expanded tri-state frameworks pci_dss_4/
+  fips_140_3/bsi_tr_02102/nist_1800_38c — now UNBLOCKED, queries strength.py's securityStrengthBits +
+  APPROVED_ALGORITHMS) or C9 (14, deps C1-C7 all true: CycloneDX hardening).
