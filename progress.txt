@@ -850,3 +850,45 @@ progress.aibom-reconcile.txt (reference only).
 - NEXT selectable: F1 (16, dep I1✓ now) — frontend asset-type + weakness-breakdown + DEPENDENCY-GRAPH viz
   reads `scan_metadata.cbom_graph` {nodes,edges}. Also F2 (PQC gauge), F3 (compliance matrix). B1 (bench
   oracles, dep C9✓) is independently selectable.
+
+## F1 (frontend, DONE) — asset-type breakdown + crypto DEPENDENCY GRAPH on the CBOM results page
+- SCOPE (prd F1): the FIRST frontend story since C9's 5 crypto charts. Surfaces the I1 `cbom_graph`
+  {nodes,edges} projection (which was typed in backend_api.ts + carried through get_scan_metadata but
+  NEVER rendered) + an asset-type breakdown. PURE frontend — NO backend/worker/aibom change → NO worker
+  restart needed. Extends `frontend/components/cbom/CbomCryptoCharts.tsx` (never a new component/aesthetic).
+- THREE deltas: (1) `AssetTypeDistribution` — buckets `cbom_graph.nodes` by `asset_type`, falling back to
+  "library" for `kind==="framework"` (the 4 crypto-lib nodes carry NO crypto:assetType → asset_type=null;
+  DON'T drop them, label them Library) → colored bar (algorithm=indigo/cert=emerald/protocol=blue/
+  material=amber/library=slate). (2) `CryptoDependencyGraph` — `@xyflow/react` (the platform's graph lib,
+  already a dep via the AIBOM `DependencyGraph`; NO new lib), column layout by asset class (cert/protocol/
+  material LEFT → algorithm → library RIGHT), nodes colored by asset_type, WEAK nodes get a red ring +
+  quantum-vulnerable (non-weak) an orange ring, edges labelled by CycloneDX ref (`REL_LABEL`:
+  signatureAlgorithm→"signed with", subjectPublicKey→"public key", cryptoRefArray/algorithms→"uses").
+  (3) expanded `WEAKNESS_LABELS` to the FULL shipped code set (WEAK_CIPHER_SUITE/WEAK_PADDING/WEAK_RNG/
+  STATIC_IV/REUSED_NONCE/HARDCODED_KEY/WEAK_CERTIFICATE_*/SELF_SIGNED_LEAF + the 6 originals) + severity-
+  toned the bars via per-Cell fill (`WEAKNESS_MEDIUM`={QUANTUM_VULNERABLE,SELF_SIGNED_LEAF}=orange, else red).
+- WIRING: `CbomResults.tsx` gains a `cryptoGraph` useMemo (`data.cbom_graph ?? scanMetadata.cbom_graph`,
+  guarded on `Array.isArray(g.nodes)`) passed as `<CbomCryptoCharts graph={cryptoGraph}>`. Both new charts
+  are GATED on `hasGraph` (nodes.length>0) so LEGACY worker CBOM scans (no cbom_graph) render exactly the
+  C9 5-chart view — fully additive, the C9/AiBom precedent. Imported `type CbomGraph` from backend_api.
+- DATA-CONTRACT LOCK (TDD-first, extended `aibom/tests/test_cbom_chart_data_contract.py` +4 tests): the
+  new charts derive from `cbom_graph`, so the contract test now asserts (a) cbom_graph present with
+  non-empty nodes AND edges, (b) each node carries id/label/kind + asset_type/weak/quantum_vulnerable,
+  (c) the derived asset-type breakdown is non-empty + multi-type (algorithm+certificate on the fixture),
+  (d) every edge endpoint resolves to a node id (React Flow silently DROPS dangling edges) + carries a rel.
+  Frozen fixture: 16 nodes / 2 edges (cert→SHA-256 signatureAlgorithm + cert→RSA-2048 subjectPublicKey).
+- DEV-BROWSER GATE (the working recipe, no auth needed): a temp NON-`_`-prefixed route
+  `frontend/app/cbomf1check/page.tsx` (top-level app/ route → NO [team_id] auth guard → no JWT) rendering
+  `<CbomCryptoCharts>` with the REAL fixture run-object (dumped via `.venv/bin/python -c normalize_crypto`).
+  curl 200 → global-playwright `.cjs` (`require('/opt/homebrew/lib/node_modules/playwright/index.js')`).
+  RESULT: all 7 chart titles present incl. "Asset types" + "Crypto dependency graph"; `.react-flow__node`
+  count==16, `.react-flow__edge`==2; 0 console/page errors; screenshot native to the theme. Deleted the
+  temp route after. (This route path serves 200 even on the running dev server — a compiled route proves
+  the component builds; a prod `next start` would 404 an unbuilt route.)
+- GATE GREEN: `tsc --noEmit` exit 0; scoped eslint on both files = 0 errors (3 warnings are PRE-EXISTING in
+  CbomDashboardCharts @242/263/648, present with my change stashed); `.venv/bin/python -m pytest -k "cbom
+  or crypto" --ignore test_cbom_web_native_crypto_scan.py` all green incl. the +4 contract tests +
+  benchmark_gate (true-miss==0 — frontend-only, no oracle delta). No two-writer interference (clean tree).
+- Next selectable after F1 = F2 (17, dep I1✓: PQC readiness gauge + quantum-vulnerable list + migration-
+  roadmap panel). Then F3 (compliance tri-state matrix + sidebar controls), B1 (bench oracles, dep C9✓),
+  B2 (CI + live e2e).
