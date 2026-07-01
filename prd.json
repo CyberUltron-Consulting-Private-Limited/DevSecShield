@@ -13,7 +13,7 @@
       "title": "Research PQC grading + standards (CNSA 2.0, FIPS 203/204/205, NIST PQC migration, nistQuantumSecurityLevel, quantum-vulnerable classification)" },
     { "id": "R5", "priority": 5, "dependencies": ["R1"], "passes": true,
       "title": "Research compliance frameworks (NIST SP 1800-38B/C, SP 800-57, FIPS 140-3, OMB M-23-02, EU CRA, DORA, PCI-DSS 4.0 crypto, BSI TR-02102); map each to graph-queryable checks" },
-    { "id": "C1", "priority": 6, "dependencies": ["R2"], "passes": false,
+    { "id": "C1", "priority": 6, "dependencies": ["R2"], "passes": true,
       "title": "Clean-room AST crypto-API scanner core + detection-rule model (Python first): emit algorithm/related-material components with params (keysize/mode/padding/curve)" },
     { "id": "C2", "priority": 7, "dependencies": ["C1"], "passes": false,
       "title": "Extend AST crypto-API scanner to Java + Go (BouncyCastle/JCA, crypto + x/crypto) with library->asset maps" },

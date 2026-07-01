@@ -1,0 +1,497 @@
+"""Clean-room crypto-API **detection-rule model** (C1) — the keystone the CBOM
+lane's algorithm detection runs on.
+
+Studied from the *behavior* of PQCA/IBM sonar-cryptography's staged
+``DetectionRuleBuilder`` DSL (object-type -> method -> ordered params -> context)
+and re-expressed as OUR OWN declarative data structure — a frozen
+:class:`CryptoRule` record keyed by ``(lang, library, receiver, method,
+ordered arg_roles)``. **No OSS source was read-and-pasted**; this is an original
+design (provenance: ``docs/cbom-research/LEDGER.md`` R1/R2 rows).
+
+What it adds over the previous flat ``(key, line-regex)`` corpus:
+
+* **Receiver + method binding** — ``algorithms.AES(...)`` is bound to the pyca
+  cipher API, not a bare ``AES`` token on any line, so detection carries the API
+  that produced it (a step toward per-library asset maps in C2/C3).
+* **Ordered argument roles** — a rule declares which resolvers apply to a matched
+  call's arguments (``KEY_SIZE``, ``MODE``, ``CURVE``, ``PADDING``,
+  ``LITERAL_KEY``), so ``rsa.generate_private_key(key_size=2048)`` resolves the
+  parameter set from the call, not a same-line digit hunt.
+* **Data-flow-lite symbol table** — a bounded intra-file, last-assignment-wins
+  pass binds ``name = <int | os.urandom(n) | modes.X | curve>`` so a size/mode
+  assigned on one line resolves a usage on another (``bits = 2048`` ->
+  ``rsa.generate_private_key(key_size=bits)`` -> RSA-2048). Our own pass — not a
+  full AST, no control-flow, no network.
+* **Padding capture** — ``padding.OAEP`` / ``PKCS1v15`` / ``PSS`` emit a
+  ``crypto:padding`` fact (the arg-role C6's weak-padding predicate later reads).
+
+Matching is a bounded **3-step per file** (deterministic, offline): prose-strip +
+call-split -> data-flow-lite symbol table -> rule apply. The per-language rule
+TABLES are ours; C1 ships the Python table, C2 adds Java+Go, C3 adds
+JS/C-C++/Rust/.NET. The previous literal/parametrized-token patterns are kept as a
+merged *literal lane* so recall never regresses — a receiver rule and a literal
+match on the same line for the same algorithm coalesce into one fact.
+
+Lane discipline: this module only turns source tokens into normalized crypto
+*facts* (:class:`Detection`). It scores nothing, flags nothing, serializes
+nothing — :mod:`aibom.cbom.scanners.algorithm_scan` turns facts into components.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+from aibom.cbom.rules import (
+    LITERAL_ALGO_ALIASES,
+    algo_info,
+    extract_curve,
+    extract_key_size,
+    extract_mode,
+)
+
+# --------------------------------------------------------------------------- #
+# Argument roles — the ordered resolvers a rule binds to a matched call's args.
+# --------------------------------------------------------------------------- #
+ROLE_KEY_SIZE = "KEY_SIZE"
+ROLE_MODE = "MODE"
+ROLE_CURVE = "CURVE"
+ROLE_PADDING = "PADDING"
+ROLE_LITERAL_KEY = "LITERAL_KEY"  # a bytes key whose length implies the key size
+
+_VALID_ROLES = frozenset(
+    {ROLE_KEY_SIZE, ROLE_MODE, ROLE_CURVE, ROLE_PADDING, ROLE_LITERAL_KEY}
+)
+
+# A never-matching default so the compiled-pattern fields are typed non-optional;
+# __post_init__ replaces it with the real receiver/method pattern.
+_NEVER = re.compile(r"(?!x)x")
+
+
+@dataclass(frozen=True)
+class CryptoRule:
+    """One clean-room detection rule: a matched ``receiver.method(args)`` call
+    binds to a ``crypto:`` fact, with ``arg_roles`` declaring which parameter
+    resolvers apply to the call's arguments.
+
+    ``key`` is the canonical algorithm key into :mod:`aibom.cbom.rules` tables
+    (``algo_info`` is authoritative for primitive/strength). ``receiver`` and
+    ``method`` are token patterns (word-boundary matched); ``receiver=None``
+    matches a bare/free function call.
+    """
+
+    lang: str
+    library: str
+    receiver: str | None
+    method: str
+    key: str
+    arg_roles: tuple[str, ...] = ()
+    # Compiled patterns (populated in __post_init__; excluded from equality).
+    method_re: re.Pattern[str] = field(default=_NEVER, compare=False, repr=False)
+    receiver_re: re.Pattern[str] | None = field(default=None, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        for role in self.arg_roles:
+            if role not in _VALID_ROLES:
+                raise ValueError(f"unknown arg_role {role!r} in rule for {self.key}")
+        object.__setattr__(
+            self, "method_re", re.compile(rf"\b{self.method}\b")
+        )
+        object.__setattr__(
+            self,
+            "receiver_re",
+            re.compile(rf"(?<![A-Za-z0-9_]){self.receiver}(?![A-Za-z0-9_])")
+            if self.receiver
+            else None,
+        )
+
+
+@dataclass
+class Detection:
+    """A normalized crypto fact from one source line."""
+
+    key: str
+    line_no: int
+    key_size: int | None = None
+    mode: str | None = None
+    curve: str | None = None
+    padding: str | None = None
+    library: str | None = None
+    receiver_bound: bool = False  # True when a receiver+method rule matched
+
+
+# --------------------------------------------------------------------------- #
+# Python rule table (C1). Keyed to the pyca/cryptography + stdlib + PyCryptodome
+# API surface. C2/C3 add the other ecosystems' tables under the same model.
+# --------------------------------------------------------------------------- #
+_PY = "python"
+_PYCA = "pyca/cryptography"
+_STDLIB = "hashlib (stdlib)"
+
+
+def _hash_rule(method: str, key: str) -> CryptoRule:
+    # hashlib.sha256(...) / hashes.SHA256() — receiver is the module, method the algo.
+    return CryptoRule(_PY, _STDLIB, r"hashlib|hashes", method, key)
+
+
+PYTHON_RULES: tuple[CryptoRule, ...] = (
+    # --- hashes (hashlib.<h> and pyca hashes.<H>) ---
+    _hash_rule(r"md5|MD5", "md5"),
+    _hash_rule(r"sha1|SHA1", "sha1"),
+    _hash_rule(r"sha224|SHA224|sha256|SHA256", "sha256"),
+    _hash_rule(r"sha384|SHA384", "sha384"),
+    _hash_rule(r"sha512|SHA512", "sha512"),
+    _hash_rule(r"sha3_256|SHA3_256", "sha3_256"),
+    _hash_rule(r"sha3_384|SHA3_384", "sha3_384"),
+    _hash_rule(r"sha3_512|SHA3_512", "sha3_512"),
+    _hash_rule(r"blake2b", "blake2b"),
+    _hash_rule(r"blake2s", "blake2s"),
+    # --- pyca symmetric cipher engines (algorithms.<X>) + mode/key-length roles ---
+    CryptoRule(_PY, _PYCA, "algorithms", "AES", "aes", (ROLE_LITERAL_KEY, ROLE_MODE)),
+    CryptoRule(_PY, _PYCA, "algorithms", "TripleDES", "3des", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCA, "algorithms", "DES", "des", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCA, "algorithms", "ARC4", "rc4", ()),
+    CryptoRule(_PY, _PYCA, "algorithms", "Blowfish", "blowfish", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCA, "algorithms", "ChaCha20", "chacha20", ()),
+    # --- pyca asymmetric key generation (arg-role KEY_SIZE / CURVE) ---
+    CryptoRule(_PY, _PYCA, "rsa", "generate_private_key", "rsa", (ROLE_KEY_SIZE,)),
+    CryptoRule(_PY, _PYCA, "dsa", "generate_private_key", "dsa", (ROLE_KEY_SIZE,)),
+    CryptoRule(_PY, _PYCA, "ec", "generate_private_key", "ecdsa", (ROLE_CURVE,)),
+    CryptoRule(_PY, _PYCA, "ec", "derive_private_key", "ecdh", (ROLE_CURVE,)),
+    CryptoRule(_PY, _PYCA, "ed25519", "Ed25519PrivateKey", "ed25519", ()),
+    CryptoRule(_PY, _PYCA, "ed448", "Ed448PrivateKey", "ed448", ()),
+    CryptoRule(_PY, _PYCA, "x25519", "X25519PrivateKey", "x25519", ()),
+    # --- pyca RSA padding (arg-role PADDING; RSA-in-use => an RSA asset) ---
+    CryptoRule(_PY, _PYCA, "padding", "OAEP|PKCS1v15|PSS", "rsa", (ROLE_PADDING,)),
+    # --- KDF / MAC ---
+    CryptoRule(_PY, _PYCA, None, "PBKDF2HMAC", "pbkdf2", ()),
+    CryptoRule(_PY, _PYCA, None, "Scrypt", "scrypt", ()),
+    CryptoRule(_PY, _PYCA, None, "HKDF", "hkdf", ()),
+    CryptoRule(_PY, _STDLIB, "hmac", "HMAC|new", "hmac", ()),
+)
+
+RULES_BY_LANG: dict[str, tuple[CryptoRule, ...]] = {_PY: PYTHON_RULES}
+
+
+# --------------------------------------------------------------------------- #
+# Literal lane — the previous concrete-spelling + parametrized-literal corpus,
+# kept so recall never regresses. A rule match and a literal match on the same
+# line for the same algorithm coalesce into ONE fact (see :func:`detect_crypto`).
+# --------------------------------------------------------------------------- #
+_F = re.IGNORECASE
+LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("md5", re.compile(r"\bhashlib\.md5\b|\bMD5\b", _F)),
+    ("sha1", re.compile(r"\bhashlib\.sha1\b|\bSHA-?1\b", _F)),
+    ("sha256", re.compile(r"\bsha-?256\b", _F)),
+    ("sha384", re.compile(r"\bsha-?384\b", _F)),
+    ("sha512", re.compile(r"\bsha-?512\b", _F)),
+    ("sha3_256", re.compile(r"\bsha3[_-]?256\b", _F)),
+    ("blake2b", re.compile(r"\bblake2b\b", _F)),
+    ("blake2s", re.compile(r"\bblake2s\b", _F)),
+    ("3des", re.compile(r"\bTripleDES\b|\b3DES\b|\bDESede\b|\bMODE_DES3\b", _F)),
+    ("des", re.compile(
+        r"\balgorithms\.DES\b|\bDES_(?:set_key|ecb|cbc)\b|\bMODE_DES\b", _F)),
+    ("rc4", re.compile(r"\bARC4\b|\bRC4\b", _F)),
+    ("rc2", re.compile(r"\bRC2\b", _F)),
+    ("blowfish", re.compile(r"\bBlowfish\b", _F)),
+    ("aes", re.compile(
+        r"\balgorithms\.AES\b|\bAESGCM\b|\bAESCCM\b|\bAES-?(?:128|192|256)\b"
+        r"|\bAES\b(?=\s*[/(])|getInstance\(\s*['\"]AES", _F)),
+    ("chacha20", re.compile(r"\bChaCha20\b", _F)),
+    ("rsa", re.compile(
+        r"\brsa\.generate_private_key\b|\bRSA\.generate\b|\bRSA-?(?:512|1024|2048|3072|4096)\b"
+        r"|\bgenerateKeyPair\(\s*['\"]RSA|\bRSA_generate_key\b", _F)),
+    ("ecdsa", re.compile(r"\bECDSA\b|\bec\.derive_private_key\b", _F)),
+    ("ed25519", re.compile(r"\bEd25519\b", _F)),
+    ("ed448", re.compile(r"\bEd448\b", _F)),
+    ("x25519", re.compile(r"\bX25519\b", _F)),
+    ("ecdh", re.compile(r"\bECDH\b", _F)),
+    ("dh", re.compile(r"\bDiffieHellman\b|\bcreateDiffieHellman\b", _F)),
+    ("dsa", re.compile(r"\bDSA\b", _F)),
+    ("pbkdf2", re.compile(r"\bPBKDF2", _F)),
+    ("scrypt", re.compile(r"\bscrypt\b", _F)),
+    ("argon2", re.compile(r"\bargon2\b", _F)),
+    ("bcrypt", re.compile(r"\bbcrypt\b", _F)),
+    ("hkdf", re.compile(r"\bHKDF\b", _F)),
+    ("hmac", re.compile(r"\bHMAC\b", _F)),
+    ("kyber", re.compile(r"\bKyber\b|\bML-?KEM\b", _F)),
+    ("dilithium", re.compile(r"\bDilithium\b|\bML-?DSA\b", _F)),
+    ("sphincs+", re.compile(r"\bSPHINCS\+?\b|\bSLH-?DSA\b", _F)),
+)
+
+
+# --------------------------------------------------------------------------- #
+# Prose stripping (docstrings / block + line comments are never scanned).
+# --------------------------------------------------------------------------- #
+_TRIPLE_QUOTE = re.compile(r'""".*?"""|\'\'\'.*?\'\'\'', re.S)
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_PY_COMMENT = re.compile(r"#.*$")
+_C_LINE_COMMENT = re.compile(r"//.*$")
+_IMPORT_RE = re.compile(
+    r"^\s*(?:import|from|require|use|using|#include|require_once)\b", re.I
+)
+
+
+def _blank(match: re.Match[str]) -> str:
+    return re.sub(r"[^\n]", " ", match.group(0))
+
+
+def strip_noncode(text: str) -> str:
+    """Blank docstrings + C-style block comments (prose is never scanned)."""
+    text = _TRIPLE_QUOTE.sub(_blank, text)
+    text = _BLOCK_COMMENT.sub(_blank, text)
+    return text
+
+
+def _strip_line_comment(line: str, lang: str) -> str:
+    if lang in ("python", "ruby"):
+        return _PY_COMMENT.sub("", line)
+    if lang in ("javascript", "java", "go", "c", "rust", "php"):
+        return _C_LINE_COMMENT.sub("", line)
+    return line
+
+
+# --------------------------------------------------------------------------- #
+# Step 1 — shallow paren-balanced call splitter.
+# --------------------------------------------------------------------------- #
+_CALL_HEAD = re.compile(r"([A-Za-z_][\w.]*)\s*\(")
+
+
+def split_calls(line: str) -> list[tuple[str, str]]:
+    """Return ``(callee_chain, args)`` for each ``...name(args)`` call on a line.
+
+    ``callee_chain`` is the full dotted callee (``ed25519.Ed25519PrivateKey`` for
+    ``ed25519.Ed25519PrivateKey.generate(``); the trailing ``.generate`` is
+    dropped so a rule's ``method`` token can match the constructor). ``args`` is
+    the paren-balanced argument substring.
+    """
+    out: list[tuple[str, str]] = []
+    for m in _CALL_HEAD.finditer(line):
+        chain = m.group(1)
+        open_idx = line.index("(", m.start(1))
+        depth = 0
+        j = open_idx
+        while j < len(line):
+            if line[j] == "(":
+                depth += 1
+            elif line[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        args = line[open_idx + 1 : j]
+        out.append((chain, args))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Step 2 — data-flow-lite symbol table (intra-file, last-assignment-wins).
+# --------------------------------------------------------------------------- #
+_ASSIGN_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*(.+?)\s*$")
+_INT_RE = re.compile(r"^(\d{2,5})$")
+_BYTES_LEN_RE = re.compile(
+    r"(?:os\.)?urandom\(\s*(\d+)\s*\)"          # os.urandom(32)
+    r"|token_bytes\(\s*(\d+)\s*\)"               # secrets.token_bytes(32)
+    r"|(?:bytes|bytearray)\(\s*(\d+)\s*\)"       # bytes(32)
+)
+
+
+@dataclass
+class _Symbol:
+    key_size: int | None = None
+    mode: str | None = None
+    curve: str | None = None
+
+
+def build_symbols(lines: list[str]) -> dict[str, _Symbol]:
+    """One pass binding ``name -> {key_size|mode|curve}`` (last write wins)."""
+    table: dict[str, _Symbol] = {}
+    for raw in lines:
+        m = _ASSIGN_RE.match(raw)
+        if not m:
+            continue
+        name, rhs = m.group(1), m.group(2)
+        sym = _Symbol()
+        im = _INT_RE.match(rhs)
+        if im:
+            sym.key_size = int(im.group(1))
+        else:
+            bm = _BYTES_LEN_RE.search(rhs)
+            if bm:
+                nbytes = next(g for g in bm.groups() if g)
+                sym.key_size = int(nbytes) * 8  # byte length -> bit key size
+        sym.mode = extract_mode(rhs)
+        sym.curve = extract_curve(rhs)
+        if sym.key_size is not None or sym.mode or sym.curve:
+            table[name] = sym  # only bind names that carry a crypto-relevant value
+    return table
+
+
+# --------------------------------------------------------------------------- #
+# Step 3 — argument-role resolution.
+# --------------------------------------------------------------------------- #
+_KW_SIZE_RE = re.compile(
+    r"(?:key_?size|bits|length|modulus_?length|n)\s*=\s*([A-Za-z_]\w*|\d{2,5})", _F
+)
+_POS_IDENT_RE = re.compile(r"^\s*([A-Za-z_]\w*)")
+
+
+def _resolve_key_size(
+    args: str, line: str, symbols: dict[str, _Symbol]
+) -> int | None:
+    """KEY_SIZE role: kwarg (``key_size=..``) -> symbol -> same-line digit."""
+    m = _KW_SIZE_RE.search(args)
+    if m:
+        val = m.group(1)
+        if val.isdigit():
+            return int(val)
+        sym = symbols.get(val)
+        if sym and sym.key_size is not None:
+            return sym.key_size
+    return extract_key_size(line)
+
+
+def _resolve_literal_key_size(
+    args: str, symbols: dict[str, _Symbol]
+) -> int | None:
+    """LITERAL_KEY role: the first positional bytes-key arg's length -> key size
+    (``algorithms.AES(key)`` where ``key = os.urandom(32)`` -> 256)."""
+    m = _POS_IDENT_RE.match(args)
+    if not m:
+        return None
+    sym = symbols.get(m.group(1))
+    if sym and sym.key_size in (128, 192, 256):
+        return sym.key_size
+    return None
+
+
+def _resolve_curve(args: str, line: str) -> str | None:
+    return extract_curve(args) or extract_curve(line)
+
+
+_PADDING_RE = re.compile(r"\b(OAEP|PKCS1v15|PSS)\b")
+
+
+def _resolve_padding(chain: str, line: str) -> str | None:
+    m = _PADDING_RE.search(chain) or _PADDING_RE.search(line)
+    return m.group(1).lower() if m else None
+
+
+def _apply_rule(
+    rule: CryptoRule,
+    chain: str,
+    args: str,
+    line: str,
+    symbols: dict[str, _Symbol],
+) -> Detection:
+    det = Detection(key=rule.key, line_no=0, library=rule.library, receiver_bound=True)
+    for role in rule.arg_roles:
+        if role == ROLE_KEY_SIZE:
+            det.key_size = _resolve_key_size(args, line, symbols)
+        elif role == ROLE_LITERAL_KEY:
+            det.key_size = _resolve_literal_key_size(args, symbols)
+        elif role == ROLE_MODE:
+            det.mode = extract_mode(line)
+        elif role == ROLE_CURVE:
+            det.curve = _resolve_curve(args, line)
+        elif role == ROLE_PADDING:
+            det.padding = _resolve_padding(chain, line)
+    return det
+
+
+def _merge(into: Detection, other: Detection) -> None:
+    """Coalesce two same-key detections on one line — non-empty params win."""
+    into.key_size = into.key_size or other.key_size
+    into.mode = into.mode or other.mode
+    into.curve = into.curve or other.curve
+    into.padding = into.padding or other.padding
+    into.library = into.library or other.library
+    into.receiver_bound = into.receiver_bound or other.receiver_bound
+
+
+def detect_crypto(text: str, lang: str) -> list[Detection]:
+    """Detect crypto usage in one source file's ``text`` (of language ``lang``).
+
+    Runs the bounded 3-step match: prose-strip + call-split -> data-flow-lite
+    symbol table -> rule apply (receiver+method+arg-roles) merged with the literal
+    lane. Returns one :class:`Detection` per distinct algorithm per line.
+    """
+    stripped = strip_noncode(text)
+    raw_lines = stripped.splitlines()
+    work_lines = [_strip_line_comment(ln, lang) for ln in raw_lines]
+    symbols = build_symbols(work_lines)
+    rules = RULES_BY_LANG.get(lang, ())
+
+    out: list[Detection] = []
+    for line_no, work in enumerate(work_lines, start=1):
+        line = work.strip()
+        if not line or _IMPORT_RE.search(line):
+            continue  # imports are LIBRARY signals, handled by the scanner
+        per_line: dict[str, Detection] = {}
+
+        # --- receiver+method rule lane ---
+        calls = split_calls(line)
+        for rule in rules:
+            if rule.receiver_re is not None and not rule.receiver_re.search(line):
+                continue
+            for chain, args in calls:
+                if not rule.method_re.search(chain):
+                    continue
+                det = _apply_rule(rule, chain, args, line, symbols)
+                det.line_no = line_no
+                if rule.key in per_line:
+                    _merge(per_line[rule.key], det)
+                else:
+                    per_line[rule.key] = det
+                break  # one detection per rule per line
+
+        # --- literal lane (recall floor) ---
+        explicit_ks = extract_key_size(line)
+        mode = extract_mode(line)
+        curve = extract_curve(line)
+        for key, pat in LITERAL_PATTERNS:
+            if not pat.search(line):
+                continue
+            lit = Detection(
+                key=key,
+                line_no=line_no,
+                key_size=explicit_ks,
+                mode=mode,
+                curve=curve,
+            )
+            if key in per_line:
+                _merge(per_line[key], lit)
+            else:
+                per_line[key] = lit
+
+        out.extend(per_line.values())
+    return out
+
+
+# Convenience: aliases that map a bare literal token to a canonical key (used by
+# downstream normalization; re-exported for callers that resolve JWT/alg tokens).
+def canonical_key(token: str) -> str | None:
+    """Map a lowercased bare token (``aes256``, ``rsa2048``) to a canonical key."""
+    key = LITERAL_ALGO_ALIASES.get(re.sub(r"[^a-z0-9]", "", token.lower()))
+    if key and algo_info(key):
+        return key
+    return key
+
+
+__all__ = [
+    "CryptoRule",
+    "Detection",
+    "PYTHON_RULES",
+    "RULES_BY_LANG",
+    "LITERAL_PATTERNS",
+    "detect_crypto",
+    "split_calls",
+    "build_symbols",
+    "strip_noncode",
+    "canonical_key",
+    "ROLE_KEY_SIZE",
+    "ROLE_MODE",
+    "ROLE_CURVE",
+    "ROLE_PADDING",
+    "ROLE_LITERAL_KEY",
+]

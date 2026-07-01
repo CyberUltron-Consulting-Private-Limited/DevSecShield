@@ -183,3 +183,43 @@ progress.aibom-reconcile.txt (reference only).
   4 frameworks. CBOM_FRAMEWORKS grows 5→9; _has_crypto applicability must register the 4 new keys.
 - Next selectable after R5 = C1 (the whole BUILD lane starts: clean-room AST crypto-API scanner core).
 ---
+
+## C1 (build, DONE) — clean-room CryptoRule detection-rule model + data-flow-lite (Python)
+- LANDED: new `aibom/src/aibom/cbom/detect.py` — the keystone the R2 ledger designed. A frozen
+  `CryptoRule(lang, library, receiver, method, arg_roles)` record + `PYTHON_RULES` table + a bounded
+  3-step matcher (`strip_noncode`+`split_calls` → `build_symbols` data-flow-lite → rule apply). Roles:
+  KEY_SIZE / MODE / CURVE / PADDING / LITERAL_KEY. `algorithm_scan._detect_assets` now calls
+  `detect_crypto(text, lang)` instead of the inline `_ALGO_PATTERNS` loop.
+- OUTPUT-PRESERVING REFACTOR (the key to not breaking the frozen benchmark): the old `_ALGO_PATTERNS`
+  literal corpus is KEPT inside `detect.py` as a merged LITERAL lane. Per line, a receiver-rule match and
+  a literal match for the SAME algorithm coalesce into ONE Detection (non-empty params win). So
+  synthetic-crypto-app emits byte-identically (emit goldens + benchmark true-miss/our-unique all green);
+  the rule lane only ADDS resolution the literal lane can't (cross-line size, byte-length AES size, padding).
+- NEW CAPABILITY proven by a SEPARATE fixture `tests/fixtures/synthetic-crypto-dataflow/` (kept the frozen
+  synthetic-crypto-app oracle untouched — do NOT edit that oracle's counts, several tests assert them):
+  `RSA_BITS=2048` one line up → RSA-2048 (old same-line `extract_key_size` returned None here);
+  `aes_key=os.urandom(32)` → AES-256 by byte-length; `padding.OAEP`/`PKCS1v15` → new `crypto:padding` prop.
+  Tests in `tests/test_cbom_detect.py` (11) — unit (split_calls/build_symbols/roles) + integration (pipeline).
+- `crypto:padding` is a NEW emitted property. It rides through CycloneDX `properties[]` (the C4 emitter's
+  `_algorithm_properties` reads a whitelist, so unknown crypto: keys pass through) → schema still validates
+  (verified `validate_cyclonedx == []` on the dataflow fixture). Wiring it into `algorithmProperties.padding`
+  is C9's emit-hardening, NOT C1. C6 is the weak-padding PREDICATE that reads this prop.
+- GATE: ruff + mypy clean on detect.py/algorithm_scan.py; all 144 cbom+detect+compliance+chart tests pass.
+  (test_differential.py chroma-provider/framework RED is PRE-EXISTING AIBOM lane, unrelated — verified by
+  reverting my files on a pristine tree; it's the known AI-BOM model-differential RED, not a CBOM regression.)
+- Next selectable after C1 = C2 (extend the rule table to Java JCA/BouncyCastle + Go stdlib+x/crypto).
+
+## ⚠️ TWO-WRITER HAZARD (HIT THIS ITERATION — read before every build story)
+- A SECOND live headless Claude (a parallel Ralph loop, `ps` showed `claude --dangerously-skip-permissions
+  --print`, pid ~96340) was writing this SAME worktree on a DIFFERENT branch (`scripts/ralph/.last-branch`
+  = `fix/devsecshield-aibom-cbom`). It half-wrote a `web_native_crypto_scan.py` scanner (C3) + edited
+  `scanners/__init__.py` to import it + a missing `jvm_go_crypto_scan` (C2) → the shared tree was TRANSIENTLY
+  BROKEN (ImportError on ALL cbom test collection) through no fault of my change.
+- WHAT WORKED: (1) commit ONLY your story's files with explicit `git add <paths>` — NEVER `git add -A/-u`
+  (you'd capture their half-finished, uncommitted files). (2) To run the gate while their `__init__.py` was
+  broken: back it up (`cp __init__.py /tmp`), `git checkout HEAD -- __init__.py` to get the clean version,
+  run tests, then `cp /tmp/... __init__.py` back to preserve THEIR in-progress edit. Use ABSOLUTE paths —
+  the Bash tool cwd drifts into `aibom/` after a `cd` and doubles relative paths (`aibom/aibom/...`).
+- Their uncommitted files stay uncommitted on the shared tree; your commit (staging only your paths) leaves
+  `__init__.py` = HEAD-clean, so your committed tree is self-consistent (algorithm_scan imports detect; the
+  5 original scanners register) and green regardless of their in-flight C2/C3 work.
