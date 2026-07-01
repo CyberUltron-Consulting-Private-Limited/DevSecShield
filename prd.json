@@ -189,7 +189,7 @@
         "F3",
         "B1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner"
     },
     {

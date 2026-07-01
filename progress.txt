@@ -1027,3 +1027,49 @@ progress.aibom-reconcile.txt (reference only).
   NEVER git stash here — two-writer hazard. Use git worktree or /tmp copies to set files aside.
 - NEXT selectable: B2 (20, deps F1/F2/F3/B1 all now ✓: CI gates + nightly + regression lock + full live e2e
   frontend+backend). B2 is the LAST story → after it green → COMPLETE.
+
+## B2 (bench/CI + e2e, DONE) — comprehensive CBOM regression lock + full frontend/backend live e2e — LAST STORY
+- SCOPE (prd B2): "CI gates + nightly + regression lock + full live e2e (frontend + backend)". The
+  nightly (cbom-nightly.yml) + the frozen-baseline hermetic gates already existed from a 29-Jun
+  iteration, but cbom-gates.yml was STALE: it enumerated only ~12 of the 29 committed cbom test files,
+  so every capability that landed AFTER 29 Jun (C1–C16 detect/certificate_depth/crypto_misuse/
+  crypto_policy/cnsa/expanded-compliance/cyclonedx_graph/oid/security_strength/weak_padding/
+  cipher_suite/manifest_libraries/pqc_readiness + F2/F3 chart contracts) was NOT locked as a regression.
+- THE KEY DESIGN CHOICE (non-staling lock): Gate A now runs the WHOLE committed suite via
+  `pytest tests/ -k "cbom or crypto"` (364 tests) instead of a fixed file list — a NEW scanner's tests
+  auto-join the lock and can never silently regress the way they could when the gate hard-coded filenames.
+  This is the single most important fix: the previous enumeration is exactly why the gate went stale.
+- cbom-gates.yml rewritten as 2 JOBS: **cbom-gates** (backend, working-dir aibom) = Gate A (full suite),
+  Gate B (hermetic benchmark true-miss test_cbom_benchmark_gate), Gate C (ruff check src/aibom/cbom +
+  cbom_devsecshield.py; mypy src/aibom/cbom), Gate D (bench/cbom/ci_repos.sh pyjwt/pyopenssl vs frozen
+  cbomkit+cdxgen). **cbom-frontend-gate** (working-dir frontend) = npm ci + `tsc --noEmit` so the
+  CbomResults/CbomCryptoCharts prop types can't drift from the run-object shape. Added frontend +
+  worker + integration paths to the on: push/pull_request filters, and the feature branch.
+- FULL LIVE E2E (the completion gate): BACKEND already had the durable artifact —
+  test_cbom_devsecshield_adapter.py calls the EXACT worker entry `scan_crypto_to_devsecshield(fixture,
+  level=4)` (scan_worker.py:645) on a real fixture and asserts the whole run-object contract
+  (results/cbom_json/distributions/compliance/scores/graph nodes+edges/per-finding dashboard keys/
+  determinism/progress→100) — green. FRONTEND: dev-browser render (F1/F2/F3 temp-route recipe, no auth)
+  of the REAL adapter run-object (dumped via scan_crypto_to_devsecshield → /tmp json → colocated
+  runobject.json) on the RUNNING next dev server. GOTCHA: CbomResults uses @tanstack/react-query →
+  the temp page MUST wrap `<CbomResults>` in a `<QueryClientProvider>` or it 500s with "No QueryClient
+  set" (F2/F3 didn't hit this because they rendered CbomCryptoCharts alone; B2 rendered the FULL
+  CbomResults). Playwright on Desktop/AI_Security/node_modules/playwright-core: all 5 capability
+  sections present (asset-type+weakness distributions, PQC 77.8% gauge + quantum-vulnerable RSA-1024/2048
+  + CNSA-2.0 roadmap, 10-framework tri-state compliance matrix, crypto dependency graph 16 nodes/2 edges),
+  7 recharts surfaces, 0 console/page errors, native DevSecShield theme (screenshot confirmed). Findings
+  table shows "0 of 0" — EXPECTED, findings ride a separate `findings` prop not the run-object, harness
+  didn't pass it; not a regression. Temp route deleted after.
+- GATE GREEN (committed tree, excluding the parallel session's UNTRACKED web_native WIP): Gate A 364
+  cbom/crypto tests pass; Gate C ruff clean + mypy 22 files clean; Gate D ci_repos.sh 0 true-misses
+  (pyjwt cbomkit our-unique=13, pyopenssl cbomkit=10 + cdxgen=3); Gate E frontend tsc --noEmit exit 0.
+  YAML validated (2 jobs, 4+1 gates). Only .github/workflows/cbom-gates.yml + prd.json committed.
+- ⚠️ TWO-WRITER: a PARALLEL session has UNTRACKED WIP (web_native_crypto_scan.py + jvm_go import +
+  synthetic-crypto-multilang/web-native fixtures + test_cbom_web_native_crypto_scan.py) that is CURRENTLY
+  FAILING (12 test failures + 1 mypy import-untyped) — NOT mine, NOT committed. I did NOT add/touch/commit
+  any of it. In CI (fresh checkout of my commit) those files are absent so Gate A/C see only the 364-test
+  committed set and pass. When that session commits, the -k "cbom or crypto" lock will (correctly) require
+  their scanner to be green first — that's the regression lock working as intended.
+- ALL 27 stories passes:true. Backend (364 cbom/crypto unit + chart contract + compliance tri-state +
+  bench differential true-miss==0 + ruff + mypy) AND frontend (tsc exit 0 + live dev-browser render of the
+  CBOM results page) all GREEN. FEATURE COMPLETE.

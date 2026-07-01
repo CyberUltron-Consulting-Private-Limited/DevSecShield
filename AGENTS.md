@@ -159,3 +159,17 @@
   stash is KEPT (not dropped) so the other session's work is safe — recover by `git checkout HEAD -- <the
   stash's files that aren't yours>` (restores your pre-pop clean state; verify `git stash list` still shows the
   leftover stash afterward). To temporarily set files aside, use `git worktree` or copy to /tmp instead of stash.
+
+## CBOM CI/e2e conventions (B2)
+- The CBOM regression gate (`.github/workflows/cbom-gates.yml`) locks the FULL committed suite via
+  `pytest tests/ -k "cbom or crypto"`, NOT a hard-coded file list — a new crypto scanner's tests must
+  auto-join the lock. Never revert Gate A to an enumerated file list (that is how it went stale between
+  29-Jun and the C1–C16 landings). Add new headline invariants as *named* gates (B/C/D) for fast-fail
+  clarity, but Gate A stays comprehensive.
+- Dev-browser rendering the FULL `CbomResults` (not just `CbomCryptoCharts`) requires wrapping it in a
+  `<QueryClientProvider client={new QueryClient()}>` — it uses @tanstack/react-query and 500s with
+  "No QueryClient set" otherwise. The F2/F3 temp-route recipe rendered the charts subcomponent alone and
+  didn't need it; the full page does.
+- The committed backend CBOM e2e artifact is `test_cbom_devsecshield_adapter.py` — it exercises the exact
+  worker entry `scan_crypto_to_devsecshield(dir, level=4)` (scan_worker.py cbom task) on a real fixture and
+  asserts the whole run-object contract. Extend THAT test when the run-object shape changes; don't mock it.
