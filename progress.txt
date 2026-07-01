@@ -785,3 +785,35 @@ progress.aibom-reconcile.txt (reference only).
   dependency graph, fully backward-compatible. No worker/aibom RUNTIME-SHAPE change → no worker restart needed.
 - Next selectable after C9 = C10 (14.5, dep C9: algorithm/curve→OID enrichment into cryptoProperties.oid) —
   then I1 (worker route, dep C8+C9), B1 (bench oracles, dep C9), F1/F2/F3 (frontend, dep I1).
+
+## C10 (build, DONE) — algorithm/curve → OID enrichment into CycloneDX cryptoProperties.oid
+- SCOPE (ledger row 14): the sonar-cryptography/cbomkit "Enrichment stage" — stamp each algorithm
+  crypto-asset with its canonical OID. PURE emit-layer change: new `aibom/src/aibom/emit/crypto_oid.py`
+  (`algorithm_oid(name, primitive, key_size, mode, curve, parameter_set) -> str|None`, a hand-curated KB
+  of PUBLIC registry OIDs — NIST CSOR / ANSI X9.62 / SEC2 / RFC8410 / RSA PKCS / FIPS203-204; numeric
+  identifiers are FACTS not code, clean-room) wired into `emit/cyclonedx.py` at `_emit_crypto_asset`
+  (real assets) + `_synth_algorithm` (cert-only synth assets) → `cryptoProperties.oid`. NO scanner/
+  normalize/compliance/scorer/worker/frontend change (C9/C15 enrichment-only precedent).
+- THE LOAD-BEARING RULE = HONEST PRECISION (same as C9 no-false-precision): emit an OID ONLY when
+  parameters pin it unambiguously. AES needs BOTH key_size∈{128,192,256} AND mode (AES-256-GCM=
+  ...3.4.1.46 ≠ AES-128-CBC=...3.4.1.2); a bare `AES`/`AES-ECB`/`AES-GCM` with NO key size → None.
+  A HYBRID PQC asset (`Hybrid ML-KEM-1024`) is a construction not a registered primitive → None.
+  FALCON (FN-DSA not finalized), SLH-DSA (needs hash+size+s/f, ambiguous), LMS/XMSS (param-dependent,
+  HSS-vs-LMS) → None. RSA/DSA/DH/rc4 are key-size-INDEPENDENT family OIDs; 3DES/DES need CBC mode.
+- THE ONE BUG worth remembering: `SLH-DSA-256` and `ML-DSA-*` contain the substring "DSA" → the classical
+  `id-dsa` fallback branch fired (returned 1.2.840.10040.4.1). FIX: guard the DSA branch to exclude
+  SLH-DSA/SLHDSA/ML-DSA/MLDSA/EDDSA (ECDSA already returns earlier). Ordering in the KB matters: curves →
+  named Edwards keys → PQC-by-pset → hashes → symmetric → asymmetric families, longest-token-first.
+- BYTE-SAFETY on frozen fixtures: `oid` is ADDITIVE inside cryptoProperties (a top-level string sibling of
+  algorithmProperties per bom-1.6.schema.json:5579). Emit tests read SPECIFIC fields (`.get("primitive")`),
+  never exact-dict — so synthetic-crypto-app now carries OIDs (SHA-256/MD5/RC4/3DES-CBC/RSA-1024/2048) with
+  zero test breakage. Adds NO components → `test_cbom_benchmark_gate` true-miss==0/our-unique unchanged
+  (benchmark counts components, not oid fields). normalize/scorer never read cryptoProperties.oid (they read
+  result.components crypto: props, which are untouched) — the run-object 7 keys are identical.
+- GATE: new `tests/test_cbom_oid_enrichment.py` (12: KB units for hashes/AES-size+mode/curves/legacy-sym/
+  PQC-pure-only + honest-None for ambiguous/hybrid/FALCON/SLH/LMS + e2e app+pqc fixture OIDs + oid-only-on-
+  algorithm-assets + schema-validates + determinism) + broad `-k "cbom or crypto or emit or detect or chart
+  or normalize or benchmark"` 372 passed + benchmark_gate 2 passed + ruff + mypy(emit/, 8 files) clean.
+- NO frontend/dev-browser/worker-restart (emit-only; the frontend "Download CBOM JSON" blob just carries the
+  richer oid; scan-metadata→charts contract untouched). Next selectable = I1 (15, deps C8✓+C9✓: worker route
+  + scan-metadata contract surfacing all new CBOM capabilities) — then F1/F2/F3 (frontend), B1/B2 (bench+CI).

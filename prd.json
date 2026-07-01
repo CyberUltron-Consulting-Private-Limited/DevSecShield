@@ -207,7 +207,7 @@
       "dependencies": [
         "C9"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room algorithm/curve->OID enrichment (R1): deterministic OID knowledge-base injected into CycloneDX cryptoProperties.oid at emit-time (sonar-cryptography Enrichment-stage technique); no OSS code"
     },
     {

@@ -26,6 +26,7 @@ import uuid
 from typing import Any, NamedTuple
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER as _ADVISORY_DISCLAIMER
+from aibom.emit.crypto_oid import algorithm_oid
 from aibom.emit.registry import BaseReporter, register_reporter
 from aibom.emit.validate import validate_cyclonedx
 from aibom.model.component import (
@@ -495,14 +496,17 @@ def _synth_algorithm(
         if curve:
             props["crypto:curve"] = curve
             algo["curve"] = curve
+        cp: dict[str, Any] = {
+            "assetType": "algorithm",
+            "algorithmProperties": algo,
+        }
+        # C10: a synthesized (cert-only) algorithm asset self-describes its OID.
+        _add(cp, "oid", algorithm_oid(name, primitive, key_size, None, curve))
         synth[bom_ref] = {
             "type": "cryptographic-asset",
             "bom-ref": bom_ref,
             "name": name,
-            "cryptoProperties": {
-                "assetType": "algorithm",
-                "algorithmProperties": algo,
-            },
+            "cryptoProperties": cp,
             "properties": _properties_list(props),
         }
     return bom_ref
@@ -765,6 +769,26 @@ def _emit_crypto_asset(
     props = dict(comp.properties or {})
     crypto = _crypto_properties(props, comp.bom_ref, index, synth)
     if crypto is not None:
+        # C10 OID enrichment: stamp the canonical object identifier onto an
+        # algorithm asset when its parameters pin it unambiguously.
+        if crypto.get("assetType") == "algorithm":
+            key_size: int | None = None
+            raw = props.get("crypto:keySize")
+            if raw is not None:
+                with contextlib.suppress(ValueError):
+                    key_size = int(raw)
+            _add(
+                crypto,
+                "oid",
+                algorithm_oid(
+                    comp.name,
+                    props.get("crypto:primitive"),
+                    key_size,
+                    props.get("crypto:mode"),
+                    props.get("crypto:curve"),
+                    props.get("crypto:parameterSet"),
+                ),
+            )
         out["cryptoProperties"] = crypto
     if props:
         out["properties"] = _properties_list(props)
