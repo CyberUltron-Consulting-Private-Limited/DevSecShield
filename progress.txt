@@ -271,3 +271,48 @@ progress.aibom-reconcile.txt (reference only).
   collection. Ran the gate against the clean HEAD `__init__.py` (`cp __init__.py /tmp; git checkout HEAD --
   __init__.py; test; cp back`) and committed ONLY my paths (never `git add -A`). My committed tree =
   HEAD-clean `__init__.py` (5 original scanners) + my detect/rules/scanner edits → self-consistent & green.
+
+## C3 (build, DONE) — clean-room JS/TS + C/C++ + Rust + .NET crypto-API detection
+- FOLLOWED the AGENTS.md-LOCKED convention ("JS/C/Rust/.NET=C3" lives in detect.py; "C2 extends rule
+  TABLES, NOT a new scanner"): C3 = LANGUAGE-SCOPED literal lanes {JS,C,RUST,DOTNET}_LITERALS in
+  LITERAL_BY_LANG (keys javascript/c/rust/csharp), NO new scanner. Rejected the parallel Ralph's
+  `scanners/web_native_crypto_scan.py` — it's the OTHER branch's approach (a 2nd detection engine that
+  imports a nonexistent `jvm_go_crypto_scan` from THEIR C2, which was a scanner file; MY C2 = detect.py
+  rule tables). Left their web_native_crypto_scan.py + test_cbom_web_native_crypto_scan.py + their two
+  fixtures (synthetic-crypto-web-native, synthetic-crypto-multilang) UNCOMMITTED/untracked.
+- ADOPTED the parallel Ralph's uncommitted rules.py + algorithm_scan.py edits — they're the OTHER HALF of
+  C3 and are convention-COMPATIBLE (library→asset lane, not a scanner): rules.py `.cs`->csharp +
+  `CRYPTO_IMPORT_MODULES_BY_LANG` (js/c/rust/csharp import-root maps); algorithm_scan `_detect_libraries`
+  consults the scoped map (Node `crypto`/C `openssl` roots collide with Python keys, so JS/C/Rust/.NET use
+  the scoped map, Python/Go/Java fall back to global). Committed both as part of my C3 (self-consistent;
+  full suite green with them). NB two writers share this tree → I `git add`ed ONLY my C3 paths explicitly.
+- WHY literal lanes not rules: these 4 ecosystems embed the algo in a STRING (Node `'aes-256-gcm'`,
+  WebCrypto `{name:"AES-GCM"}`) or a TYPE/FN name (`Aes256Gcm`, `EVP_aes_256_gcm`,
+  `RSACryptoServiceProvider`) — none fit receiver.method(fixed-key). Literal KEY encodes size directly
+  (`aes-256` -> algo_info resolves primitive, display folds size). mode/curve ride per-line extract_* ONLY
+  where the DASH form appears (WebCrypto `AES-GCM`, `namedCurve:'P-384'`); underscore forms
+  (`EVP_aes_256_gcm`, `NID_secp384r1`) are size-only (extract_mode/_curve need a `-`/`/` boundary).
+- REAL BUGS my fixture surfaced + fixed: (1) global LITERAL_PATTERNS ALREADY catch bare `SHA256`/`Ed25519`/
+  `MD5` in any language file (algorithm_scan scans all LANGUAGE_EXTENSIONS + detect_crypto always runs the
+  global lane) — so the scoped lanes must ONLY add the spellings the `\b` boundary misses: `Aes256Gcm`/
+  `ChaCha20Poly1305`/`ECDSA_P384`/`HMAC_SHA256`/`TripleDESCryptoServiceProvider`/`RSACryptoServiceProvider`/
+  `RsaPrivateKey`/`EVP_sha384` all END the token with `_` or extra letters -> no boundary -> global miss.
+  (2) `EVP_PKEY_CTX_set_rsa_keygen_bits` is prefixed by `_` so a LEADING `\b` on `set_rsa_keygen_bits`
+  never fires (dropped it) -> RSA-3072 was silently missed. (3) C# `using` is overloaded: refined
+  detect.py `_IMPORT_RE` to `using(?!\s*[(])` so `using (var aes=Aes.Create())` STATEMENT is scanned but
+  `using System.Security.Cryptography;` directive is still skipped (library signal). (4) added `csharp` to
+  the `//`-comment langs in `_strip_line_comment`.
+- Detection-level `d.key_size` is None for the SIZED literal keys (`aes-256`) — the size is in the key
+  NAME, resolved LATER by algorithm_scan via `algo_info(key).key_size`. Assert `"aes-256" in agg` at the
+  detect layer; assert the `crypto:keySize` PROPERTY at the pipeline layer. (RSA size 2048/3072 DOES ride
+  `d.key_size` because it's a bare modulus digit `extract_key_size` catches on the line.)
+- GATE: full cbom suite green (155 -k cbom incl. test_cbom_benchmark_gate differential); the 2
+  test_differential.py FAILS (chroma provider/framework recall 0.5<0.9) are PRE-EXISTING on clean HEAD
+  (AIBOM lane, proven via `git stash` of my 3 tracked files) — NOT my regression. ruff+mypy clean on
+  detect.py/rules.py/algorithm_scan.py + the test. FRONTEND: untouched — C3 emits the SAME
+  crypto_asset/framework shapes the existing normalizer->charts contract handles (new-capability surfacing
+  is F1's scope), so no tsc/dev-browser needed this iteration.
+- Fixture `tests/fixtures/synthetic-crypto-native-apis/{node_crypto.js,openssl_app.c,ring_rustcrypto.rs,
+  DotNetCrypto.cs}` (distinct name from the parallel Ralph's fixtures). Test
+  `tests/test_cbom_detect_native_apis.py` (13). Frozen synthetic-crypto-app UNCHANGED (scoped lanes never
+  run on Python) -> benchmark true-miss==0 preserved.

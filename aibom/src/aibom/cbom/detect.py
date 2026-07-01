@@ -342,8 +342,120 @@ JAVA_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("pbkdf2", re.compile(r"\bPBKDF2With", _F)),
 )
 
+# --------------------------------------------------------------------------- #
+# Language-scoped literal lanes for the four remaining R2 ecosystems (C3):
+# JS/TS (Node ``crypto`` + WebCrypto), C/C++ (OpenSSL EVP), Rust (ring +
+# RustCrypto), .NET (``System.Security.Cryptography``). These recover the
+# ecosystem-specific spellings the GLOBAL literal lane structurally cannot see —
+# WebCrypto's ``{name:"AES-GCM"}`` (no key-size digit), OpenSSL's underscore-
+# packed ``EVP_aes_256_gcm`` / ``EVP_sha384`` (a ``_`` breaks ``\bSHA-?384\b``),
+# RustCrypto's fused ``Aes256Gcm`` / ``ChaCha20Poly1305`` (no word boundary
+# before the mode), and .NET's ``RSACryptoServiceProvider`` /
+# ``TripleDESCryptoServiceProvider`` / ``Rfc2898DeriveBytes``. Each key is the
+# CANONICAL algorithm key (a sized ``aes-256`` where the spelling encodes the
+# length, so ``algo_info`` resolves the primitive and the display name carries
+# the size); mode/curve still ride the per-line ``extract_mode``/``extract_curve``
+# where the dash form supports it. Scoping to the language keeps the frozen
+# Python corpus byte-identical (these lanes never run on Python).
+# --------------------------------------------------------------------------- #
+_JS = "javascript"
+_C = "c"
+_RUST = "rust"
+_CSHARP = "csharp"
+
+JS_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # Node cipher spec strings carry algorithm + key size + mode in one literal
+    # (``createCipheriv('aes-256-gcm', …)``); the sized key + the ``-gcm`` suffix
+    # (read by extract_mode) resolve AES-256-GCM.
+    ("aes-256", re.compile(r"['\"]aes-256-\w+['\"]", _F)),
+    ("aes-192", re.compile(r"['\"]aes-192-\w+['\"]", _F)),
+    ("aes-128", re.compile(r"['\"]aes-128-\w+['\"]", _F)),
+    ("3des", re.compile(r"['\"]des-ede3-\w+['\"]|['\"]des3['\"]", _F)),
+    # Node ``'des-cbc'`` but NOT the 3DES ``des-ede3`` spelling above.
+    ("des", re.compile(r"['\"]des-(?:cbc|ecb|cfb|ofb)['\"]", _F)),
+    # WebCrypto ``{name:"AES-GCM"|"AES-CBC"|…}`` — no size digit, mode via suffix.
+    ("aes", re.compile(r"\bAES-(?:GCM|CBC|CTR|KW|CCM)\b", _F)),
+    # WebCrypto RSA identifiers + Node ``generateKeyPair[Sync]('rsa',…)`` (the
+    # ``Sync`` suffix breaks the global ``generateKeyPair\(`` anchor); size via the
+    # bare modulus digit on the line.
+    ("rsa", re.compile(
+        r"\bRSA-OAEP\b|\bRSA-PSS\b|\bRSASSA-PKCS1"
+        r"|generateKeyPair(?:Sync)?\s*\(\s*['\"]rsa", _F)),
+    # Node ``generateKeyPair[Sync]('ec',…)`` — curve via the ``namedCurve`` string.
+    ("ecdsa", re.compile(r"generateKeyPair(?:Sync)?\s*\(\s*['\"]ec['\"]", _F)),
+    # Node ``createHmac(…)`` — ``\bHMAC\b`` never fires on ``createHmac``.
+    ("hmac", re.compile(r"\bcreateHmac\b", _F)),
+    # ``chacha20-poly1305`` AEAD (Node/WebCrypto spelling).
+    ("chacha20-poly1305", re.compile(r"chacha20-poly1305", _F)),
+    # Node legacy KEM/KA helper.
+    ("dh", re.compile(r"\bcreateDiffieHellman\b", _F)),
+)
+
+C_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # OpenSSL EVP cipher fns pack algorithm + key size + mode in the fn name.
+    ("aes-256", re.compile(r"\bEVP_aes_256_\w+", _F)),
+    ("aes-192", re.compile(r"\bEVP_aes_192_\w+", _F)),
+    ("aes-128", re.compile(r"\bEVP_aes_128_\w+", _F)),
+    ("3des", re.compile(r"\bEVP_des_ede3?_\w+", _F)),
+    ("des", re.compile(r"\bEVP_des_(?:cbc|ecb|cfb|ofb)\b", _F)),
+    ("rc4", re.compile(r"\bEVP_rc4\b", _F)),
+    ("chacha20-poly1305", re.compile(r"\bEVP_chacha20_poly1305\b", _F)),
+    # Digests: a ``_`` before the family breaks the global ``\bSHA-?384\b``.
+    ("sha512", re.compile(r"\bEVP_sha512\b|\bSHA512_Init\b", _F)),
+    ("sha384", re.compile(r"\bEVP_sha384\b|\bSHA384_Init\b", _F)),
+    ("sha256", re.compile(r"\bEVP_sha256\b|\bSHA256_Init\b", _F)),
+    ("sha1", re.compile(r"\bEVP_sha1\b|\bSHA1_Init\b", _F)),
+    ("md5", re.compile(r"\bEVP_md5\b|\bMD5_Init\b", _F)),
+    # RSA key generation (size via the bare modulus digit on the line). No leading
+    # \b — ``EVP_PKEY_CTX_set_rsa_keygen_bits`` prefixes ``set`` with ``_``.
+    ("rsa", re.compile(r"set_rsa_keygen_bits|\bRSA_generate_key(?:_ex)?\b", _F)),
+    # EC key generation (curve carried in the NID_ token — coarse; no curve fold).
+    ("ecdsa", re.compile(
+        r"\bEC_KEY_new_by_curve_name\b|\bEVP_PKEY_CTX_set_ec_paramgen_curve", _F)),
+    # ``HMAC``/``HMAC_Init`` — a trailing ``_`` breaks the global ``\bHMAC\b``.
+    ("hmac", re.compile(r"\bHMAC", _F)),
+)
+
+RUST_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # RustCrypto fused AEAD types + ring UPPER_SNAKE constants.
+    ("aes-256", re.compile(r"\bAes256Gcm(?:Siv)?\b|\bAES_256_GCM\b", _F)),
+    ("aes-192", re.compile(r"\bAes192Gcm\b|\bAES_192_GCM\b", _F)),
+    ("aes-128", re.compile(r"\bAes128Gcm\b|\bAES_128_GCM\b", _F)),
+    ("chacha20-poly1305",
+     re.compile(r"\bChaCha20Poly1305\b|\bCHACHA20_POLY1305\b", _F)),
+    # RustCrypto RSA + ring RSA signature schemes (global ``rsa`` lane misses both).
+    ("rsa", re.compile(r"\bRsa(?:PrivateKey|PublicKey)\b|\bRSA_P(?:SS|KCS1)", _F)),
+    # ring signature constants: ``ECDSA_P384_*`` — the ``_`` breaks ``\bECDSA\b``.
+    ("ecdsa", re.compile(r"\bECDSA_P\d+", _F)),
+    # ring ``hmac::HMAC_SHA256`` — a trailing ``_``/``::`` breaks the global lane.
+    ("hmac", re.compile(r"\bhmac::|\bHMAC_SHA", _F)),
+)
+
+DOTNET_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # AES providers (``Aes.Create`` / ``new AesGcm`` / ``RijndaelManaged``).
+    ("aes", re.compile(
+        r"\bAes\.Create\b|\bnew\s+Aes(?:Gcm|Managed|CryptoServiceProvider)?\b"
+        r"|\bRijndaelManaged\b", _F)),
+    # 3DES vs DES vs RC2 providers (a trailing ``Crypto…`` breaks the global lane).
+    ("3des", re.compile(r"\bTripleDES", _F)),
+    ("des", re.compile(
+        r"(?<![A-Za-z])DESCryptoServiceProvider\b|(?<![A-Za-z])DES\.Create\b", _F)),
+    ("rc2", re.compile(r"\bRC2CryptoServiceProvider\b|\bRC2\.Create\b", _F)),
+    # RSA providers — key size via the bare modulus digit (``new RSA…(2048)``).
+    ("rsa",
+     re.compile(r"\bRSACryptoServiceProvider\b|\bRSA\.Create\b|\bRSAOpenSsl\b", _F)),
+    # HMAC ``new HMACSHA256`` — a following ``SHA`` breaks the global ``\bHMAC\b``.
+    ("hmac", re.compile(r"\bnew\s+HMAC|\bHMAC(?:SHA\d+|MD5)\b", _F)),
+    # PBKDF2 under its .NET class name.
+    ("pbkdf2", re.compile(r"\bRfc2898DeriveBytes\b", _F)),
+)
+
 LITERAL_BY_LANG: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     _JAVA: JAVA_LITERALS,
+    _JS: JS_LITERALS,
+    _C: C_LITERALS,
+    _RUST: RUST_LITERALS,
+    _CSHARP: DOTNET_LITERALS,
 }
 
 
@@ -354,8 +466,12 @@ _TRIPLE_QUOTE = re.compile(r'""".*?"""|\'\'\'.*?\'\'\'', re.S)
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _PY_COMMENT = re.compile(r"#.*$")
 _C_LINE_COMMENT = re.compile(r"//.*$")
+# C#'s ``using`` is overloaded: ``using System.Security.Cryptography;`` is an
+# import directive (a LIBRARY signal), but ``using (var aes = Aes.Create())`` is a
+# real USAGE statement — the negative lookahead keeps the latter out of the
+# import-skip so its crypto call is still scanned (C3).
 _IMPORT_RE = re.compile(
-    r"^\s*(?:import|from|require|use|using|#include|require_once)\b", re.I
+    r"^\s*(?:import|from|require|use|using(?!\s*[(])|#include|require_once)\b", re.I
 )
 # A grouped-import path entry (Go ``import (\n  "crypto/aes"\n )``): a line that is
 # only a path-like quoted string (optionally aliased). These are LIBRARY signals,
@@ -378,7 +494,7 @@ def strip_noncode(text: str) -> str:
 def _strip_line_comment(line: str, lang: str) -> str:
     if lang in ("python", "ruby"):
         return _PY_COMMENT.sub("", line)
-    if lang in ("javascript", "java", "go", "c", "rust", "php"):
+    if lang in ("javascript", "java", "go", "c", "rust", "php", "csharp"):
         return _C_LINE_COMMENT.sub("", line)
     return line
 
@@ -619,6 +735,10 @@ __all__ = [
     "RULES_BY_LANG",
     "LITERAL_PATTERNS",
     "JAVA_LITERALS",
+    "JS_LITERALS",
+    "C_LITERALS",
+    "RUST_LITERALS",
+    "DOTNET_LITERALS",
     "LITERAL_BY_LANG",
     "detect_crypto",
     "split_calls",

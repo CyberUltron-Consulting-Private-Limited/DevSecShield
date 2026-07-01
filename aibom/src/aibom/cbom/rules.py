@@ -43,6 +43,7 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
     ".rs": "rust",
     ".php": "php",
     ".phtml": "php",
+    ".cs": "csharp",
 }
 
 # --------------------------------------------------------------------------- #
@@ -282,6 +283,63 @@ CRYPTO_IMPORT_MODULES: dict[str, str] = {
 }
 
 # --------------------------------------------------------------------------- #
+# Language-scoped import-module maps (C3). Node's ``crypto`` module root and
+# C/C++'s ``openssl`` include root are spelled identically to the Python keys
+# above (``crypto`` -> PyCryptodome, ``openssl`` -> pyOpenSSL), so a flat lookup
+# would MIS-attribute a JS/C file. The scanner therefore consults the scoped map
+# for these languages (and falls back to the global one for Python/Go/Java, whose
+# roots are distinctive). Bare crate/module roots (``ring``/``hmac``/``rsa``) are
+# safe here precisely because they are scoped to their own language.
+# --------------------------------------------------------------------------- #
+CRYPTO_IMPORT_MODULES_BY_LANG: dict[str, dict[str, str]] = {
+    "javascript": {
+        "node:crypto": "Node.js crypto (stdlib)",
+        "crypto": "Node.js crypto (stdlib)",
+        "node-forge": "node-forge",
+        "crypto-js": "crypto-js",
+        "tweetnacl": "TweetNaCl",
+        "libsodium-wrappers": "libsodium.js",
+        "jsonwebtoken": "jsonwebtoken",
+        "bcrypt": "bcrypt (npm)",
+        "bcryptjs": "bcrypt (npm)",
+    },
+    "c": {
+        "openssl/evp": "OpenSSL",
+        "openssl/aes": "OpenSSL",
+        "openssl/sha": "OpenSSL",
+        "openssl/rsa": "OpenSSL",
+        "openssl/ec": "OpenSSL",
+        "openssl/hmac": "OpenSSL",
+        "openssl/rand": "OpenSSL",
+        "openssl/des": "OpenSSL",
+        "openssl": "OpenSSL",
+        "sodium": "libsodium",
+        "mbedtls": "mbed TLS",
+    },
+    "rust": {
+        "ring": "ring (Rust)",
+        "aes_gcm": "RustCrypto",
+        "aes": "RustCrypto",
+        "chacha20poly1305": "RustCrypto",
+        "sha2": "RustCrypto",
+        "sha1": "RustCrypto",
+        "sha3": "RustCrypto",
+        "md5": "RustCrypto",
+        "hmac": "RustCrypto",
+        "rsa": "RustCrypto",
+        "ed25519_dalek": "RustCrypto",
+        "p256": "RustCrypto",
+        "p384": "RustCrypto",
+        "pbkdf2": "RustCrypto",
+    },
+    "csharp": {
+        "system.security.cryptography": ".NET (System.Security.Cryptography)",
+        "bouncycastle": "Bouncy Castle",
+        "org.bouncycastle": "Bouncy Castle",
+    },
+}
+
+# --------------------------------------------------------------------------- #
 # Parametrization extraction (THE ADDED PIECE). Pulls key size / mode / curve
 # out of the same source line the algorithm was detected on, so a usage resolves
 # to RSA-2048 vs RSA-1024 and AES-GCM vs AES-ECB rather than a flat "RSA"/"AES".
@@ -350,6 +408,7 @@ __all__ = [
     "CRYPTO_METHOD_HINTS",
     "CRYPTO_LIBRARY_PACKAGES",
     "CRYPTO_IMPORT_MODULES",
+    "CRYPTO_IMPORT_MODULES_BY_LANG",
     "algo_info",
     "extract_key_size",
     "extract_mode",

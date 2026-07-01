@@ -69,3 +69,24 @@
   `cipher.NewGCM`), so Go assets are per-PRIMITIVE (no mode); JCA transformation strings DO carry the mode.
   `_detect_libraries`'s import-root lookbehind is `(?<![a-z0-9_./])` so a generic root (the Python `crypto`
   key) can't match across a `.`/`/` path boundary (was mislabeling `javax.crypto` as PyCryptodome).
+- C3 lane (JS/TS + C/C++ + Rust + .NET detection): also extends `detect.py`, NOT a new scanner (the
+  parallel Ralph's `scanners/web_native_crypto_scan.py` is the OTHER branch's approach — do NOT adopt it;
+  it needs a second detection engine + imports a nonexistent `jvm_go_crypto_scan`). These four ecosystems
+  embed the algorithm in a STRING (Node `'aes-256-gcm'`, WebCrypto `{name:"AES-GCM"}`) or a TYPE/FN name
+  (`Aes256Gcm`, `EVP_aes_256_gcm`, `RSACryptoServiceProvider`), NOT a receiver.method(fixed-key) — so C3
+  is LANGUAGE-SCOPED literal lanes `{JS,C,RUST,DOTNET}_LITERALS` in `LITERAL_BY_LANG`, NO rule tables. Keys
+  encode size directly (`aes-256`, so `algo_info` resolves the primitive + the display folds the size);
+  mode/curve ride the per-line `extract_mode`/`extract_curve` only where the DASH form appears (WebCrypto
+  `AES-GCM`, `namedCurve:'P-384'`) — underscore forms (`EVP_aes_256_gcm`, `NID_secp384r1`) yield size-only.
+  GOTCHAS: (1) global `LITERAL_PATTERNS` already catch bare `SHA256`/`Ed25519`/`MD5` in ANY language, so the
+  scoped lanes ONLY add the spellings the global boundary misses (`Aes256Gcm`/`ECDSA_P384`/`HMAC_SHA256`/
+  `TripleDESCryptoServiceProvider` all end the token with `_` or more letters → no `\b`). (2) `.cs`→csharp
+  added to `LANGUAGE_EXTENSIONS`; `csharp` added to the `//`-comment set in `_strip_line_comment`. (3) C#
+  `using` is overloaded — `_IMPORT_RE` refined to `using(?!\s*[(])` so a `using (var aes=Aes.Create())`
+  STATEMENT is scanned while the `using System…;` directive is skipped. (4) OpenSSL `set_rsa_keygen_bits`
+  is prefixed by `_` (`EVP_PKEY_CTX_set_…`) → NO leading `\b`. Library attribution rides
+  `rules.CRYPTO_IMPORT_MODULES_BY_LANG` (js/c/rust/csharp maps: node crypto, OpenSSL, ring vs RustCrypto,
+  .NET) consulted by `algorithm_scan._detect_libraries` (Node `crypto`/C `openssl` roots collide with the
+  Python keys, so JS/C/Rust/.NET use the scoped map; Python/Go/Java fall back to the global one). Frozen
+  Python corpus stays byte-identical (scoped lanes never run on Python). Fixture
+  `tests/fixtures/synthetic-crypto-native-apis/` + `tests/test_cbom_detect_native_apis.py`.

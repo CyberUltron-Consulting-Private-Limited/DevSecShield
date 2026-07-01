@@ -30,6 +30,7 @@ from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
     CRYPTO_IMPORT_MODULES,
+    CRYPTO_IMPORT_MODULES_BY_LANG,
     CRYPTO_LIBRARY_PACKAGES,
     LANGUAGE_EXTENSIONS,
     algo_info,
@@ -164,6 +165,11 @@ def _detect_libraries(root: Path) -> list[tuple[str, str]]:
     # 2) imported crypto modules in source
     for path in _iter_source_files(root):
         rel = path.relative_to(root).as_posix()
+        lang = LANGUAGE_EXTENSIONS[path.suffix.lower()]
+        # Node's ``crypto`` and C's ``openssl`` roots collide with the Python keys,
+        # so JS/C/Rust/.NET files use a language-scoped map; Python/Go/Java (whose
+        # roots are distinctive) fall back to the global one (C3).
+        modules = CRYPTO_IMPORT_MODULES_BY_LANG.get(lang, CRYPTO_IMPORT_MODULES)
         try:
             lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
         except OSError:
@@ -172,7 +178,7 @@ def _detect_libraries(root: Path) -> list[tuple[str, str]]:
             if not _IMPORT_RE.search(line):
                 continue
             low = line.lower()
-            for module, label in CRYPTO_IMPORT_MODULES.items():
+            for module, label in modules.items():
                 # The lookbehind rejects a preceding "." / "/" so a generic root
                 # (e.g. the Python "crypto" key for ``from Crypto import AES``) can
                 # NOT match across a package path — ``javax.crypto`` / ``crypto/aes``
