@@ -358,3 +358,27 @@ progress.aibom-reconcile.txt (reference only).
   + `synthetic-crypto-{web-native,multilang}` fixtures are STILL uncommitted and NOT in scanners/__init__.py
   (5 committed scanners). I ran the gate with `--ignore` on that test and committed ONLY my C12 paths
   (never `git add -A`).
+
+## C4 — certificate-depth scanner (EC curve/CA capture, chain edges, weak-cert flags)
+- The C2 cert lane already had fields+expiry+RSA-size+EXPIRED_CERTIFICATE; C4's real deltas were: EC named
+  curve + BasicConstraints cA capture, a `signed_by` chain edge, and the MISSING cert weakness predicates.
+- x509.py stays a pure DER reader: `_ec_curve` reads the SECOND OID in the SPKI AlgorithmIdentifier (RFC 5480
+  namedCurve; the first is ecPublicKey) → curve field-size becomes crypto:keySize; `_basic_constraints_ca`
+  walks the `[3] EXPLICIT` extensions → is_ca True/False/None (None = ext absent → keeps self-signed-leaf
+  conservative). openssl `req -x509` DEFAULTS to CA:TRUE — author a leaf with `-addext basicConstraints=critical,CA:FALSE`.
+- Weakness stacking is the load-bearing design point: a cert can be expired AND SHA-1-signed AND undersized,
+  and the weights file explicitly wants them to stack (expired+weak = 16 → critical). So `certificate_findings`
+  returns a LIST and `weak_algorithm_scan` was changed from one-per-asset (`weak_finding(c) or expiry`) to raise
+  ALL findings: `[weak_finding] + [expiry] + certificate_findings(c)`. `weak_finding` still explicitly SKIPS certs.
+- Codes: WEAK_CERTIFICATE_SIGNATURE (MD2/4/5/SHA-1 substring of signatureAlgorithm), WEAK_CERTIFICATE_KEY
+  (RSA/DSA<2048 or EC<224 — EC gated via publicKeyAlgorithm/curve), SELF_SIGNED_LEAF (selfSigned==true &&
+  isCertificateAuthority=="false"). (ledger proposed WEAK_CERT_* / SELF_SIGNED_CERTIFICATE names; I used the
+  _CERTIFICATE_ / _LEAF spellings — update I1/F1 chart contract to these when it lands.)
+- REGRESSION SAFETY: the existing synthetic-crypto-app cert.pem is CA:TRUE/SHA-256/RSA-2048 → no new flag fires
+  on it, so scorer/compliance/normalize/cyclonedx + the bench/cbom differential gate are all UNCHANGED. New flags
+  never change EMITTED assets, so the true-miss==0 gate can't regress from a weakness-only story. Confirmed green.
+- 2 pre-existing FAILs in tests/test_differential.py (chroma provider/framework recall — AIBOM lane, needs cloned
+  repos; missing openai/mistral/transformers) are UNRELATED to CBOM and predate this change. Don't chase them here.
+- Fixtures: openssl is an AUTHORING tool for static .crt files (allowed) — never a product dep. C4-extend
+  follow-ups still open: EXPIRING_CERTIFICATE (near-expiry, needs a `today` param) + PROBLEMATIC_CA_CERTIFICATE
+  (untrusted-issuer deny-list); `*Ref` separate sig/pubkey algorithm assets belong to C9.
