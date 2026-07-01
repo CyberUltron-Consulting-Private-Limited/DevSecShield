@@ -34,12 +34,26 @@ WEAK_KEY_SIZE = "WEAK_KEY_SIZE"
 WEAK_PROTOCOL = "WEAK_PROTOCOL"
 # An X.509 certificate past its notValidAfter date (C8: "expired cert -> high").
 EXPIRED_CERTIFICATE = "EXPIRED_CERTIFICATE"
+# C4 certificate-depth weaknesses (distinct from the algorithm-asset codes above
+# so the scorer/charts can attribute them to the certificate lane):
+#   * a certificate signed with a broken digest (MD2/MD4/MD5/SHA-1) — forgeable;
+#   * a certificate whose public key is below the asymmetric floor;
+#   * a self-signed *leaf* (BasicConstraints CA:FALSE) — a production trust smell.
+WEAK_CERTIFICATE_SIGNATURE = "WEAK_CERTIFICATE_SIGNATURE"
+WEAK_CERTIFICATE_KEY = "WEAK_CERTIFICATE_KEY"
+SELF_SIGNED_LEAF = "SELF_SIGNED_LEAF"
 
 WEAK_CRYPTO_CODES = frozenset(
     {WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL}
 )
 
 _SEV = "error"  # SARIF error == High impact (mirrors the secret scanner).
+_SEV_MED = "warning"  # SARIF warning == Medium impact (a smell, not a break).
+
+# Broken message digests inside a certificate signatureAlgorithm name. A cert
+# signed with any of these is forgeable via collision (chosen-prefix), so the
+# whole certificate is untrustworthy regardless of its key strength.
+_BROKEN_SIG_DIGESTS = ("md2", "md4", "md5", "sha1")
 
 # Reverse of ALGORITHM_NORMALIZE: a display name (upper) -> canonical key. Built
 # from the same table the scanner names assets with, so it never drifts. e.g.
@@ -159,6 +173,79 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
     return None
 
 
+def _sig_digest_is_broken(sig_alg: str) -> bool:
+    """A certificate signatureAlgorithm built on a collision-broken digest."""
+    low = sig_alg.lower()
+    return any(d in low for d in _BROKEN_SIG_DIGESTS)
+
+
+def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:
+    """Return every certificate-depth weakness on a certificate asset (C4).
+
+    Pure, and orthogonal to :func:`cert_expiry_finding` — a certificate can be
+    *both* expired and signed with SHA-1 with an undersized key, and every such
+    finding is raised so the scorer stacks them (mirroring the weights file's
+    "expired+weak cert" rationale). Returns an empty list for any non-certificate
+    component, so the scanner can call it on every asset unconditionally.
+    """
+    if component.kind != "crypto_asset":
+        return []
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "certificate":
+        return []
+    name = component.name
+    findings: list[tuple[str, str, str]] = []
+
+    # 1) Broken signature digest (MD2/MD4/MD5/SHA-1) -> the cert is forgeable.
+    sig_alg = props.get("crypto:signatureAlgorithm", "")
+    if sig_alg and _sig_digest_is_broken(sig_alg):
+        findings.append(
+            (
+                WEAK_CERTIFICATE_SIGNATURE,
+                _SEV,
+                f"Certificate {name} is signed with {sig_alg}: MD5/SHA-1 digests "
+                f"are collision-broken (chosen-prefix), so the certificate can be "
+                f"forged; reissue with a SHA-256+ signature.",
+            )
+        )
+
+    # 2) Undersized public key. RSA/DSA below the 2048-bit floor (NIST SP 800-57);
+    #    an EC curve below a 224-bit field (< 112-bit strength) is equally weak.
+    bits = _key_size(props)
+    if bits is not None:
+        pk = props.get("crypto:publicKeyAlgorithm", "").lower()
+        is_ec = pk.startswith("ec") or bool(props.get("crypto:curve"))
+        floor = 224 if is_ec else _MIN_ASYMMETRIC_BITS
+        if bits < floor:
+            findings.append(
+                (
+                    WEAK_CERTIFICATE_KEY,
+                    _SEV,
+                    f"Certificate {name} has an undersized {bits}-bit public key "
+                    f"(floor {floor}-bit, NIST SP 800-57); reissue with "
+                    f"RSA-3072+ or a P-256+ / PQC key.",
+                )
+            )
+
+    # 3) Self-signed leaf: a self-signed cert that is explicitly NOT a CA is an
+    #    end-entity trusting itself — a production trust smell (a real root CA is
+    #    self-signed but carries BasicConstraints CA:TRUE, so is not flagged).
+    if (
+        props.get("crypto:selfSigned") == "true"
+        and props.get("crypto:isCertificateAuthority") == "false"
+    ):
+        findings.append(
+            (
+                SELF_SIGNED_LEAF,
+                _SEV_MED,
+                f"Self-signed leaf certificate {name} (BasicConstraints CA:FALSE): "
+                f"an end-entity certificate acting as its own trust anchor; issue "
+                f"it from a proper CA before relying on it in production.",
+            )
+        )
+    return findings
+
+
 def _cert_not_after_date(raw: str) -> date | None:
     """Parse a certificate ``crypto:notValidAfter`` value to a date.
 
@@ -208,7 +295,11 @@ __all__ = [
     "WEAK_KEY_SIZE",
     "WEAK_PROTOCOL",
     "EXPIRED_CERTIFICATE",
+    "WEAK_CERTIFICATE_SIGNATURE",
+    "WEAK_CERTIFICATE_KEY",
+    "SELF_SIGNED_LEAF",
     "WEAK_CRYPTO_CODES",
     "weak_finding",
     "cert_expiry_finding",
+    "certificate_findings",
 ]

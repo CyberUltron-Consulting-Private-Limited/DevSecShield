@@ -16,8 +16,11 @@ flags:
   WEAK_KEY_SIZE: 8        # RSA/DSA/DH below the 2048-bit floor
   WEAK_PROTOCOL: 8        # TLS < 1.2 / SSL (RFC 8996)
   EXPIRED_CERTIFICATE: 8  # an X.509 certificate past notValidAfter
-  # ── quantum-vulnerable -> MEDIUM (a future exposure to migrate; SARIF warning) ──
+  WEAK_CERTIFICATE_SIGNATURE: 8  # cert signed with MD5/SHA-1 — forgeable (C4)
+  WEAK_CERTIFICATE_KEY: 8        # cert public key below the asymmetric floor (C4)
+  # ── quantum-vulnerable / trust smell -> MEDIUM (a future/latent risk; SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
+  SELF_SIGNED_LEAF: 4     # self-signed end-entity cert — a production trust smell (C4)
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A crypto asset with no flags scores 0 -> low (the inventory floor; a strong
