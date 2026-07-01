@@ -131,7 +131,7 @@
         "C6",
         "C7"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Harden hand-built CycloneDX 1.6 crypto-asset emission + dependency graph (cryptoRefArray) across all new asset types; schema-valid"
     },
     {

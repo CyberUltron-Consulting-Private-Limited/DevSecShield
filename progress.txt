@@ -736,3 +736,52 @@ progress.aibom-reconcile.txt (reference only).
   `int | None`). Pre-existing AIBOM test_differential chroma failures unrelated (not run in CBOM suite).
 - Next selectable after C14 = C9 (14, deps C1-C7: CycloneDX 1.6 hardening across all asset types) — then
   C10 (14.5, dep C9: OID enrichment), I1 (worker route), F1/F2/F3 (frontend), B1/B2 (bench + CI).
+
+## C9 (build, DONE) — CycloneDX 1.6 crypto DEPENDENCY GRAPH (cryptoRefArray) across all asset types
+- SCOPE (ledger rows 104/107/120): the emit-time dependency-graph the C4-C7 scanners emit INTO. PURE render
+  change in the SHARED `aibom/src/aibom/emit/cyclonedx.py` (NO scanner/normalize/compliance/scorer change) —
+  the emitter is the render lane; it now links certificate/protocol/material assets to the algorithm assets
+  they name via CycloneDX `*Ref` / `cryptoRefArray`, and stays schema-valid.
+- THE LOAD-BEARING SAFETY INSIGHT (why frozen fixtures stay byte-safe): refs RESOLVE TO EXISTING inventory
+  algorithm components (an emit-time index `_algorithm_index(result.components)` keyed by canonical family +
+  keySize/curve), so on synthetic-crypto-app the cert's sig→SHA-256 + pubkey→RSA-2048 both hit source assets
+  → ZERO synthesized components → `test_every_crypto_asset_emits_cryptoProperties` (`len(crypto_comps) ==
+  len(scanned)`) still holds AND `test_cbom_benchmark_gate` our-unique/true-miss unchanged (adding REF FIELDS
+  inside existing cryptoProperties adds no components; the benchmark counts components, not refs). The emit
+  test's `cipherSuites[0].name == "ECDHE-RSA-AES128-SHA"` stays green because splitting the comma-bag of a
+  SINGLE suite yields one object with the same name.
+- CERT (the headline): `_certificate_properties` adds `certificateFormat`="X.509" + `certificateExtension`
+  (source-file suffix from `discovery:source`) + `subjectPublicKeyRef` (pubkey family+keySize/curve →
+  `_find_key_ref`; keySize disambiguates RSA-2048 vs RSA-1024) + `signatureAlgorithmRef` (a COMPOSITE
+  `sha256WithRSA` refs its DIGEST SHA-256 — consistent with our long-standing decomposition philosophy, cf.
+  the `SHA256-RSA` bench FP-exclusion "we inventory SHA-256 + RSA separately"; a PURE scheme Ed25519/RSASSA-PSS
+  has no standalone digest → falls back to the key ref). SYNTHESIS-IF-MISSING: when a cert names an algorithm
+  ABSENT from source (real cert-only repo), `_synth_algorithm` adds a minimal dedicated algorithm crypto-asset
+  at EMIT TIME (deterministic bom-ref `{cert}-pubkey`/`{cert}-sigalg`, appended after the scanned components,
+  NOT in result.components so serialNumber/normalize/scorer/benchmark-via-ScanResult are untouched) so the cert
+  self-describes (the cbomkit-theia certificates-plugin behavior, clean-room). Proven by a cert-only unit test.
+- PROTOCOL: `_protocol_properties` splits the `crypto:cipherSuite` `", "`-joined bag into structured
+  `cipherSuites[].{name, algorithms[]}` + a protocol-level `cryptoRefArray`. `_suite_algorithm_refs` tokenizes
+  a suite on `[-_]`, maps each token to a family, and links ONLY when the inventory holds EXACTLY ONE asset of
+  that family (unambiguous) — so the frozen `ECDHE-RSA-AES128-SHA` (RSA×2, AES×3, bare "SHA" no family) yields
+  structure-only, zero refs, byte-safe; a clean single-candidate suite (proven by a crafted fixture with one
+  ChaCha20 asset) links correctly. NEVER a false-precision guess.
+- MATERIAL: `_related_material_properties` adds `format` (source suffix → PEM/DER/…), `algorithmRef` (from
+  `crypto:algorithm` when the family resolves to exactly one asset), `size` (keySize). On the fixture the
+  private-key's source is `crypto_app.py` (.py → no format) + no `crypto:algorithm` → unchanged (`type` only).
+- LAYERING: kept a LOCAL `_FAMILY_TOKENS`/`_family_of` in the emit module (mirrors strength.py's taxonomy) so
+  the shared emit layer never imports the cbom package (avoids an emit↔cbom import cycle). refType is just a
+  string in the schema → a dangling ref would still validate, but ours always resolve to a real component.
+- GATE: new `tests/test_cbom_cyclonedx_graph.py` (12: cert refs-to-existing / keysize-disambiguation / synth /
+  pure-scheme-fallback / protocol split+link / ambiguous-omit / material / 3 frozen-fixture regressions) +
+  `test_cbom_cyclonedx_emit.py` (24 total) + full `-k "cbom or crypto or detect"` 305 passed + benchmark_gate
+  (true-miss==0, our-unique>0) + chart-data-contract + normalize + `test_emit.py` (AIBOM model/dataset path,
+  `_emit_component` signature changed → verified unaffected) + FULL aibom suite green with chroma moved aside
+  (CI-equivalent: all pass / only chroma-absent self-skips) + ruff + mypy(7 emit files) clean.
+- NO frontend/dev-browser this iteration (enrichment-only, C4/C5/C7/C8/C13 precedent): C9 changes ONLY the
+  emitted CycloneDX JSON (`cbom_json`, ridden by the shared reporter through `normalize_crypto`). The run-object
+  KEYS are unchanged (7 keys, `cbom_distributions`/`cbom_compliance`/`cbom_scores` all identical), so the
+  scan-metadata→charts contract is untouched; the frontend's "Download CBOM JSON" blob just carries the richer
+  dependency graph, fully backward-compatible. No worker/aibom RUNTIME-SHAPE change → no worker restart needed.
+- Next selectable after C9 = C10 (14.5, dep C9: algorithm/curve→OID enrichment into cryptoProperties.oid) —
+  then I1 (worker route, dep C8+C9), B1 (bench oracles, dep C9), F1/F2/F3 (frontend, dep I1).

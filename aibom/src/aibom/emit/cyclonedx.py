@@ -21,8 +21,9 @@ itself satisfy FDA / EU AI Act / HIPAA obligations.
 from __future__ import annotations
 
 import contextlib
+import re
 import uuid
-from typing import Any
+from typing import Any, NamedTuple
 
 from aibom.emit._disclaimer import ADVISORY_DISCLAIMER as _ADVISORY_DISCLAIMER
 from aibom.emit.registry import BaseReporter, register_reporter
@@ -309,6 +310,210 @@ _CDX_MATERIAL = {
 _CDX_PROTOCOL = {"tls", "ssh", "ipsec", "ike", "sstp", "wpa", "other", "unknown"}
 
 
+# --------------------------------------------------------------------------- #
+# C9 crypto dependency graph — algorithm-reference resolution (pure)
+# --------------------------------------------------------------------------- #
+
+# Algorithm-family tokens used to link certificate / protocol / material assets
+# to the algorithm assets they name (``*Ref`` / ``cryptoRefArray``). Ordered so a
+# composite/PQC token wins over a substring (ML-DSA before DSA, 3DES before DES,
+# SHA-2 before SHA-1). Mirrors the strength scanner's taxonomy but is kept LOCAL
+# so the shared emit layer never imports the cbom package (no layering cycle).
+_FAMILY_TOKENS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ml-kem", ("ML-KEM", "MLKEM", "KYBER")),
+    ("ml-dsa", ("ML-DSA", "MLDSA", "DILITHIUM")),
+    ("slh-dsa", ("SLH-DSA", "SPHINCS")),
+    ("falcon", ("FALCON",)),
+    ("3des", ("3DES", "TRIPLEDES", "DESEDE", "DES-EDE")),
+    ("chacha20", ("CHACHA",)),
+    ("aes", ("AES",)),
+    ("rc4", ("RC4", "ARCFOUR", "ARC4")),
+    ("des", ("DES",)),
+    ("md5", ("MD5",)),
+    ("sha3", ("SHA3", "SHA-3")),
+    ("sha2", ("SHA-224", "SHA224", "SHA-256", "SHA256",
+              "SHA-384", "SHA384", "SHA-512", "SHA512")),
+    ("sha1", ("SHA-1", "SHA1")),
+    ("ecdsa", ("ECDSA",)),
+    ("ecdh", ("ECDH",)),
+    ("eddsa", ("ED25519", "ED448", "EDDSA")),
+    ("xdh", ("X25519", "X448")),
+    ("rsa", ("RSA",)),
+    ("dsa", ("DSA",)),
+    ("dh", ("DIFFIE",)),
+    ("hmac", ("HMAC",)),
+    ("poly1305", ("POLY1305",)),
+)
+
+# Specific digest tokens (longest-first) for pulling the hash out of a composite
+# certificate signature-algorithm name (``sha256WithRSAEncryption`` -> SHA-256).
+_HASH_TOKENS: tuple[tuple[str, str], ...] = (
+    ("SHA-512", "SHA-512"), ("SHA512", "SHA-512"),
+    ("SHA-384", "SHA-384"), ("SHA384", "SHA-384"),
+    ("SHA-256", "SHA-256"), ("SHA256", "SHA-256"),
+    ("SHA-224", "SHA-224"), ("SHA224", "SHA-224"),
+    ("SHA-1", "SHA-1"), ("SHA1", "SHA-1"),
+    ("MD5", "MD5"), ("MD4", "MD4"), ("MD2", "MD2"),
+)
+
+# Source-file extension -> CycloneDX material format token.
+_MATERIAL_FORMAT = {
+    "pem": "PEM", "der": "DER", "key": "PEM",
+    "p12": "P12", "pfx": "PFX", "p8": "P8",
+}
+
+
+class _AlgoRef(NamedTuple):
+    """One inventoried algorithm asset, indexed for reference resolution."""
+
+    bom_ref: str
+    family: str | None
+    key_size: int | None
+    curve: str | None
+    name_upper: str
+
+
+def _family_of(name: str | None) -> str | None:
+    """Map an algorithm display / OID name to a canonical family token."""
+    if not name:
+        return None
+    up = name.upper()
+    for family, tokens in _FAMILY_TOKENS:
+        if any(tok in up for tok in tokens):
+            return family
+    return None
+
+
+def _pubkey_family(pk_alg: str | None, curve: str | None) -> str | None:
+    """Family of a certificate subject public key (from its algorithm name)."""
+    if pk_alg:
+        low = pk_alg.lower()
+        if "rsa" in low:
+            return "rsa"
+        if "ed25519" in low or "ed448" in low:
+            return "eddsa"
+        if "ecpublickey" in low or "ecdsa" in low:
+            return "ecdsa"
+        if "dsa" in low:
+            return "dsa"
+    return "ecdsa" if curve else _family_of(pk_alg)
+
+
+def _algorithm_index(components: list[Any]) -> list[_AlgoRef]:
+    """Index the algorithm crypto-assets so refs can resolve to real bom-refs."""
+    out: list[_AlgoRef] = []
+    for c in components:
+        if getattr(c, "kind", None) != "crypto_asset":
+            continue
+        props = c.properties or {}
+        if props.get("crypto:assetType") != "algorithm":
+            continue
+        raw = props.get("crypto:keySize")
+        key_size: int | None = None
+        if raw is not None:
+            with contextlib.suppress(ValueError):
+                key_size = int(raw)
+        out.append(
+            _AlgoRef(
+                bom_ref=c.bom_ref,
+                family=_family_of(c.name),
+                key_size=key_size,
+                curve=props.get("crypto:curve"),
+                name_upper=(c.name or "").upper(),
+            )
+        )
+    return out
+
+
+def _find_key_ref(
+    index: list[_AlgoRef], family: str | None, key_size: int | None, curve: str | None
+) -> str | None:
+    """Resolve a keyed algorithm (RSA/EC/…) to an inventoried asset's bom-ref."""
+    if curve is not None:
+        cu = curve.upper()
+        for e in index:
+            if e.curve == curve or cu in e.name_upper:
+                return e.bom_ref
+        return None
+    if family is None:
+        return None
+    for e in index:
+        if e.family != family:
+            continue
+        if key_size is not None and e.key_size != key_size:
+            continue
+        return e.bom_ref
+    return None
+
+
+def _find_hash_ref(index: list[_AlgoRef], display: str) -> str | None:
+    """Resolve a digest display name (``SHA-256``) to an inventoried hash asset."""
+    fam = _family_of(display)
+    compact = display.upper().replace("-", "")
+    for e in index:
+        if e.family == fam and compact in e.name_upper.replace("-", ""):
+            return e.bom_ref
+    return None
+
+
+def _key_display(family: str | None, key_size: int | None, curve: str | None) -> str:
+    """Human name for a synthesized public-key algorithm asset."""
+    base = {
+        "rsa": "RSA", "dsa": "DSA", "eddsa": "EdDSA", "ecdsa": "EC",
+    }.get(family or "", (family or "key").upper())
+    if curve:
+        return f"{base}-{curve}" if base != "EC" else curve
+    if key_size:
+        return f"{base}-{key_size}"
+    return base
+
+
+def _synth_algorithm(
+    synth: dict[str, dict[str, Any]],
+    bom_ref: str,
+    name: str,
+    primitive: str,
+    key_size: int | None = None,
+    curve: str | None = None,
+) -> str:
+    """Add a minimal algorithm crypto-asset to the synthesis sink; return its ref.
+
+    Used only when a certificate names a signature / public-key algorithm that is
+    NOT already in the source inventory, so the certificate remains self-describing
+    (the cbomkit-theia ``certificates``-plugin behavior, clean-room). Deterministic:
+    keyed by ``bom_ref`` so repeated resolutions collapse to one component.
+    """
+    if bom_ref not in synth:
+        props: dict[str, str] = {
+            "crypto:assetType": "algorithm",
+            "crypto:primitive": primitive,
+        }
+        algo: dict[str, Any] = {"primitive": primitive}
+        if key_size is not None:
+            props["crypto:keySize"] = str(key_size)
+            algo["parameterSetIdentifier"] = str(key_size)
+        if curve:
+            props["crypto:curve"] = curve
+            algo["curve"] = curve
+        synth[bom_ref] = {
+            "type": "cryptographic-asset",
+            "bom-ref": bom_ref,
+            "name": name,
+            "cryptoProperties": {
+                "assetType": "algorithm",
+                "algorithmProperties": algo,
+            },
+            "properties": _properties_list(props),
+        }
+    return bom_ref
+
+
+def _source_extension(props: dict[str, str]) -> str:
+    """Lower-case file extension of the asset's discovery source (``""`` if none)."""
+    src = props.get("discovery:source") or ""
+    return src.rsplit(".", 1)[-1].lower() if "." in src else ""
+
+
 def _nist_quantum_level(props: dict[str, str]) -> int | None:
     """Resolve ``nistQuantumSecurityLevel`` (0-6) from the scanner properties.
 
@@ -356,7 +561,12 @@ def _algorithm_properties(props: dict[str, str]) -> dict[str, Any]:
     return algo
 
 
-def _certificate_properties(props: dict[str, str]) -> dict[str, Any]:
+def _certificate_properties(
+    props: dict[str, str],
+    comp_ref: str,
+    index: list[_AlgoRef],
+    synth: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     certp: dict[str, Any] = {}
     for src, dst in (
         ("crypto:subjectName", "subjectName"),
@@ -366,35 +576,153 @@ def _certificate_properties(props: dict[str, str]) -> dict[str, Any]:
     ):
         if props.get(src):
             certp[dst] = props[src]
+    # A parsed X.509 certificate always has the X.509 format; the file suffix
+    # (pem/crt/cer/der/…) is the certificateExtension where the source has one.
+    certp["certificateFormat"] = "X.509"
+    ext = _source_extension(props)
+    if ext in {"crt", "pem", "cer", "der", "p12", "pfx"}:
+        certp["certificateExtension"] = ext
+
+    # subjectPublicKeyRef -> the algorithm asset for the subject public key,
+    # resolved to source inventory (RSA-2048/EC curve) or synthesized when absent.
+    key_size: int | None = None
+    raw = props.get("crypto:keySize")
+    if raw is not None:
+        with contextlib.suppress(ValueError):
+            key_size = int(raw)
+    curve = props.get("crypto:curve")
+    pk_alg = props.get("crypto:publicKeyAlgorithm")
+    key_ref: str | None = None
+    pk_family = _pubkey_family(pk_alg, curve)
+    if pk_family or curve:
+        key_ref = _find_key_ref(index, pk_family, key_size, curve)
+        if key_ref is None:
+            key_ref = _synth_algorithm(
+                synth,
+                f"{comp_ref}-pubkey",
+                _key_display(pk_family, key_size, curve),
+                "pke",
+                key_size,
+                curve,
+            )
+        certp["subjectPublicKeyRef"] = key_ref
+
+    # signatureAlgorithmRef -> the digest asset named by a composite signature
+    # (sha256WithRSA -> SHA-256); a pure scheme (Ed25519) falls back to the key.
+    sig = props.get("crypto:signatureAlgorithm")
+    if sig:
+        sig_ref = _signature_ref(sig, comp_ref, index, synth, key_ref)
+        if sig_ref:
+            certp["signatureAlgorithmRef"] = sig_ref
     return certp
 
 
-def _related_material_properties(props: dict[str, str]) -> dict[str, Any]:
+def _signature_ref(
+    sig: str,
+    comp_ref: str,
+    index: list[_AlgoRef],
+    synth: dict[str, dict[str, Any]],
+    key_ref: str | None,
+) -> str | None:
+    up = sig.upper()
+    for tok, display in _HASH_TOKENS:
+        if tok in up:
+            ref = _find_hash_ref(index, display)
+            if ref is None:
+                ref = _synth_algorithm(
+                    synth, f"{comp_ref}-sigalg", display, "hash"
+                )
+            return ref
+    # No standalone digest (Ed25519 / RSASSA-PSS) -> the key algorithm signs.
+    return key_ref
+
+
+def _related_material_properties(
+    props: dict[str, str], index: list[_AlgoRef]
+) -> dict[str, Any]:
     relp: dict[str, Any] = {}
     kind = props.get("crypto:materialKind")
     if kind in _CDX_MATERIAL:
         relp["type"] = kind
+    fmt = _MATERIAL_FORMAT.get(_source_extension(props))
+    if fmt:
+        relp["format"] = fmt
+    # algorithmRef -> the algorithm that generated the material, when the family
+    # resolves to exactly one inventoried asset (never a false-precision guess).
+    alg = props.get("crypto:algorithm")
+    if alg:
+        fam = _family_of(alg)
+        cands = [e.bom_ref for e in index if fam is not None and e.family == fam]
+        if len(cands) == 1:
+            relp["algorithmRef"] = cands[0]
+    raw = props.get("crypto:keySize")
+    if raw is not None and raw.isdigit():
+        relp["size"] = int(raw)
     return relp
 
 
-def _protocol_properties(props: dict[str, str]) -> dict[str, Any]:
+def _suite_algorithm_refs(token: str, index: list[_AlgoRef]) -> list[str]:
+    """Refs to the algorithm assets a cipher-suite token names (unambiguous only).
+
+    A suite names families (ECDHE-RSA-AES128-SHA -> ecdh/rsa/aes/sha); each family
+    is linked ONLY when the inventory holds exactly one asset of that family, so an
+    ambiguous family (two AES usages) never yields a false-precision reference.
+    """
+    refs: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"[-_]", token):
+        fam = _family_of(part)
+        if fam is None:
+            continue
+        cands = [e.bom_ref for e in index if e.family == fam]
+        if len(cands) == 1 and cands[0] not in seen:
+            seen.add(cands[0])
+            refs.append(cands[0])
+    return refs
+
+
+def _protocol_properties(
+    props: dict[str, str], index: list[_AlgoRef]
+) -> dict[str, Any]:
     protp: dict[str, Any] = {}
     ptype = props.get("crypto:protocolType")
     if ptype in _CDX_PROTOCOL:
         protp["type"] = ptype
     if props.get("crypto:protocolVersion"):
         protp["version"] = props["crypto:protocolVersion"]
-    if props.get("crypto:cipherSuite"):
-        protp["cipherSuites"] = [{"name": props["crypto:cipherSuite"]}]
+    raw = props.get("crypto:cipherSuite")
+    if raw:
+        suites: list[dict[str, Any]] = []
+        all_refs: list[str] = []
+        for token in (t.strip() for t in raw.split(",")):
+            if not token:
+                continue
+            suite: dict[str, Any] = {"name": token}
+            refs = _suite_algorithm_refs(token, index)
+            if refs:
+                suite["algorithms"] = refs
+                all_refs.extend(refs)
+            suites.append(suite)
+        if suites:
+            protp["cipherSuites"] = suites
+        uniq = sorted(set(all_refs))
+        if uniq:
+            protp["cryptoRefArray"] = uniq
     return protp
 
 
-def _crypto_properties(props: dict[str, str]) -> dict[str, Any] | None:
+def _crypto_properties(
+    props: dict[str, str],
+    comp_ref: str,
+    index: list[_AlgoRef],
+    synth: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
     """Build the CycloneDX 1.6 ``cryptoProperties`` block from ``crypto:`` props.
 
     Returns ``None`` when the asset carries no recognized ``crypto:assetType``
     (so the component falls back to a plain serialization rather than emitting an
-    invalid crypto-asset).
+    invalid crypto-asset). ``index``/``synth`` wire the C9 dependency graph:
+    certificate/protocol/material assets reference the algorithm assets they name.
     """
     asset_type = props.get("crypto:assetType")
     if asset_type not in {
@@ -408,19 +736,25 @@ def _crypto_properties(props: dict[str, str]) -> dict[str, Any] | None:
     if asset_type == "algorithm":
         _add(cp, "algorithmProperties", _algorithm_properties(props))
     elif asset_type == "certificate":
-        _add(cp, "certificateProperties", _certificate_properties(props))
+        _add(
+            cp,
+            "certificateProperties",
+            _certificate_properties(props, comp_ref, index, synth),
+        )
     elif asset_type == "related-crypto-material":
         _add(
             cp,
             "relatedCryptoMaterialProperties",
-            _related_material_properties(props),
+            _related_material_properties(props, index),
         )
     elif asset_type == "protocol":
-        _add(cp, "protocolProperties", _protocol_properties(props))
+        _add(cp, "protocolProperties", _protocol_properties(props, index))
     return cp
 
 
-def _emit_crypto_asset(comp: Any) -> dict[str, Any]:
+def _emit_crypto_asset(
+    comp: Any, index: list[_AlgoRef], synth: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
     """Serialize a ``crypto_asset`` to a CycloneDX 1.6 ``cryptographic-asset``.
 
     The crypto detail is rendered into the spec ``cryptoProperties`` block; the
@@ -429,7 +763,7 @@ def _emit_crypto_asset(comp: Any) -> dict[str, Any]:
     """
     out = _base_component(comp, "cryptographic-asset")
     props = dict(comp.properties or {})
-    crypto = _crypto_properties(props)
+    crypto = _crypto_properties(props, comp.bom_ref, index, synth)
     if crypto is not None:
         out["cryptoProperties"] = crypto
     if props:
@@ -437,7 +771,9 @@ def _emit_crypto_asset(comp: Any) -> dict[str, Any]:
     return out
 
 
-def _emit_component(comp: Any) -> dict[str, Any]:
+def _emit_component(
+    comp: Any, index: list[_AlgoRef], synth: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
     # model + dataset have rich, bespoke serializers; crypto assets render the
     # hand-built cryptoProperties block (C4); every other kind (the full
     # shadow-AI taxonomy) maps to a CycloneDX type via KIND_TO_CDX — one place,
@@ -447,7 +783,7 @@ def _emit_component(comp: Any) -> dict[str, Any]:
     if isinstance(comp, DatasetComponent):
         return _emit_dataset(comp)
     if comp.kind == "crypto_asset":
-        return _emit_crypto_asset(comp)
+        return _emit_crypto_asset(comp, index, synth)
     cdx_type = KIND_TO_CDX.get(comp.kind)
     if cdx_type is None:
         raise TypeError(f"Unknown component kind: {comp.kind!r}")
@@ -500,13 +836,22 @@ def emit_cyclonedx(result: ScanResult) -> dict[str, Any]:
     bom_props.setdefault("regulatory:disclaimer", ADVISORY_DISCLAIMER)
     metadata["properties"] = _properties_list(bom_props)
 
+    # C9 crypto dependency graph: index the algorithm assets once so certificate/
+    # protocol/material assets resolve their *Ref / cryptoRefArray links. Only a
+    # certificate naming an algorithm ABSENT from the inventory adds a synthesized
+    # asset (kept in ``synth``, appended after the scanned components).
+    index = _algorithm_index(result.components)
+    synth: dict[str, dict[str, Any]] = {}
+    components = [_emit_component(c, index, synth) for c in result.components]
+    components.extend(synth[ref] for ref in sorted(synth))
+
     bom: dict[str, Any] = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.6",
         "serialNumber": _serial_number(result),
         "version": 1,
         "metadata": metadata,
-        "components": [_emit_component(c) for c in result.components],
+        "components": components,
     }
 
     deps = _dependencies(result)
