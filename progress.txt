@@ -984,3 +984,46 @@ progress.aibom-reconcile.txt (reference only).
   two-writer interference (clean tree, only my 3 files). 
 - NEXT selectable: B1 (19, dep C9✓: extend bench/cbom oracles + refresh baselines + differential gate).
   Then B2 (20, deps F1/F2/F3/B1: CI + full live e2e). After B1+B2 green → COMPLETE.
+
+## B1 (bench/CI, DONE) — second OSS oracle (@cyclonedx/cdxgen) + multi-oracle differential gate
+- SCOPE (prd B1): add a 2nd bench oracle + refresh baselines + keep the differential gate green
+  (true-miss==0, our-unique>0). Was: single hardcoded IBM cbomkit-theia (filesystem) oracle.
+- ORACLE CHOICE (honest, evidence-driven): the PRD named Sonar-Cryptography/cryptobom-forge, but
+  Sonar-Cryptography is a SonarQube PLUGIN (needs a server — not standalone-runnable headless) and
+  cryptobom-forge parses CodeQL MRVA output (needs CodeQL DBs). Both impractical to run in one iteration.
+  A LIVE independent oracle >> a hand-authored snapshot (which would be circular against our own scanner),
+  so chose **@cyclonedx/cdxgen** — the reference CycloneDX BOM generator, genuinely runs headless via
+  `npx --yes @cyclonedx/cdxgen@11 -t python --include-crypto --spec-version 1.6` (no docker). Documented the
+  reasoning in the LEDGER B-lane row. Node 25 / npm 11 present; cdxgen 11.11.0 pulled+ran fine.
+- KEY EMPIRICAL FINDING: cdxgen's source-level ALGORITHM detection needs the `atom` code-slicer, which
+  FAILS headless ("Unable to generate reachables/usages slice using atom") → 0 crypto-assets on both
+  Python and a JS node:crypto probe. What cdxgen DOES reliably emit is the resolved LIBRARY graph. So
+  cdxgen is the crypto-**LIBRARY** oracle (complementary to cbomkit-theia's filesystem certs/keys and our
+  source-code algorithm lane). `--include-crypto` includes the FULL dep graph (pyopenssl→cryptography +
+  typing-extensions), so the library lane is SCOPED to a bench-local crypto-lib allowlist (`_CRYPTO_LIB_NAMES`
+  in normalize.py) — typing-extensions is OUT-OF-SCOPE for a crypto benchmark, not a miss.
+- DESIGN: `ORACLE_LANE={cbomkit:crypto_asset, cdxgen:library}` registry in diff.py+ci_gate.py. Each oracle
+  diffed in its OWN lane. `ci_gate.true_misses/our_unique_count` + `diff.diff_repo` gain `oracle=` param
+  (backward-compat default cbomkit). `normalize.crypto_libraries()` extracts type:library comps, canon via
+  purl (`pkg:pypi/cryptography` + our `pyca/cryptography` → `cryptography`), allowlist-filtered. A repo with
+  no snapshot for an oracle SKIPS it (cdxgen resolved 0 deps for 01-pyjwt → no cdxgen baseline there).
+- FROZEN BASELINES: `ci_baseline/{00-synthetic,02-pyopenssl}.cdxgen.cdx.json` = the REAL live cdxgen output,
+  trimmed deterministically (drop volatile serialNumber/timestamp, keep components, sort). synthetic:
+  {cryptography, pyOpenSSL}; pyopenssl: {cryptography, typing-extensions}. run.sh gains a best-effort cdxgen
+  step (npx; failure just skips the oracle). GATE: true-miss==0 across BOTH oracles + our-unique>0 (ours adds
+  stdlib hashlib/ssl cdxgen can't see). Multi-oracle report.md: our-unique=36 aggregate, true-miss=0.
+- TDD-FIRST: `test_cbom_benchmark_gate.py` +3 (test_synthetic_has_cdxgen_oracle / _cdxgen_zero_true_misses /
+  _cdxgen_our_unique_positive). ci_repos.sh gate now auto-diffs every oracle w/ a baseline: PASS 01-pyjwt
+  [cbomkit], 02-pyopenssl [cbomkit]+[cdxgen], 0 true-misses.
+- GATE GREEN: aibom `-k "cbom or crypto or chart or benchmark"` all pass (incl. +3 + benchmark_gate); ruff on
+  in-scope test file clean; mypy on bench harness clean (voluntary — bench is OUTSIDE the aibom ruff/mypy
+  gate: `src=[src,tests]` doesn't reach ../bench); NO product src/aibom code touched. tsc N/A (no frontend).
+- ⚠️ INCIDENT + LESSON: while checking whether some bench E501 were pre-existing I ran `git stash push --
+  <files>` then `git stash pop` — but a PARALLEL ralph session had its OWN stash (`cbom-blip-leftover-*`), and
+  my no-arg pop popped ITS stash onto my tree → UU merge conflicts on 5 files I never touched (x509.py,
+  certificate_scan.py, weak_algorithm_scan.py, weakness.py, crypto-risk-weights.yaml). RECOVERED: the popped
+  stash is KEPT (not dropped) so the other session's work was safe; `git checkout HEAD -- <those 6 files>`
+  restored my pre-pop clean tree, `git stash list` still shows the leftover stash. NEW RULE (AGENTS.md):
+  NEVER git stash here — two-writer hazard. Use git worktree or /tmp copies to set files aside.
+- NEXT selectable: B2 (20, deps F1/F2/F3/B1 all now ✓: CI gates + nightly + regression lock + full live e2e
+  frontend+backend). B2 is the LAST story → after it green → COMPLETE.

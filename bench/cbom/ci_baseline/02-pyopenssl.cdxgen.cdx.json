@@ -1,0 +1,36 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "bom-ref": "pkg:pypi/cryptography@49.0.0",
+      "name": "cryptography",
+      "purl": "pkg:pypi/cryptography@49.0.0",
+      "type": "library",
+      "version": "49.0.0"
+    },
+    {
+      "bom-ref": "pkg:pypi/typing-extensions@4.9",
+      "name": "typing-extensions",
+      "purl": "pkg:pypi/typing-extensions@4.9",
+      "type": "library",
+      "version": "4.9"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "name": "pyca/pyopenssl",
+      "type": "application"
+    },
+    "tools": {
+      "components": [
+        {
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "type": "application",
+          "version": "11.11.0"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6"
+}

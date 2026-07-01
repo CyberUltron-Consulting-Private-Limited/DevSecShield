@@ -89,3 +89,39 @@ def test_synthetic_our_unique_positive() -> None:
         "CBOM regression: our crypto lane no longer adds source-code crypto the "
         "filesystem oracle lacks (source algorithms / TLS / PQC / compliance)."
     )
+
+
+# --- B1: second oracle — @cyclonedx/cdxgen (crypto-library lane) --------------
+# cdxgen is the reference CycloneDX generator; its frozen snapshot resolves the
+# fixture's crypto libraries (cryptography, pyOpenSSL). Our C12 dependency-
+# manifest scanner must cover every crypto library it resolves (zero true miss),
+# while still adding the stdlib crypto modules (hashlib/ssl) cdxgen can't see.
+
+
+def test_synthetic_has_cdxgen_oracle() -> None:
+    # the frozen cdxgen baseline is committed for the synthetic fixture.
+    assert "cdxgen" in ci_gate.available_oracles("synthetic")
+
+
+def test_synthetic_cdxgen_zero_true_misses() -> None:
+    ours = _emit_ours(_FX)
+    try:
+        misses = ci_gate.true_misses("synthetic", ours, oracle="cdxgen")
+    finally:
+        os.unlink(ours)
+    assert misses == [], (
+        "CBOM regression: our crypto-library inventory now misses a crypto library "
+        f"the cdxgen oracle resolves (and it is not a documented FP): {misses}"
+    )
+
+
+def test_synthetic_cdxgen_our_unique_positive() -> None:
+    ours = _emit_ours(_FX)
+    try:
+        unique = ci_gate.our_unique_count("synthetic", ours, oracle="cdxgen")
+    finally:
+        os.unlink(ours)
+    assert unique > 0, (
+        "CBOM regression: our crypto-library lane no longer adds libraries the "
+        "cdxgen dependency-resolver lacks (stdlib hashlib/ssl / source-imported libs)."
+    )

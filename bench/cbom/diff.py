@@ -39,6 +39,7 @@ from pathlib import Path
 from normalize import (
     all_cert_key_evidence,
     crypto_family_root,
+    crypto_libraries,
     evidence_index,
     normalize,
 )
@@ -47,6 +48,11 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 BASELINE = HERE / "ci_baseline"
 EXCL_FILE = HERE / "fp-exclusions.json"
+
+# Oracle registry (B1). Each oracle is compared in its own LANE:
+#   cbomkit — IBM cbomkit-theia, FILESYSTEM oracle → crypto-asset lane.
+#   cdxgen  — @cyclonedx/cdxgen, DEPENDENCY oracle → crypto-library lane.
+ORACLE_LANE = {"cbomkit": "crypto_asset", "cdxgen": "library"}
 
 
 def _load_exclusions() -> list[dict]:
@@ -70,10 +76,15 @@ def _excluded(name: str, klass: str, repo: str, rules: list[dict]) -> str | None
     return None
 
 
-def _oracle_path(repo: str) -> Path:
+def _oracle_path(repo: str, oracle: str = "cbomkit") -> Path:
     """The committed frozen oracle snapshot, else a fresh out/ snapshot."""
-    snap = BASELINE / f"{repo}.cbomkit.cdx.json"
-    return snap if snap.exists() else OUT / f"{repo}.cbomkit.cdx.json"
+    snap = BASELINE / f"{repo}.{oracle}.cdx.json"
+    return snap if snap.exists() else OUT / f"{repo}.{oracle}.cdx.json"
+
+
+def _available_oracles(repo: str) -> list[str]:
+    """Oracles with either a frozen baseline or a fresh out/ snapshot for repo."""
+    return [o for o in ORACLE_LANE if _oracle_path(repo, o).exists()]
 
 
 def _repos() -> list[str]:
@@ -83,26 +94,45 @@ def _repos() -> list[str]:
     return sorted(ids)
 
 
-def _sets(repo: str) -> dict[str, set]:
+def _library_diff(repo: str, oracle: str, rules: list[dict]) -> dict:
+    """Crypto-library lane (cdxgen): oracle crypto-libs vs ours, FP-triaged."""
     ours_f = OUT / f"{repo}.ours.cdx.json"
-    orc_f = _oracle_path(repo)
+    orc_f = _oracle_path(repo, oracle)
+    ours = crypto_libraries(ours_f) if ours_f.exists() else set()
+    oracle_set = crypto_libraries(orc_f) if orc_f.exists() else set()
+    triaged, true_misses = [], []
+    for nm, tc in sorted(oracle_set - ours):
+        reason = _excluded(nm, tc, repo, rules)
+        triaged.append({"name": nm, "asset_class": tc, "fp": reason is not None, "reason": reason})
+        if reason is None:
+            true_misses.append((nm, tc))
     return {
-        "cbomkit": normalize(orc_f, "cbomkit") if orc_f.exists() else set(),
-        "ours": normalize(ours_f, "ours") if ours_f.exists() else set(),
+        "repo": repo,
+        "oracle": oracle,
+        "cbomkit": len(oracle_set),
+        "ours": len(ours),
+        "overlap": len(ours & oracle_set),
+        "misses_raw": len(oracle_set - ours),
+        "true_misses": [list(x) for x in true_misses],
+        "our_unique": sorted(list(x) for x in (ours - oracle_set)),
+        "triaged": triaged,
     }
 
 
-def diff_repo(repo: str, rules: list[dict]) -> dict:
-    s = _sets(repo)
-    oracle = s["cbomkit"]
-    ours = s["ours"]
-    misses = sorted(oracle - ours)
+def diff_repo(repo: str, rules: list[dict], oracle: str = "cbomkit") -> dict:
+    if ORACLE_LANE.get(oracle) == "library":
+        return _library_diff(repo, oracle, rules)
+    ours_f = OUT / f"{repo}.ours.cdx.json"
+    orc_f = _oracle_path(repo, oracle)
+    oracle_set = normalize(orc_f, "cbomkit") if orc_f.exists() else set()
+    ours = normalize(ours_f, "ours") if ours_f.exists() else set()
+    misses = sorted(oracle_set - ours)
     our_names = {n for n, _ in ours}
     our_algo_roots = {crypto_family_root(n) for n, t in ours if t == "algorithm"}
     ours_has_cert_or_key = any(
         t in ("certificate", "related-crypto-material") for _, t in ours
     )
-    orc_evidence = evidence_index(_oracle_path(repo)) if _oracle_path(repo).exists() else {}
+    orc_evidence = evidence_index(orc_f) if orc_f.exists() else {}
     triaged = []
     true_misses = []
     for nm, tc in misses:
@@ -139,52 +169,70 @@ def diff_repo(repo: str, rules: list[dict]) -> dict:
             true_misses.append((nm, tc))
     return {
         "repo": repo,
-        "cbomkit": len(oracle),
+        "oracle": "cbomkit",
+        "cbomkit": len(oracle_set),
         "ours": len(ours),
-        "overlap": len(ours & oracle),
+        "overlap": len(ours & oracle_set),
         "misses_raw": len(misses),
         "true_misses": [list(x) for x in true_misses],
-        "our_unique": sorted(list(x) for x in (ours - oracle)),
+        "our_unique": sorted(list(x) for x in (ours - oracle_set)),
         "triaged": triaged,
     }
+
+
+# human-facing oracle labels for the report.
+_ORACLE_LABEL = {
+    "cbomkit": "IBM cbomkit-theia (filesystem: certs/keys/secrets)",
+    "cdxgen": "@cyclonedx/cdxgen (dependency graph: crypto libraries)",
+}
 
 
 def main() -> int:
     rules = _load_exclusions()
     repos = [sys.argv[1]] if len(sys.argv) > 1 else _repos()
-    results = [diff_repo(r, rules) for r in repos]
+    # one row per (repo, oracle-with-a-snapshot); cbomkit first, then cdxgen.
+    results: list[dict] = []
+    for repo in repos:
+        oracles = _available_oracles(repo) or ["cbomkit"]
+        for o in oracles:
+            results.append(diff_repo(repo, rules, oracle=o))
 
     lines = [
-        "# CBOM benchmark — diff matrix (ours vs IBM cbomkit-theia)\n",
-        "Canonical key = (normalized_name, asset_class). Misses = "
-        "CBOMkit \\ Ours; triaged against `fp-exclusions.json`. The oracle is a "
-        "FILESYSTEM scanner (certs/keys/secrets); ours adds source-code algorithm "
-        "usage, TLS protocols, PQC grading and tri-state compliance — hence the "
-        "large our-unique column.\n",
-        "| repo | CBOMkit | Ours | overlap | raw-miss | **true-miss** | our-unique |",
-        "|------|--------:|-----:|--------:|---------:|--------------:|-----------:|",
+        "# CBOM benchmark — multi-oracle diff matrix\n",
+        "Canonical key = (normalized_name, asset_class). Each oracle is diffed in "
+        "its own LANE, triaged against `fp-exclusions.json`:\n",
+        "* **cbomkit** — IBM cbomkit-theia, a FILESYSTEM scanner (certs/keys/"
+        "secrets) → crypto-asset lane. Ours adds source-code algorithm usage, TLS "
+        "protocols, PQC grading and tri-state compliance it structurally can't see.\n",
+        "* **cdxgen** — @cyclonedx/cdxgen, a DEPENDENCY-graph SBOM tool → crypto-"
+        "library lane (known crypto libs only). Ours adds the stdlib crypto modules "
+        "(hashlib/ssl) and source-imported libs its manifest resolution can't see.\n",
+        "| repo | oracle | Oracle | Ours | overlap | raw-miss | **true-miss** | our-unique |",
+        "|------|--------|-------:|-----:|--------:|---------:|--------------:|-----------:|",
     ]
     agg_true = 0
     agg_unique = 0
-    for r in results:
-        tm = len(r["true_misses"])
+    for row in results:
+        tm = len(row["true_misses"])
         agg_true += tm
-        agg_unique += len(r["our_unique"])
+        agg_unique += len(row["our_unique"])
         lines.append(
-            f"| {r['repo']} | {r['cbomkit']} | {r['ours']} | {r['overlap']} | "
-            f"{r['misses_raw']} | **{tm}** | {len(r['our_unique'])} |"
+            f"| {row['repo']} | {row['oracle']} | {row['cbomkit']} | {row['ours']} | "
+            f"{row['overlap']} | {row['misses_raw']} | **{tm}** | {len(row['our_unique'])} |"
         )
-    lines.append(f"| **TOTAL** | | | | | **{agg_true}** | {agg_unique} |\n")
+    lines.append(f"| **TOTAL** | | | | | | **{agg_true}** | {agg_unique} |\n")
 
     any_true = False
-    for r in results:
-        if r["true_misses"]:
+    for row in results:
+        if row["true_misses"]:
             any_true = True
-            lines.append(f"### TRUE MISSES — {r['repo']} (fix our crypto scanner)")
-            for nm, tc in r["true_misses"]:
+            lines.append(
+                f"### TRUE MISSES — {row['repo']} [{row['oracle']}] (fix our crypto scanner)"
+            )
+            for nm, tc in row["true_misses"]:
                 lines.append(f"- `{tc}` **{nm}**")
     if not any_true:
-        lines.append("### TRUE MISSES — none across all repos ✅")
+        lines.append("### TRUE MISSES — none across all repos × oracles ✅")
 
     gate_pass = agg_true == 0 and agg_unique > 0
     lines.append(
@@ -197,15 +245,14 @@ def main() -> int:
         print(report)
     else:
         (HERE / "report.md").write_text(report)
-        state = {
-            r["repo"]: {
-                "cbomkit": r["cbomkit"],
-                "ours": r["ours"],
-                "true_misses": r["true_misses"],
-                "our_unique_count": len(r["our_unique"]),
+        state: dict = {}
+        for row in results:
+            state.setdefault(row["repo"], {})[row["oracle"]] = {
+                "oracle_assets": row["cbomkit"],
+                "ours": row["ours"],
+                "true_misses": row["true_misses"],
+                "our_unique_count": len(row["our_unique"]),
             }
-            for r in results
-        }
         (HERE / "state" / "benchmark.json").write_text(json.dumps(state, indent=2))
         print(report)
     return 0 if gate_pass else 1

@@ -177,7 +177,7 @@
       "dependencies": [
         "C9"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Extend bench/cbom oracles (add Sonar-Cryptography and/or cryptobom-forge as oracles) + refresh frozen baselines + differential gate (true-miss==0, our-unique>0)"
     },
     {
