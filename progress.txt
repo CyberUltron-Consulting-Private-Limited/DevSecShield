@@ -150,3 +150,36 @@ progress.aibom-reconcile.txt (reference only).
   detection change beyond the table is RETAINING the ML-KEM/ML-DSA parameter in the normalized key.
 - Next selectable after R4 = R5 (compliance frameworks research). R5/C1/C11/C12 etc. also open.
 ---
+
+## R5 (research, DONE) — compliance frameworks → graph-queryable checks (PCI/FIPS/BSI/1800-38C)
+- RESEARCH story = NO product code → build gate N/A. Gate met = 5 new ledger rows (R5 section in
+  docs/cbom-research/LEDGER.md, one per new framework + the shared strength fact) + R5 gap-list + R5
+  arch notes + 1 appended BUILD story (C15) + C8 title/deps updated + prd.json valid JSON (26 stories,
+  R5 True, next selectable = C1). Validated with json.load + next-selectable one-liner.
+- GROUNDED IN THE LANE FIRST (not docstrings): compliance.py ALREADY ships 5 frameworks
+  (nist_1800_38b/nist_800_57/omb_m_23_02/eu_cra/eu_dora) with reusable graph helpers
+  (weak_algorithms/weak_protocols/undersized_keys/ecb_modes/hardcoded_key_material/quantum_vulnerable/
+  self_signed_certs). R5's job = the FOUR named-but-uncovered frameworks: PCI-DSS 4.0.1, FIPS 140-3,
+  BSI TR-02102-1, NIST SP 1800-38C. Most requirements map to EXISTING helpers → C8's scope; C8 must
+  NOT re-implement them (reuse map is in the ledger arch notes).
+- KEY EVIDENCE FACTS: PCI-DSS 4.0.1 "strong cryptography" = industry-tested ≥112-bit effective (NIST) =
+  AES-128+/RSA-2048+/ECC-P256+/SHA-256+; Req 4.2.1 TLS 1.2+ (no RC4/3DES/CBC/SSL), 12.3.3 cipher-suite
+  inventory, 3.6.1.1 key lifecycle (manual). FIPS 140-3 = SP 800-140C Approved-security-functions
+  ALLOWLIST + SP 800-131A key floors; CMVP module validation is a runtime fact a source scan can't prove
+  (manual). BSI TR-02102-1 (v2026-01) = ≥120-bit security level, STRICTER floors RSA/DH≥3000 / EC≥250,
+  AES-only symmetric, endorses ML-KEM/FrodoKEM+hybrid. SP 1800-38C = the quantum-DISCOVERY half
+  (complements 1800-38B readiness we already ship) → QR-1 discovery-complete / QR-2 q-v surfaced /
+  QR-3 hybrid-present / QR-4 interop-test (manual).
+- DISCIPLINE (mirrors R3/R4): only ONE genuinely-uncovered capability appended — C15, a classical
+  effective-security-strength GRADE (`crypto:securityStrengthBits` via SP 800-57 Table 2) + an
+  APPROVED_ALGORITHM allowlist. It's a GRAPH FACT (scanner-lane enrichment, parallel to C7's
+  nistQuantumSecurityLevel), NOT a framework check — the exact R4 precedent (CNSA's C14 needed C7's
+  positive grade first; PCI ≥112 / BSI ≥120 / FIPS-approved can't be answered until C15 emits the bits).
+  TWO lane gaps C15 closes: (a) no per-asset security-strength number (only a coarse WEAK/MOD/STRONG
+  enum); (b) no positive APPROVED allowlist (rules.WEAK_ALGORITHMS is a DENY-list; FIPS/BSI are
+  allowlist frameworks — same wall CNSA hit). Also flagged: undersized_keys hardcodes ONE 2048 floor →
+  C8 must parameterize it for BSI's 3000/250.
+- C15 priority 12.8 (dep C7), slots after C7(12) before C8(13). C8 deps gained C15 + title now names the
+  4 frameworks. CBOM_FRAMEWORKS grows 5→9; _has_crypto applicability must register the 4 new keys.
+- Next selectable after R5 = C1 (the whole BUILD lane starts: clean-room AST crypto-API scanner core).
+---

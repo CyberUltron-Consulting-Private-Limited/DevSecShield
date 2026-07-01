@@ -162,6 +162,88 @@ Current lane state (grounded in `pqc.py` / `pqc_scan.py` / `rules.py` / `algorit
 - **New/threaded property + flag surface** (for I1/F1/F2 later): `crypto:nistQuantumSecurityLevel` now populated for ALL assets (drives a PQC-readiness gauge + a quantum-safe/at-risk split), `crypto:hybrid`, `crypto:pqcMigrationTarget` (now sized), plus the CNSA-2.0 framework rows in the compliance tri-state matrix. F2 (PQC gauge + quantum-vulnerable list + roadmap panel) consumes these.
 - **APPENDED C14** uses fractional priority 13.5 (dep C7 + C8) to slot after C8 (13) and before C9 (14) — it needs the graded/parameterized assets (C7) and the compliance framework infra (C8). Selection logic (lowest-priority `passes:false`, deps met) handles the fraction fine.
 
+## R5 — Compliance frameworks → graph-queryable checks (technique/framework rows)
+
+R5 studies the **crypto-regulatory frameworks** named in the story title and maps EACH to checks our
+tri-state engine can answer from the crypto graph. `compliance.py` already ships five frameworks
+(`nist_1800_38b`, `nist_800_57`, `omb_m_23_02`, `eu_cra`, `eu_dora`); R5's job is the FOUR not yet
+covered — **NIST SP 1800-38C, FIPS 140-3, PCI-DSS 4.0.1, BSI TR-02102-1** — plus the graph fact they all
+depend on. Like R3/R4, most gaps ENRICH the existing BUILD story (**C8** — "expanded tri-state
+frameworks"); only ONE genuinely-uncovered capability is appended (**C15**, a *classical
+security-strength grade* — an emitted GRAPH FACT, distinct from a framework check, that PCI/BSI/FIPS all
+query, exactly as CNSA's C14 needed C7's positive quantum grade first).
+
+Grounded in the ACTUAL lane (not docstrings): `compliance.py` checks QUERY `crypto:` properties on
+`crypto_asset` components (assetType/primitive/keySize/mode/quantumVulnerable/selfSigned/materialKind/
+nistQuantumSecurityLevel/pqcMigrationTarget) and NEVER read `result.flags`. Reusable graph helpers already
+exist: `weak_algorithms`/`weak_protocols` (pure `weak_finding` predicate), `undersized_keys` (primitive∈
+pke/signature/key-agree & keySize<2048), `ecb_modes`, `hardcoded_key_material`, `quantum_vulnerable`,
+`self_signed_certs`. The ONE fact none of them expose is a per-asset **effective security strength in
+bits** (SP 800-57 comparable-strength) — needed to answer PCI "strong cryptography" (≥112-bit) and BSI
+"security level ≥120 bits" *generically* rather than per-algorithm hardcoding, and the current
+`undersized_keys` hardcodes a single 2048-bit floor that BSI's stricter RSA≥3000/EC≥250 cannot express.
+
+| capability | source framework/standard (studied as spec) | public-spec evidence (URL) | how WE re-implement (graph-queryable check, original) | gap vs current lane | story | status |
+|---|---|---|---|---|---|---|
+| **PCI-DSS 4.0.1 crypto requirements** → `pci_dss_4` framework: PCI-1 strong cryptography only (industry-tested, ≥112-bit effective per NIST — AES-128+/RSA-2048+/ECC P-256+/SHA-256+); PCI-2 TLS 1.2+ for PAN over open networks (no RC4/3DES/CBC/SSL); PCI-3 no keys embedded with/near the data they protect; PCI-4 cryptographic cipher-suite + protocol inventory maintained (Req 12.3.3); PCI-5 key-management lifecycle (3.6.1.1) + PAN-rendered-unreadable (3.5.1) = manual | PCI Security Standards Council PCI DSS v4.0.1 (Req 3.5/3.6/4.2.1/4.2.1.1/12.3.3 + glossary "Strong Cryptography") | https://www.pcisecuritystandards.org/document_library/ ; https://www.qcecuring.com/blog/pci-dss-4-cryptography-requirements ; https://www.appviewx.com/blogs/decoding-the-pci-dss-v4-0-cryptographic-requirements/ | Tri-state framework querying the graph: PCI-1 = every `algorithm` asset has `securityStrengthBits≥112` (C15) AND `weak_finding` returns nothing; PCI-2 = reuse `weak_protocols` (TLS<1.2/SSL→fail) + the C13 `WEAK_CIPHER_SUITE` predicate once it lands (RC4/3DES/CBC); PCI-3 = reuse `hardcoded_key_material`; PCI-4 = `protocols` carry `crypto:cipherSuite` (inventory present) else fail, "reviewed annually" = `register_manual`; PCI-5 = `register_manual` (key lifecycle + PAN-unreadable are operational, not inventory facts). Our own framework, coverage=pass/(pass+fail). | No PCI framework. TLS-version + weak-algo + hardcoded-key checks EXIST as helpers but are not assembled under PCI requirement ids; the ≥112-bit "strong cryptography" test has no graph fact to read. | C8 (+ C15 for strength) | pending |
+| **FIPS 140-3 approved-algorithm ALLOWLIST** → `fips_140_3` framework (allowlist model, like CNSA C14 — NOT a deny-list): FIPS-1 only SP 800-140C Approved security functions in use (AES, SHA-2/SHA-3, RSA/ECDSA/EdDSA per FIPS 186-5, ML-KEM/ML-DSA/SLH-DSA, HMAC, approved KDFs); FIPS-2 SP 800-131A key floors (RSA/DH/DSA≥2048, ECC≥224, AES≥128, SHA≥224); FIPS-3 no disallowed legacy (MD5, DES, RC4, Blowfish, 2-key-3DES, SHA-1-for-signatures, ECB where prohibited); FIPS-4 CMVP-validated module = manual | FIPS PUB 140-3 + SP 800-140C (Approved Security Functions) + SP 800-131A (transitions) | https://csrc.nist.gov/pubs/fips/140-3/final ; https://csrc.nist.gov/projects/cryptographic-module-validation-program/sp-800-140-series-supplemental-information/sp800-140c ; https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.140-3.pdf | FIPS-1 = an `APPROVED_ALGORITHM` allowlist predicate (C15) over each asset's canonical `crypto:` name/primitive; not-in-list → fail (the allowlist inversion of `weak_algorithms`' deny-list). FIPS-2 = reuse `undersized_keys` + per-primitive floors (AES≥128, SHA≥224). FIPS-3 = reuse `weak_algorithms` + `ecb_modes`. FIPS-4 = `register_manual` (a source inventory cannot prove the RUNTIME module carries a CMVP certificate). Our own allowlist + framework. | No FIPS framework; the lane has a weak/deprecated DENY-list (`rules.WEAK_ALGORITHMS`) but no positive APPROVED allowlist, so "is every algorithm FIPS-approved?" is unanswerable. | C8 (+ C15 allowlist) | pending |
+| **BSI TR-02102-1 (2026-01) approved mechanisms + stricter floors** → `bsi_tr_02102` framework (allowlist + ≥120-bit level, stricter than NIST): BSI-1 approved symmetric = AES only (128/192/256; no DES/3DES/RC4/Blowfish); BSI-2 minimum security level 120 bits; BSI-3 asymmetric floors RSA/DH≥3000, ECC≥250 (stricter than the 2048/224 floor); BSI-4 approved hash SHA-256/384/512 + SHA-3 (no MD5/SHA-1); BSI-5 authenticated modes / no ECB; BSI-6 quantum-safe/hybrid endorsed (ML-KEM/FrodoKEM + hybrid) = advisory pass_with_evidence | BSI TR-02102-1 "Cryptographic Mechanisms: Recommendations and Key Lengths" v2026-01 | https://www.bsi.bund.de/SharedDocs/Downloads/EN/BSI/Publications/TechGuidelines/TG02102/BSI-TR-02102-1.html ; https://cybercompliancewatch.org/bsi-tr-02102-1/ | BSI-1/BSI-4 = allowlist predicate (C15) restricted to the BSI-approved symmetric/hash set; BSI-2 = `securityStrengthBits≥120` (C15, stricter than PCI's 112); BSI-3 = a **parameterizable** key-floor helper (BSI floor RSA≥3000/EC≥250, NOT the hardcoded 2048) — generalize `undersized_keys(min_bits=…)`; BSI-5 = reuse `ecb_modes`; BSI-6 = PQC/hybrid presence (`crypto:hybrid` or ML-KEM asset from C7) → pass_with_evidence else `register_manual`. Our own framework + BSI floor constants. | No BSI framework. `undersized_keys` hardcodes ONE 2048-bit floor — cannot express BSI's stricter RSA≥3000/EC≥250; no 120-bit-security-level notion; no BSI symmetric/hash allowlist. | C8 (+ C15 strength/allowlist + parameterized floor) | pending |
+| **NIST SP 1800-38C quantum-readiness (discovery + interop)** → `nist_1800_38c` framework (the discovery-tool's own deliverables): QR-1 cryptographic discovery complete = inventory enumerates every algorithm primitive with evidence locations (no `crypto:primitive==unknown`); QR-2 quantum-vulnerable algorithms surfaced for the migration/test plan; QR-3 hybrid/interoperable PQC present (X25519MLKEM768 etc.); QR-4 interop + performance testing executed in a non-prod lab = manual | NIST SP 1800-38C "Quantum Readiness: Testing Draft Standards for Interoperability and Performance" (NCCoE) | https://csrc.nist.gov/pubs/sp/1800/38/iprd-(1) ; https://www.nccoe.nist.gov/crypto-agility-considerations-migrating-post-quantum-cryptographic-algorithms ; https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38c-preliminary-draft.pdf | QR-1 = reuse the OMB-1 pattern (no unidentified-primitive assets); QR-2 = reuse `quantum_vulnerable` (surface, don't fail-if-present — this is a discovery deliverable); QR-3 = `crypto:hybrid` OR any ML-KEM/ML-DSA asset present → pass else not_bom_evidenceable (hybrid interop is a lab activity a static inventory partially evidences); QR-4 = `register_manual` (interop/perf testing is an NCCoE lab procedure, not a code fact). Our own framework — the DISCOVERY half of 1800-38 that complements 1800-38B's readiness half we already ship. | Only SP 1800-38**B** (readiness) is modelled; 1800-38**C** (discovery-completeness + hybrid-interop testing) has no framework — our source scanner IS a discovery tool, so QR-1/QR-2/QR-3 are naturally graph-evidenceable. | C8 | pending |
+| **Classical effective-security-strength GRADE + approved-algorithm allowlist** (the shared graph fact) — `crypto:securityStrengthBits` per algorithm asset via the SP 800-57 comparable-strength table (AES-128→128, AES-256→256, RSA-2048→112, RSA-3072→128, RSA-15360→256, P-256→128, P-384→192, SHA-256→128-collision, 3DES→112/broken); + an `APPROVED_ALGORITHM(framework)` allowlist predicate FIPS/BSI query | NIST SP 800-57 Pt.1 Rev.5 Table 2 (comparable algorithm strengths) + SP 800-131A Rev.3 (transitions) | https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final ; https://csrc.nist.gov/pubs/sp/800/131/a/r3/ipd | An ENRICHMENT pass (parallel to C7's `nistQuantumSecurityLevel` grading — likely extends `pqc_scan`/a new `strength_scan`) emitting `crypto:securityStrengthBits` for every `algorithm` asset from a clean-room SP 800-57 Table-2 map keyed by normalized primitive+keySize+curve; PLUS a per-framework `APPROVED_ALGORITHM` allowlist set (FIPS-approved / BSI-approved) used by the allowlist checks. SCANNERS EMIT, compliance QUERIES — never a framework-side re-derivation. Our own table + allowlist. | The lane has NO per-asset security-strength number (only a coarse WEAK/MODERATE/STRONG `crypto:strength` enum) and NO positive approved-algorithm allowlist — so ≥112-bit (PCI) / ≥120-bit (BSI) / FIPS-approved (140-3) are all unanswerable from the graph today. | **C15 (NEW)** | pending |
+
+### R5 gap-list — where our compliance lane is thinner than the crypto-regulatory framework set (leverage-ordered, evidence-backed)
+
+1. **No per-asset security-strength number.** The single most reusable gap: PCI (≥112-bit), BSI (≥120-bit
+   level) and FIPS (approved strengths) all need a graph fact — SP 800-57 comparable-strength bits — that
+   the lane never computes; only a coarse WEAK/MODERATE/STRONG enum + a single hardcoded 2048-bit floor
+   exist. → **C15 (new)** emits `crypto:securityStrengthBits`; **C8** queries it.
+2. **No positive approved-algorithm allowlist.** `rules.WEAK_ALGORITHMS` is a DENY-list; FIPS-140-3 and
+   BSI-TR-02102 are ALLOWLIST frameworks ("is EVERY algorithm approved?"), the inversion the lane lacks
+   (CNSA's C14 hit the same wall for PQC). → **C15** allowlist predicate; **C8** FIPS/BSI checks.
+3. **`undersized_keys` hardcodes one 2048-bit floor.** BSI's stricter RSA≥3000 / EC≥250 cannot be
+   expressed; the floor must be parameterizable per framework. → **C8** (generalize the helper) + **C15**.
+4. **Four named frameworks unmodelled.** PCI-DSS 4.0.1, FIPS 140-3, BSI TR-02102-1, NIST SP 1800-38C have
+   no `Requirement`/check rows; their inventory-evidenceable requirements map cleanly to existing helpers
+   (weak/undersized/ECB/hardcoded/quantum-vulnerable) + the new strength grade. → **C8**.
+5. **Manual / not_bom_evidenceable requirements must be honestly declared** (not silently passed): CMVP
+   module validation (FIPS-4), key-management lifecycle + PAN-rendered-unreadable (PCI-5), annual cipher
+   inventory review (PCI-4 cadence), and interop/perf lab testing (QR-4) are operational/process artifacts
+   a crypto inventory cannot prove → `register_manual` (they surface as their own tri-state count, never
+   inflate coverage). → **C8**.
+6. **Where we are already at-or-ahead:** five frameworks already graph-queried across NIST/OMB/EU with the
+   locked tri-state vocabulary (broader than cbomkit's single quantum-safe allowlist); the SP 1800-38C
+   discovery deliverables (QR-1/QR-2/QR-3) are *naturally* evidenceable because ours is a SOURCE scanner
+   (a discovery tool), so our compliance breadth stays large by design.
+
+### R5 architecture notes (for C8 / C15)
+
+- **The predicate/emitter/compliance split is preserved.** C15 is a SCANNER-lane enrichment that EMITS a
+  graph fact (`crypto:securityStrengthBits`) — mirroring how C7's `pqc_scan` enriches
+  `crypto:nistQuantumSecurityLevel` in place; the C4 emitter passes unknown `crypto:` props through
+  untouched, so C15 needs NO emitter change. C8's framework checks QUERY that fact + the existing helpers,
+  never re-derive strength and never read flags (`test_compliance_never_reads_flags` must still pass).
+- **C15 is the appended story because it's a GRAPH FACT, not a framework check** — the exact R4 precedent
+  (CNSA's C14 could not exist until C7 emitted a positive `nistQuantumSecurityLevel`; PCI/BSI/FIPS cannot
+  answer "strong enough?" until C15 emits `securityStrengthBits`). Everything else R5 found IS "add a
+  framework" = C8's stated scope, so no further stories fragment out.
+- **Allowlist vs deny-list are different check MODELS but the same tri-state runner.** FIPS/BSI checks
+  invert the deny-list: `not APPROVED_ALGORITHM(fw, asset)` → fail. This reuses `run_framework`
+  (coverage=pass/(pass+fail)) unchanged — only the predicate flips. Keep the allowlist SETS in C15 (a data
+  table) so C8 stays check-assembly only.
+- **Reuse map (C8 must not re-implement):** PCI-2/QR-2 reuse `weak_protocols`/`quantum_vulnerable`;
+  PCI-3 reuses `hardcoded_key_material`; PCI-1/FIPS-2/BSI-3 reuse a *parameterized* `undersized_keys`
+  (+ C15 strength); FIPS-3/BSI-5 reuse `weak_algorithms`/`ecb_modes`; QR-1 reuses the OMB-1
+  unidentified-primitive pattern; QR-3/BSI-6 read `crypto:hybrid`/ML-KEM presence (C7). New per-framework
+  constants only: the SP 800-57 strength table + FIPS/BSI allowlists + BSI stricter floors (all C15/C8
+  data, no new detection).
+- **CBOM_FRAMEWORKS grows to nine** (`nist_1800_38b`, `nist_800_57`, `omb_m_23_02`, `eu_cra`, `eu_dora`,
+  **`pci_dss_4`, `fips_140_3`, `bsi_tr_02102`, `nist_1800_38c`**); the shared `_has_crypto` applicability
+  must register for the four new keys too (no-crypto repo → all out_of_scope, never a 0% false-fail). The
+  new framework rows thread through the scan-metadata → compliance-matrix contract (I1/F3).
+- **APPENDED C15** uses fractional priority 12.8 (dep C7 — pairs with the quantum-grade enrichment pass) to
+  slot after C7 (12) and before C8 (13); **C8's dependency set gains C15** and its title names the four
+  frameworks. Selection logic (lowest-priority `passes:false`, deps met) handles the fraction fine.
+
 ## Rules
 - No reading-and-pasting OSS source. Learn from docs, papers, schema, and observed output only.
 - OSS tools run ONLY in `bench/cbom/` as oracles; never on the product import path.
