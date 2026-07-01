@@ -133,6 +133,19 @@ STANDARD_ALGORITHMS: dict[str, dict] = {
                  "quantum_vulnerable": False},
     "falcon": {"primitive": "signature", "strength": _STRONG,
                "quantum_vulnerable": False},
+    # PQC stateful-hash signatures (NIST SP 800-208; CNSA 2.0 firmware signing).
+    # Hash-based => quantum-safe (Grover only halves preimage strength).
+    "lms": {"primitive": "signature", "strength": _STRONG,
+            "quantum_vulnerable": False},
+    "hss": {"primitive": "signature", "strength": _STRONG,
+            "quantum_vulnerable": False},
+    "xmss": {"primitive": "signature", "strength": _STRONG,
+             "quantum_vulnerable": False},
+    # Hybrid / composite key-establishment (classical KEX xor PQC KEM). The whole
+    # construction is quantum-safe: an attacker must break BOTH halves. Graded at
+    # its ML-KEM component's NIST category (C7 grader).
+    "hybrid": {"primitive": "key-agree", "strength": _STRONG,
+               "quantum_vulnerable": False},
 }
 
 
@@ -161,6 +174,28 @@ ALGORITHM_NORMALIZE: dict[str, str] = {
     "hkdf": "HKDF", "hmac": "HMAC", "cmac": "CMAC", "poly1305": "Poly1305",
     "kyber": "CRYSTALS-Kyber", "dilithium": "CRYSTALS-Dilithium",
     "sphincs+": "SPHINCS+", "falcon": "FALCON",
+    "lms": "LMS", "hss": "HSS", "xmss": "XMSS", "hybrid": "Hybrid ML-KEM",
+}
+
+# PQC family -> FIPS 203/204/205 canonical spelling, used to build the SIZED
+# display name when a parameter set is captured (``ML-KEM-768`` vs the unsized
+# research name ``CRYSTALS-Kyber``). Only applied when a parameter is present, so
+# an unsized detection (``new MLKEMEngine(0)``) keeps its ALGORITHM_NORMALIZE name.
+PQC_FIPS_NAME: dict[str, str] = {
+    "kyber": "ML-KEM",
+    "dilithium": "ML-DSA",
+    "sphincs+": "SLH-DSA",
+    "falcon": "FALCON",
+}
+
+# Valid NIST parameter sets per PQC family (guards the parameter extractor so a
+# stray digit — e.g. ``MLKEMEngine(0)`` — is never mistaken for a parameter set).
+PQC_PARAM_SETS: dict[str, frozenset[str]] = {
+    "kyber": frozenset({"512", "768", "1024"}),
+    "dilithium": frozenset({"44", "65", "87"}),
+    "sphincs+": frozenset({"128", "192", "256"}),
+    "falcon": frozenset({"512", "1024"}),
+    "hybrid": frozenset({"512", "768", "1024"}),  # the ML-KEM component's set
 }
 
 # Whole-token aliases -> canonical algorithm key (port: LITERAL_ALGO_ALIASES).
@@ -184,7 +219,8 @@ LITERAL_ALGO_ALIASES: dict[str, str] = {
     "argon2": "argon2", "hkdf": "hkdf",
     "kyber": "kyber", "mlkem": "kyber", "dilithium": "dilithium",
     "mldsa": "dilithium", "sphincs": "sphincs+", "slhdsa": "sphincs+",
-    "falcon": "falcon",
+    "falcon": "falcon", "lms": "lms", "hss": "hss", "xmss": "xmss",
+    "xmssmt": "xmss",
 }
 
 # JWT "alg" header values -> component algorithm keys (port: JWT_ALG_MAP).

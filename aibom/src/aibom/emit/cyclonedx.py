@@ -332,8 +332,12 @@ def _algorithm_properties(props: dict[str, str]) -> dict[str, Any]:
     primitive = props.get("crypto:primitive")
     if primitive in _CDX_PRIMITIVE:
         algo["primitive"] = primitive
+    # RSA/AES carry a bit-length key size; PQC assets a parameter-set identifier
+    # (ML-KEM-768 -> "768") — both render into ``parameterSetIdentifier``.
     if props.get("crypto:keySize"):
         algo["parameterSetIdentifier"] = props["crypto:keySize"]
+    elif props.get("crypto:parameterSet"):
+        algo["parameterSetIdentifier"] = props["crypto:parameterSet"]
     if props.get("crypto:curve"):
         algo["curve"] = props["crypto:curve"]
     mode = props.get("crypto:mode")

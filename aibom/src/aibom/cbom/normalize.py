@@ -72,6 +72,9 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "quantum_vulnerable": props.get("crypto:quantumVulnerable") == "true",
         "nist_quantum_security_level": int(nqsl) if nqsl is not None else None,
         "pqc_migration_target": props.get("crypto:pqcMigrationTarget"),
+        "pqc_migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
+        "parameter_set": props.get("crypto:parameterSet"),
+        "hybrid": props.get("crypto:hybrid") == "true",
         "weak": any(c in _WEAKNESS_CODES for c in codes),
         "finding_codes": codes,
         "description": description,
@@ -101,8 +104,14 @@ def _weakness_distribution(result: ScanResult) -> dict[str, int]:
 
 
 def _pqc_readiness(assets: list[AIComponent]) -> dict[str, Any]:
-    """PQC readiness over algorithm assets: quantum-vulnerable vs quantum-safe."""
-    vulnerable = safe = 0
+    """PQC readiness over algorithm assets: quantum-vulnerable vs quantum-safe.
+
+    Carries the C7 grading surface for the PQC gauge / roadmap panel (F2):
+    hybrid-KEX count and the NIST quantum-security-level histogram (0 = vulnerable,
+    1-5 = quantum-safe category).
+    """
+    vulnerable = safe = hybrid = 0
+    level_dist: dict[str, int] = {}
     for c in assets:
         props = c.properties or {}
         if props.get("crypto:assetType") != "algorithm":
@@ -111,12 +120,19 @@ def _pqc_readiness(assets: list[AIComponent]) -> dict[str, Any]:
             vulnerable += 1
         else:
             safe += 1
+        if props.get("crypto:hybrid") == "true":
+            hybrid += 1
+        level = props.get("crypto:nistQuantumSecurityLevel")
+        if level is not None:
+            level_dist[level] = level_dist.get(level, 0) + 1
     graded = vulnerable + safe
     readiness = round(safe / graded * 100, 1) if graded else None
     return {
         "quantum_vulnerable": vulnerable,
         "quantum_safe": safe,
+        "hybrid": hybrid,
         "readiness_pct": readiness,
+        "nist_level_distribution": dict(sorted(level_dist.items())),
     }
 
 

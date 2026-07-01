@@ -20,7 +20,7 @@ the flag, the C4 emitter RENDERS the property. It computes no risk.
 
 from __future__ import annotations
 
-from aibom.cbom.pqc import pqc_grade
+from aibom.cbom.pqc import nist_quantum_level, pqc_grade
 from aibom.cbom.registry import cbom_register
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -35,14 +35,24 @@ class PQCReadinessScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         for comp in ctx.components:
+            # C7 positive grading: EVERY gradeable algorithm asset (quantum-safe
+            # included) carries its NIST category, so a report can state an asset
+            # is quantum-safe (cat 1-5), not only that a vulnerable one is 0.
+            level = nist_quantum_level(comp)
+            if level is not None:
+                props = comp.properties or {}
+                props["crypto:nistQuantumSecurityLevel"] = str(level)
+                comp.properties = props
+
+            # Vulnerable assets additionally get the migration target + roadmap
+            # and raise the QUANTUM_VULNERABLE flag the scorer weights.
             grade = pqc_grade(comp)
             if grade is None:
                 continue
             props = comp.properties or {}
-            props["crypto:nistQuantumSecurityLevel"] = str(
-                grade.nist_quantum_security_level
-            )
             props["crypto:pqcMigrationTarget"] = grade.migration_target
+            if grade.migration_roadmap:
+                props["crypto:pqcMigrationRoadmap"] = grade.migration_roadmap
             comp.properties = props
             ctx.add_flag(
                 grade.code,

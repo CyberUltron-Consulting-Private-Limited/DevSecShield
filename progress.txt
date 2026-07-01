@@ -583,3 +583,41 @@ progress.aibom-reconcile.txt (reference only).
   C5/C6/C13 precedent). No two-writer interference this iteration (clean tree).
 - Next selectable after C16 = C7 (12, dep R4: PQC readiness — nistQuantumSecurityLevel grading, ML-KEM/
   ML-DSA/SLH-DSA detection, hybrid + migration roadmap).
+
+## C7 (build, DONE) — PQC readiness: positive nistQuantumSecurityLevel grading + param retention + hybrid + roadmap
+- SCOPE (ledger R4 rows 138-162): turned the vulnerable-ONLY level-0 grader into a TOTAL
+  `pqc.nist_quantum_level(component) -> int|None` over the 5 NIST PQC categories (anchors:
+  Cat1=AES-128, Cat2=SHA-256 collision, Cat3=AES-192, Cat4=SHA-384, Cat5=AES-256). AES-256->5,
+  SHA-384->4, ML-KEM-768->3, ML-DSA-87->5, SLH-DSA-256->5, FALCON-512->1, LMS/XMSS->2 (SHA-256
+  anchored stateful-hash), RSA/ECC/DH/DSA->0. `pqc_scan` now tags EVERY gradeable algo asset
+  `crypto:nistQuantumSecurityLevel` (not just vulnerable). pqc.py stays the PURE grader; scanner APPLIES.
+- PARAM RETENTION: added `Detection.parameter` + `detect.extract_pqc_parameter(line,key)` (family-anchored,
+  validated against `rules.PQC_PARAM_SETS`) + broadened kyber/dilithium/sphincs literals for fused sized
+  spellings (`MLKEM768`/`MLDSA87`); algorithm_scan emits `crypto:parameterSet` and builds the SIZED FIPS
+  display name (`ML-KEM-768`) ONLY when a param is captured — an unsized `new MLKEMEngine(0)` keeps
+  "CRYSTALS-Kyber" so the FROZEN jvm-go test (`"CRYSTALS-Kyber" in names`) stays green. FIPS-name map =
+  `rules.PQC_FIPS_NAME`.
+- HYBRID: new `hybrid` canonical key + a LITERAL that matches fused `X25519MLKEM768`/`SecP384r1MLKEM1024`.
+  KEY INSIGHT: the bare X25519/ML-KEM literals CANNOT fire inside the fused token (no word boundary before
+  `MLKEM`), so a hybrid is ONE `crypto:hybrid=true` key-agree asset graded at its ML-KEM category (768->3,
+  1024->5) — never split into a vulnerable-X25519 + safe-Kyber pair. Named "Hybrid ML-KEM-<set>".
+- ROADMAP: `sized_migration_target(component)` maps classical strength (SP 800-57 Table-2: RSA-2048->112b,
+  RSA-15360->256b, P-256->128b) to a SIZED PQC target (`ML-KEM-768/ML-DSA-65` vs `-1024/-87`), emitted as
+  `crypto:pqcMigrationRoadmap`. The unsized `crypto:pqcMigrationTarget` is UNCHANGED (frozen manifest
+  `pqc_migration_targets` compatibility). Flag message now cites BOTH the NIST 2030/2035 timeline AND the
+  CNSA 2.0 NSS milestones (message asserts only substrings so it stayed compatible).
+- GOTCHA (cost 0 runs, caught pre-test): the GLOBAL `dsa` literal `\bDSA\b` FALSE-MATCHED the "DSA" inside
+  PQC "SLH-DSA"/"ML-DSA" (hyphen is a \b) -> a phantom quantum-vulnerable DSA asset. Fixed to
+  `(?<![-\w])DSA\b` (reject a preceding hyphen/letter). Java `withDSA` uses JAVA_LITERALS (no leading \b)
+  so unaffected; verified all frozen fixtures unchanged. Also: `MLKEM\d`/fused tokens have no \b after
+  KEM/DSA, so an explicit `\bMLKEM\d{3,4}\b` alternative is REQUIRED alongside the dashed `\bML-?KEM\b`.
+- FRONTEND: NONE this iteration (F2 surfaces the PQC gauge/roadmap distinctly; C5/C6/C13/C16 precedent).
+  normalize.py threads the new surface additively: findings gain `parameter_set`/`hybrid`/
+  `pqc_migration_roadmap`; the `pqc` distribution gains `hybrid` count + `nist_level_distribution` for F2.
+- GATE: new test_cbom_pqc_readiness.py (19) + full cbom/crypto/detect suite 271 passed + benchmark_gate
+  (true-miss==0) + chart-data-contract + CDX emit_and_validate on synthetic-crypto-pqc (parameterSetIdentifier
+  from crypto:parameterSet, levels 1-5 schema-valid) + ruff + mypy clean (7 files). `.venv/bin/python`
+  interpreter (system py 3.9 breaks `str | None`). The 2 AIBOM `test_differential.py` chroma-provider/
+  framework recall failures are PRE-EXISTING (re-confirmed: fail identically with C7 stashed) — unrelated to CBOM.
+- Next selectable after C7 = C15 (12.8, dep C7: classical securityStrengthBits + approved-algo allowlist)
+  or C14 (13.5, dep C7+C8: CNSA 2.0 compliance framework — now unblocked, needs C8 too).

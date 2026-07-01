@@ -106,7 +106,7 @@
       "dependencies": [
         "R4"
       ],
-      "passes": false,
+      "passes": true,
       "title": "PQC readiness: nistQuantumSecurityLevel grading, quantum-vulnerable flagging, ML-KEM/ML-DSA/SLH-DSA detection, hybrid + migration roadmap"
     },
     {

@@ -34,6 +34,7 @@ from aibom.cbom.rules import (
     CRYPTO_IMPORT_MODULES_BY_LANG,
     CRYPTO_LIBRARY_PACKAGES,
     LANGUAGE_EXTENSIONS,
+    PQC_FIPS_NAME,
     algo_info,
     match_dep_coordinate,
 )
@@ -86,10 +87,25 @@ def _refine_key(key: str, key_size: int | None) -> str:
     return key
 
 
-def _display_name(key: str, explicit_key_size: int | None, mode: str | None) -> str:
+def _display_name(
+    key: str,
+    explicit_key_size: int | None,
+    mode: str | None,
+    parameter: str | None = None,
+) -> str:
     """Build the asset display name. Only a key size found EXPLICITLY on the
     source line is folded into the name (so RSA-2048 vs RSA-1024 separate); a
-    table-default size (e.g. 3DES's 168) is NOT, to avoid noisy names."""
+    table-default size (e.g. 3DES's 168) is NOT, to avoid noisy names.
+
+    A captured PQC ``parameter`` set switches the name to the sized FIPS spelling
+    (``ML-KEM-768``); without one, the unsized research name is kept
+    (``CRYSTALS-Kyber``) so an unparameterized ``new MLKEMEngine(0)`` is stable.
+    Hybrid assets read ``Hybrid ML-KEM-<set>``.
+    """
+    if key == "hybrid":
+        return f"Hybrid ML-KEM-{parameter}" if parameter else "Hybrid ML-KEM"
+    if parameter and key in PQC_FIPS_NAME:
+        return f"{PQC_FIPS_NAME[key]}-{parameter}"
     base = ALGORITHM_NORMALIZE.get(key, key.upper())
     if explicit_key_size and not re.search(rf"\b{explicit_key_size}\b", base):
         info = algo_info(key) or {}
@@ -102,10 +118,10 @@ def _display_name(key: str, explicit_key_size: int | None, mode: str | None) -> 
 
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "padding",
-                 "operation", "info", "location")
+                 "operation", "parameter", "info", "location")
 
     def __init__(self, key, name, key_size, mode, curve, padding, operation,
-                 info, location):
+                 parameter, info, location):
         self.key = key
         self.name = name
         self.key_size = key_size
@@ -113,6 +129,7 @@ class _Asset:
         self.curve = curve
         self.padding = padding
         self.operation = operation
+        self.parameter = parameter
         self.info = info
         self.location = location
 
@@ -137,12 +154,12 @@ def _detect_assets(root: Path) -> list[_Asset]:
             refined = _refine_key(det.key, det.key_size)
             info = algo_info(refined) or {}
             resolved_ks = det.key_size or info.get("key_size")
-            name = _display_name(refined, det.key_size, det.mode)
+            name = _display_name(refined, det.key_size, det.mode, det.parameter)
             ident = (name, rel)
             if ident not in seen:
                 seen[ident] = _Asset(
                     refined, name, resolved_ks, det.mode, det.curve,
-                    det.padding, det.operation, info, rel
+                    det.padding, det.operation, det.parameter, info, rel
                 )
     return sorted(seen.values(), key=lambda a: (a.name, a.location))
 
@@ -374,6 +391,10 @@ class CryptoAlgorithmScanner(Scanner):
                 props["crypto:padding"] = asset.padding
             if asset.operation:
                 props["crypto:operation"] = asset.operation
+            if asset.parameter:
+                props["crypto:parameterSet"] = asset.parameter
+            if asset.key == "hybrid":
+                props["crypto:hybrid"] = "true"
             ctx.add_component(
                 CryptoAssetComponent(
                     bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",

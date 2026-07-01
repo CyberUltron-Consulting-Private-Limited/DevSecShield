@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 
 from aibom.cbom.rules import (
     LITERAL_ALGO_ALIASES,
+    PQC_PARAM_SETS,
     algo_info,
     extract_curve,
     extract_key_size,
@@ -124,6 +125,11 @@ class Detection:
     curve: str | None = None
     padding: str | None = None
     operation: str | None = None  # "encrypt" | "sign" | None (see ROLE_OPERATION)
+    # PQC parameter set (ML-KEM-768 -> "768", ML-DSA-87 -> "87", ...): retained so
+    # the C7 grader can map the set to its NIST security category. None when the
+    # spelling carries no set (``new MLKEMEngine(0)``). Distinct from ``key_size``
+    # (a bit length) — a PQC set identifier is a category label, not a bit count.
+    parameter: str | None = None
     library: str | None = None
     receiver_bound: bool = False  # True when a receiver+method rule matched
 
@@ -318,16 +324,34 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("x25519", re.compile(r"\bX25519\b", _F)),
     ("ecdh", re.compile(r"\bECDH\b", _F)),
     ("dh", re.compile(r"\bDiffieHellman\b|\bcreateDiffieHellman\b", _F)),
-    ("dsa", re.compile(r"\bDSA\b", _F)),
+    # Plain DSA, but NOT the "DSA" inside PQC "ML-DSA" / "SLH-DSA" (a hyphen or
+    # letter before "DSA" is the PQC form, graded separately as dilithium/sphincs).
+    ("dsa", re.compile(r"(?<![-\w])DSA\b", _F)),
     ("pbkdf2", re.compile(r"\bPBKDF2", _F)),
     ("scrypt", re.compile(r"\bscrypt\b", _F)),
     ("argon2", re.compile(r"\bargon2\b", _F)),
     ("bcrypt", re.compile(r"\bbcrypt\b", _F)),
     ("hkdf", re.compile(r"\bHKDF\b", _F)),
     ("hmac", re.compile(r"\bHMAC\b", _F)),
-    ("kyber", re.compile(r"\bKyber\b|\bML-?KEM\b", _F)),
-    ("dilithium", re.compile(r"\bDilithium\b|\bML-?DSA\b", _F)),
-    ("sphincs+", re.compile(r"\bSPHINCS\+?\b|\bSLH-?DSA\b", _F)),
+    # Hybrid / composite KEX FIRST (fused ``X25519MLKEM768``): the leading \b of
+    # the bare X25519 / ML-KEM patterns can't fire inside the fused token (no word
+    # boundary before ``MLKEM``), but matching hybrid up front documents intent.
+    ("hybrid", re.compile(
+        r"\b(?:X25519|X448|SecP256r1|SecP384r1|P256|P384)"
+        r"(?:MLKEM|Kyber)\d{3,4}\b", _F)),
+    # PQC KEM / signatures. The fused sized spellings (``MLKEM768``/``MLDSA87``)
+    # have no word boundary after ``KEM``/``DSA``, so an explicit ``MLKEM\d`` /
+    # ``MLDSA\d`` alternative is needed alongside the dashed ``ML-KEM`` form.
+    ("kyber", re.compile(r"\bKyber\d*\b|\bML-?KEM\b|\bMLKEM\d{3,4}\b", _F)),
+    ("dilithium", re.compile(r"\bDilithium\d*\b|\bML-?DSA\b|\bMLDSA\d{2,3}\b", _F)),
+    ("sphincs+", re.compile(r"\bSPHINCS\+?\d*\b|\bSLH-?DSA\b|\bSLHDSA\d{3}\b", _F)),
+    # FN-DSA / FALCON — sized only (bare "falcon" is an AMBIGUOUS_TOKENS word).
+    ("falcon", re.compile(r"\bFALCON[-_]?(?:512|1024)\b", _F)),
+    # Stateful-hash signatures (SP 800-208 / CNSA 2.0). XMSS/XMSS^MT, LMS, HSS as
+    # standalone uppercase tokens — crypto-specific enough at word boundaries.
+    ("xmss", re.compile(r"\bXMSS(?:\^?MT)?\b", _F)),
+    ("lms", re.compile(r"\bLMS\b", _F)),
+    ("hss", re.compile(r"\bHSS\b", _F)),
 )
 
 
@@ -680,6 +704,31 @@ def _apply_rule(
     return det
 
 
+# PQC parameter-set extraction (C7). Each family's set is captured from the line
+# it appears on, anchored to the family token so an unrelated digit is never
+# mistaken for a set. ``hybrid`` reuses the ML-KEM extractor (the parameter is the
+# ML-KEM component's set). Only a member of ``PQC_PARAM_SETS[key]`` is accepted.
+_PQC_PARAM_RE: dict[str, re.Pattern[str]] = {
+    "kyber": re.compile(r"(?:Kyber|ML-?KEM)[-_]?(\d{3,4})", _F),
+    "dilithium": re.compile(r"(?:Dilithium|ML-?DSA)[-_]?(\d{2,3})", _F),
+    "sphincs+": re.compile(r"(?:SPHINCS\+?|SLH-?DSA)[-_]?(\d{3})", _F),
+    "falcon": re.compile(r"FALCON[-_]?(\d{3,4})", _F),
+    "hybrid": re.compile(r"(?:Kyber|ML-?KEM)[-_]?(\d{3,4})", _F),
+}
+
+
+def extract_pqc_parameter(line: str, key: str) -> str | None:
+    """The NIST parameter set for a PQC ``key`` on ``line`` (or None)."""
+    pat = _PQC_PARAM_RE.get(key)
+    if pat is None:
+        return None
+    m = pat.search(line)
+    if not m:
+        return None
+    param = m.group(1)
+    return param if param in PQC_PARAM_SETS.get(key, frozenset()) else None
+
+
 def _merge(into: Detection, other: Detection) -> None:
     """Coalesce two same-key detections on one line — non-empty params win."""
     into.key_size = into.key_size or other.key_size
@@ -687,6 +736,7 @@ def _merge(into: Detection, other: Detection) -> None:
     into.curve = into.curve or other.curve
     into.padding = into.padding or other.padding
     into.operation = into.operation or other.operation
+    into.parameter = into.parameter or other.parameter
     into.library = into.library or other.library
     into.receiver_bound = into.receiver_bound or other.receiver_bound
 
@@ -740,6 +790,7 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                 key_size=explicit_ks,
                 mode=mode,
                 curve=curve,
+                parameter=extract_pqc_parameter(line, key),
             )
             if key in per_line:
                 _merge(per_line[key], lit)
@@ -779,6 +830,7 @@ __all__ = [
     "build_symbols",
     "strip_noncode",
     "canonical_key",
+    "extract_pqc_parameter",
     "ROLE_KEY_SIZE",
     "ROLE_MODE",
     "ROLE_CURVE",
