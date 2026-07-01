@@ -216,7 +216,7 @@
       "dependencies": [
         "C3"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room multi-ecosystem dependency-MANIFEST crypto-library scanner (R2): parse pom.xml/build.gradle + go.mod + package.json + Cargo.toml + *.csproj/packages.config into crypto:role=library assets via a CRYPTO_DEP_COORDINATES map (Maven/Go/npm/crate/NuGet), extending the Python-only _detect_libraries"
     },
     {

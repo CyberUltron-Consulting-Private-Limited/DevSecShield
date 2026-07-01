@@ -316,3 +316,45 @@ progress.aibom-reconcile.txt (reference only).
   DotNetCrypto.cs}` (distinct name from the parallel Ralph's fixtures). Test
   `tests/test_cbom_detect_native_apis.py` (13). Frozen synthetic-crypto-app UNCHANGED (scoped lanes never
   run on Python) -> benchmark true-miss==0 preserved.
+
+## C12 (build, DONE) — clean-room multi-ecosystem dependency-MANIFEST crypto-library scanner
+- SCOPE: extend the Python-only `_detect_libraries` (requirements.txt/pyproject + imports) to Maven/Go/
+  npm/Cargo/NuGet DECLARED deps. NO new scanner file (honors the AGENTS.md convention that library->asset
+  detection lives in algorithm_scan's `_detect_libraries`, not a 2nd engine). rules.py gains
+  `CRYPTO_DEP_COORDINATES` (ecosystem -> coordinate -> label) + `match_dep_coordinate`; algorithm_scan gains
+  `_detect_manifest_libraries` + per-ecosystem parsers, merged as section "1b" of `_detect_libraries`.
+- MATCHING RULES (the interesting part): Maven coord = `groupId:artifactId`, matched EXACT then `group:*`
+  wildcard (a vendor ships many artifacts — bcprov/bcpkix/bctls all = Bouncy Castle; so jjwt-api resolves
+  via `io.jsonwebtoken:*`). Go = module PATH matched exact OR longest-prefix (`golang.org/x/crypto/ssh` ->
+  root; `github.com/golang-jwt/jwt/v5` -> `github.com/golang-jwt/jwt`). npm/crate/nuget = case-folded exact.
+- PARSERS are conservative + clean-room (NO OSS manifest parser bundled): pom.xml pairs groupId+artifactId
+  WITHIN each `<dependency>` block (regex over `<dependency>...</dependency>`, DOTALL — do NOT globally
+  findall groupIds/artifactIds or you mis-pair them); build.gradle = quoted `group:artifact[:ver]` tokens;
+  go.mod = `path vX` lines (version starts with `v`); package.json = stdlib `json` over deps/devDeps/
+  optional/peer (guarded: non-dict section or invalid json -> []); Cargo.toml = section-tracked
+  `[dependencies]`/`[dev-*]`/`[build-*]` incl. `[dependencies.<crate>]` sub-table form (header's 2nd dotted
+  part IS the crate); *.csproj = `<PackageReference Include="...">` (matched by SUFFIX, not name); 
+  packages.config = `<package id="...">`.
+- GOTCHA (deterministic source when a label appears in TWO manifests): `_detect_manifest_libraries` iterates
+  `sorted(root.rglob("*"))` and uses `setdefault`, so first-seen path wins. ASCII sort puts UPPERCASE
+  filenames before lowercase (`CryptoSvc.csproj` < `build.gradle` < `pom.xml`). My first fixture put
+  BouncyCastle in BOTH pom.xml AND the csproj -> "Bouncy Castle" source resolved to the csproj (came first),
+  breaking `== "pom.xml"`. FIX: keep each library in ONE manifest in the fixture (csproj now NSec +
+  Konscious Argon2, pom keeps Bouncy Castle) so source assertions are unambiguous. Real repos can collide;
+  that's fine (setdefault is deterministic), but fixtures should isolate to keep tests readable.
+- NuGet regex FRAGILITY: a triple-quoted raw string ending in `...\"""` (escaped-quote then closer) parses
+  but is confusing; use single-quote raw delimiters `r'...Include\s*=\s*"([^"]+)"'` instead.
+- ORACLE DELTA = 0: the manifest lane fires ONLY on manifest files; frozen synthetic-crypto-app has only
+  requirements.txt (already handled) + no pom/go.mod/etc, so its counts + benchmark true-miss==0 are
+  UNCHANGED. No frontend this iteration — C12 emits the SAME `crypto:role=library` framework shape C1
+  already emits (new-capability surfacing is F1), so the existing normalizer->charts contract handles it.
+- FIXTURE `tests/fixtures/synthetic-crypto-manifests/{pom.xml,build.gradle,go.mod,package.json,Cargo.toml,
+  CryptoSvc.csproj,packages.config}` (each includes a NON-crypto dep — commons-lang3/express/serde/
+  Newtonsoft.Json/log4net/cobra/junit — asserted NOT inventoried). Test `test_cbom_manifest_libraries.py`
+  (15: 8 integration via `scan_crypto` + 7 unit parser/resolver). GATE: full cbom suite 170 passed
+  (`-k cbom --ignore test_cbom_web_native_crypto_scan.py`); ruff + mypy clean on rules.py/algorithm_scan.py
+  + test. Interpreter: `uv run python` (system python is 3.9, project needs 3.10+ `str | None`).
+- TWO-WRITER: the parallel Ralph's untracked `web_native_crypto_scan.py` + `test_cbom_web_native_crypto_scan.py`
+  + `synthetic-crypto-{web-native,multilang}` fixtures are STILL uncommitted and NOT in scanners/__init__.py
+  (5 committed scanners). I ran the gate with `--ignore` on that test and committed ONLY my C12 paths
+  (never `git add -A`).

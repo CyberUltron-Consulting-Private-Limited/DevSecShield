@@ -340,6 +340,131 @@ CRYPTO_IMPORT_MODULES_BY_LANG: dict[str, dict[str, str]] = {
 }
 
 # --------------------------------------------------------------------------- #
+# Dependency-MANIFEST crypto-library coordinates (C12). The Python-only
+# ``CRYPTO_LIBRARY_PACKAGES`` above reads requirements.txt / pyproject; this map
+# does the same job for the other ecosystems' declared dependencies — Maven
+# (pom.xml / build.gradle), Go (go.mod), npm (package.json), Cargo (Cargo.toml)
+# and NuGet (*.csproj / packages.config) — keyed by that ecosystem's native
+# coordinate so a crypto library is inventoried the moment it is DECLARED, not
+# only where it is imported. Keys are stored lowercase (coordinates are matched
+# case-folded). Maven supports a ``group:*`` group-wildcard (a vendor ships many
+# artifacts — bcprov/bcpkix/bctls all = Bouncy Castle); Go is matched by longest
+# module-path prefix (so ``golang.org/x/crypto/ssh`` resolves to the root).
+# --------------------------------------------------------------------------- #
+CRYPTO_DEP_COORDINATES: dict[str, dict[str, str]] = {
+    # Maven: "groupId:artifactId" (exact) or "groupId:*" (any artifact).
+    "maven": {
+        "org.bouncycastle:*": "Bouncy Castle",
+        "com.google.crypto.tink:*": "Google Tink",
+        "org.conscrypt:*": "Conscrypt",
+        "io.jsonwebtoken:*": "JJWT",
+        "com.nimbusds:nimbus-jose-jwt": "Nimbus JOSE+JWT",
+        "org.mindrot:jbcrypt": "jBCrypt",
+        "at.favre.lib:bcrypt": "favre bcrypt",
+        "de.mkammerer:argon2-jvm": "argon2-jvm",
+        "com.password4j:password4j": "Password4j",
+        "org.wildfly.security:*": "WildFly Elytron",
+    },
+    # Go: module path (matched by exact or longest-prefix so subpaths resolve).
+    "go": {
+        "golang.org/x/crypto": "golang.org/x/crypto",
+        "github.com/golang-jwt/jwt": "golang-jwt",
+        "github.com/dgrijalva/jwt-go": "jwt-go",
+        "github.com/cloudflare/circl": "CIRCL (PQC)",
+        "filippo.io/age": "age",
+        "filippo.io/edwards25519": "edwards25519",
+        "github.com/minio/sha256-simd": "sha256-simd",
+    },
+    # npm: package name (including scoped "@scope/name").
+    "npm": {
+        "node-forge": "node-forge",
+        "crypto-js": "crypto-js",
+        "tweetnacl": "TweetNaCl",
+        "libsodium-wrappers": "libsodium.js",
+        "libsodium-wrappers-sumo": "libsodium.js",
+        "jsonwebtoken": "jsonwebtoken",
+        "jose": "jose (npm)",
+        "bcrypt": "bcrypt (npm)",
+        "bcryptjs": "bcrypt (npm)",
+        "elliptic": "elliptic",
+        "sjcl": "SJCL",
+        "@noble/hashes": "noble-hashes",
+        "@noble/curves": "noble-curves",
+        "@noble/ciphers": "noble-ciphers",
+        "argon2": "argon2 (npm)",
+    },
+    # Cargo: crate name.
+    "crate": {
+        "ring": "ring (Rust)",
+        "aes-gcm": "RustCrypto",
+        "aes": "RustCrypto",
+        "chacha20poly1305": "RustCrypto",
+        "sha2": "RustCrypto",
+        "sha1": "RustCrypto",
+        "sha3": "RustCrypto",
+        "md-5": "RustCrypto",
+        "hmac": "RustCrypto",
+        "rsa": "RustCrypto",
+        "ed25519-dalek": "RustCrypto",
+        "p256": "RustCrypto",
+        "p384": "RustCrypto",
+        "pbkdf2": "RustCrypto",
+        "argon2": "RustCrypto",
+        "rustls": "Rustls",
+        "openssl": "rust-openssl",
+        "sodiumoxide": "sodiumoxide",
+        "orion": "orion",
+        "pqcrypto": "PQClean (pqcrypto)",
+    },
+    # NuGet: package id (from *.csproj PackageReference / packages.config).
+    "nuget": {
+        "bouncycastle.cryptography": "Bouncy Castle",
+        "bouncycastle": "Bouncy Castle",
+        "portable.bouncycastle": "Bouncy Castle",
+        "nsec.cryptography": "NSec",
+        "libsodium": "libsodium",
+        "sodium.core": "libsodium",
+        "bcrypt.net-next": "BCrypt.Net",
+        "konscious.security.cryptography.argon2": "Konscious Argon2",
+        "jose-jwt": "jose-jwt",
+        "system.identitymodel.tokens.jwt": "Microsoft JWT",
+        "system.security.cryptography.cng": ".NET (System.Security.Cryptography)",
+        "system.security.cryptography.pkcs": ".NET (System.Security.Cryptography)",
+    },
+}
+
+
+def match_dep_coordinate(ecosystem: str, coordinate: str) -> str | None:
+    """Resolve a declared dependency ``coordinate`` to a crypto-library label.
+
+    ``maven`` coordinates (``group:artifact``) try an exact match then a
+    ``group:*`` wildcard; ``go`` module paths match exactly or by longest prefix
+    (``golang.org/x/crypto/ssh`` -> ``golang.org/x/crypto``); the flat ecosystems
+    (``npm``/``crate``/``nuget``) match the case-folded name exactly.
+    """
+    table = CRYPTO_DEP_COORDINATES.get(ecosystem)
+    if not table:
+        return None
+    low = coordinate.strip().lower()
+    if not low:
+        return None
+    if ecosystem == "maven":
+        if low in table:
+            return table[low]
+        group = low.split(":", 1)[0]
+        return table.get(f"{group}:*")
+    if ecosystem == "go":
+        best_len = -1
+        best_label: str | None = None
+        for key, label in table.items():
+            matched = low == key or low.startswith(key + "/")
+            if matched and len(key) > best_len:
+                best_len, best_label = len(key), label
+        return best_label
+    return table.get(low)
+
+
+# --------------------------------------------------------------------------- #
 # Parametrization extraction (THE ADDED PIECE). Pulls key size / mode / curve
 # out of the same source line the algorithm was detected on, so a usage resolves
 # to RSA-2048 vs RSA-1024 and AES-GCM vs AES-ECB rather than a flat "RSA"/"AES".
@@ -409,6 +534,8 @@ __all__ = [
     "CRYPTO_LIBRARY_PACKAGES",
     "CRYPTO_IMPORT_MODULES",
     "CRYPTO_IMPORT_MODULES_BY_LANG",
+    "CRYPTO_DEP_COORDINATES",
+    "match_dep_coordinate",
     "algo_info",
     "extract_key_size",
     "extract_mode",
