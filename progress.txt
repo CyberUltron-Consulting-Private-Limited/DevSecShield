@@ -382,3 +382,39 @@ progress.aibom-reconcile.txt (reference only).
 - Fixtures: openssl is an AUTHORING tool for static .crt files (allowed) — never a product dep. C4-extend
   follow-ups still open: EXPIRING_CERTIFICATE (near-expiry, needs a `today` param) + PROBLEMATIC_CA_CERTIFICATE
   (untrusted-issuer deny-list); `*Ref` separate sig/pubkey algorithm assets belong to C9.
+
+## C5 (build, DONE) — protocol scanner: IPsec/IKE detection + SSH/IKEv1 version-weakness
+- SCOPE (ledger row 107/118): the existing protocol_scan.py already did TLS/SSH + versions + cipher
+  tokens. C5's real deltas were (a) a 3rd protocol family **IPsec/IKE** and (b) completing the
+  version-weakness signal for the non-TLS families. The cipher-suite/kex/transform WEAKNESS catalog
+  (RC4/DES/modp1024 = SWEET32/weak-DH) is a SEPARATE predicate story (C13) — C5 only CARRIES the tokens.
+- IPsec detection needs a SECOND file iterator: `ipsec.conf`/`swanctl.conf`/`ipsec.secrets`/`racoon.conf`
+  have NO code extension so `_iter_source_files` (filters on LANGUAGE_EXTENSIONS) skips them. Added
+  `_iter_ipsec_configs` matching by exact filename (`p.name.lower() in _IPSEC_CONFIG_NAMES`). GOTCHA: I
+  first named the fixture `ipsec_legacy.conf` → matcher wants exact `ipsec.conf` → silently not scanned;
+  renamed to `ipsec.conf` (real strongSwan name). swanctl.conf matched fine (exact). Source files ALSO
+  get an IPsec pass gated on `_IPSEC_USE` (strongswan/libreswan/charon/IKEv[12]/ipsec/xfrm) so a .py
+  referencing the API still inventories.
+- IKE version: `_IKE_VERSION` = `\bIKEv([12])\b` (IGNORECASE catches `ikev1` in `keyexchange=ikev1`).
+  swanctl.conf has NO ikev token — it uses `version = 2`; so `_IKE_VERSION_CONF` (`version\s*=\s*([12])`)
+  is a FALLBACK applied ONLY when `is_config` (never on arbitrary source — `version = 2` is too generic).
+- Weakness is VERSION-only in C5: IKEv1→weak, IKEv2→strong; SSH-1.x→weak (added `crypto:strength` to the
+  SSH lane which previously set none), SSH-2.0→strong. All flow through the SAME pure `weak_finding`
+  protocol branch (keys off `crypto:strength=="weak"`), which I generalized: `_WEAK_PROTOCOL_RATIONALE`
+  map by protocolType (tls→RFC8996, ssh→CVE-2001-0361 use SSH-2.0, ipsec/ike→RFC9395 migrate IKEv2) so the
+  message names the right deprecated version instead of a TLS-only string. Same code (WEAK_PROTOCOL) + sev.
+- Transform tokens: `_IPSEC_TRANSFORM` = `(?:aes\w*|3des|des|null|chacha20\w*)-(?:sha\w*|md5|aesxcbc|
+  poly1305)(?:-(?:modp\d+|ecp\d+|x25519|curve25519))?` — the optional DH-group tail is greedy so
+  `ike=3des-md5-modp1024` yields the full token while `esp=3des-md5` yields the short one; both land in the
+  sorted `crypto:cipherSuite` set. Stored under `crypto:cipherSuite` (same bag as TLS) so C9's cryptoRefArray
+  emission stays uniform across protocol families.
+- REGRESSION SAFETY: no existing fixture contains any IPsec marker (grepped strongswan/libreswan/ikev/ipsec
+  across tests/fixtures → 0 hits outside synthetic-crypto-protocols) → no phantom IPsec asset on any frozen
+  fixture → synthetic-crypto-app counts + bench/cbom differential true-miss==0 UNCHANGED. Confirmed:
+  benchmark_gate green, full cbom suite 194 passed.
+- Fixture `tests/fixtures/synthetic-crypto-protocols/{ipsec.conf (IKEv1/3des weak), swanctl.conf (IKEv2/aes256
+  strong), ssh_legacy.py (SSH-1.5 weak)}`. Test `test_cbom_protocol_ipsec.py` (12: pipeline + predicate +
+  lane-isolation). ruff+mypy clean on protocol_scan.py/weakness.py. Interpreter `uv run python` (system py 3.9).
+- NO frontend this iteration: C5 emits the SAME `crypto:assetType=protocol` shape the normalizer→charts
+  contract already handles; `ipsec` is just another protocolType value. Surfacing the IPsec asset-type /
+  IKE-version breakdown in CbomResults is F1's scope (chart-data-contract test stayed green untouched).

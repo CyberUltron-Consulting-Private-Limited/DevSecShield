@@ -88,7 +88,7 @@
       "dependencies": [
         "R3"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Protocol scanner: TLS/SSH/IPsec versions + cipher suites from config/source; emit protocol crypto-assets with weakness flags"
     },
     {
@@ -226,7 +226,7 @@
         "C5"
       ],
       "passes": false,
-      "title": "Clean-room cipher-suite & SSH/IPsec-negotiation weakness catalog (R3): WEAK_CIPHER_SUITE predicate over emitted protocol cipher-suite/SSH-algo/IKEv2-transform tokens — NULL/anon/EXPORT/RC4/DES/3DES/CBC-SHA1 (SWEET32/FREAK/Logjam/Lucky13) + weak SSH kex/host-key/cipher + weak IKEv2 transforms, with attack-named rationale; extends weakness.py (predicate separate from C5 emission)"
+      "title": "Clean-room cipher-suite & SSH/IPsec-negotiation weakness catalog (R3): WEAK_CIPHER_SUITE predicate over emitted protocol cipher-suite/SSH-algo/IKEv2-transform tokens \u2014 NULL/anon/EXPORT/RC4/DES/3DES/CBC-SHA1 (SWEET32/FREAK/Logjam/Lucky13) + weak SSH kex/host-key/cipher + weak IKEv2 transforms, with attack-named rationale; extends weakness.py (predicate separate from C5 emission)"
     },
     {
       "id": "C14",

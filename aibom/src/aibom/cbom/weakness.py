@@ -70,6 +70,21 @@ _MODE_SUFFIXES = ("-GCM", "-CBC", "-ECB", "-CTR", "-CFB", "-OFB", "-XTS", "-CCM"
 # disallow RSA/DSA/DH below 2048.
 _MIN_ASYMMETRIC_BITS = 2048
 
+# Per-protocol-family rationale for a WEAK_PROTOCOL finding, so the message names
+# the right deprecated version + migration target instead of a TLS-only string.
+_WEAK_PROTOCOL_RATIONALE: dict[str, str] = {
+    "tls": "TLS below 1.2 / SSL is deprecated (RFC 8996); negotiate TLS 1.2+ "
+    "(prefer 1.3).",
+    "ssh": "SSH protocol 1.x is cryptographically broken (CVE-2001-0361); use "
+    "SSH-2.0 only.",
+    "ipsec": "IKEv1 is deprecated (RFC 9395); migrate the tunnel to IKEv2.",
+    "ike": "IKEv1 is deprecated (RFC 9395); migrate the tunnel to IKEv2.",
+}
+_WEAK_PROTOCOL_RATIONALE_DEFAULT = (
+    "a deprecated protocol version is in use; migrate to the current, "
+    "non-deprecated version."
+)
+
 
 def _base_key(name: str) -> str | None:
     """Recover the canonical algorithm key from a crypto_asset display name.
@@ -112,11 +127,14 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
         if props.get("crypto:strength") == "weak":
             version = props.get("crypto:protocolVersion")
             ver = f" {version}" if version else ""
+            rationale = _WEAK_PROTOCOL_RATIONALE.get(
+                props.get("crypto:protocolType", ""),
+                _WEAK_PROTOCOL_RATIONALE_DEFAULT,
+            )
             return (
                 WEAK_PROTOCOL,
                 _SEV,
-                f"Weak transport protocol {name}{ver}: TLS below 1.2 / SSL is "
-                f"deprecated (RFC 8996); negotiate TLS 1.2+ (prefer 1.3).",
+                f"Weak transport protocol {name}{ver}: {rationale}",
             )
         return None
 

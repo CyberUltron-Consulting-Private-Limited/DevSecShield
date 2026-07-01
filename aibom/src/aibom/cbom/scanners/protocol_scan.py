@@ -1,14 +1,19 @@
-"""CBOM scanner (C3): cryptographic **protocols** (TLS / SSH).
+"""CBOM scanner (C3 + C5): cryptographic **protocols** (TLS / SSH / IPsec).
 
-The third of the four CycloneDX 1.6 crypto-asset lanes (after C1's *algorithm*
-and C2's *certificate / related-crypto-material* lanes). It inventories transport
+The third of the CycloneDX 1.6 crypto-asset lanes (after C1's *algorithm* and
+C2's *certificate / related-crypto-material* lanes). It inventories transport
 crypto protocols in use, with the detail CycloneDX ``protocolProperties`` carries:
 
 * **TLS / SSL** — a negotiated or pinned TLS context (``ssl.SSLContext``,
   ``PROTOCOL_TLS*``, ``set_ciphers``, ``wrap_socket``) plus any pinned protocol
   **version** (``TLSv1.0`` / ``ssl.TLSVersion.TLSv1`` / ``SSLv3`` …) and **cipher
   suites** (OpenSSL ``ECDHE-RSA-AES128-SHA`` or IANA ``TLS_..._WITH_...``);
-* **SSH** — an SSH client/library usage (paramiko, ``SSHClient``, ``ssh://`` …).
+* **SSH** — an SSH client/library usage (paramiko, ``SSHClient``, ``ssh://`` …),
+  with the pinned wire version (``SSH-2.0`` / ``SSH-1.5``);
+* **IPsec / IKE** (C5) — strongSwan / libreswan config (``ipsec.conf`` /
+  ``swanctl.conf`` / ``ipsec.secrets``) or source references, carrying the
+  negotiated **IKE version** (``IKEv1`` / ``IKEv2``) and the transform / proposal
+  tokens (``3des-md5-modp1024`` / ``aes256-sha256-modp3072``).
 
 Each detected protocol becomes ONE ``crypto_asset`` component per (type, file):
 multiple version/cipher tokens in the same file collapse to a single protocol
@@ -16,12 +21,15 @@ asset carrying the **weakest** (lowest) pinned version, so the fixture's
 ``tls_config.py`` — which mentions ``TLSv1.0`` both as a string and as
 ``ssl.TLSVersion.TLSv1`` — yields exactly one TLS 1.0 asset, not two.
 
-Lane discipline: this EMITS components only. The weak-protocol FLAG (TLS < 1.2)
-is the scorer's job (C5/C8); the CycloneDX crypto-asset serialization is C4. The
-inventory signal C5 reads is ``crypto:strength`` (``weak`` for TLS < 1.2 / any
-SSL), mirroring the algorithm lane. Prose is never scanned: docstrings, block
-comments and trailing line comments are blanked first, so a comment like
-``# below the TLS 1.2 floor`` cannot inventory a phantom TLS 1.2 protocol.
+Lane discipline: this EMITS components only + sets ``crypto:strength`` on the
+protocol **version** (``weak`` for TLS < 1.2 / any SSL, SSH protocol 1.x, IKEv1).
+The pure ``weak_finding`` predicate turns that into a ``WEAK_PROTOCOL`` flag and
+C8 WEIGHTS it; the CycloneDX crypto-asset serialization is C9. The cipher-suite /
+kex / transform *weakness catalog* (RC4/DES/modp1024 = SWEET32 / weak-DH) is a
+separate predicate story (C13); C5 only CARRIES those tokens for it. Prose is
+never scanned: docstrings, block comments and trailing line comments are blanked
+first, so a comment like ``# below the TLS 1.2 floor`` cannot inventory a phantom
+TLS 1.2 protocol.
 """
 
 from __future__ import annotations
@@ -67,6 +75,29 @@ _SSH_USE = re.compile(
     _F,
 )
 _SSH_VERSION = re.compile(r"\bSSH-(2\.0|1\.\d{1,2})\b")
+
+# IPsec / IKE. Config files are matched by name; source is matched by a narrow
+# marker set (strongSwan/libreswan tooling, an explicit IKE version, or an
+# ``ipsec`` reference). ESP/AH alone are too generic to key detection on.
+_IPSEC_CONFIG_NAMES = frozenset(
+    {"ipsec.conf", "ipsec.secrets", "swanctl.conf", "racoon.conf"}
+)
+_IPSEC_USE = re.compile(
+    r"\bstrongswan\b|\blibreswan\b|\bcharon\b|\bracoon\b|\bIKEv[12]\b|"
+    r"\bipsec\b|\bxfrm\b|\bsetkey\b|\bstroke\b",
+    _F,
+)
+# Negotiated IKE version: ``IKEv1`` / ``keyexchange=ikev2`` (bare token) — a
+# config's ``version = 2`` line is a fallback used only inside a known IPsec file.
+_IKE_VERSION = re.compile(r"\bIKEv([12])\b", _F)
+_IKE_VERSION_CONF = re.compile(r"\bversion\s*=\s*([12])\b", _F)
+# strongSwan / libreswan transform proposals: ``cipher-mac[-dhgroup]`` — e.g.
+# ``3des-md5-modp1024``, ``aes256-sha256-modp3072``, ``aes256gcm16-sha256``.
+_IPSEC_TRANSFORM = re.compile(
+    r"\b(?:aes\w*|3des|des|null|chacha20\w*)-(?:sha\w*|md5|aesxcbc|poly1305)"
+    r"(?:-(?:modp\d+|ecp\d+|x25519|curve25519))?\b",
+    _F,
+)
 
 # Cipher suites. OpenSSL hyphenated form (>=2 hyphen groups so a 2-token
 # algorithm name like ``AES-256`` is NOT mistaken for a suite) + IANA form
@@ -118,6 +149,25 @@ def _iter_source_files(root: Path):
         yield p
 
 
+def _iter_ipsec_configs(root: Path):
+    """IPsec config files matched by name (``ipsec.conf`` / ``swanctl.conf`` …).
+
+    These carry no code extension so :func:`_iter_source_files` skips them; the
+    IPsec lane reads them directly for the IKE version + transform proposals.
+    """
+    for p in sorted(root.rglob("*")):
+        if any(part in _IGNORE_DIRS for part in p.parts):
+            continue
+        if not p.is_file() or p.name.lower() not in _IPSEC_CONFIG_NAMES:
+            continue
+        try:
+            if p.stat().st_size > _MAX_BYTES:
+                continue
+        except OSError:
+            continue
+        yield p
+
+
 class _TlsVersion:
     """A pinned TLS/SSL version: a sort key (family, minor) + display label."""
 
@@ -155,6 +205,17 @@ class ProtocolScanner(Scanner):
                 continue
             self._emit_tls(ctx, rel, code)
             self._emit_ssh(ctx, rel, code)
+            # Source-level IPsec references (strongSwan/libreswan API, IKEv2 …).
+            if _IPSEC_USE.search(code):
+                self._emit_ipsec(ctx, rel, code, is_config=False)
+        # Named IPsec config artifacts (ipsec.conf / swanctl.conf / …).
+        for path in _iter_ipsec_configs(ctx.root):
+            rel = path.relative_to(ctx.root).as_posix()
+            try:
+                code = _strip_prose(path.read_text(encoding="utf-8", errors="ignore"))
+            except OSError:
+                continue
+            self._emit_ipsec(ctx, rel, code, is_config=True)
 
     # --- TLS / SSL -------------------------------------------------------- #
 
@@ -198,11 +259,54 @@ class ProtocolScanner(Scanner):
         name = "SSH"
         sver = _SSH_VERSION.search(code)
         if sver is not None:
-            props["crypto:protocolVersion"] = sver.group(1)
-            name = f"SSH {sver.group(1)}"
+            version = sver.group(1)
+            props["crypto:protocolVersion"] = version
+            # SSH protocol 1.x is cryptographically broken (CVE-2001-0361);
+            # SSH-2.0 is the current, strong wire protocol.
+            props["crypto:strength"] = "weak" if version.startswith("1.") else "strong"
+            name = f"SSH {version}"
         ctx.add_component(
             CryptoAssetComponent(
                 bom_ref=f"crypto-protocol-ssh-{_slug(rel)}", name=name, properties=props
+            )
+        )
+
+    # --- IPsec / IKE ------------------------------------------------------ #
+
+    def _emit_ipsec(
+        self, ctx: ScanContext, rel: str, code: str, *, is_config: bool
+    ) -> None:
+        props: dict[str, str] = {
+            "crypto:assetType": "protocol",
+            "crypto:protocolType": "ipsec",
+            "discovery:source": rel,
+        }
+        name = "IPsec"
+
+        ike = _IKE_VERSION.search(code)
+        version_num = ike.group(1) if ike is not None else None
+        if version_num is None and is_config:
+            # A swanctl-style ``version = 2`` line — only trusted inside a known
+            # IPsec config file, never in arbitrary source.
+            conf = _IKE_VERSION_CONF.search(code)
+            version_num = conf.group(1) if conf is not None else None
+        if version_num is not None:
+            props["crypto:protocolVersion"] = f"IKEv{version_num}"
+            # IKEv1 is deprecated (RFC 9395); IKEv2 is the current, strong
+            # keying protocol. Transform-level weakness (DES/MD5/modp1024) is
+            # the C13 predicate's job — the version drives crypto:strength here.
+            props["crypto:strength"] = "weak" if version_num == "1" else "strong"
+            name = f"IPsec (IKEv{version_num})"
+
+        transforms = sorted({m.group(0) for m in _IPSEC_TRANSFORM.finditer(code)})
+        if transforms:
+            props["crypto:cipherSuite"] = ", ".join(transforms)
+
+        ctx.add_component(
+            CryptoAssetComponent(
+                bom_ref=f"crypto-protocol-ipsec-{_slug(rel)}",
+                name=name,
+                properties=props,
             )
         )
 
