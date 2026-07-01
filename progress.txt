@@ -931,3 +931,56 @@ progress.aibom-reconcile.txt (reference only).
   aibom already sees `_pqc_migration_rows`). Clean tree, no two-writer interference.
 - NEXT selectable: F3 (18, dep I1: compliance tri-state matrix + sidebar controls) or B1 (19, dep C9: bench
   oracles). Then B2 (20, deps F1/F2/F3/B1: CI + full live e2e). After F3+B1+B2 all green → COMPLETE.
+
+## F3 (frontend, DONE) — expanded compliance tri-state matrix + framework/verdict controls
+- SCOPE (prd F3): surface the 10-framework tri-state compliance the C8/C14 lane already computes
+  (result.compliance → normalize_crypto `cbom_compliance`, carried through get_scan_metadata since I4)
+  which was NEVER rendered on the results page. PURE frontend — NO backend/worker/aibom src change
+  (I only ADDED a contract test), so NO worker restart needed (F1 precedent, unlike F2 which touched
+  aibom). The data was already flowing; F3 is the missing VIEW + controls.
+- THE HONEST-SCOPE DECISION on "options sidebar controls (level/frameworks/language toggles)": the
+  backend `StartCBOMScanData` (backend/utilities/db/schemas.py:221) accepts ONLY
+  repo_context/zip/cbom_file/scan_binaries — there is NO level/frameworks/language SCAN input, and the
+  worker hardcodes `scan_crypto(dir, level=4)`. Adding scan-config toggles to cbom-options-sidebar.tsx
+  that the backend silently ignores would be dishonest + non-functional. So the controls are realized
+  as GENUINELY-FUNCTIONAL client-side controls ON the results-page compliance matrix: (a) framework-
+  group filter chips (All / Quantum-safe / Baseline crypto / Regulatory — disjoint 3+3+4 partition of
+  the 10 frameworks) = the "frameworks" toggle; (b) a "Failures only" toggle that filters the
+  requirement drilldown = the detail/"level" control. "language" toggle is N/A to compliance +
+  distributions carry no per-language tag, so it's honestly omitted (documented, not faked). Threading
+  level/frameworks/language as REAL scan inputs is a backend+worker story, out of an Fx frontend lane.
+- COMPONENT: new `CbomComplianceMatrix` in `frontend/components/cbom/CbomCryptoCharts.tsx` (never a new
+  file/aesthetic — extends the F1/F2 chart module). MIRRORS `ai-bom/AiBomVisualizations.ComplianceCoverage`
+  EXACTLY (same verdict palette/badges/labels: pass=emerald / pass_with_evidence=teal / fail=red /
+  out_of_scope=slate / not_bom_evidenceable=violet / na=zinc; coverage=pass/(pass+fail); the OOS + NBE
+  states reported SEPARATELY, never folded into pass/fail) so the two BOM pages read identically. Stacked
+  horizontal bars per framework + click-a-bar → per-requirement drilldown table (verdict badge / id /
+  title / evidence). Height is dynamic (`data.length*34+40`) so a filtered 3-framework group isn't sparse.
+- CONTRACT LOCK (the load-bearing bit — `CBOM_FRAMEWORK_LABELS` FE map ⇄ aibom `CBOM_FRAMEWORKS`): the
+  cbom_compliance shape is IDENTICAL to the AIBOM `FrameworkCoverage` (same `run_framework` engine, keyed
+  by framework STRING). A `disclaimer` STRING rides alongside the 10 framework OBJECTS → the matrix
+  filters `k!=="disclaimer" && typeof v==="object"`. If a NEW framework ships without an FE label it
+  renders its raw snake_case key → the +4 contract tests in `test_cbom_chart_data_contract.py` assert the
+  framework key-set EXACTLY equals `_EXPECTED_FRAMEWORKS` (10) so any drift FAILS before the UI, plus the
+  6 tri-state count ints + coverage∈{None,0..1} + non-empty requirement drilldown per framework.
+- WIRING: `CbomResults.tsx` gains a `cryptoCompliance` useMemo (`data.cbom_compliance ??
+  scanMetadata.cbom_compliance`, guarded on typeof object) passed as `<CbomCryptoCharts compliance=…>`.
+  The matrix is GATED on `hasCompliance` (≥1 framework object) so legacy worker CBOM scans (no
+  cbom_compliance) render exactly the F1/F2 view — fully additive (the C9/F1/F2 precedent).
+- DEV-BROWSER GATE (F1/F2 recipe, no auth): temp top-level route `app/cbomf3check/page.tsx` embedding the
+  REAL fixture run-object (dumped via `.venv/bin/python normalize_crypto` → /tmp/cbom_f3_runobject.json),
+  curl 200, global-playwright `.cjs`. RESULT: title + coverage-desc + 5 framework labels + OOS/NBE legend
+  + both control chips present; 75 recharts bars rendered; clicking a >6px-wide bar OPENS the drilldown
+  ("— requirements", PCI- ids, verdict badges); "Failures only" toggle works; 0 console/page errors;
+  screenshot native to the CBOM theme. GOTCHA: recharts `.recharts-bar-rectangle path` for a 0-count
+  verdict is a ZERO-WIDTH path with no clickable area — the playwright click must SKIP thin segments
+  (boundingBox().width < 6) and try the next bar, else the drilldown appears not to open. Deleted the
+  temp route after.
+- GATE GREEN: `tsc --noEmit` exit 0; scoped eslint 0 errors + 0 NEW warnings on both files (inlined the
+  group-filter lookup INSIDE the `shown` useMemo to avoid a react-hooks/exhaustive-deps warning on a
+  `groupKeys` logical-expression dep — the same pattern AIBOM's ComplianceCoverage sidesteps); aibom
+  `-k "cbom or crypto or chart or benchmark"` 370 passed incl. the +4 contract tests + benchmark_gate
+  (true-miss==0 — frontend+test-only, no oracle delta); ruff clean on the test (wrapped one E501). No
+  two-writer interference (clean tree, only my 3 files). 
+- NEXT selectable: B1 (19, dep C9✓: extend bench/cbom oracles + refresh baselines + differential gate).
+  Then B2 (20, deps F1/F2/F3/B1: CI + full live e2e). After B1+B2 green → COMPLETE.

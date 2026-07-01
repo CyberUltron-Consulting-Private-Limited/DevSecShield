@@ -20,7 +20,7 @@
  * payload is present (legacy worker scans carry none).
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -53,6 +53,14 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart3,
@@ -65,6 +73,7 @@ import {
   ShieldX,
   Rocket,
   CalendarClock,
+  Scale,
 } from "lucide-react";
 import type { CbomGraph } from "@/utils/backend_api";
 
@@ -225,6 +234,119 @@ const migrationDescriptor = (r: PqcMigrationRow): string => {
 const countConfig = {
   count: { label: "Count", color: C.primitive },
 } satisfies ChartConfig;
+
+// ── compliance tri-state matrix (F3) ─────────────────────────────────────────
+// The CBOM lane's run_cbom_compliance fills result.compliance with the SAME
+// tri-state verdict shape the AIBOM compliance engine uses (pass /
+// pass_with_evidence / fail / out_of_scope / not_bom_evidenceable / na +
+// coverage + a per-requirement drilldown). Coverage = pass / (pass + fail); the
+// other states are reported SEPARATELY, never folded into pass or fail. Palette +
+// verdict labels mirror AiBomVisualizations.ComplianceCoverage so the two BOM
+// pages read identically.
+export type ComplianceVerdict =
+  | "pass"
+  | "pass_with_evidence"
+  | "fail"
+  | "out_of_scope"
+  | "not_bom_evidenceable"
+  | "na";
+
+export interface ComplianceRequirement {
+  id: string;
+  title: string;
+  verdict: ComplianceVerdict;
+  evidence?: string;
+  source?: string;
+}
+
+export interface FrameworkCoverage {
+  pass: number;
+  pass_with_evidence?: number;
+  fail: number;
+  out_of_scope?: number;
+  not_bom_evidenceable?: number;
+  na: number;
+  coverage: number | null;
+  requirements?: ComplianceRequirement[];
+}
+
+/** result.compliance as surfaced through scan-metadata (a `disclaimer` string
+ *  rides alongside the per-framework objects — filtered out before rendering). */
+export type CbomCompliance = Record<string, FrameworkCoverage | string>;
+
+const VERDICT_COLOR: Record<ComplianceVerdict, string> = {
+  pass: "#10b981", // emerald-500
+  pass_with_evidence: "#14b8a6", // teal-500 (satisfied by attestation; counts as pass)
+  fail: "#dc2626", // red-600
+  out_of_scope: "#64748b", // slate-500 (framework doesn't apply — NOT fail/na)
+  not_bom_evidenceable: "#8b5cf6", // violet-500 (process evidence; attestable)
+  na: "#a1a1aa", // zinc-400
+};
+const VERDICT_BADGE: Record<ComplianceVerdict, string> = {
+  pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  pass_with_evidence: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200",
+  fail: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  out_of_scope: "bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200",
+  not_bom_evidenceable: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
+  na: "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200",
+};
+const VERDICT_LABEL: Record<ComplianceVerdict, string> = {
+  pass: "Pass",
+  pass_with_evidence: "Pass (evidence)",
+  fail: "Fail",
+  out_of_scope: "Out of scope",
+  not_bom_evidenceable: "Not BOM-evidenceable",
+  na: "N/A",
+};
+const VERDICT_ORDER: ComplianceVerdict[] = [
+  "pass",
+  "pass_with_evidence",
+  "fail",
+  "out_of_scope",
+  "not_bom_evidenceable",
+  "na",
+];
+
+// The 10 CBOM compliance frameworks the aibom lane registers. Kept in lockstep
+// with aibom compliance.CBOM_FRAMEWORKS + the chart-data-contract test's
+// _EXPECTED_FRAMEWORKS — a framework missing here renders its raw snake_case key.
+const CBOM_FRAMEWORK_LABELS: Record<string, string> = {
+  nist_1800_38b: "NIST SP 1800-38B",
+  nist_800_57: "NIST SP 800-57",
+  omb_m_23_02: "OMB M-23-02",
+  eu_cra: "EU CRA",
+  eu_dora: "EU DORA",
+  pci_dss_4: "PCI-DSS 4.0",
+  fips_140_3: "FIPS 140-3",
+  bsi_tr_02102: "BSI TR-02102",
+  nist_1800_38c: "NIST SP 1800-38C",
+  cnsa_2_0: "CNSA 2.0",
+};
+
+// Framework-filter groups (the "frameworks" toggle). Disjoint by regulatory
+// regime so the chips partition the 10 frameworks cleanly (3 + 3 + 4).
+const FRAMEWORK_GROUPS: Array<{ id: string; label: string; keys: string[] }> = [
+  { id: "all", label: "All", keys: [] },
+  {
+    id: "quantum",
+    label: "Quantum-safe",
+    keys: ["nist_1800_38b", "nist_1800_38c", "cnsa_2_0"],
+  },
+  {
+    id: "baseline",
+    label: "Baseline crypto",
+    keys: ["nist_800_57", "fips_140_3", "bsi_tr_02102"],
+  },
+  {
+    id: "regulatory",
+    label: "Regulatory",
+    keys: ["pci_dss_4", "eu_cra", "eu_dora", "omb_m_23_02"],
+  },
+];
+
+const labelFramework = (k: string) => CBOM_FRAMEWORK_LABELS[k] ?? k;
+const isFailingVerdict = (v: ComplianceVerdict) =>
+  v === "fail" || v === "not_bom_evidenceable";
 
 function EmptyChart({ message }: { message: string }) {
   return (
@@ -734,22 +856,229 @@ function CryptoDependencyGraph({ graph }: { graph: CbomGraph }) {
   );
 }
 
+/** 8 — Compliance tri-state matrix: all CBOM frameworks with a per-requirement
+ *  drilldown + framework-group + failures-only controls (F3). Verdicts and
+ *  palette mirror AiBomVisualizations.ComplianceCoverage. */
+function CbomComplianceMatrix({ compliance }: { compliance: CbomCompliance }) {
+  const frameworks = useMemo(
+    () =>
+      Object.entries(compliance ?? {})
+        .filter(([k, v]) => k !== "disclaimer" && typeof v === "object" && v !== null)
+        .map(([k, v]) => ({ key: k, ...(v as FrameworkCoverage) })),
+    [compliance]
+  );
+  const [group, setGroup] = useState<string>("all");
+  const [active, setActive] = useState<string | null>(null);
+  const [failingOnly, setFailingOnly] = useState(false);
+
+  const shown = useMemo(() => {
+    const keys = FRAMEWORK_GROUPS.find((g) => g.id === group)?.keys ?? [];
+    return keys.length === 0
+      ? frameworks
+      : frameworks.filter((f) => keys.includes(f.key));
+  }, [frameworks, group]);
+
+  if (frameworks.length === 0) return null;
+
+  const data = shown.map((f) => ({
+    key: f.key,
+    name: labelFramework(f.key),
+    pass: f.pass,
+    pass_with_evidence: f.pass_with_evidence ?? 0,
+    fail: f.fail,
+    out_of_scope: f.out_of_scope ?? 0,
+    not_bom_evidenceable: f.not_bom_evidenceable ?? 0,
+    na: f.na,
+  }));
+
+  const cfg: ChartConfig = Object.fromEntries(
+    VERDICT_ORDER.map((v) => [v, { label: VERDICT_LABEL[v], color: VERDICT_COLOR[v] }])
+  );
+
+  // keep the drilldown target inside the currently-filtered set
+  const activeFw =
+    active && shown.some((f) => f.key === active)
+      ? shown.find((f) => f.key === active)!
+      : null;
+  const reqsAll = activeFw?.requirements ?? [];
+  const reqs = failingOnly ? reqsAll.filter((r) => isFailingVerdict(r.verdict)) : reqsAll;
+
+  const chipCls = (on: boolean) =>
+    `rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+      on
+        ? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
+        : "border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+    }`;
+
+  return (
+    <Card className="border-zinc-200 dark:border-zinc-800 col-span-full">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Scale className="w-4 h-4 text-emerald-600" />
+          Crypto compliance readiness
+        </CardTitle>
+        <CardDescription>
+          Per-framework tri-state verdicts (advisory). Coverage = pass / (pass + fail).
+          <span className="font-medium"> Out of scope</span> (framework doesn&apos;t apply) and{" "}
+          <span className="font-medium">Not BOM-evidenceable</span> (process evidence) are reported
+          separately — never folded into pass or fail. Click a bar for per-requirement detail.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* controls: framework-group filter + failures-only toggle */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mr-1">Frameworks</span>
+          {FRAMEWORK_GROUPS.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className={chipCls(group === g.id)}
+              onClick={() => {
+                setGroup(g.id);
+                setActive(null);
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+          <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" aria-hidden />
+          <button
+            type="button"
+            className={chipCls(failingOnly)}
+            onClick={() => setFailingOnly((v) => !v)}
+          >
+            Failures only
+          </button>
+        </div>
+
+        {data.length === 0 ? (
+          <EmptyChart message="No frameworks in this group" />
+        ) : (
+          <div style={{ height: Math.max(160, data.length * 34 + 40) }}>
+            <ChartContainer config={cfg} className="aspect-auto h-full w-full">
+              <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+                <XAxis type="number" hide />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  width={140}
+                  tickLine={false}
+                  axisLine={false}
+                  className="text-xs"
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                {VERDICT_ORDER.map((v, i) => (
+                  <Bar
+                    key={v}
+                    dataKey={v}
+                    stackId="a"
+                    fill={VERDICT_COLOR[v]}
+                    cursor="pointer"
+                    radius={
+                      i === 0
+                        ? [3, 0, 0, 3]
+                        : i === VERDICT_ORDER.length - 1
+                          ? [0, 3, 3, 0]
+                          : undefined
+                    }
+                    onClick={(_, idx) => setActive(data[idx].key)}
+                  />
+                ))}
+              </BarChart>
+            </ChartContainer>
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+          {VERDICT_ORDER.map((v) => (
+            <span key={v} className="flex items-center gap-1.5">
+              <span className="size-2.5 rounded-sm" style={{ background: VERDICT_COLOR[v] }} />
+              {VERDICT_LABEL[v]}
+            </span>
+          ))}
+        </div>
+
+        {activeFw && (
+          <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className="px-3 py-2 text-sm font-medium border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+              <span>
+                {labelFramework(activeFw.key)} — requirements
+                {activeFw.coverage != null && (
+                  <span className="ml-2 text-xs font-normal text-zinc-500">
+                    coverage {Math.round(activeFw.coverage * 100)}%
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer"
+                onClick={() => setActive(null)}
+              >
+                Close
+              </button>
+            </div>
+            {reqs.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-zinc-500">
+                No {failingOnly ? "failing " : ""}requirements.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-36">Verdict</TableHead>
+                    <TableHead className="w-24">ID</TableHead>
+                    <TableHead>Requirement</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reqs.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        <Badge className={VERDICT_BADGE[r.verdict] ?? VERDICT_BADGE.na}>
+                          {VERDICT_LABEL[r.verdict] ?? r.verdict}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-400">{r.id}</TableCell>
+                      <TableCell className="text-sm">
+                        {r.title}
+                        {r.evidence && <div className="text-xs text-zinc-500 mt-0.5">{r.evidence}</div>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * Composes the CBOM crypto charts. Renders nothing when the run-object carries
  * no `cbom_distributions` (e.g. a legacy worker CBOM scan) so the existing
  * dashboard charts remain the sole view in that case. The two graph-fed
  * visualizations (asset-type breakdown + crypto dependency graph, F1) render
- * only when the I1 `cbom_graph` projection is present.
+ * only when the I1 `cbom_graph` projection is present; the compliance tri-state
+ * matrix (F3) renders only when `cbom_compliance` carries ≥1 framework.
  */
 export function CbomCryptoCharts({
   distributions,
   graph,
+  compliance,
 }: {
   distributions?: CbomDistributions | null;
   graph?: CbomGraph | null;
+  compliance?: CbomCompliance | null;
 }) {
   if (!distributions) return null;
   const hasGraph = !!graph && (graph.nodes?.length ?? 0) > 0;
+  const hasCompliance =
+    !!compliance &&
+    Object.entries(compliance).some(
+      ([k, v]) => k !== "disclaimer" && typeof v === "object" && v !== null
+    );
   const pqc = distributions.pqc;
   const migration = pqc?.migration ?? [];
   // The PQC readiness detail (F2 list + roadmap) renders whenever the scan graded
@@ -777,6 +1106,11 @@ export function CbomCryptoCharts({
       {hasGraph && (
         <div className="grid grid-cols-1 gap-6">
           <CryptoDependencyGraph graph={graph} />
+        </div>
+      )}
+      {hasCompliance && (
+        <div className="grid grid-cols-1 gap-6">
+          <CbomComplianceMatrix compliance={compliance!} />
         </div>
       )}
     </div>

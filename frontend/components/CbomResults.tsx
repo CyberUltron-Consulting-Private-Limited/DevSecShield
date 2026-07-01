@@ -82,7 +82,11 @@ import { PieChart, BarChart3, TrendingUp, Search } from "lucide-react";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
-import { CbomCryptoCharts, type CbomDistributions } from "@/components/cbom/CbomCryptoCharts";
+import {
+  CbomCryptoCharts,
+  type CbomDistributions,
+  type CbomCompliance,
+} from "@/components/cbom/CbomCryptoCharts";
 
 interface CbomResultsProps {
   data: unknown;
@@ -936,6 +940,16 @@ export default function CbomResults({
     return g && Array.isArray(g.nodes) ? g : null;
   }, [data, scanMetadata]);
 
+  // Tri-state compliance matrix (F3). Same source precedence as the
+  // distributions/graph — present only on reconciled aibom-lane scans; the
+  // matrix renders only when it carries ≥1 framework object.
+  const cryptoCompliance = useMemo<CbomCompliance | null>(() => {
+    const fromData = (data as Record<string, unknown> | null)?.cbom_compliance;
+    const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_compliance;
+    const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
+    return c && typeof c === "object" ? c : null;
+  }, [data, scanMetadata]);
+
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
 
@@ -1122,7 +1136,7 @@ export default function CbomResults({
           )}
 
           {/* Crypto-asset charts (aibom CBOM lane) */}
-          {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} graph={cryptoGraph} />}
+          {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} graph={cryptoGraph} compliance={cryptoCompliance} />}
 
           {/* Dashboard */}
           {dashboard && cardData && (

@@ -168,7 +168,7 @@
       "dependencies": [
         "I1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Frontend: expanded compliance tri-state matrix + options sidebar controls (level/frameworks/language toggles)"
     },
     {

@@ -196,3 +196,91 @@ def test_pqc_migration_rows_are_deterministically_ordered() -> None:
     rank = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
     keys = [(rank.get(r["impact"], 9), str(r["name"])) for r in migration]
     assert keys == sorted(keys), "migration rows not deterministically ordered"
+
+
+# ── F3: expanded compliance tri-state matrix ─────────────────────────────────
+# The F3 results-page section binds to ``cbom_compliance`` (result.compliance the
+# CBOM lane fills via run_cbom_compliance across all 10 frameworks; see
+# CbomCryptoCharts.tsx CbomComplianceMatrix). Every framework key MUST carry a
+# human label in the FE FRAMEWORK map (below) or the matrix shows a raw snake_key,
+# and every framework MUST carry the six tri-state counts + coverage + a
+# per-requirement drilldown so no framework row silently starves.
+
+# The 10 CBOM frameworks the aibom lane registers (compliance.CBOM_FRAMEWORKS).
+# Kept in lockstep with the FE ``CBOM_FRAMEWORK_LABELS`` map — a new framework
+# with no FE label would render its raw snake_case key, which this set forbids.
+_EXPECTED_FRAMEWORKS = {
+    "nist_1800_38b",
+    "nist_800_57",
+    "omb_m_23_02",
+    "eu_cra",
+    "eu_dora",
+    "pci_dss_4",
+    "fips_140_3",
+    "bsi_tr_02102",
+    "nist_1800_38c",
+    "cnsa_2_0",
+}
+_VERDICTS = {
+    "pass",
+    "pass_with_evidence",
+    "fail",
+    "out_of_scope",
+    "not_bom_evidenceable",
+    "na",
+}
+
+
+def _compliance() -> dict:
+    return _distributions()["cbom_compliance"]
+
+
+def test_cbom_compliance_present_with_all_frameworks() -> None:
+    """The matrix reads every framework in ``cbom_compliance`` (skipping the
+    ``disclaimer`` string). The framework key-set must exactly equal the FE's
+    labelled set so no framework renders as a raw snake_case key."""
+    comp = _compliance()
+    assert isinstance(comp, dict) and comp, "cbom_compliance missing/flattened"
+    keys = {k for k, v in comp.items() if k != "disclaimer" and isinstance(v, dict)}
+    assert keys == _EXPECTED_FRAMEWORKS, (
+        f"framework set drifted from the FE label map: {keys ^ _EXPECTED_FRAMEWORKS}"
+    )
+
+
+def test_cbom_compliance_frameworks_carry_tristate_counts() -> None:
+    """Each framework carries the six tri-state counts (ints) + a coverage value
+    (None or a 0..1 fraction) so the stacked bar + coverage% never NaN."""
+    comp = _compliance()
+    for key in _EXPECTED_FRAMEWORKS:
+        fw = comp[key]
+        for state in _VERDICTS:
+            assert isinstance(fw.get(state), int) and fw[state] >= 0, (
+                f"{key}.{state} not a non-negative int -> bar segment NaN"
+            )
+        cov = fw["coverage"]
+        assert cov is None or (isinstance(cov, (int, float)) and 0.0 <= cov <= 1.0)
+
+
+def test_cbom_compliance_requirements_drilldown_is_populated() -> None:
+    """Clicking a framework bar opens its requirement table — each requirement
+    carries id/title/verdict (verdict in the tri-state set) so the drilldown
+    can render a verdict badge for every row."""
+    comp = _compliance()
+    for key in _EXPECTED_FRAMEWORKS:
+        reqs = comp[key]["requirements"]
+        assert isinstance(reqs, list) and reqs, f"{key} has no requirements to drill"
+        for r in reqs:
+            assert r.get("id") and r.get("title"), f"{key} requirement missing id/title"
+            assert r["verdict"] in _VERDICTS, f"{key}.{r['id']} bad verdict"
+
+
+def test_cbom_compliance_matrix_is_not_blank_and_is_tri_state() -> None:
+    """Consolidated guard: at least one framework has a non-zero stacked bar AND
+    at least one carries a real fail AND at least one has a computed coverage, so
+    the matrix renders a meaningful tri-state breakdown on the reference fixture
+    (a weak repo — every strong-crypto framework should surface failures)."""
+    comp = _compliance()
+    fws = [comp[k] for k in _EXPECTED_FRAMEWORKS]
+    assert any(sum(fw[s] for s in _VERDICTS) > 0 for fw in fws), "every bar blank"
+    assert any(fw["fail"] > 0 for fw in fws), "no failures -> tri-state degenerate"
+    assert any(fw["coverage"] is not None for fw in fws), "no coverage computed"
