@@ -7,7 +7,7 @@
       "title": "Research IBM CBOMkit / cbomkit-theia + Sonar-Cryptography: architecture, detection model, CycloneDX output; write ledger + gap-list vs our lane" },
     { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": true,
       "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model" },
-    { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": false,
+    { "id": "R3", "priority": 3, "dependencies": ["R1"], "passes": true,
       "title": "Research certificate/protocol/related-crypto-material depth + weakness catalogs (weak primitives, ECB, static IV/nonce, hardcoded keys, weak RNG, cert weaknesses)" },
     { "id": "R4", "priority": 4, "dependencies": ["R1"], "passes": false,
       "title": "Research PQC grading + standards (CNSA 2.0, FIPS 203/204/205, NIST PQC migration, nistQuantumSecurityLevel, quantum-vulnerable classification)" },
@@ -48,6 +48,8 @@
     { "id": "C10", "priority": 14.5, "dependencies": ["C9"], "passes": false,
       "title": "Clean-room algorithm/curve->OID enrichment (R1): deterministic OID knowledge-base injected into CycloneDX cryptoProperties.oid at emit-time (sonar-cryptography Enrichment-stage technique); no OSS code" },
     { "id": "C12", "priority": 8.7, "dependencies": ["C3"], "passes": false,
-      "title": "Clean-room multi-ecosystem dependency-MANIFEST crypto-library scanner (R2): parse pom.xml/build.gradle + go.mod + package.json + Cargo.toml + *.csproj/packages.config into crypto:role=library assets via a CRYPTO_DEP_COORDINATES map (Maven/Go/npm/crate/NuGet), extending the Python-only _detect_libraries" }
+      "title": "Clean-room multi-ecosystem dependency-MANIFEST crypto-library scanner (R2): parse pom.xml/build.gradle + go.mod + package.json + Cargo.toml + *.csproj/packages.config into crypto:role=library assets via a CRYPTO_DEP_COORDINATES map (Maven/Go/npm/crate/NuGet), extending the Python-only _detect_libraries" },
+    { "id": "C13", "priority": 11.5, "dependencies": ["C5"], "passes": false,
+      "title": "Clean-room cipher-suite & SSH/IPsec-negotiation weakness catalog (R3): WEAK_CIPHER_SUITE predicate over emitted protocol cipher-suite/SSH-algo/IKEv2-transform tokens — NULL/anon/EXPORT/RC4/DES/3DES/CBC-SHA1 (SWEET32/FREAK/Logjam/Lucky13) + weak SSH kex/host-key/cipher + weak IKEv2 transforms, with attack-named rationale; extends weakness.py (predicate separate from C5 emission)" }
   ]
 }
