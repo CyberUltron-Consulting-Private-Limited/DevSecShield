@@ -10,8 +10,10 @@ no components: the C8 scorer WEIGHTS these flags; the C4 emitter ignores them.
 
 Flagged: MD5/SHA-1/DES/3DES/RC4/RC2/Blowfish (deprecated corpus), RSA/DSA/DH
 keys below 2048 bits, ECB cipher mode, TLS < 1.2 / SSL protocols, and X.509
-certificates past their notValidAfter date. Strong assets (RSA-2048+, AES-GCM,
-SHA-256, TLS 1.2+, valid certificates) are left unflagged.
+certificates that are expired, near-expiry, signed with a collision-broken hash
+(MD2/MD4/MD5/SHA-1), or carry an undersized RSA/DSA key (the C4 certificate
+weakness catalog — stacked per cert). Strong assets (RSA-2048+, AES-GCM, SHA-256,
+TLS 1.2+, valid SHA-256-signed certificates) are left unflagged.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from __future__ import annotations
 from datetime import date
 
 from aibom.cbom.registry import cbom_register
-from aibom.cbom.weakness import cert_expiry_finding, weak_finding
+from aibom.cbom.weakness import cert_weakness_findings, weak_finding
 from aibom.scan.registry import ScanContext, Scanner
 
 
@@ -36,13 +38,16 @@ class WeakCryptoScanner(Scanner):
         # decision consistent within one run.
         today = date.today()
         for comp in ctx.components:
-            # Algorithm/mode/key/protocol weakness OR certificate expiry — a
-            # crypto asset is at most one of these kinds, so one flag per asset.
-            finding = weak_finding(comp) or cert_expiry_finding(comp, today)
-            if finding is None:
+            # Algorithm / mode / key / protocol weakness is a single verdict per
+            # asset; a certificate can stack several (C4: expiry + weak-sig +
+            # weak-key), so it yields a list of findings that all get raised.
+            algo = weak_finding(comp)
+            if algo is not None:
+                code, severity, message = algo
+                ctx.add_flag(code, comp.bom_ref, severity=severity, message=message)
                 continue
-            code, severity, message = finding
-            ctx.add_flag(code, comp.bom_ref, severity=severity, message=message)
+            for code, severity, message in cert_weakness_findings(comp, today):
+                ctx.add_flag(code, comp.bom_ref, severity=severity, message=message)
 
 
 __all__ = ["WeakCryptoScanner"]

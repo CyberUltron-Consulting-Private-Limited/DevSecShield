@@ -19,7 +19,13 @@ import json
 from typing import Any
 
 from aibom.cbom.pqc import QUANTUM_VULNERABLE
-from aibom.cbom.weakness import EXPIRED_CERTIFICATE, WEAK_CRYPTO_CODES
+from aibom.cbom.weakness import (
+    CERT_NEAR_EXPIRY,
+    EXPIRED_CERTIFICATE,
+    WEAK_CERT_KEY_SIZE,
+    WEAK_CERT_SIGNATURE,
+    WEAK_CRYPTO_CODES,
+)
 from aibom.emit import get_reporter
 from aibom.model.component import AIComponent
 from aibom.model.result import ScanResult
@@ -121,19 +127,35 @@ def _pqc_readiness(assets: list[AIComponent]) -> dict[str, Any]:
 
 
 def _certificate_expiry(
-    assets: list[AIComponent], expired_refs: set[str]
+    assets: list[AIComponent], result: ScanResult
 ) -> list[dict[str, Any]]:
-    """Per-certificate expiry rows (name + notValidAfter + expired flag)."""
-    rows = [
-        {
-            "name": c.name,
-            "not_valid_after": (c.properties or {}).get("crypto:notValidAfter"),
-            "self_signed": (c.properties or {}).get("crypto:selfSigned") == "true",
-            "expired": c.bom_ref in expired_refs,
-        }
-        for c in assets
-        if (c.properties or {}).get("crypto:assetType") == "certificate"
-    ]
+    """Per-certificate rows: expiry + the C4 weakness catalog verdicts.
+
+    Carries the depth the C4 certificate-weakness lane raises (weak signature
+    hash, undersized key, near-expiry) as booleans alongside the base
+    expiry/self-signed fields, so the CBOM results page can surface every cert
+    verdict without re-deriving it. Reads the flags the scanner already computed.
+    """
+    rows = []
+    for c in assets:
+        if (c.properties or {}).get("crypto:assetType") != "certificate":
+            continue
+        codes = {f.code for f in result.flags_for(c.bom_ref)}
+        rows.append(
+            {
+                "name": c.name,
+                "not_valid_after": (c.properties or {}).get("crypto:notValidAfter"),
+                "self_signed": (c.properties or {}).get("crypto:selfSigned") == "true",
+                "expired": EXPIRED_CERTIFICATE in codes,
+                "near_expiry": CERT_NEAR_EXPIRY in codes,
+                "weak_signature": WEAK_CERT_SIGNATURE in codes,
+                "weak_key_size": WEAK_CERT_KEY_SIZE in codes,
+                "signature_algorithm": (c.properties or {}).get(
+                    "crypto:signatureAlgorithm"
+                ),
+                "key_size": (c.properties or {}).get("crypto:keySize"),
+            }
+        )
     rows.sort(key=lambda r: str(r["name"]))
     return rows
 
@@ -160,9 +182,6 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     scores through verbatim, so no chart can be starved by a flattened payload.
     """
     assets = _crypto_assets(result)
-    expired_refs = {
-        f.target for f in result.flags if f.code == EXPIRED_CERTIFICATE and f.target
-    }
     findings = [_finding(c, result) for c in assets]
     findings.sort(
         key=lambda f: (_IMPACT_RANK.get(f["impact"], 9), str(f["title"]))
@@ -178,7 +197,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
             "algorithms": _algorithm_distribution(assets),
             "weakness": _weakness_distribution(result),
             "pqc": _pqc_readiness(assets),
-            "certificates": _certificate_expiry(assets, expired_refs),
+            "certificates": _certificate_expiry(assets, result),
             "protocols": _protocol_distribution(assets),
         },
         "quantum_vulnerable_count": sum(

@@ -16,8 +16,11 @@ flags:
   WEAK_KEY_SIZE: 8        # RSA/DSA/DH below the 2048-bit floor
   WEAK_PROTOCOL: 8        # TLS < 1.2 / SSL (RFC 8996)
   EXPIRED_CERTIFICATE: 8  # an X.509 certificate past notValidAfter
-  # ── quantum-vulnerable -> MEDIUM (a future exposure to migrate; SARIF warning) ──
+  WEAK_CERT_SIGNATURE: 8  # cert signed with MD2/MD4/MD5/SHA-1 (collision-broken)
+  WEAK_CERT_KEY_SIZE: 8   # cert RSA/DSA key below the 2048-bit floor
+  # ── quantum-vulnerable / migrate-soon -> MEDIUM (SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
+  CERT_NEAR_EXPIRY: 4     # a valid cert expiring within the warn window (rotate soon)
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A crypto asset with no flags scores 0 -> low (the inventory floor; a strong

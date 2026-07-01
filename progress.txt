@@ -322,3 +322,40 @@ progress.aibom-reconcile.txt (reference only).
 - GOTCHA for future iters: do NOT `git stash` in the PARENT repo to "prove pre-existing failures" — it
   silently reverts ALL uncommitted work (I had to `git stash pop` to recover). The chroma failures are
   already documented pre-existing; don't re-prove.
+
+## C4 (BUILD) — landed 2026-07-01 — certificate weakness catalog (weak-sig + weak-keysize + near-expiry)
+- The cert lane already INVENTORIED sig-alg/keysize/expiry (C2 certificate_scan) but only flagged hard
+  EXPIRED. C4 = the WEAKNESS predicates (ledger row 14), added to `weakness.py`, NOT a new scanner:
+  `cert_weakness_findings(component, today, near_expiry_days=30) -> list[(code,sev,msg)]`. Returns a
+  LIST (not single) because a cert stacks weaknesses (SHA-1 + RSA-1024 → 2 flags) and the C8 scorer sums
+  their weights per component. Keeps `cert_expiry_finding` UNCHANGED (existing tests import it) — the new
+  fn reuses it internally for the hard-expired branch.
+- THREE new flag codes + weights (`config/crypto-risk-weights.yaml`): `WEAK_CERT_SIGNATURE`(8/High),
+  `WEAK_CERT_KEY_SIZE`(8/High), `CERT_NEAR_EXPIRY`(4/Medium/warning). Added the two High cert codes to
+  `WEAK_CRYPTO_CODES` so they flow through `normalize._weakness_distribution` + the `weak` finding bool
+  automatically; CERT_NEAR_EXPIRY is Medium so it's intentionally NOT in that set (matches QUANTUM_VULNERABLE).
+- KEY GOTCHA #1 (weak-sig detection): cert sig-alg names are `sha1WithRSAEncryption`/`md5WithRSAEncryption`
+  (x509 reader maps common OIDs) OR a RAW OID for md2/md4 (unmapped). `_weak_cert_hash` does token match
+  (`md5`/`md4`/`md2` substring) + `_SHA1_RE = re.compile(r"sha-?1(?![0-9])")` — the negative-lookahead is
+  MANDATORY so `sha512`/`sha256` never match `sha1` — PLUS an explicit `_WEAK_SIG_OIDS` set for md2/md4/sha1
+  raw OIDs. Verified `sha512WithRSAEncryption` yields [] (test_sha512_is_not_confused_for_sha1).
+- KEY GOTCHA #2 (why C4 is needed at all): the algorithm-lane `WEAK_KEY_SIZE` gates on
+  `assetType=="algorithm"` and SKIPS certs, so an RSA-1024 CERT passed. C4's `WEAK_CERT_KEY_SIZE` gates on
+  `publicKeyAlgorithm` containing rsa/dsa (`_MODULUS_PK_TOKENS`) — EC certs have no keySize (x509 only
+  computes RSA modulus bits) so they never false-positive.
+- KEY GOTCHA #3 (deterministic near-expiry): the scanner passes `date.today()` → non-deterministic. So the
+  REAL-fixture pipeline certs use ~55y validity (`openssl -days 20000`) → date-independent (never near-expiry,
+  never expired) and assert only weak-sig/weak-keysize; the near-expiry band is unit-tested with a FIXED
+  `today=date(2026,7,1)` on synthetic CryptoAssetComponents (like the existing expired-cert tests). Building
+  a CryptoAssetComponent directly is NOT mocking the graph — it's the domain object.
+- FIXTURES: separate dir `tests/fixtures/synthetic-crypto-certs/{rsa1024,sha1,strong}.pem` (openssl-generated,
+  committed static — test data, NOT product OSS) so the existing `synthetic-crypto-app` manifest/counts
+  (certificates==1) are untouched. One weakness per fixture file (rsa1024=keysize, sha1=sig, strong=control).
+- C4 is FLAGS-ONLY (no new components) → the CycloneDX emission over synthetic-crypto-app is byte-identical,
+  so `bench/cbom` gate is provably unperturbed (true-miss=0, our-unique>0 hold; ran green).
+- GATES: 21 C4 tests pass; full CBOM/crypto subset green; full aibom = only the 2 PRE-EXISTING chroma
+  differential failures (chroma-provider/framework, 377 passed / 2 failed — same as C1/C2/C3). ruff+mypy
+  clean. Frontend `tsc --noEmit` exit 0 (NO frontend touched — new cert depth rides the existing scan-meta→
+  results contract as more weakness-distribution rows + enriched certificate[] rows; F1 renders them, and
+  F1 depends on I1 not C4). Backend not started, so no live dev-browser render (additive-contract + tsc-clean
+  is the proof, same as C1/C2/C3).

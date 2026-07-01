@@ -79,7 +79,7 @@
       "dependencies": [
         "R3"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Certificate depth scanner: x509 fields, chain, expiry, weak sig algos, key size, self-signed-in-prod; emit certificate crypto-assets"
     },
     {

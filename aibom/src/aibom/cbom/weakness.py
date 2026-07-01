@@ -22,7 +22,8 @@ acceptance criterion "weak crypto -> high".
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, timedelta
 
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, WEAK_ALGORITHMS
 from aibom.model.component import AIComponent
@@ -34,12 +35,26 @@ WEAK_KEY_SIZE = "WEAK_KEY_SIZE"
 WEAK_PROTOCOL = "WEAK_PROTOCOL"
 # An X.509 certificate past its notValidAfter date (C8: "expired cert -> high").
 EXPIRED_CERTIFICATE = "EXPIRED_CERTIFICATE"
+# C4 certificate-weakness catalog: a collision-broken signature hash
+# (MD2/MD4/MD5/SHA-1), an undersized RSA/DSA certificate key (< 2048), and a
+# certificate approaching expiry (a warn band ahead of hard EXPIRED).
+WEAK_CERT_SIGNATURE = "WEAK_CERT_SIGNATURE"
+WEAK_CERT_KEY_SIZE = "WEAK_CERT_KEY_SIZE"
+CERT_NEAR_EXPIRY = "CERT_NEAR_EXPIRY"
 
 WEAK_CRYPTO_CODES = frozenset(
-    {WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL}
+    {
+        WEAK_ALGORITHM,
+        WEAK_CIPHER_MODE,
+        WEAK_KEY_SIZE,
+        WEAK_PROTOCOL,
+        WEAK_CERT_SIGNATURE,
+        WEAK_CERT_KEY_SIZE,
+    }
 )
 
 _SEV = "error"  # SARIF error == High impact (mirrors the secret scanner).
+_SEV_WARN = "warning"  # SARIF warning == Medium impact (a migrate-soon band).
 
 # Reverse of ALGORITHM_NORMALIZE: a display name (upper) -> canonical key. Built
 # from the same table the scanner names assets with, so it never drifts. e.g.
@@ -55,6 +70,47 @@ _MODE_SUFFIXES = ("-GCM", "-CBC", "-ECB", "-CTR", "-CFB", "-OFB", "-XTS", "-CCM"
 # Minimum acceptable asymmetric key size (bits). NIST SP 800-57 / 800-131A
 # disallow RSA/DSA/DH below 2048.
 _MIN_ASYMMETRIC_BITS = 2048
+
+# Certificate signature hashes distrusted for collision resistance: MD2/MD4/MD5
+# and SHA-1 (CA/Browser Forum SHA-1 sunset 2016; NIST SP 800-131A). Raw OIDs the
+# x509 reader leaves unmapped (md2/md4-with-RSA) are matched explicitly; the rest
+# are recognised by hash token inside the signatureAlgorithm name.
+_WEAK_SIG_OIDS: dict[str, str] = {
+    "1.2.840.113549.1.1.2": "MD2",  # md2WithRSAEncryption
+    "1.2.840.113549.1.1.3": "MD4",  # md4WithRSAEncryption
+    "1.2.840.113549.1.1.4": "MD5",  # md5WithRSAEncryption (also name-mapped)
+    "1.3.14.3.2.29": "SHA-1",  # sha1WithRSA (legacy OIW OID)
+}
+# SHA-1 not followed by another digit (so "sha256"/"sha512" never match).
+_SHA1_RE = re.compile(r"sha-?1(?![0-9])")
+
+# Public-key algorithms whose certificate key size is graded against the 2048-bit
+# asymmetric floor (EC/EdDSA are sized by curve, not modulus, so excluded here).
+_MODULUS_PK_TOKENS = ("rsa", "dsa")
+
+# Default near-expiry warn window (days). A cert expiring within this window but
+# not yet past notValidAfter earns a Medium CERT_NEAR_EXPIRY (rotate-soon) band.
+_NEAR_EXPIRY_DAYS = 30
+
+
+def _weak_cert_hash(sig_alg: str) -> str | None:
+    """Return the weak signature-hash display name (MD5/SHA-1/...) or None.
+
+    Pure token/OID lookup over a certificate ``crypto:signatureAlgorithm`` value
+    (either a human name like ``sha1WithRSAEncryption`` or a raw dotted OID).
+    """
+    s = sig_alg.strip().lower()
+    if s in _WEAK_SIG_OIDS:
+        return _WEAK_SIG_OIDS[s]
+    if "md5" in s:
+        return "MD5"
+    if "md4" in s:
+        return "MD4"
+    if "md2" in s:
+        return "MD2"
+    if _SHA1_RE.search(s):
+        return "SHA-1"
+    return None
 
 
 def _base_key(name: str) -> str | None:
@@ -202,13 +258,97 @@ def cert_expiry_finding(
     )
 
 
+def cert_weakness_findings(
+    component: AIComponent,
+    today: date,
+    near_expiry_days: int = _NEAR_EXPIRY_DAYS,
+) -> list[tuple[str, str, str]]:
+    """All certificate-weakness findings for one crypto asset (C4 catalog).
+
+    Unlike the single-verdict :func:`weak_finding` (algorithm / protocol), a
+    certificate can be weak on several orthogonal axes at once — a legacy cert can
+    be BOTH SHA-1-signed AND RSA-1024 AND expiring — so this returns a list and
+    the caller stacks the flags (the C8 scorer sums their weights per component).
+
+    Findings (deterministic order): validity band first (EXPIRED_CERTIFICATE High,
+    else CERT_NEAR_EXPIRY Medium when within ``near_expiry_days``), then a weak
+    signature hash (High), then an undersized RSA/DSA key (High). Non-certificate
+    assets return ``[]``. Pure: reads only ``crypto:`` properties + ``today``.
+    """
+    if component.kind != "crypto_asset":
+        return []
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "certificate":
+        return []
+    name = component.name
+    findings: list[tuple[str, str, str]] = []
+
+    # 1) Validity band — hard-expired (reuse the existing predicate) OR near-expiry.
+    expired = cert_expiry_finding(component, today)
+    if expired is not None:
+        findings.append(expired)
+    else:
+        not_after = _cert_not_after_date(props.get("crypto:notValidAfter", ""))
+        if (
+            not_after is not None
+            and not_after >= today
+            and not_after < today + timedelta(days=near_expiry_days)
+        ):
+            days_left = (not_after - today).days
+            findings.append(
+                (
+                    CERT_NEAR_EXPIRY,
+                    _SEV_WARN,
+                    f"Certificate {name} expires in {days_left} day(s) "
+                    f"(notValidAfter {not_after.isoformat()}); schedule "
+                    f"rotation before it lapses to avoid an outage.",
+                )
+            )
+
+    # 2) Collision-broken signature hash (MD2/MD4/MD5/SHA-1).
+    sig_alg = props.get("crypto:signatureAlgorithm", "")
+    weak_hash = _weak_cert_hash(sig_alg) if sig_alg else None
+    if weak_hash is not None:
+        findings.append(
+            (
+                WEAK_CERT_SIGNATURE,
+                _SEV,
+                f"Certificate {name} is signed with {weak_hash} "
+                f"({sig_alg}): a collision-broken hash (CA/Browser Forum SHA-1 "
+                f"sunset; NIST SP 800-131A); reissue with SHA-256+.",
+            )
+        )
+
+    # 3) Undersized RSA/DSA certificate key (< 2048), which WEAK_KEY_SIZE skips
+    #    because it gates on assetType == "algorithm".
+    pk_alg = props.get("crypto:publicKeyAlgorithm", "").lower()
+    if any(tok in pk_alg for tok in _MODULUS_PK_TOKENS):
+        bits = _key_size(props)
+        if bits is not None and bits < _MIN_ASYMMETRIC_BITS:
+            findings.append(
+                (
+                    WEAK_CERT_KEY_SIZE,
+                    _SEV,
+                    f"Certificate {name} has an undersized {bits}-bit key: "
+                    f"below the {_MIN_ASYMMETRIC_BITS}-bit RSA/DSA floor "
+                    f"(NIST SP 800-57); reissue with RSA-3072+ or ECDSA P-256.",
+                )
+            )
+
+    return findings
+
+
 __all__ = [
     "WEAK_ALGORITHM",
     "WEAK_CIPHER_MODE",
     "WEAK_KEY_SIZE",
     "WEAK_PROTOCOL",
     "EXPIRED_CERTIFICATE",
+    "WEAK_CERT_SIGNATURE",
+    "WEAK_CERT_KEY_SIZE",
+    "CERT_NEAR_EXPIRY",
     "WEAK_CRYPTO_CODES",
     "weak_finding",
     "cert_expiry_finding",
+    "cert_weakness_findings",
 ]
