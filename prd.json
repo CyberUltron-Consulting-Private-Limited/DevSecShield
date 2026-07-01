@@ -141,7 +141,7 @@
         "C8",
         "C9"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Worker route + scan-metadata contract: surface all new CBOM capabilities (distributions/compliance/scores/graph) through get_scan_metadata to the results page"
     },
     {

@@ -817,3 +817,36 @@ progress.aibom-reconcile.txt (reference only).
 - NO frontend/dev-browser/worker-restart (emit-only; the frontend "Download CBOM JSON" blob just carries the
   richer oid; scan-metadata→charts contract untouched). Next selectable = I1 (15, deps C8✓+C9✓: worker route
   + scan-metadata contract surfacing all new CBOM capabilities) — then F1/F2/F3 (frontend), B1/B2 (bench+CI).
+
+## I1 (integration, DONE) — worker→scan-metadata contract: surface the crypto DEPENDENCY GRAPH (cbom_graph)
+- WHAT WAS ALREADY DONE (I4, prior): the worker `cbom` task routes through `aibom.integrations.
+  cbom_devsecshield.scan_crypto_to_devsecshield` and the backend `get_scan_metadata` cbom branch already
+  surfaced `cbom_json`/`cbom_distributions`/`cbom_compliance`/`cbom_scores`. So I1's ONLY genuinely-missing
+  capability named in its title was the **graph** — the AIBOM lane surfaces `ai_bom_graph` (nodes+edges) but
+  the CBOM lane had NO peer payload.
+- THE LOAD-BEARING INSIGHT: `result.edges` is EMPTY on the crypto lane (checked: 16 components, 0 edges).
+  C9 built the dependency graph at EMIT-TIME inside `cyclonedx.py` (cert→pubkey/sig refs, protocol
+  cryptoRefArray, material algorithmRef) as CycloneDX `*Ref` fields INSIDE `cbom_json`, NOT as
+  `ScanResult.edges`. So a naive `[{src,dst,rel} for e in result.edges]` graph would STARVE (0 edges).
+- FIX (`aibom/src/aibom/cbom/normalize.py`): `_crypto_graph(result, bom)` + `_iter_crypto_refs(cp)` PROJECT
+  the refs already rendered into `cbom_json` into a flat `{nodes, edges}`. `_iter_crypto_refs` is a generic
+  recursive walk of `cryptoProperties`: any key ending `Ref` (str) + `cryptoRefArray`/cipherSuite
+  `algorithms` (lists) → (rel, target). Edges filtered to `target in node_ids` (inventory) → ZERO dangling
+  even if C9 synthesizes an emit-only component (none on frozen fixture). `result.edges` merged too
+  (future-proof, empty today). `normalize_crypto` now renders the BOM ONCE (`bom = _bom(result)`) and shares
+  it between `cbom_json` and `cbom_graph` (was rendering twice). Node carries id/label/kind/asset_type/
+  primitive/impact(stacked severity via `_impact_for`)/quantum_vulnerable/weak. Deterministic (sorted).
+- CARRY-THROUGH: adapter `normalize_to_devsecshield` spreads the whole normalize dict → `cbom_graph` rides
+  for free. Backend `get_scan_metadata` cbom branch adds `cbom_graph` (+ legacy-None fallback). Frontend
+  `backend_api.ts` gains typed `CbomGraph`/`CbomGraphNode`/`CbomGraphEdge` on `CbomScanMetadata`.
+- ON THE FROZEN FIXTURE: 16 nodes, 2 edges — cert→SHA-256 (`signatureAlgorithm`) + cert→RSA-2048
+  (`subjectPublicKey`). Oracle delta 0 (normalize-only; no component/flag change; benchmark true-miss==0).
+- GATE: aibom cbom/crypto/chart suite (357) + benchmark gate + normalize/adapter (real fixture) + backend
+  hermetic `test_cbom_scan_metadata_contract.py` (3, duck-typed Scan, no DB) all GREEN. ruff+mypy clean.
+  frontend `tsc --noEmit` exit 0. Worker-venv import of the modified adapter + real scan → cbom_graph OK.
+- LIVE E2E BLOCKER (pre-existing, NOT I1): `backend/tests/test_cbom_e2e.py` SKIPS — POST /{team}/cbom/scan
+  returns 500 ("team 1/user not seeded"). Seeding/env issue, belongs to B2's live-e2e lane; the scan-create
+  endpoint doesn't import aibom so it's unrelated to this change. Full browser e2e is explicitly B2.
+- NEXT selectable: F1 (16, dep I1✓ now) — frontend asset-type + weakness-breakdown + DEPENDENCY-GRAPH viz
+  reads `scan_metadata.cbom_graph` {nodes,edges}. Also F2 (PQC gauge), F3 (compliance matrix). B1 (bench
+  oracles, dep C9✓) is independently selectable.

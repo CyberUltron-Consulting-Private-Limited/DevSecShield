@@ -244,6 +244,12 @@ bits** (SP 800-57 comparable-strength) — needed to answer PCI "strong cryptogr
   slot after C7 (12) and before C8 (13); **C8's dependency set gains C15** and its title names the four
   frameworks. Selection logic (lowest-priority `passes:false`, deps met) handles the fraction fine.
 
+## Integration provenance (I-lane)
+
+| capability | source tool | public-spec/behavioral evidence | how WE re-implement (original) | gap closed | story |
+|---|---|---|---|---|---|
+| **Normalized crypto dependency-graph payload** surfaced to the results page (nodes = crypto assets carrying assetType/primitive/severity/quantum/weak; edges = asset→asset links) — a pre-joined projection so the UI never re-walks CycloneDX | cryptobom-forge dependency-graph aggregation (asset-level relationship view); CycloneDX 1.6 `dependencies`/`cryptoRefArray` | https://github.com/awslabs/cryptobom-forge ; https://cyclonedx.org/use-cases/cryptographic-protocol/ | **implemented (I1)** — `aibom/src/aibom/cbom/normalize.py::_crypto_graph`+`_iter_crypto_refs` PROJECT the C9 CycloneDX crypto refs (`subjectPublicKeyRef`/`signatureAlgorithmRef`/`algorithmRef`/`cryptoRefArray`/cipherSuite `algorithms`) already rendered into `cbom_json` into a flat `{nodes,edges}` payload (endpoints filtered to inventory nodes → zero dangling; native `result.edges` merged, empty today). Peer of the AIBOM `ai_bom_graph`. Carried through the adapter (spread) → surfaced by `backend/utilities/dashboard/scan_metadata.py` cbom branch (+ legacy-None fallback) → typed `CbomGraph` in `frontend/utils/backend_api.ts`. Tests: `test_cbom_normalize.py` (cert→RSA-2048/SHA-256 edges), `test_cbom_devsecshield_adapter.py`, `backend/tests/test_cbom_scan_metadata_contract.py`. Oracle delta 0 — normalize-only, no component/flag change, benchmark true-miss==0 preserved. distributions/compliance/scores already surfaced by I4. | **I1** |
+
 ## Rules
 - No reading-and-pasting OSS source. Learn from docs, papers, schema, and observed output only.
 - OSS tools run ONLY in `bench/cbom/` as oracles; never on the product import path.
