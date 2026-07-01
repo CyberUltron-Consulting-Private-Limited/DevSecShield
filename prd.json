@@ -235,7 +235,7 @@
         "C7",
         "C8"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room CNSA 2.0 quantum-readiness compliance framework (R4): graph-queried NSS allowlist (ML-KEM-1024/ML-DSA-87/LMS/XMSS/AES-256/SHA-384-512 = pass; quantum-vulnerable or under-parameterized ML-KEM-512-768/ML-DSA-44-65 = fail; classical-not-yet-migrated = its own state) + CNSA-2.0 timeline; tri-state, coverage=pass/(pass+fail), queries nistQuantumSecurityLevel+primitive+parameter, never flags; mirrors cbomkit BasicQuantumSafeComplianceService behavior (allowlist) not code"
     },
     {

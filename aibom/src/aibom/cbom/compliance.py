@@ -62,6 +62,7 @@ CBOM_FRAMEWORKS = [
     "fips_140_3",
     "bsi_tr_02102",
     "nist_1800_38c",
+    "cnsa_2_0",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -197,6 +198,90 @@ def quantum_safe_mechanisms(r: ScanResult) -> list[AIComponent]:
             continue
         if canonical_algorithm_family(c) in _PQC_FAMILIES:
             out.append(c)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# CNSA 2.0 (C14): the NSA Commercial National Security Algorithm Suite 2.0 is a
+# PARAMETER-LEVEL allowlist for National Security Systems — stricter than the
+# family-level FIPS/BSI allowlist (C15). It approves AES-256, SHA-384/512,
+# ML-KEM-1024, ML-DSA-87, and the SP 800-208 stateful-hash signatures (LMS/XMSS)
+# for firmware/software signing. Everything else that is quantum-safe-capable
+# but under-parameterized (ML-KEM-512/768, ML-DSA-44/65) or outside the suite
+# (SLH-DSA, FALCON, ChaCha20, AES-128/192, SHA-256) is non-compliant. Classical
+# quantum-vulnerable public-key crypto is NOT a suite violation — it is the
+# transition state CNSA-3 tracks. These queries read only the graph facts C7
+# stamped (nistQuantumSecurityLevel + primitive + parameterSet + hybrid) + C15's
+# canonical family; they never read flags.
+# --------------------------------------------------------------------------- #
+
+#: CNSA 2.0 security-strength category floors (C7 nistQuantumSecurityLevel). The
+#: suite mandates the Category-5 (256-bit) member of the symmetric + quantum-safe
+#: families and Category-4+ (SHA-384/512) hashing.
+_CNSA_SYMMETRIC_LEVEL = 5  # AES-256 only
+_CNSA_HASH_LEVEL = 4  # SHA-384 / SHA-512
+_CNSA_PQC_LEVEL = 5  # ML-KEM-1024 / ML-DSA-87
+
+#: SP 800-208 stateful-hash signatures CNSA 2.0 approves for firmware/software
+#: signing regardless of a NIST-category grade (their strength rides the tree/hash
+#: parameters, not a single securityStrengthBits number).
+_CNSA_STATEFUL_HASH = frozenset({"lms", "xmss", "hss"})
+
+
+def _qsl(c: AIComponent) -> int | None:
+    """The asset's C7 ``nistQuantumSecurityLevel`` as an int, or None if ungraded."""
+    raw = (c.properties or {}).get("crypto:nistQuantumSecurityLevel")
+    if raw is not None and str(raw).isdigit():
+        return int(raw)
+    return None
+
+
+def cnsa_symmetric_hash_noncompliant(r: ScanResult) -> list[AIComponent]:
+    """Symmetric ciphers / hashes below the CNSA 2.0 floor (AES-256, SHA-384/512).
+
+    Graded straight off the C7 ``nistQuantumSecurityLevel`` + ``crypto:primitive``:
+    a block/stream cipher must be AES at Category 5 (AES-256); a hash must be
+    Category 4+ (SHA-384/512 — SHA-256 at Category 2 fails). An ungraded asset
+    (no level stamped, e.g. an AES whose key size the source never revealed) is
+    skipped — never counted as a fail the inventory cannot substantiate.
+    """
+    out: list[AIComponent] = []
+    for c in algorithms(r):
+        prim = (c.properties or {}).get("crypto:primitive")
+        lvl = _qsl(c)
+        if lvl is None:
+            continue
+        if prim in ("block-cipher", "stream-cipher"):
+            if canonical_algorithm_family(c) != "aes" or lvl < _CNSA_SYMMETRIC_LEVEL:
+                out.append(c)
+        elif prim == "hash" and lvl < _CNSA_HASH_LEVEL:
+            out.append(c)
+    return out
+
+
+def cnsa_underparameterized_quantum_safe(r: ScanResult) -> list[AIComponent]:
+    """Quantum-safe assets not at the CNSA 2.0 parameter set.
+
+    Queries the quantum-safe / hybrid mechanisms (:func:`quantum_safe_mechanisms`)
+    and rejects any that are not the CNSA-mandated parameter: ML-KEM must be 1024
+    (Category 5), ML-DSA must be 87 (Category 5); LMS/XMSS/HSS are approved as
+    SP 800-208 stateful-hash signing; every other quantum-safe scheme (SLH-DSA,
+    FALCON) is outside the CNSA 2.0 suite. A hybrid key-agreement is judged on its
+    ML-KEM component's grade (its ``nistQuantumSecurityLevel``).
+    """
+    out: list[AIComponent] = []
+    for c in quantum_safe_mechanisms(r):
+        fam = canonical_algorithm_family(c)
+        if fam in _CNSA_STATEFUL_HASH:
+            continue
+        pset = (c.properties or {}).get("crypto:parameterSet")
+        lvl = _qsl(c)
+        if fam in ("ml-kem", "hybrid"):
+            if pset == "1024" or lvl == _CNSA_PQC_LEVEL:
+                continue
+        elif fam == "ml-dsa" and (pset == "87" or lvl == _CNSA_PQC_LEVEL):
+            continue
+        out.append(c)
     return out
 
 
@@ -1027,6 +1112,117 @@ register_manual(
 
 
 # --------------------------------------------------------------------------- #
+# CNSA 2.0 — NSA Commercial National Security Algorithm Suite 2.0 (National
+# Security Systems). A parameter-level quantum-readiness allowlist: AES-256,
+# SHA-384/512, ML-KEM-1024, ML-DSA-87, and SP 800-208 stateful-hash (LMS/XMSS)
+# for firmware signing. Classical quantum-vulnerable crypto is permitted through
+# the CNSA 2.0 transition window (exclusive PQC by 2035) but must be identified
+# for migration — that is CNSA-3's transition-state tracker, not a suite ban.
+# --------------------------------------------------------------------------- #
+
+_FW_CNSA = "cnsa_2_0"
+_S_CNSA = "NSA CNSA 2.0"
+
+R_CNSA1 = _req(
+    "CNSA-1",
+    _FW_CNSA,
+    "CNSA 2.0 symmetric + hashing: AES-256 and SHA-384/512 only",
+    _S_CNSA,
+)
+R_CNSA2 = _req(
+    "CNSA-2",
+    _FW_CNSA,
+    "Quantum-resistant algorithms at the CNSA 2.0 parameter set "
+    "(ML-KEM-1024 / ML-DSA-87 / LMS / XMSS)",
+    _S_CNSA,
+)
+R_CNSA3 = _req(
+    "CNSA-3",
+    _FW_CNSA,
+    "Quantum-vulnerable public-key cryptography identified for CNSA 2.0 migration",
+    _S_CNSA,
+)
+R_CNSA4 = _req(
+    "CNSA-4",
+    _FW_CNSA,
+    "CNSA 2.0 NSS transition-timeline milestones met",
+    _S_CNSA,
+)
+
+
+@register_check(R_CNSA1)
+def _cnsa1(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    bad = cnsa_symmetric_hash_noncompliant(r)
+    if bad:
+        return FAIL(
+            f"{len(bad)} symmetric/hash algorithm(s) below the CNSA 2.0 floor "
+            f"(NSS requires AES-256 and SHA-384/512; e.g. AES-128/192, SHA-256)",
+            _refs(bad),
+        )
+    return PASS(
+        "all symmetric ciphers + hashes meet the CNSA 2.0 floor (AES-256, "
+        "SHA-384/512)",
+        _refs(algorithms(r)),
+    )
+
+
+@register_check(R_CNSA2)
+def _cnsa2(r: ScanResult, req: Requirement) -> CheckResult:
+    safe = quantum_safe_mechanisms(r)
+    if not safe:
+        return PASS("no quantum-resistant algorithms adopted yet to evaluate")
+    under = cnsa_underparameterized_quantum_safe(r)
+    if under:
+        return FAIL(
+            f"{len(under)} quantum-resistant algorithm(s) not at the CNSA 2.0 "
+            f"parameter set (NSS mandates ML-KEM-1024 / ML-DSA-87 / LMS / XMSS; "
+            f"e.g. ML-KEM-512/768, ML-DSA-44/65, SLH-DSA, FALCON)",
+            _refs(under),
+        )
+    return PASS(
+        f"all {len(safe)} quantum-resistant algorithm(s) use a CNSA 2.0 "
+        f"parameter set",
+        _refs(safe),
+    )
+
+
+@register_check(R_CNSA3)
+def _cnsa3(r: ScanResult, req: Requirement) -> CheckResult:
+    qv = quantum_vulnerable(r)
+    if not qv:
+        return PASS(
+            "no quantum-vulnerable public-key cryptography — no CNSA 2.0 migration "
+            "pending"
+        )
+    missing = [
+        c for c in qv if not (c.properties or {}).get("crypto:pqcMigrationTarget")
+    ]
+    if missing:
+        return FAIL(
+            f"{len(missing)} quantum-vulnerable public-key asset(s) not identified "
+            f"with a CNSA 2.0 PQC migration target (NSS must migrate off RSA/ECC "
+            f"before the 2035 exclusive-PQC deadline)",
+            _refs(missing),
+        )
+    return PASS(
+        f"{len(qv)} quantum-vulnerable public-key asset(s) identified + assigned a "
+        f"CNSA 2.0 migration target (classical use permitted through the CNSA 2.0 "
+        f"transition window; exclusive PQC by 2035)",
+        _refs(qv),
+    )
+
+
+register_manual(
+    R_CNSA4,
+    "CNSA 2.0 NSS transition-timeline attestation (software/firmware signing by "
+    "2030, default across NSS by 2033, exclusive by 2035) is a program milestone "
+    "outside a static crypto inventory",
+)
+
+
+# --------------------------------------------------------------------------- #
 # Runner — assemble ``ScanResult.compliance`` for the CBOM frameworks.
 # --------------------------------------------------------------------------- #
 
@@ -1070,4 +1266,6 @@ __all__ = [
     "under_strength",
     "quantum_safe_mechanisms",
     "non_approved_algorithms",
+    "cnsa_symmetric_hash_noncompliant",
+    "cnsa_underparameterized_quantum_safe",
 ]

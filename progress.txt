@@ -701,3 +701,38 @@ progress.aibom-reconcile.txt (reference only).
   chroma-provider/framework recall failures are PRE-EXISTING (crewai detection; unrelated to CBOM/crypto).
 - Next selectable after C8 = C14 (13.5, deps C7+C8 both true now: CNSA 2.0 quantum-readiness framework) or
   C9 (14, deps C1-C7: CycloneDX hardening).
+
+## C14 (build, DONE) — CNSA 2.0 quantum-readiness compliance framework
+- SCOPE (ledger row 146): CBOM_FRAMEWORKS 9→10. New framework `cnsa_2_0` in compliance.py — a
+  PARAMETER-LEVEL quantum-readiness allowlist for NSS, STRICTER than the C15 family-level FIPS/BSI
+  allowlist. Pure check-assembly querying the GRAPH (C7 crypto:nistQuantumSecurityLevel + primitive +
+  parameterSet + hybrid, C15 canonical_algorithm_family); never flags. Enrichment-only (no scanner, no
+  new components → benchmark true-miss==0 preserved). NO frontend (F3 surfaces the expanded matrix;
+  normalize.py carries result.compliance verbatim → all 10 frameworks thread additively — C7/C8/C13/C15
+  precedent). No worker/aibom runtime change → no worker restart needed.
+- THE CNSA-SPECIFIC INSIGHT — why it needed C7 not C15: the FIPS/BSI allowlist (C15 is_approved_algorithm)
+  is FAMILY-level (ml-kem approved regardless of param). CNSA 2.0 is PARAMETER-level: ML-KEM-1024 approved
+  but ML-KEM-768 FAILS. So CNSA cannot reuse is_approved_algorithm — it queries C7's parameterSet + qsl.
+  CNSA-2 `cnsa_underparameterized_quantum_safe`: ml-kem/hybrid pass iff pset=='1024' or qsl==5; ml-dsa iff
+  pset=='87' or qsl==5; lms/xmss/hss approved (SP 800-208 stateful-hash firmware signing); SLH-DSA + FALCON
+  are OUT of the CNSA suite → fail. A hybrid is judged on its ML-KEM component's grade (Hybrid ML-KEM-1024
+  pass, Hybrid ML-KEM-768 fail) — proven by test.
+- CNSA-1 symmetric/hash floor: block/stream-cipher must be AES @ Category 5 (AES-256); hash @ Category 4+
+  (SHA-384/512; SHA-256=Cat2 FAILS). Uses `_qsl()` (C7 level as int) + primitive. UNGRADED (no level, e.g.
+  synthetic-crypto-app's AES with no key size on the source line) → SKIPPED, never a fail the inventory
+  can't substantiate (same honesty contract as under_strength). So app CNSA-1 fails on SHA-256 (graded),
+  NOT on the ungraded AES-ECB.
+- CNSA-3 = classical-not-migrated is a TRANSITION STATE not a suite ban (ledger: "its own state"): pass iff
+  every quantum-vulnerable public-key asset carries a crypto:pqcMigrationTarget (identified for migration),
+  fail otherwise. Mirrors OMB-2/QR-3 shape. So RSA present + targeted → CNSA-3 pass (classical permitted
+  through the transition window, exclusive PQC by 2035). CNSA-4 = register_manual (NSS timeline attestation).
+- VERDICT MATRIX (real pipeline): app(weak) CNSA-1 fail(SHA-256)/CNSA-2 pass(no PQC)/CNSA-3 pass/CNSA-4 nbe
+  → coverage 0.667. pqc(strong) CNSA-1 pass(AES-256+SHA-384)/CNSA-2 fail(ML-KEM-768+SLH-DSA-256+FALCON-512+
+  Hybrid-768 = 4)/CNSA-3 pass(RSA-2048 targeted)/CNSA-4 nbe → coverage 0.667.
+- GATE: new test_cbom_compliance_cnsa.py (14 incl. parameter-level allowlist + hybrid-component judging +
+  ungraded-skip honesty + transition-state + lane-purity flag-corruption + out_of_scope-without-crypto +
+  coverage) + broad cbom/crypto/compliance/normalize/chart/benchmark suite 360 passed + benchmark_gate
+  (true-miss==0, 3 passed) + ruff + mypy(compliance.py) clean. `.venv/bin/python` (system py 3.9 breaks
+  `int | None`). Pre-existing AIBOM test_differential chroma failures unrelated (not run in CBOM suite).
+- Next selectable after C14 = C9 (14, deps C1-C7: CycloneDX 1.6 hardening across all asset types) — then
+  C10 (14.5, dep C9: OID enrichment), I1 (worker route), F1/F2/F3 (frontend), B1/B2 (bench + CI).
