@@ -42,9 +42,22 @@ EXPIRED_CERTIFICATE = "EXPIRED_CERTIFICATE"
 WEAK_CERTIFICATE_SIGNATURE = "WEAK_CERTIFICATE_SIGNATURE"
 WEAK_CERTIFICATE_KEY = "WEAK_CERTIFICATE_KEY"
 SELF_SIGNED_LEAF = "SELF_SIGNED_LEAF"
+# C6 related-crypto-material misuse codes (source-derived; see
+# :mod:`aibom.cbom.misuse` for detection). Each is a present-day break:
+#   * WEAK_RNG      — key/IV/nonce/salt from a non-crypto PRNG (CWE-338);
+#   * STATIC_IV     — a constant/predictable IV or nonce reaching a cipher (CWE-329);
+#   * REUSED_NONCE  — the same static IV/nonce securing >1 encryption (CWE-323);
+#   * HARDCODED_KEY — a symmetric key embedded as a source literal (CWE-321).
+WEAK_RNG = "WEAK_RNG"
+STATIC_IV = "STATIC_IV"
+REUSED_NONCE = "REUSED_NONCE"
+HARDCODED_KEY = "HARDCODED_KEY"
 
 WEAK_CRYPTO_CODES = frozenset(
-    {WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL}
+    {
+        WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL,
+        WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY,
+    }
 )
 
 _SEV = "error"  # SARIF error == High impact (mirrors the secret scanner).
@@ -191,6 +204,75 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
     return None
 
 
+def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str]]:
+    """Return every crypto-material misuse flag on a related-crypto-material asset (C6).
+
+    Pure predicate over the ``crypto:`` misuse props the C6 misuse scanner
+    (:mod:`aibom.cbom.scanners.crypto_misuse_scan`) emitted — never re-scans
+    source. Returns an empty list for any non-material component, so the flag
+    scanner can call it on every asset unconditionally. Misuses stack: material
+    from a weak RNG that is also a static, reused IV raises all three.
+    """
+    if component.kind != "crypto_asset":
+        return []
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "related-crypto-material":
+        return []
+    kind = props.get("crypto:materialKind", "material")
+    name = component.name
+    findings: list[tuple[str, str, str]] = []
+
+    if props.get("crypto:weakRng") == "true":
+        src = props.get("crypto:generatedBy", "a non-cryptographic PRNG")
+        findings.append(
+            (
+                WEAK_RNG,
+                _SEV,
+                f"Weak RNG for crypto material {name}: {src} is not a CSPRNG "
+                f"(CWE-338); the {kind} is predictable. Use os.urandom / "
+                f"secrets / crypto.randomBytes / a platform CSPRNG.",
+            )
+        )
+    # A reused nonce is strictly worse than a merely-static one, so REUSED_NONCE
+    # supersedes STATIC_IV on the same asset (no double IV finding).
+    if props.get("crypto:reused") == "true":
+        findings.append(
+            (
+                REUSED_NONCE,
+                _SEV,
+                f"Reused nonce/IV {name}: the same constant {kind} secures more "
+                f"than one encryption (CWE-323) — catastrophic for GCM/CTR "
+                f"(nonce reuse breaks confidentiality and integrity). Derive a "
+                f"fresh random nonce per message.",
+            )
+        )
+    elif props.get("crypto:staticIv") == "true":
+        findings.append(
+            (
+                STATIC_IV,
+                _SEV,
+                f"Static IV/nonce {name}: a constant, predictable {kind} reaches "
+                f"a cipher (CWE-329); it defeats CBC/CTR semantic security. Use a "
+                f"fresh random IV per message.",
+            )
+        )
+    if props.get("crypto:hardcoded") == "true" and kind in (
+        "secret-key",
+        "private-key",
+        "key",
+    ):
+        findings.append(
+            (
+                HARDCODED_KEY,
+                _SEV,
+                f"Hardcoded key {name}: a symmetric/private key is embedded as a "
+                f"source literal (CWE-321); anyone with the code has the key. "
+                f"Load key material from a secret manager / KMS, never source.",
+            )
+        )
+    return findings
+
+
 def _sig_digest_is_broken(sig_alg: str) -> bool:
     """A certificate signatureAlgorithm built on a collision-broken digest."""
     low = sig_alg.lower()
@@ -316,8 +398,13 @@ __all__ = [
     "WEAK_CERTIFICATE_SIGNATURE",
     "WEAK_CERTIFICATE_KEY",
     "SELF_SIGNED_LEAF",
+    "WEAK_RNG",
+    "STATIC_IV",
+    "REUSED_NONCE",
+    "HARDCODED_KEY",
     "WEAK_CRYPTO_CODES",
     "weak_finding",
     "cert_expiry_finding",
     "certificate_findings",
+    "material_misuse_findings",
 ]

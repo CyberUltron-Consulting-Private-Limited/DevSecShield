@@ -97,7 +97,7 @@
       "dependencies": [
         "R3"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Related-crypto-material + weakness analysis: hardcoded keys/IV/nonce/salt, weak RNG, ECB mode, deprecated primitives; emit flags + edges"
     },
     {
@@ -246,6 +246,15 @@
       ],
       "passes": false,
       "title": "Clean-room classical security-strength grade + approved-algorithm allowlist (R5): enrichment pass (parallel to C7 pqc grading) emitting crypto:securityStrengthBits per algorithm asset via SP 800-57 Table-2 comparable-strength map (AES-128->128/RSA-2048->112/RSA-3072->128/P-256->128/SHA-256->128), + APPROVED_ALGORITHM(framework) allowlist sets (FIPS-140-3/BSI) queried by C8; scanners EMIT, compliance QUERIES; no framework logic here"
+    },
+    {
+      "id": "C16",
+      "priority": 11.8,
+      "dependencies": [
+        "C1"
+      ],
+      "passes": false,
+      "title": "Clean-room weak-asymmetric-padding weakness (CWE-780, deferred from C6): capture the crypto OPERATION (encrypt/sign) as a C1 arg-role, then flag WEAK_PADDING for RSA ENCRYPTION with pkcs1v15/none/textbook padding \u2014 must NOT flag FIPS-approved PKCS#1 v1.5 signatures (frozen synthetic-crypto-dataflow rsa_pkcs1v15_sign)"
     }
   ]
 }

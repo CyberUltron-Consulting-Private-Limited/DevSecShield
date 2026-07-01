@@ -464,3 +464,42 @@ progress.aibom-reconcile.txt (reference only).
   AIBOM-only gitignored tree → never scanned by the CBOM pipeline (scan_crypto only touches synthetic-crypto-*).
 - Next selectable after C11 = C6 (related-crypto-material + weakness analysis: hardcoded keys/IV/nonce/salt,
   weak RNG, ECB, deprecated primitives).
+
+## C6 (build, DONE) — related-crypto-material MISUSE analysis (weak RNG / static IV / reused nonce / hardcoded key)
+- SCOPE (ledger rows 110/111 + title): source-level MISUSE the inventory lanes (C1 algorithm, C2 material) do
+  not derive. NEW flag codes WEAK_RNG (CWE-338), STATIC_IV (CWE-329), REUSED_NONCE (CWE-323), HARDCODED_KEY
+  (CWE-321). ECB + deprecated-primitive weakness were ALREADY C5; NOT re-done.
+- ARCHITECTURE (honors the R3 predicate/emitter split): NEW `cbom/misuse.py::detect_material_misuse(text,lang)`
+  (pure source analysis) → NEW scanner `scanners/crypto_misuse_scan.py` (order=25, between material=20 and
+  weak-flagger=40) EMITS enriched `related-crypto-material` components carrying the misuse as `crypto:` props
+  (`crypto:weakRng`+`crypto:generatedBy`, `crypto:staticIv`, `crypto:reused`, `crypto:hardcoded`) + a
+  `used_by` edge to the co-located cipher asset → NEW pure predicate `weakness.py::material_misuse_findings`
+  reads those props back into flags (raised by the EXISTING order-40 weak_algorithm_scan, which now also calls
+  it) → C8 scorer weights them (added 4×weight-8 to crypto-risk-weights.yaml). Codes added to
+  WEAK_CRYPTO_CODES so they thread through normalize `_weakness_distribution` + `_finding.weak` automatically
+  (no normalize/chart change needed — F1 will surface the breakdown).
+- PRECISION = 3 AND-gates (why zero-FP): (1) whole-file `_CRYPTO_CTX_RE` gate (a cipher construct or crypto
+  import must exist — a game's `Math.random()` file is skipped entirely); (2) crypto-material VARIABLE-NAME
+  gate (`iv/nonce/*_iv`, `key/secret_key/*_key`, `salt`, `token`) OR inline-into-cipher; (3) a CONSTANT-LITERAL
+  binding (anchored `_CONST_LIT_RE`) OR a weak-PRNG binding with `_SECURE_RNG_RE` (os.urandom/secrets/
+  SecureRandom/crypto.randomBytes/crypto/rand) explicitly EXCLUDED. Reuse = `_count_cipher_uses` (same
+  IV/nonce symbol on ≥2 cipher-construction lines); REUSED_NONCE SUPERSEDES STATIC_IV on one asset (no double
+  IV flag). GOTCHA fixed: trailing `#`/`//` comments defeat the anchored const-literal `$` — must
+  `_strip_trailing_comment(rhs,lang)` before the const test (weak-RNG uses search so was unaffected).
+- REGRESSION SAFETY (C5/C11 discipline — isolated fixture + PROVEN zero phantom): new fixture
+  `tests/fixtures/synthetic-crypto-misuse/{static_iv.py,weak_rng.py,hardcoded_key.py,good_crypto.py(neg
+  control),weak_crypto.js(cross-lang)}`. Grepped ALL frozen fixtures: NO `iv/nonce=<literal>` binding, NO
+  crypto-context non-crypto-RNG, so C6 emits 0 flags on all 8 synthetic-crypto-* frozen fixtures (verified
+  in-loop). crypto_app.py's INLINE `modes.CBC(b"\x00"*8)` is intentionally out of scope (we do symbol-bound
+  static-IV per the ledger's documented technique; inline-literal-IV is a future superset — noted, not
+  shipped, to keep the frozen oracle + baselines untouched).
+- DEFERRED WEAK_PADDING → NEW story C16 (dep C1): a naive `crypto:padding∈{pkcs1v15}` predicate FALSE-POSITIVES
+  on frozen `synthetic-crypto-dataflow::rsa_pkcs1v15_sign` (PKCS#1 v1.5 is FIPS-approved for SIGNATURES; only
+  ENCRYPTION is weak). The emitted asset lacks encrypt-vs-sign context → needs C1 to capture the crypto
+  OPERATION as an arg-role first. Split out so C6 stays zero-phantom + green. Ledger row 112 marked deferred.
+- GATE: full cbom/crypto suite 225 passed + new test_cbom_crypto_misuse.py 14 passed + benchmark_gate
+  (true-miss==0) + ruff + mypy clean on misuse.py/crypto_misuse_scan.py/weakness.py + CycloneDX schema-valid
+  with the new material props. NOTE: 2 PRE-EXISTING failures in AIBOM `test_differential.py`
+  (chroma-provider/chroma-framework recall 0.5<0.9) are unrelated to CBOM — confirmed identical with C6
+  stashed. `uv run` interpreter (system py 3.9 breaks `str | None`).
+- Next selectable after C6 = C13 (11.5, dep C5: cipher-suite & SSH/IPsec-negotiation weakness catalog).

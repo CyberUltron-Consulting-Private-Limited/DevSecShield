@@ -18,6 +18,11 @@ flags:
   EXPIRED_CERTIFICATE: 8  # an X.509 certificate past notValidAfter
   WEAK_CERTIFICATE_SIGNATURE: 8  # cert signed with MD5/SHA-1 — forgeable (C4)
   WEAK_CERTIFICATE_KEY: 8        # cert public key below the asymmetric floor (C4)
+  # ── C6 crypto-material misuse -> HIGH (present-day breaks) ──
+  WEAK_RNG: 8             # key/IV/nonce/salt from a non-crypto PRNG (CWE-338)
+  STATIC_IV: 8            # constant/predictable IV or nonce reaching a cipher (CWE-329)
+  REUSED_NONCE: 8         # same static IV/nonce securing >1 encryption (CWE-323)
+  HARDCODED_KEY: 8        # symmetric/private key embedded as a source literal (CWE-321)
   # ── quantum-vulnerable / trust smell -> MEDIUM (a future/latent risk; SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
   SELF_SIGNED_LEAF: 4     # self-signed end-entity cert — a production trust smell (C4)

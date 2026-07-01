@@ -22,6 +22,7 @@ from aibom.cbom.registry import cbom_register
 from aibom.cbom.weakness import (
     cert_expiry_finding,
     certificate_findings,
+    material_misuse_findings,
     weak_finding,
 )
 from aibom.scan.registry import ScanContext, Scanner
@@ -53,6 +54,9 @@ class WeakCryptoScanner(Scanner):
             if expiry is not None:
                 findings.append(expiry)
             findings.extend(certificate_findings(comp))
+            # C6: related-crypto-material misuse (weak RNG / static IV / reused
+            # nonce / hardcoded key) — pure predicate over the emitted props.
+            findings.extend(material_misuse_findings(comp))
             for code, severity, message in findings:
                 ctx.add_flag(code, comp.bom_ref, severity=severity, message=message)
 
