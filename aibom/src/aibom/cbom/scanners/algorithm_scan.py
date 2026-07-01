@@ -101,16 +101,18 @@ def _display_name(key: str, explicit_key_size: int | None, mode: str | None) -> 
 
 
 class _Asset:
-    __slots__ = ("key", "name", "key_size", "mode", "curve", "padding", "info",
-                 "location")
+    __slots__ = ("key", "name", "key_size", "mode", "curve", "padding",
+                 "operation", "info", "location")
 
-    def __init__(self, key, name, key_size, mode, curve, padding, info, location):
+    def __init__(self, key, name, key_size, mode, curve, padding, operation,
+                 info, location):
         self.key = key
         self.name = name
         self.key_size = key_size
         self.mode = mode
         self.curve = curve
         self.padding = padding
+        self.operation = operation
         self.info = info
         self.location = location
 
@@ -140,7 +142,7 @@ def _detect_assets(root: Path) -> list[_Asset]:
             if ident not in seen:
                 seen[ident] = _Asset(
                     refined, name, resolved_ks, det.mode, det.curve,
-                    det.padding, info, rel
+                    det.padding, det.operation, info, rel
                 )
     return sorted(seen.values(), key=lambda a: (a.name, a.location))
 
@@ -370,6 +372,8 @@ class CryptoAlgorithmScanner(Scanner):
                 props["crypto:curve"] = asset.curve
             if asset.padding:
                 props["crypto:padding"] = asset.padding
+            if asset.operation:
+                props["crypto:operation"] = asset.operation
             ctx.add_component(
                 CryptoAssetComponent(
                     bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",

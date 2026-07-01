@@ -58,9 +58,16 @@ ROLE_MODE = "MODE"
 ROLE_CURVE = "CURVE"
 ROLE_PADDING = "PADDING"
 ROLE_LITERAL_KEY = "LITERAL_KEY"  # a bytes key whose length implies the key size
+# The crypto OPERATION the matched call performs (encrypt/decrypt vs sign/verify).
+# It is not a positional argument but the enclosing method context — resolved from
+# the source line the same way ROLE_MODE reads ``extract_mode(line)``. C16 uses it
+# to tell an RSA *encryption* (where PKCS#1 v1.5 padding is a Bleichenbacher break)
+# apart from an RSA *signature* (where PKCS#1 v1.5 is FIPS-approved).
+ROLE_OPERATION = "OPERATION"
 
 _VALID_ROLES = frozenset(
-    {ROLE_KEY_SIZE, ROLE_MODE, ROLE_CURVE, ROLE_PADDING, ROLE_LITERAL_KEY}
+    {ROLE_KEY_SIZE, ROLE_MODE, ROLE_CURVE, ROLE_PADDING, ROLE_LITERAL_KEY,
+     ROLE_OPERATION}
 )
 
 # A never-matching default so the compiled-pattern fields are typed non-optional;
@@ -116,6 +123,7 @@ class Detection:
     mode: str | None = None
     curve: str | None = None
     padding: str | None = None
+    operation: str | None = None  # "encrypt" | "sign" | None (see ROLE_OPERATION)
     library: str | None = None
     receiver_bound: bool = False  # True when a receiver+method rule matched
 
@@ -161,8 +169,12 @@ PYTHON_RULES: tuple[CryptoRule, ...] = (
     CryptoRule(_PY, _PYCA, "ed25519", "Ed25519PrivateKey", "ed25519", ()),
     CryptoRule(_PY, _PYCA, "ed448", "Ed448PrivateKey", "ed448", ()),
     CryptoRule(_PY, _PYCA, "x25519", "X25519PrivateKey", "x25519", ()),
-    # --- pyca RSA padding (arg-role PADDING; RSA-in-use => an RSA asset) ---
-    CryptoRule(_PY, _PYCA, "padding", "OAEP|PKCS1v15|PSS", "rsa", (ROLE_PADDING,)),
+    # --- pyca RSA padding (arg-roles PADDING + OPERATION; RSA-in-use => an RSA
+    #     asset). OPERATION separates an RSA encrypt (``pub.encrypt(m, PKCS1v15())``
+    #     — a Bleichenbacher break) from an RSA sign (``priv.sign(m, PKCS1v15())`` —
+    #     FIPS-approved), which C16's weak-padding predicate needs. ---
+    CryptoRule(_PY, _PYCA, "padding", "OAEP|PKCS1v15|PSS", "rsa",
+               (ROLE_PADDING, ROLE_OPERATION)),
     # --- KDF / MAC ---
     CryptoRule(_PY, _PYCA, None, "PBKDF2HMAC", "pbkdf2", ()),
     CryptoRule(_PY, _PYCA, None, "Scrypt", "scrypt", ()),
@@ -625,6 +637,25 @@ def _resolve_padding(chain: str, line: str) -> str | None:
     return m.group(1).lower() if m else None
 
 
+# The crypto operation is read off the enclosing call on the line: a
+# ``.encrypt(`` / ``.decrypt(`` receiver marks encryption, ``.sign(`` /
+# ``.verify(`` marks a signature. Only an UNAMBIGUOUS line (exactly one family
+# present) yields an operation — a line mentioning both, or neither, stays None so
+# a downstream weak-padding check can only fire on proven encryption.
+_OP_ENCRYPT_RE = re.compile(r"\.(?:encrypt|decrypt)\b", _F)
+_OP_SIGN_RE = re.compile(r"\.(?:sign|verify)\b", _F)
+
+
+def _resolve_operation(line: str) -> str | None:
+    enc = bool(_OP_ENCRYPT_RE.search(line))
+    sig = bool(_OP_SIGN_RE.search(line))
+    if enc and not sig:
+        return "encrypt"
+    if sig and not enc:
+        return "sign"
+    return None
+
+
 def _apply_rule(
     rule: CryptoRule,
     chain: str,
@@ -644,6 +675,8 @@ def _apply_rule(
             det.curve = _resolve_curve(args, line)
         elif role == ROLE_PADDING:
             det.padding = _resolve_padding(chain, line)
+        elif role == ROLE_OPERATION:
+            det.operation = _resolve_operation(line)
     return det
 
 
@@ -653,6 +686,7 @@ def _merge(into: Detection, other: Detection) -> None:
     into.mode = into.mode or other.mode
     into.curve = into.curve or other.curve
     into.padding = into.padding or other.padding
+    into.operation = into.operation or other.operation
     into.library = into.library or other.library
     into.receiver_bound = into.receiver_bound or other.receiver_bound
 
@@ -750,4 +784,5 @@ __all__ = [
     "ROLE_CURVE",
     "ROLE_PADDING",
     "ROLE_LITERAL_KEY",
+    "ROLE_OPERATION",
 ]

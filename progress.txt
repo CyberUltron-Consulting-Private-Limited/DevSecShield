@@ -539,3 +539,47 @@ progress.aibom-reconcile.txt (reference only).
   contract; surfacing the cipher-suite breakdown distinctly is F1's scope (C5/C6/C11 precedent).
 - Next selectable after C13 = C16 (11.8, dep C1: weak-asymmetric-padding WEAK_PADDING, deferred from C6) or
   C7 (12, dep R4: PQC readiness).
+
+## C16 (build, DONE) — weak-asymmetric-ENCRYPTION-padding weakness (CWE-780, deferred from C6)
+- SCOPE (ledger row 112): the predicate C6 deferred because it FALSE-POSITIVES on the frozen
+  `synthetic-crypto-dataflow` `rsa_pkcs1v15_sign` (PKCS#1 v1.5 is FIPS 186-5-approved for SIGNATURES;
+  only ENCRYPTION is the Bleichenbacher/ROBOT break). The fix the story mandates: capture the crypto
+  OPERATION (encrypt vs sign) as a C1 arg-role FIRST, then gate WEAK_PADDING on operation=="encrypt".
+- C1 ADD: new `ROLE_OPERATION` in detect.py + `Detection.operation` field + `_resolve_operation(line)`
+  (`.encrypt`/`.decrypt` → "encrypt"; `.sign`/`.verify` → "sign"; ambiguous/absent → None — only an
+  UNAMBIGUOUS line yields an operation, so a downstream check can only fire on PROVEN encryption).
+  Added to the pyca padding rule `(ROLE_PADDING, ROLE_OPERATION)`. operation reads the LINE (not args) —
+  same pattern as ROLE_MODE's `extract_mode(line)`; `_merge` carries it. algorithm_scan `_Asset` gains an
+  `operation` slot + emits `crypto:operation` when set.
+- KEY DATA-FLOW INSIGHT (why the frozen fixture is safe WITHOUT changing asset identity): in
+  `synthetic-crypto-dataflow`, `rsa_oaep` (padding.OAEP) precedes `rsa_pkcs1v15_sign` and BOTH detect as
+  key="rsa" name="RSA" (no key size) → `_detect_assets` dedups by (name, rel) first-seen → the merged
+  "RSA" asset keeps padding=oaep, and the pkcs1v15-sign detection is DROPPED. So the frozen RSA-padding
+  asset is padding=oaep (not weak). AND the OAEP is cross-line from `.encrypt(` so operation=None there.
+  Net: ZERO delta on the frozen fixture — no new prop, no split, no count change. Proven by a frozen
+  regression test (WEAK_PADDING flags == 0 on both dataflow + synthetic-crypto-app).
+- OPERATION IS ON THE SAME LINE AS THE PADDING for the cases that matter: `priv.sign(m, padding.PKCS1v15(),
+  h)` (sign+padding same line) and `pub.encrypt(m, padding.PKCS1v15())` (encrypt+padding same line). The
+  OAEP negative is multi-line (`pub.encrypt(` \n `padding.OAEP(`) so its operation is None — fine, oaep is
+  safe regardless. So the isolated positive fixture MUST keep encrypt+padding on ONE line.
+- PREDICATE: `weakness.weak_padding_finding(component)` — pke asset + `crypto:padding∈{pkcs1v15,none,
+  textbook,raw}` + `crypto:operation=="encrypt"` → WEAK_PADDING (High). Only pkcs1v15 is reachable today
+  (the pyca `_PADDING_RE` only emits oaep/pkcs1v15/pss); none/textbook/raw future-proof + match the story
+  wording. Wired into order-40 weak_algorithm_scan; added to WEAK_CRYPTO_CODES (threads normalize
+  `_weakness_distribution` + charts for free — Gate B chart-data-contract stayed green, no chart edit);
+  weight 8 in crypto-risk-weights.yaml.
+- ISOLATED FIXTURE `tests/fixtures/synthetic-crypto-padding/{rsa_pkcs1v15_encrypt.py (POSITIVE),
+  rsa_oaep_encrypt.py (safe-padding negative), rsa_pkcs1v15_sign.py (FIPS-signature negative — the exact
+  shape the story forbids flagging)}` — each RSA usage in its OWN file so all three become separate
+  (name="RSA", rel) assets (same-file would collide-dedup to one). Test `test_cbom_weak_padding.py` (15:
+  detect operation-resolution unit + predicate unit + pipeline integration + 2 frozen regressions).
+- CycloneDX: `crypto:operation` rides properties[] like crypto:padding (emit_and_validate == [] on the
+  fixture — confirmed). No emitter change needed.
+- GATE: new test 15 passed; full cbom/crypto/detect suite 252 passed (`-k "cbom or crypto or detect"
+  --ignore test_cbom_web_native_crypto_scan.py`); benchmark_gate + chart-data-contract + normalize +
+  scorer green; ruff + mypy clean on detect.py/weakness.py/algorithm_scan.py/weak_algorithm_scan.py.
+  `.venv/bin/python` interpreter (system py 3.9 breaks `str | None`). NO frontend this iteration
+  (weakness-only code rides the existing WEAK_CRYPTO_CODES→charts contract — F1 surfaces it distinctly;
+  C5/C6/C13 precedent). No two-writer interference this iteration (clean tree).
+- Next selectable after C16 = C7 (12, dep R4: PQC readiness — nistQuantumSecurityLevel grading, ML-KEM/
+  ML-DSA/SLH-DSA detection, hybrid + migration roadmap).

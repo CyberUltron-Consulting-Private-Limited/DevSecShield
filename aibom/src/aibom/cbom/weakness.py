@@ -61,11 +61,17 @@ HARDCODED_KEY = "HARDCODED_KEY"
 # ssh-rsa / diffie-hellman-group1-sha1 / arcfour, or an IKE proposal on a weak
 # MODP DH group). See :func:`cipher_suite_findings`.
 WEAK_CIPHER_SUITE = "WEAK_CIPHER_SUITE"
+# C16 weak asymmetric ENCRYPTION padding (CWE-780). RSA used for encryption with
+# PKCS#1 v1.5 (Bleichenbacher / ROBOT padding oracle), textbook/raw, or no
+# padding is a present-day break. Deliberately gated on the crypto OPERATION: a
+# PKCS#1 v1.5 *signature* is FIPS 186-5-approved and must NEVER be flagged.
+WEAK_PADDING = "WEAK_PADDING"
 
 WEAK_CRYPTO_CODES = frozenset(
     {
         WEAK_ALGORITHM, WEAK_CIPHER_MODE, WEAK_KEY_SIZE, WEAK_PROTOCOL,
         WEAK_RNG, STATIC_IV, REUSED_NONCE, HARDCODED_KEY, WEAK_CIPHER_SUITE,
+        WEAK_PADDING,
     }
 )
 
@@ -211,6 +217,50 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
         )
 
     return None
+
+
+# RSA encryption paddings with no chosen-ciphertext security. PKCS#1 v1.5
+# encryption is the Bleichenbacher/ROBOT padding oracle (CWE-780); textbook/raw/
+# none is deterministic RSA with no semantic security. OAEP / PSS are safe and
+# never listed. (Only ``pkcs1v15`` is currently emitted by the pyca padding rule;
+# the others future-proof the predicate and mirror the C16 story wording.)
+_WEAK_ENCRYPTION_PADDINGS = frozenset({"pkcs1v15", "none", "textbook", "raw"})
+
+
+def weak_padding_finding(component: AIComponent) -> tuple[str, str, str] | None:
+    """Return a ``WEAK_PADDING`` finding for insecure RSA *encryption* padding (C16).
+
+    Pure predicate over the ``crypto:padding`` + ``crypto:operation`` props the C1
+    detection lane emits. Fires ONLY when an RSA (``pke``) asset is used for
+    encryption/decryption with a padding that has no chosen-ciphertext security
+    (PKCS#1 v1.5 = Bleichenbacher/ROBOT, or textbook/none). A PKCS#1 v1.5
+    *signature* is FIPS 186-5-approved, so the operation gate means a signature —
+    or any usage whose operation could not be proven to be encryption — is never
+    flagged (zero false positives on the frozen ``synthetic-crypto-dataflow``
+    ``rsa_pkcs1v15_sign`` fixture). Returns ``None`` for any other component.
+    """
+    if component.kind != "crypto_asset":
+        return None
+    props = component.properties or {}
+    if props.get("crypto:assetType") != "algorithm":
+        return None
+    if props.get("crypto:primitive") != "pke":
+        return None
+    padding = (props.get("crypto:padding") or "").lower()
+    if padding not in _WEAK_ENCRYPTION_PADDINGS:
+        return None
+    # The operation gate: only proven encryption/decryption is a weakness.
+    if props.get("crypto:operation") != "encrypt":
+        return None
+    return (
+        WEAK_PADDING,
+        _SEV,
+        f"Insecure RSA encryption padding on {component.name}: PKCS#1 v1.5 (or "
+        f"textbook/raw) RSA encryption is a chosen-ciphertext / padding-oracle "
+        f"break (Bleichenbacher, ROBOT; CWE-780). Use RSA-OAEP for encryption, or "
+        f"a hybrid KEM (ML-KEM / ECIES). Note: PKCS#1 v1.5 *signatures* remain "
+        f"FIPS 186-5-approved and are not flagged.",
+    )
 
 
 def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str]]:
@@ -555,8 +605,10 @@ __all__ = [
     "REUSED_NONCE",
     "HARDCODED_KEY",
     "WEAK_CIPHER_SUITE",
+    "WEAK_PADDING",
     "WEAK_CRYPTO_CODES",
     "weak_finding",
+    "weak_padding_finding",
     "cert_expiry_finding",
     "certificate_findings",
     "material_misuse_findings",

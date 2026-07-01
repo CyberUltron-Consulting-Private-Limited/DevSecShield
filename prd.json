@@ -253,7 +253,7 @@
       "dependencies": [
         "C1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room weak-asymmetric-padding weakness (CWE-780, deferred from C6): capture the crypto OPERATION (encrypt/sign) as a C1 arg-role, then flag WEAK_PADDING for RSA ENCRYPTION with pkcs1v15/none/textbook padding \u2014 must NOT flag FIPS-approved PKCS#1 v1.5 signatures (frozen synthetic-crypto-dataflow rsa_pkcs1v15_sign)"
     }
   ]

@@ -25,6 +25,7 @@ from aibom.cbom.weakness import (
     cipher_suite_findings,
     material_misuse_findings,
     weak_finding,
+    weak_padding_finding,
 )
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -51,6 +52,13 @@ class WeakCryptoScanner(Scanner):
             algo = weak_finding(comp)
             if algo is not None:
                 findings.append(algo)
+            # C16: insecure RSA *encryption* padding (PKCS#1 v1.5 = Bleichenbacher).
+            # Orthogonal to weak_finding — a strong RSA-2048 key encrypting with
+            # PKCS#1 v1.5 is otherwise-unflagged but padding-weak; a PKCS#1 v1.5
+            # signature is FIPS-approved and the operation gate leaves it alone.
+            padding = weak_padding_finding(comp)
+            if padding is not None:
+                findings.append(padding)
             expiry = cert_expiry_finding(comp, today)
             if expiry is not None:
                 findings.append(expiry)

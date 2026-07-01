@@ -112,3 +112,15 @@
   canonical (`_canon_alg`) with a startswith+digit rule so bare `RSA` catches `RSA-2048` but `DES` never
   matches `3DES`. KM-7 PASSES vacuously with no policy artifact (absence = no violation) so it's safe on the
   frozen fixture. Fixture `tests/fixtures/synthetic-crypto-policy/`; test `tests/test_cbom_crypto_policy.py`.
+- C16 lane (weak RSA-ENCRYPTION-padding, CWE-780): the predicate C6 deferred. A PKCS#1 v1.5 SIGNATURE is
+  FIPS 186-5-approved; only ENCRYPTION is the Bleichenbacher/ROBOT break — so the flag MUST know the crypto
+  OPERATION. Added a NEW C1 arg-role `ROLE_OPERATION` in `detect.py` (`Detection.operation` + `_resolve_operation(line)`:
+  `.encrypt`/`.decrypt`→"encrypt", `.sign`/`.verify`→"sign", ambiguous/absent→None — reads the LINE like ROLE_MODE,
+  not args) on the pyca padding rule; `algorithm_scan` emits `crypto:operation`. New pure predicate
+  `weakness.weak_padding_finding` fires `WEAK_PADDING` (High, weight 8, in `WEAK_CRYPTO_CODES`) ONLY on `pke` +
+  `crypto:padding∈{pkcs1v15,none,textbook,raw}` + `crypto:operation=="encrypt"`. ZERO-DELTA on the frozen
+  `synthetic-crypto-dataflow` because its `rsa_oaep` (padding.OAEP) precedes `rsa_pkcs1v15_sign` and both dedup
+  to one "RSA" (name, rel) asset → padding=oaep wins, pkcs1v15-sign dropped; and OAEP is cross-line from
+  `.encrypt(` so operation=None. To PROVE the positive, keep `encrypt`+`padding.PKCS1v15()` on ONE line and put
+  each RSA usage in its OWN file (same-file collide-dedups). Fixture `tests/fixtures/synthetic-crypto-padding/`;
+  test `tests/test_cbom_weak_padding.py`.
