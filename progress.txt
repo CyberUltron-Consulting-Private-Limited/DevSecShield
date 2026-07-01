@@ -1100,3 +1100,30 @@ progress.aibom-reconcile.txt (reference only).
 - NO tracked files modified this iteration (0 code changes) — pure verification of an already-complete
   feature. Two-writer discipline honored: never touched/committed the parallel session's untracked WIP.
 - CONCLUSION: every story passes:true AND the full backend+frontend gate is green → FEATURE COMPLETE.
+
+## FINAL VERIFY (fresh iteration, 2026-07-01) — full completion gate re-proven, 0 code changes
+- All 27 prd stories passes:true; no passes:false selectable → terminal state. Re-ran the ENTIRE gate on
+  the COMMITTED tree (fresh-CI view; parallel session's untracked web_native WIP + multilang/web-native/
+  certs fixtures EXCLUDED via --ignore + mypy --exclude since absent in CI).
+- GOTCHA (fresh context): `source .venv/bin/activate` no-op'd → fell back to system Python 3.9 which can't
+  eval `str | None` annotations (pydantic TypeError). The venv is uv-managed Python 3.14 at
+  aibom/.venv/bin/python — invoke it DIRECTLY (`.venv/bin/python -m pytest ...`), do NOT rely on activate.
+- Backend: `.venv/bin/python -m pytest tests/ -k "cbom or crypto" --ignore=test_cbom_web_native...` = 364
+  passed / 188 deselected. ruff check src/aibom/cbom + integrations/cbom_devsecshield.py = clean.
+  mypy src/aibom/cbom --exclude 'web_native|jvm_go' = Success 22 files (lone error is on untracked
+  web_native_crypto_scan.py import-untyped → absent in CI). bench differential: test_cbom benchmark_gate
+  6 passed; bench/cbom/ci_repos.sh = 0 true-misses (01-pyjwt[cbomkit] our-unique=13,
+  02-pyopenssl[cbomkit]=10 + [cdxgen]=3).
+- Frontend: `npx tsc --noEmit` exit 0. LIVE dev-browser render on the ALREADY-RUNNING :3000 dev server
+  (temp route app/cbomlivecheck wrapping <CbomResults> in <QueryClientProvider>, real adapter run-object
+  from scan_crypto_to_devsecshield('synthetic-crypto-app', level=4) → cbom_distributions/cbom_compliance
+  [11 frameworks]/cbom_graph[16 nodes/2 edges]/cbom_scores[risk_band medium]/quantum_vulnerable_count=2,
+  passed as BOTH data + scanMetadata). Standalone playwright-core (AI_Security node_modules, channel:chrome;
+  MCP profile locked by parallel session as expected): HTTP 200, NOT a 404, 30 SVGs / 14 recharts surfaces,
+  0 console errors, 0 page errors, ALL 7 capability probes PASS (PQC/quantum readiness, quantum-vulnerable
+  RSA-1024/2048, CNSA-2.0/ML-KEM roadmap, compliance frameworks, weakness breakdown, dependency graph,
+  asset/algorithm distribution). Temp route + tmp json deleted; git status back to session-start (only the
+  parallel session's untracked WIP remains — never touched/committed).
+- NOTE: CbomResults reads cbom_* keys from either `data` OR `scanMetadata` (source precedence at
+  CbomResults.tsx ~927/937/947); temp route passes the run-object as both to exercise the real contract.
+- CONCLUSION: every story passes:true AND full backend+frontend gate green → FEATURE COMPLETE.
