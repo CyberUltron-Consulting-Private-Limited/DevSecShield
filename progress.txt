@@ -35,3 +35,25 @@ progress.aibom-reconcile.txt (reference only).
   be slow; a long iteration with advancing CPU + file writes is NOT stuck. Restart-then-verify; don't
   thrash. If a gate times out under load, note it and retry rather than declaring a product defect.
 ---
+
+## R1 (research, DONE) — IBM/PQCA CBOMkit + cbomkit-theia + sonar-cryptography
+- A RESEARCH story touches NO product code → the backend/frontend build gate does NOT apply. Its gate =
+  ledger rows written + gap-list produced + any appended BUILD stories + prd.json still valid JSON.
+  Validate with the python one-liner (json.load + recompute next-selectable) before committing.
+- IBM CBOM tooling is now **PQCA** (Post-Quantum Cryptography Alliance / Linux Foundation), formerly IBM.
+  Canonical repos: `github.com/PQCA/sonar-cryptography` (source AST, Java/Python/Go via SonarQube parsers)
+  + `github.com/PQCA/cbomkit-theia` (Go CLI, filesystem/container). Architecture blog:
+  https://pqca.org/blog/2026/pqca-cbomkit-architecture/ (best single overview).
+- KEY EVIDENCE-BACKED GAPS vs our lane (full rows in docs/cbom-research/LEDGER.md): (1) our detection is
+  regex-per-LINE, theirs is receiver-type + ordered-arg + nested-parameter (dataflow) → C1; (2) our corpus
+  is Python-centric, theirs has real Java/Go API rules → C1/C2/C3; (3) NO OID enrichment in our emit →
+  appended **C10**; (4) NO crypto-policy config-file scan (java.security jdk.tls.disabledAlgorithms +
+  openssl.cnf CipherString/MinProtocol) → appended **C11**. theia plugins = certificates/secrets/
+  javasecurity/opensslconf/problematicca/keys/vex.
+- WE ARE AT-OR-AHEAD on: hand-built CycloneDX 1.6 crypto-asset, tri-state graph-queried compliance across
+  NIST/OMB/EU (broader than their single quantum-safe allowlist policy), deterministic PQC grading, and
+  source-level TLS/weakness inventory (theia is filesystem-only → our OurUnique is large by design).
+- APPENDED stories use FRACTIONAL priorities to slot before I1/F/B without renumbering: C11=10.5 (dep C5),
+  C10=14.5 (dep C9). Selection logic (lowest-priority passes:false with deps met) handles non-int fine.
+- Next selectable after R1: R2 (research multi-language AST detection). R3/R4/R5 also unblocked by R1.
+---

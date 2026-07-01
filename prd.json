@@ -3,7 +3,7 @@
   "branchName": "feat/cbom-best-of-breed",
   "notes": "Ralph picks the lowest-priority story with passes:false whose dependencies are all passes:true. RESEARCH (Rx) stories produce docs/cbom-research/LEDGER.md provenance rows + may APPEND new BUILD stories. BUILD stories (Cx) clean-room implement ONE capability into aibom/src/aibom/cbom/ + tests + bench/cbom differential gate. FRONTEND (Fx) extend CbomResults.tsx + charts + sidebar matching the existing theme. BENCH/CI (Bx) extend oracles + gates. HARD RULE: product ships NO OSS BOM tool; OSS tools are oracles in bench/cbom only; techniques are re-implemented clean-room (spec/behavior, never copied code); no runtime LLM in product; tri-state compliance; hand-built CycloneDX 1.6 crypto-asset.",
   "userStories": [
-    { "id": "R1", "priority": 1, "dependencies": [], "passes": false,
+    { "id": "R1", "priority": 1, "dependencies": [], "passes": true,
       "title": "Research IBM CBOMkit / cbomkit-theia + Sonar-Cryptography: architecture, detection model, CycloneDX output; write ledger + gap-list vs our lane" },
     { "id": "R2", "priority": 2, "dependencies": ["R1"], "passes": false,
       "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model" },
@@ -42,6 +42,10 @@
     { "id": "B1", "priority": 19, "dependencies": ["C9"], "passes": false,
       "title": "Extend bench/cbom oracles (add Sonar-Cryptography and/or cryptobom-forge as oracles) + refresh frozen baselines + differential gate (true-miss==0, our-unique>0)" },
     { "id": "B2", "priority": 20, "dependencies": ["F1","F2","F3","B1"], "passes": false,
-      "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner" }
+      "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner" },
+    { "id": "C11", "priority": 10.5, "dependencies": ["C5"], "passes": false,
+      "title": "Clean-room crypto-policy config-file scanner (R1): parse java.security (jdk.tls.disabledAlgorithms/crypto.policy) + openssl.cnf (CipherString/MinProtocol) into protocol/policy crypto-assets + disabled-but-used compliance cross-ref (cbomkit-theia javasecurity/opensslconf technique)" },
+    { "id": "C10", "priority": 14.5, "dependencies": ["C9"], "passes": false,
+      "title": "Clean-room algorithm/curve->OID enrichment (R1): deterministic OID knowledge-base injected into CycloneDX cryptoProperties.oid at emit-time (sonar-cryptography Enrichment-stage technique); no OSS code" }
   ]
 }
