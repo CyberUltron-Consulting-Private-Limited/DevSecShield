@@ -53,7 +53,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
 import {
@@ -926,6 +926,16 @@ export default function CbomResults({
     return dist ?? null;
   }, [data, scanMetadata]);
 
+  // Crypto dependency graph (I1 cbom_graph). Same source precedence as the
+  // distributions — present only on reconciled aibom-lane scans; F1's asset-type
+  // breakdown + dependency-graph viz render only when it carries nodes.
+  const cryptoGraph = useMemo<CbomGraph | null>(() => {
+    const fromData = (data as Record<string, unknown> | null)?.cbom_graph;
+    const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph;
+    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
+    return g && Array.isArray(g.nodes) ? g : null;
+  }, [data, scanMetadata]);
+
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
 
@@ -1112,7 +1122,7 @@ export default function CbomResults({
           )}
 
           {/* Crypto-asset charts (aibom CBOM lane) */}
-          {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} />}
+          {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} graph={cryptoGraph} />}
 
           {/* Dashboard */}
           {dashboard && cardData && (

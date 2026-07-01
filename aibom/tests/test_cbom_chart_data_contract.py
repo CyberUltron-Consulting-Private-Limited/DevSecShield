@@ -90,3 +90,58 @@ def test_no_cbom_chart_can_silently_go_blank() -> None:
     assert pqc["readiness_pct"] is not None, "pqc readiness_pct blank"
     assert dist["certificates"], "certificates[] blank"
     assert dist["protocols"], "protocols[] blank"
+
+
+# ── F1: asset-type breakdown + crypto dependency-graph (cbom_graph) ──────────
+# The F1 results-page adds two graph-fed visualizations bound to the I1
+# ``cbom_graph`` {nodes, edges} projection (see CbomCryptoCharts.tsx):
+#   * Asset-type distribution  <- graph.nodes grouped by node.asset_type
+#                                  (falling back to "library" for kind==framework)
+#   * Crypto dependency graph  <- graph.nodes + graph.edges (React Flow)
+# These lock the payload so neither graph-fed chart can silently starve.
+
+
+def test_cbom_graph_present_with_nodes_and_edges() -> None:
+    """The dependency-graph viz reads ``cbom_graph`` {nodes, edges}; both must be
+    lists and the fixture must carry inventory nodes AND at least one edge."""
+    graph = _distributions()["cbom_graph"]
+    assert isinstance(graph, dict), "cbom_graph missing/flattened"
+    assert isinstance(graph["nodes"], list) and graph["nodes"], "graph nodes blank"
+    assert isinstance(graph["edges"], list) and graph["edges"], (
+        "graph edges blank -> CryptoDependencyGraph draws no lineage"
+    )
+
+
+def test_cbom_graph_nodes_carry_asset_type_fields() -> None:
+    """Each graph node carries the fields the AssetTypeDistribution + node styling
+    read (id/label/kind + optional asset_type/weak/quantum_vulnerable)."""
+    nodes = _distributions()["cbom_graph"]["nodes"]
+    for n in nodes:
+        assert n.get("id") and n.get("label") and n.get("kind"), "node field missing"
+        assert "asset_type" in n and "weak" in n and "quantum_vulnerable" in n
+
+
+def test_asset_type_distribution_non_empty_and_multi_type() -> None:
+    """AssetTypeDistribution buckets nodes by ``asset_type`` (or "library" for a
+    framework node). The fixture must yield >1 distinct asset class so the chart
+    is a real breakdown, not a single bar."""
+    nodes = _distributions()["cbom_graph"]["nodes"]
+    buckets: dict[str, int] = {}
+    for n in nodes:
+        key = n["asset_type"] or ("library" if n["kind"] == "framework" else "other")
+        buckets[key] = buckets.get(key, 0) + 1
+    assert buckets, "asset-type breakdown EMPTY -> chart is blank"
+    assert len(buckets) > 1, "only one asset class -> breakdown chart is degenerate"
+    # the fixture inventories algorithms, a cert, a protocol, key material + libs
+    assert "algorithm" in buckets and "certificate" in buckets
+
+
+def test_cbom_graph_edges_resolve_to_inventory_nodes() -> None:
+    """Every edge endpoint resolves to a node id (React Flow drops edges whose
+    source/target is absent), and each edge carries a ``rel`` label."""
+    graph = _distributions()["cbom_graph"]
+    ids = {n["id"] for n in graph["nodes"]}
+    for e in graph["edges"]:
+        assert e["source"] in ids, f"dangling edge source {e['source']}"
+        assert e["target"] in ids, f"dangling edge target {e['target']}"
+        assert e.get("rel"), "edge missing rel label"

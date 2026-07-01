@@ -150,7 +150,7 @@
       "dependencies": [
         "I1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Frontend: new asset-type + weakness-breakdown + dependency-graph visualizations in CbomResults, matching the existing scanner theme/charts/palette"
     },
     {
