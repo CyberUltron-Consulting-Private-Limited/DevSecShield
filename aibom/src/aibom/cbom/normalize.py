@@ -107,12 +107,50 @@ def _weakness_distribution(result: ScanResult) -> dict[str, int]:
     return dict(sorted(dist.items()))
 
 
-def _pqc_readiness(assets: list[AIComponent]) -> dict[str, Any]:
+def _pqc_migration_rows(
+    assets: list[AIComponent], result: ScanResult
+) -> list[dict[str, Any]]:
+    """One migration row per quantum-vulnerable algorithm asset (F2).
+
+    Carries the C7 grader's per-asset PQC targets — the unsized target family
+    (``ML-KEM (FIPS 203) / ML-DSA (FIPS 204)``) and the parameter-sized roadmap
+    (``ML-KEM-768 / ML-DSA-65``) matched to the asset's classical strength —
+    already rendered into ``crypto:pqcMigrationTarget`` / ``crypto:pqcMigrationRoadmap``
+    by the PQC scanner, so the F2 quantum-vulnerable list + migration-roadmap
+    panel render the exact algorithm-by-algorithm plan without re-deriving it.
+    Deterministic: sorted by impact rank then name.
+    """
+    rows = [
+        {
+            "name": c.name,
+            "primitive": props.get("crypto:primitive"),
+            "key_size": props.get("crypto:keySize"),
+            "curve": props.get("crypto:curve"),
+            "nist_quantum_security_level": (
+                int(nqsl) if (nqsl := props.get("crypto:nistQuantumSecurityLevel"))
+                is not None else None
+            ),
+            "migration_target": props.get("crypto:pqcMigrationTarget"),
+            "migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
+            "impact": _impact_for(c, result),
+        }
+        for c in assets
+        if (props := c.properties or {}).get("crypto:assetType") == "algorithm"
+        and props.get("crypto:quantumVulnerable") == "true"
+    ]
+    rows.sort(key=lambda r: (_IMPACT_RANK.get(str(r["impact"]), 9), str(r["name"])))
+    return rows
+
+
+def _pqc_readiness(
+    assets: list[AIComponent], result: ScanResult
+) -> dict[str, Any]:
     """PQC readiness over algorithm assets: quantum-vulnerable vs quantum-safe.
 
     Carries the C7 grading surface for the PQC gauge / roadmap panel (F2):
-    hybrid-KEX count and the NIST quantum-security-level histogram (0 = vulnerable,
-    1-5 = quantum-safe category).
+    hybrid-KEX count, the NIST quantum-security-level histogram (0 = vulnerable,
+    1-5 = quantum-safe category), and one ``migration`` row per quantum-vulnerable
+    algorithm (its sized PQC target) for the quantum-vulnerable list + roadmap.
     """
     vulnerable = safe = hybrid = 0
     level_dist: dict[str, int] = {}
@@ -137,6 +175,7 @@ def _pqc_readiness(assets: list[AIComponent]) -> dict[str, Any]:
         "hybrid": hybrid,
         "readiness_pct": readiness,
         "nist_level_distribution": dict(sorted(level_dist.items())),
+        "migration": _pqc_migration_rows(assets, result),
     }
 
 
@@ -292,7 +331,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         "cbom_distributions": {
             "algorithms": _algorithm_distribution(assets),
             "weakness": _weakness_distribution(result),
-            "pqc": _pqc_readiness(assets),
+            "pqc": _pqc_readiness(assets, result),
             "certificates": _certificate_expiry(assets, expired_refs),
             "protocols": _protocol_distribution(assets),
         },

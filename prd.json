@@ -159,7 +159,7 @@
       "dependencies": [
         "I1"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Frontend: PQC readiness gauge + quantum-vulnerable list + migration-roadmap panel"
     },
     {

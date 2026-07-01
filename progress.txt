@@ -892,3 +892,42 @@ progress.aibom-reconcile.txt (reference only).
 - Next selectable after F1 = F2 (17, dep I1✓: PQC readiness gauge + quantum-vulnerable list + migration-
   roadmap panel). Then F3 (compliance tri-state matrix + sidebar controls), B1 (bench oracles, dep C9✓),
   B2 (CI + live e2e).
+
+## F2 (frontend, DONE) — PQC readiness detail: quantum-vulnerable list + CNSA-2.0 migration roadmap
+- SCOPE (prd F2): PQC gauge + quantum-vulnerable LIST + migration-roadmap panel. The gauge already
+  existed (C9's PqcReadinessGauge in CbomCryptoCharts.tsx); the NEW work is the per-algorithm vulnerable
+  list + the roadmap. Unlike F1 (pure frontend), F2 touched aibom → WORKER RESTART required.
+- THE LOAD-BEARING INSIGHT: the C7 grader ALREADY computes per-asset PQC targets (`crypto:pqcMigrationTarget`
+  family + `crypto:pqcMigrationRoadmap` sized, e.g. RSA→"ML-KEM-768 (FIPS 203)/ML-DSA-65 (FIPS 204)") and
+  they ride on the finding rows — but NO stable contract surfaced them for a PQC panel. The `cbom_graph`
+  nodes carry `quantum_vulnerable`+`primitive` but NOT key_size/target/roadmap, so a pure-frontend list
+  (F1-style, deriving target from primitive) would be less accurate + can't show the SIZED roadmap. So F2
+  is contract-driven: a tiny backend addition, not a frontend guess.
+- BACKEND (`aibom/src/aibom/cbom/normalize.py`): `_pqc_migration_rows(assets, result)` adds a `migration[]`
+  list to `cbom_distributions.pqc` — one row per quantum-vulnerable algorithm {name, primitive, key_size,
+  curve, nist_quantum_security_level(=0), migration_target(family), migration_roadmap(sized), impact},
+  sorted (impact rank, name) for determinism. Pure — reads props the C7 scanner already rendered; computes
+  no scores/flags. `_pqc_readiness` signature changed to take `result` (for `_impact_for`). On the frozen
+  fixture: 2 rows (RSA-1024 High, RSA-2048 Medium), both → ML-KEM-768/ML-DSA-65. Oracle delta 0.
+- FRONTEND (`frontend/components/cbom/CbomCryptoCharts.tsx`): extended `CbomDistributions.pqc` (hybrid?,
+  nist_level_distribution?, migration?: PqcMigrationRow[]). Added `QuantumVulnerableList` (compact styled
+  rows: name · primitive/keysize + "Level 0" + impact badge; POSITIVE empty-guard "No quantum-vulnerable
+  algorithms" w/ green shield when migration==[]) + `MigrationRoadmap` (CNSA-2.0 milestone strip
+  2025/2030/2033/2035 as clean-room display constants from the NSA advisory, + per-algo "RSA-1024 →
+  ML-KEM-768…" rows). Added a Hybrid badge to the existing gauge. Section gated on `hasPqcDetail`
+  (quantum_vulnerable+quantum_safe>0) so even a fully-safe repo shows a reassuring "no migration required"
+  panel; legacy scans (no distributions) still render nothing (CbomCryptoCharts returns null). Impact-badge
+  tone mirrors CbomResults.getImpactBadgeClass.
+- TDD-FIRST (extended `test_cbom_chart_data_contract.py` +3): (a) pqc.hybrid int + nist_level_distribution
+  non-empty w/ level-0==quantum_vulnerable; (b) migration rows == quantum_vulnerable count, each carrying
+  name/primitive/key_size/curve/nqsl==0/target/roadmap/impact; (c) rows deterministically ordered.
+- DEV-BROWSER GATE (F1 recipe, no auth): temp top-level route `app/cbomf2check/page.tsx` embedding the real
+  fixture run-object (dumped via `.venv/bin/python normalize_crypto`), curl 200, global-playwright `.cjs`.
+  10/10 text checks (both new card titles, CNSA header+2035, RSA-1024/2048, ML-KEM-768, Level 0, 77.8%),
+  0 console/page errors, screenshot native to theme. Deleted the temp route after.
+- GATE GREEN: contract test (16) + cbom/crypto/normalize/benchmark suite + benchmark differential gate
+  (true-miss==0) + ruff + mypy(normalize.py) all pass; frontend tsc --noEmit exit 0 + scoped eslint 0.
+  Worker restarted (killed celery 21291/21304 → fresh `uv run celery … -n aibomdemo@%h` → "ready", editable
+  aibom already sees `_pqc_migration_rows`). Clean tree, no two-writer interference.
+- NEXT selectable: F3 (18, dep I1: compliance tri-state matrix + sidebar controls) or B1 (19, dep C9: bench
+  oracles). Then B2 (20, deps F1/F2/F3/B1: CI + full live e2e). After F3+B1+B2 all green → COMPLETE.

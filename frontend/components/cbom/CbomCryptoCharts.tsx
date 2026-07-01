@@ -13,9 +13,11 @@
  *
  * Charts: Algorithm distribution · Weak-crypto findings (severity-toned) · PQC
  * readiness gauge (nistQuantumSecurityLevel) · Certificate expiry · Protocol /
- * TLS · Asset-type breakdown · Crypto dependency graph. The last two (F1) are
- * fed by the I1 `cbom_graph` {nodes, edges} projection and render only when it
- * is present (legacy worker scans carry none).
+ * TLS · Asset-type breakdown · Crypto dependency graph. Asset-type + dependency
+ * graph (F1) are fed by the I1 `cbom_graph` {nodes, edges} projection. The PQC
+ * readiness detail (F2 — quantum-vulnerable list + CNSA 2.0 migration roadmap)
+ * is fed by `distributions.pqc.migration`. All render only when their backing
+ * payload is present (legacy worker scans carry none).
  */
 
 import { useMemo } from "react";
@@ -60,6 +62,9 @@ import {
   Network,
   Layers,
   Share2,
+  ShieldX,
+  Rocket,
+  CalendarClock,
 } from "lucide-react";
 import type { CbomGraph } from "@/utils/backend_api";
 
@@ -85,6 +90,12 @@ export interface CbomDistributions {
     quantum_vulnerable: number;
     quantum_safe: number;
     readiness_pct: number;
+    /** hybrid-KEX (classical + PQC) algorithm count (F2) */
+    hybrid?: number;
+    /** NIST quantum-security-level histogram (0 = vulnerable, 1-5 = safe cat) */
+    nist_level_distribution?: Record<string, number>;
+    /** one row per quantum-vulnerable algorithm — the F2 list + roadmap source */
+    migration?: PqcMigrationRow[];
   };
   /** one row per detected certificate */
   certificates: Array<{
@@ -95,6 +106,20 @@ export interface CbomDistributions {
   }>;
   /** protocol assets grouped by label (e.g. "TLS 1.0") */
   protocols: Record<string, number>;
+}
+
+/** One quantum-vulnerable algorithm's PQC migration plan (F2, C7 grader). */
+export interface PqcMigrationRow {
+  name: string;
+  primitive: string | null;
+  key_size: string | null;
+  curve: string | null;
+  nist_quantum_security_level: number | null;
+  /** NIST-standardized target family (e.g. "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)") */
+  migration_target: string | null;
+  /** parameter-sized target matched to the asset's strength (e.g. "ML-KEM-768 …") */
+  migration_roadmap: string | null;
+  impact: string | null;
 }
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -165,6 +190,37 @@ const labelPrimitive = (k: string) =>
   PRIMITIVE_LABELS[k] ?? k.replace(/[-_]/g, " ");
 const labelWeakness = (k: string) =>
   WEAKNESS_LABELS[k] ?? k.replace(/_/g, " ").toLowerCase();
+
+// ── PQC readiness (F2) ───────────────────────────────────────────────────────
+// Impact-badge tone matching CbomResults.getImpactBadgeClass (High=orange,
+// Medium=amber, Low=blue), so the quantum-vulnerable list reads identically to
+// the findings table.
+const impactBadgeClass = (impact: string | null): string => {
+  const i = (impact ?? "").toLowerCase();
+  if (i === "critical") return "border-red-500/50 text-red-600 dark:text-red-400";
+  if (i === "high") return "border-orange-500/50 text-orange-600 dark:text-orange-400";
+  if (i === "medium") return "border-amber-500/50 text-amber-600 dark:text-amber-400";
+  return "border-blue-500/50 text-blue-600 dark:text-blue-400";
+};
+
+// CNSA 2.0 National Security System transition milestones (NSA public advisory,
+// 2022 — a clean-room encoding of the published timeline, not tool output). The
+// C7 grader cites the same milestones in each QUANTUM_VULNERABLE finding message.
+const CNSA_MILESTONES: Array<{ year: string; label: string }> = [
+  { year: "2025", label: "Software / firmware signing" },
+  { year: "2030", label: "Networking & traditional protocols" },
+  { year: "2033", label: "Operating systems" },
+  { year: "2035", label: "All National Security Systems" },
+];
+
+/** Short primitive/param descriptor for a vulnerable algorithm row. */
+const migrationDescriptor = (r: PqcMigrationRow): string => {
+  const parts: string[] = [];
+  if (r.primitive) parts.push(labelPrimitive(r.primitive));
+  if (r.key_size) parts.push(`${r.key_size}-bit`);
+  else if (r.curve) parts.push(r.curve);
+  return parts.join(" · ") || "—";
+};
 
 const countConfig = {
   count: { label: "Count", color: C.primitive },
@@ -298,13 +354,137 @@ function PqcReadinessGauge({ pqc }: { pqc: CbomDistributions["pqc"] }) {
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">quantum-safe</p>
               </div>
             </div>
-            <div className="flex gap-2 mt-3">
+            <div className="flex flex-wrap justify-center gap-2 mt-3">
               <Badge variant="outline" className="border-blue-500/50 text-blue-600 dark:text-blue-400">
                 Safe: {safe}
               </Badge>
               <Badge variant="outline" className="border-orange-500/50 text-orange-600 dark:text-orange-400">
                 Vulnerable: {vuln}
               </Badge>
+              {(pqc?.hybrid ?? 0) > 0 && (
+                <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">
+                  Hybrid: {pqc.hybrid}
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** F2a — Quantum-vulnerable list: every algorithm broken by Shor's algorithm. */
+function QuantumVulnerableList({ migration }: { migration: PqcMigrationRow[] }) {
+  return (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldX className="w-4 h-4 text-orange-500" />
+          Quantum-vulnerable algorithms
+        </CardTitle>
+        <CardDescription>
+          Public-key assets broken by a cryptographically-relevant quantum computer
+          (NIST level 0)
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {migration.length === 0 ? (
+          <div className="flex h-[220px] flex-col items-center justify-center gap-2 text-center">
+            <ShieldCheck className="h-8 w-8 text-emerald-500" />
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              No quantum-vulnerable algorithms
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Every inventoried algorithm is quantum-resistant at its parameter size.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {migration.map((r, i) => (
+              <div key={`${r.name}-${i}`} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {r.name}
+                  </p>
+                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {migrationDescriptor(r)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Badge variant="outline" className="border-orange-500/50 text-orange-600 dark:text-orange-400">
+                    Level {r.nist_quantum_security_level ?? 0}
+                  </Badge>
+                  <Badge variant="outline" className={impactBadgeClass(r.impact)}>
+                    {r.impact ?? "—"}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** F2b — Migration roadmap: CNSA 2.0 timeline + per-algorithm sized PQC target. */
+function MigrationRoadmap({ migration }: { migration: PqcMigrationRow[] }) {
+  return (
+    <Card className="border-zinc-200 dark:border-zinc-800">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Rocket className="w-4 h-4 text-blue-500" />
+          PQC migration roadmap
+        </CardTitle>
+        <CardDescription>
+          NIST-standardized replacement per algorithm, against the CNSA 2.0 timeline
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* CNSA 2.0 milestone strip */}
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <CalendarClock className="h-3.5 w-3.5" />
+            CNSA 2.0 transition milestones
+          </p>
+          <ol className="flex flex-wrap gap-2">
+            {CNSA_MILESTONES.map((m) => (
+              <li
+                key={m.year}
+                className="flex-1 min-w-[120px] rounded-md border border-zinc-200 bg-zinc-50/60 p-2 dark:border-zinc-800 dark:bg-zinc-900/40"
+              >
+                <p className="text-sm font-semibold tabular-nums text-blue-600 dark:text-blue-400">{m.year}</p>
+                <p className="text-[11px] leading-tight text-zinc-600 dark:text-zinc-400">{m.label}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+        {/* Per-algorithm target */}
+        {migration.length === 0 ? (
+          <p className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+            No migration required — the inventory carries no quantum-vulnerable algorithms.
+          </p>
+        ) : (
+          <div>
+            <p className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Recommended replacements
+            </p>
+            <div className="space-y-2">
+              {migration.map((r, i) => (
+                <div
+                  key={`${r.name}-${i}`}
+                  className="flex items-center gap-2 rounded-md border border-zinc-200 p-2 dark:border-zinc-800"
+                >
+                  <Badge variant="outline" className="shrink-0 border-orange-500/50 text-orange-600 dark:text-orange-400">
+                    {r.name}
+                  </Badge>
+                  <span className="shrink-0 text-zinc-400" aria-hidden>→</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    {r.migration_roadmap ?? r.migration_target ?? "ML-KEM / ML-DSA"}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -570,6 +750,12 @@ export function CbomCryptoCharts({
 }) {
   if (!distributions) return null;
   const hasGraph = !!graph && (graph.nodes?.length ?? 0) > 0;
+  const pqc = distributions.pqc;
+  const migration = pqc?.migration ?? [];
+  // The PQC readiness detail (F2 list + roadmap) renders whenever the scan graded
+  // any quantum-relevant algorithm — even a fully quantum-safe repo, where the
+  // panel reassures ("no migration required") rather than starving.
+  const hasPqcDetail = (pqc?.quantum_vulnerable ?? 0) + (pqc?.quantum_safe ?? 0) > 0;
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -577,6 +763,12 @@ export function CbomCryptoCharts({
         <WeakCryptoFindings data={distributions.weakness} />
         <PqcReadinessGauge pqc={distributions.pqc} />
       </div>
+      {hasPqcDetail && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <QuantumVulnerableList migration={migration} />
+          <MigrationRoadmap migration={migration} />
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {hasGraph && <AssetTypeDistribution graph={graph} />}
         <CertificateExpiry certificates={distributions.certificates} />

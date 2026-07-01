@@ -145,3 +145,54 @@ def test_cbom_graph_edges_resolve_to_inventory_nodes() -> None:
         assert e["source"] in ids, f"dangling edge source {e['source']}"
         assert e["target"] in ids, f"dangling edge target {e['target']}"
         assert e.get("rel"), "edge missing rel label"
+
+
+# ── F2: PQC readiness gauge + quantum-vulnerable list + migration roadmap ─────
+# The F2 results-page section binds to the ``distributions.pqc`` payload the C7
+# grader carries through (see CbomCryptoCharts.tsx PqcReadinessPanel):
+#   * PQC readiness gauge      <- pqc.readiness_pct + quantum_safe/vulnerable/hybrid
+#   * Quantum-vulnerable list  <- pqc.migration[] (one row per q-v algorithm)
+#   * Migration-roadmap panel  <- pqc.migration[].migration_roadmap (sized target)
+# These lock the payload so the PQC panel can never silently starve.
+
+
+def test_pqc_carries_hybrid_and_nist_level_histogram() -> None:
+    """The gauge sub-badges + NIST-level histogram read ``pqc.hybrid`` and
+    ``pqc.nist_level_distribution`` (level -> count), both always present."""
+    pqc = _distributions()["cbom_distributions"]["pqc"]
+    assert "hybrid" in pqc and isinstance(pqc["hybrid"], int)
+    hist = pqc["nist_level_distribution"]
+    assert isinstance(hist, dict) and hist, "NIST-level histogram blank"
+    # level-0 == the two quantum-vulnerable RSA keys on the fixture
+    assert int(hist.get("0", 0)) == pqc["quantum_vulnerable"]
+
+
+def test_pqc_migration_rows_present_for_every_vulnerable_algorithm() -> None:
+    """QuantumVulnerableList + MigrationRoadmap render from ``pqc.migration``:
+    one row per quantum-vulnerable algorithm, each carrying the fields the panel
+    reads (name / primitive / NIST level 0 / sized migration roadmap)."""
+    pqc = _distributions()["cbom_distributions"]["pqc"]
+    migration = pqc["migration"]
+    assert isinstance(migration, list)
+    assert len(migration) == pqc["quantum_vulnerable"], (
+        "migration rows must cover every quantum-vulnerable algorithm"
+    )
+    assert migration, "no migration rows -> PQC roadmap panel is blank"
+    for row in migration:
+        assert row.get("name"), "migration row missing algorithm name"
+        assert "primitive" in row and "key_size" in row and "curve" in row
+        assert row["nist_quantum_security_level"] == 0, (
+            "a quantum-vulnerable algorithm is NIST quantum level 0"
+        )
+        assert row.get("migration_target"), "migration row missing target family"
+        assert row.get("migration_roadmap"), "migration row missing sized roadmap"
+        assert row.get("impact"), "migration row missing impact"
+
+
+def test_pqc_migration_rows_are_deterministically_ordered() -> None:
+    """The list renders in a stable order (impact rank, then name) so identical
+    input yields identical output (no React key churn / flaky snapshots)."""
+    migration = _distributions()["cbom_distributions"]["pqc"]["migration"]
+    rank = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+    keys = [(rank.get(r["impact"], 9), str(r["name"])) for r in migration]
+    assert keys == sorted(keys), "migration rows not deterministically ordered"
