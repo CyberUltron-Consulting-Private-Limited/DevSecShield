@@ -418,3 +418,49 @@ progress.aibom-reconcile.txt (reference only).
 - NO frontend this iteration: C5 emits the SAME `crypto:assetType=protocol` shape the normalizer→charts
   contract already handles; `ipsec` is just another protocolType value. Surfacing the IPsec asset-type /
   IKE-version breakdown in CbomResults is F1's scope (chart-data-contract test stayed green untouched).
+
+## C11 (build, DONE) — crypto-policy config-file scanner (java.security + openssl.cnf) + disabled-but-used
+- SCOPE (ledger row 17, R1 gap #4): a GENUINELY-NEW lane (like C10/C12) — protocol_scan.py reads TLS from
+  SOURCE, never from policy artifacts. C11 = NEW scanner `scanners/crypto_policy_scan.py`
+  (`CryptoPolicyScanner`, order=35, between protocol=30 and weak-flagger=40). It matches `java.security` +
+  `openssl.cnf`/`openssl.conf` by EXACT filename (they carry no code extension → the source/ipsec iterators
+  skip them; same exact-name pattern as C5's `_iter_ipsec_configs`).
+- REPRESENTATION DECISION: there is NO `policy` assetType in CycloneDX 1.6 (only algorithm/certificate/
+  protocol/related-crypto-material), so a "policy crypto-asset" reuses assetType=**protocol** (protocolType
+  =tls) to stay schema-valid. ONE protocol asset per policy file, distinguished by a NEW `crypto:policySource`
+  prop (java-security / openssl-config). java.security carries `crypto:disabledAlgorithms` (comma-joined
+  union of jdk.tls + jdk.certpath disabledAlgorithms) + `crypto:cryptoPolicy`; openssl carries
+  `crypto:protocolVersion` (from MinProtocol) + `crypto:strength` + `crypto:cipherSuite` (CipherString +
+  Ciphersuites, `:`-split) + `crypto:maxProtocolVersion`. These non-spec crypto: props ride CycloneDX
+  properties[] (schema-valid — additionalProperties:false is on the cryptoProperties sub-objects, not the
+  top-level properties[] array); confirmed via emit_and_validate on the fixture.
+- FREE WEAK-PROTOCOL REUSE: an openssl MinProtocol < TLS 1.2 sets `crypto:strength=weak`, so the EXISTING
+  pure `weak_finding` protocol branch (order-40 weak_algorithm_scan reads ctx.components) raises WEAK_PROTOCOL
+  + DORA-1 fails — no new weakness code needed. java.security is a HARDENING policy (disables weak algos) so
+  it is NOT itself weak → no strength set → no phantom flag.
+- DISABLED-BUT-USED CROSS-REF = NIST SP 800-57 **KM-7** (new requirement in compliance.py, graph-queried per
+  hard-rule #4: reads `crypto:disabledAlgorithms` off the policy protocol asset + the algorithm inventory,
+  NEVER flags). `policy_disabled_algorithms(r)` extracts BLANKET single-token disables ONLY — an entry with a
+  space / `&` / `<>` (`RSA keySize < 1024`, `SHA1 jdkCA & usage TLSServer`) carries a numeric/usage predicate
+  we don't evaluate, so it's conservatively SKIPPED (never a false positive). `disabled_but_used` matches a
+  used algo's mode-stripped canonical base (`_canon_alg`: lowercase alnum-only, folds SHA-1→sha1) against the
+  disabled set, with a startswith+digit rule so bare `RSA` disable catches `RSA-2048` while `DES` NEVER
+  matches `3DES` (3des doesn't start with des). KM-7 PASSES vacuously when no policy artifact is present
+  (absence of policy = no violation), so it's safe on the frozen fixture (adds one pass to nist_800_57;
+  existing test only asserts fail>=5 + coverage<1.0, both still hold).
+- FRAMEWORK-CHOICE SAFETY: adding KM-7 to an EXISTING framework (nist_800_57) rather than a new framework
+  avoids touching CBOM_FRAMEWORKS / the _has_crypto applicability loop / the scan-metadata compliance
+  contract; the coverage test recomputes from block counts so a new vacuous-pass requirement can't break it.
+- NO frontend this iteration: policy assets are assetType=protocol → they ride the EXISTING protocol
+  distribution + compliance tri-state contracts the charts already handle (surfacing policySource /
+  disabledAlgorithms distinctly is F-scope). Matches the C4/C5/C12 precedent.
+- FIXTURE `tests/fixtures/synthetic-crypto-policy/{java.security (disables RC4/DES/MD5/SSLv3/TLSv1…),
+  openssl.cnf (MinProtocol TLSv1 → weak), app.py (uses hashlib.md5 + ARC4)}`. Test
+  `tests/test_cbom_crypto_policy.py` (10). Detection note: MD5 via global `hashlib.md5|MD5` literal, RC4 via
+  global `ARC4|RC4` literal — both blanket-disabled → disabled_but_used == {MD5, RC4}, KM-7 fail.
+- GATE: full cbom suite green (`-k cbom --ignore test_cbom_web_native_crypto_scan.py`) + benchmark_gate
+  (true-miss==0) + ruff + mypy clean on crypto_policy_scan.py/compliance.py/__init__.py + test. `uv`/.venv
+  interpreter (system py 3.9 breaks `str | None`). NOTE: the chroma clone's `.../test/openssl.cnf` is in the
+  AIBOM-only gitignored tree → never scanned by the CBOM pipeline (scan_crypto only touches synthetic-crypto-*).
+- Next selectable after C11 = C6 (related-crypto-material + weakness analysis: hardcoded keys/IV/nonce/salt,
+  weak RNG, ECB, deprecated primitives).

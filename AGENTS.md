@@ -92,3 +92,22 @@
   Python corpus stays byte-identical (scoped lanes never run on Python). Fixture
   `tests/fixtures/synthetic-crypto-native-apis/` + `tests/test_cbom_detect_native_apis.py`.
 - C5 protocol EXTENSION (IPsec/IKE + version-weakness): `protocol_scan.py` now emits a 3rd protocolType `ipsec`. IPsec config artifacts (`ipsec.conf`/`swanctl.conf`/`ipsec.secrets`/`racoon.conf`) have NO code extension so a SECOND iterator `_iter_ipsec_configs` matches them by EXACT filename (`_IPSEC_CONFIG_NAMES`) — `_iter_source_files` (LANGUAGE_EXTENSIONS-only) skips them; source files ALSO get an IPsec pass gated on `_IPSEC_USE` (strongswan/libreswan/charon/IKEv[12]/ipsec/xfrm). IKE version: `IKEv([12])` (IGNORECASE catches `keyexchange=ikev1`), with a swanctl `version=([12])` fallback applied ONLY inside a known config (`is_config`) since `version = 2` is too generic for source. `_IPSEC_TRANSFORM` captures proposal tokens (`3des-md5-modp1024`,`aes256-sha256-modp3072`) into `crypto:cipherSuite` (same bag as TLS, for C9 cryptoRefArray). WEAKNESS is VERSION-ONLY in C5: IKEv1→`crypto:strength=weak`, SSH-1.x→weak (added strength to the SSH lane which had none); the transform/kex/cipher-suite WEAKNESS catalog (RC4/DES/modp1024=SWEET32/weak-DH) is C13. `weakness.py` `weak_finding` protocol branch is now protocol-type-aware via `_WEAK_PROTOCOL_RATIONALE` (tls→RFC8996, ssh→CVE-2001-0361/SSH-2.0, ipsec/ike→RFC9395/IKEv2) — same `WEAK_PROTOCOL` code+sev. Fixture `synthetic-crypto-protocols/`; test `test_cbom_protocol_ipsec.py`. Frozen `synthetic-crypto-app` has 0 IPsec markers → bench differential true-miss==0 unchanged.
+- C11 lane (crypto-POLICY config-file scanner): NEW scanner `cbom/scanners/crypto_policy_scan.py`
+  (`CryptoPolicyScanner`, order=35, name=`crypto_policy`) — the cbomkit-theia javasecurity/opensslconf
+  technique, clean-room. Matches `java.security` + `openssl.cnf`/`openssl.conf` by EXACT filename (no code
+  extension → `_iter_source_files` skips them; same pattern as C5's IPsec-config iterator). Emits ONE
+  `protocol`(assetType) "policy" `crypto_asset` per file — there is NO `policy` assetType in CycloneDX 1.6,
+  so policy reuses `protocol`+protocolType=tls to stay schema-valid — distinguished by `crypto:policySource`
+  (java-security/openssl-config). java.security asset carries `crypto:disabledAlgorithms` (union of
+  jdk.tls+jdk.certpath disabledAlgorithms, comma-joined) + `crypto:cryptoPolicy`; openssl asset carries
+  `crypto:protocolVersion`(from MinProtocol)+`crypto:strength`(weak if <TLS1.2 → EXISTING weak_finding raises
+  WEAK_PROTOCOL, no new code)+`crypto:cipherSuite`(CipherString+Ciphersuites `:`-split)+`crypto:maxProtocolVersion`.
+  A hardening java.security is NOT itself weak (no strength set → no phantom flag). Config parsing uses
+  `_logical_lines` (strips `#` comments, folds trailing-`\` continuations — java.security wraps long values).
+  Disabled-but-used cross-ref = NIST SP 800-57 **KM-7** in `compliance.py` (`policy_disabled_algorithms` +
+  `disabled_but_used`, graph-queried per hard-rule #4, reads `crypto:disabledAlgorithms` off the policy asset
+  + the algorithm inventory, never flags). Only BLANKET single-token disables count — a conditioned entry
+  (space / `&` / `<>`, e.g. `RSA keySize < 1024`) is SKIPPED (no false positive); match is mode-stripped
+  canonical (`_canon_alg`) with a startswith+digit rule so bare `RSA` catches `RSA-2048` but `DES` never
+  matches `3DES`. KM-7 PASSES vacuously with no policy artifact (absence = no violation) so it's safe on the
+  frozen fixture. Fixture `tests/fixtures/synthetic-crypto-policy/`; test `tests/test_cbom_crypto_policy.py`.

@@ -32,6 +32,7 @@ of weakness while staying strictly graph-evidenced.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from aibom.cbom.weakness import WEAK_PROTOCOL, weak_finding
@@ -156,6 +157,84 @@ def self_signed_certs(r: ScanResult) -> list[AIComponent]:
         for c in certificates(r)
         if (c.properties or {}).get("crypto:selfSigned") == "true"
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Crypto-policy cross-reference (C11): the environment's own policy artifacts
+# (java.security / openssl.cnf) list DISABLED algorithms; a *disabled-but-used*
+# algorithm — one the runtime forbids yet the code still uses — is a policy
+# violation. The disabled set rides as a ``crypto:disabledAlgorithms`` property
+# on the policy ``protocol`` asset the C11 scanner emits (a graph fact, not a
+# flag), so this stays strictly graph-evidenced.
+# --------------------------------------------------------------------------- #
+
+#: Cipher-mode suffixes appended to an algorithm display name (``AES-256-GCM``);
+#: stripped to recover the base algorithm before matching against the policy.
+_POLICY_MODE_SUFFIXES = ("-GCM", "-CBC", "-ECB", "-CTR", "-CFB", "-OFB", "-XTS", "-CCM")
+
+
+def _canon_alg(token: str) -> str:
+    """Fold an algorithm token to a comparison key: lowercase, alnum-only.
+
+    ``SHA-1`` -> ``sha1``, ``3DES_EDE_CBC`` -> ``3desedecbc``, ``RC4`` -> ``rc4``.
+    """
+    return re.sub(r"[^a-z0-9]", "", token.lower())
+
+
+def policy_disabled_algorithms(r: ScanResult) -> set[str]:
+    """Blanket-disabled algorithm families declared by the crypto-policy assets.
+
+    Only UNCONDITIONED single tokens (``RC4``, ``DES``, ``SSLv3``, ``MD5``)
+    become a family disable. Conditioned entries (``RSA keySize < 1024``,
+    ``SHA1 jdkCA & usage TLSServer``) carry a numeric/usage predicate this
+    static cross-check does not evaluate, so they are conservatively skipped —
+    never producing a false disabled-but-used positive.
+    """
+    disabled: set[str] = set()
+    for p in protocols(r):
+        raw = (p.properties or {}).get("crypto:disabledAlgorithms")
+        if not raw:
+            continue
+        for entry in raw.split(","):
+            e = entry.strip()
+            if not e or " " in e or any(c in e for c in "&<>"):
+                continue
+            key = _canon_alg(e)
+            if len(key) >= 3:
+                disabled.add(key)
+    return disabled
+
+
+def _used_algorithm_key(c: AIComponent) -> str:
+    name = c.name.upper()
+    for suffix in _POLICY_MODE_SUFFIXES:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return _canon_alg(name)
+
+
+def disabled_but_used(r: ScanResult) -> list[AIComponent]:
+    """Algorithm assets in use that the environment crypto policy disables.
+
+    An algorithm matches a disabled family when its canonical base name equals a
+    disabled token, or begins with one followed by a key-size digit (so a bare
+    ``RSA`` disable catches ``RSA-2048`` while ``DES`` never matches ``3DES``).
+    """
+    disabled = policy_disabled_algorithms(r)
+    if not disabled:
+        return []
+    out: list[AIComponent] = []
+    for c in algorithms(r):
+        key = _used_algorithm_key(c)
+        if not key:
+            continue
+        if key in disabled or any(
+            key.startswith(d) and (len(key) == len(d) or key[len(d)].isdigit())
+            for d in disabled
+        ):
+            out.append(c)
+    return out
 
 
 def hardcoded_key_material(r: ScanResult) -> list[AIComponent]:
@@ -290,6 +369,12 @@ R_KM3 = _req("KM-3", _FW_KM, "No hardcoded private / secret key material", _S_KM
 R_KM4 = _req("KM-4", _FW_KM, "Certificates are CA-issued (not self-signed)", _S_KM)
 R_KM5 = _req("KM-5", _FW_KM, "Authenticated cipher modes (no ECB)", _S_KM)
 R_KM6 = _req("KM-6", _FW_KM, "Key rotation + HSM-backed custody policy", _S_KM)
+R_KM7 = _req(
+    "KM-7",
+    _FW_KM,
+    "No algorithm in use is disabled by the environment crypto policy",
+    _S_KM,
+)
 
 
 @register_check(R_KM1)
@@ -361,6 +446,29 @@ register_manual(
     "key rotation cadence + HSM/KMS custody is operational-policy evidence not "
     "modelled in a crypto inventory",
 )
+
+
+@register_check(R_KM7)
+def _km7(r: ScanResult, req: Requirement) -> CheckResult:
+    disabled = policy_disabled_algorithms(r)
+    if not disabled:
+        return PASS(
+            "no crypto-policy artifact (java.security / openssl.cnf) disables an "
+            "algorithm family; no disabled-but-used violation to evaluate"
+        )
+    violations = disabled_but_used(r)
+    if violations:
+        return FAIL(
+            f"{len(violations)} algorithm(s) in use are explicitly disabled by the "
+            f"environment crypto policy (java.security "
+            f"jdk.tls/certpath.disabledAlgorithms) — disabled-but-used",
+            _refs(violations),
+        )
+    return PASS(
+        f"the crypto policy disables {len(disabled)} algorithm family/ies; none "
+        f"are used in the inventoried code",
+        _refs(algorithms(r)),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -561,4 +669,6 @@ __all__ = [
     "weak_protocols",
     "self_signed_certs",
     "hardcoded_key_material",
+    "policy_disabled_algorithms",
+    "disabled_but_used",
 ]

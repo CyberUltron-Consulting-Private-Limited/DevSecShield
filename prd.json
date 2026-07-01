@@ -198,7 +198,7 @@
       "dependencies": [
         "C5"
       ],
-      "passes": false,
+      "passes": true,
       "title": "Clean-room crypto-policy config-file scanner (R1): parse java.security (jdk.tls.disabledAlgorithms/crypto.policy) + openssl.cnf (CipherString/MinProtocol) into protocol/policy crypto-assets + disabled-but-used compliance cross-ref (cbomkit-theia javasecurity/opensslconf technique)"
     },
     {
