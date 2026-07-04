@@ -1,13 +1,17 @@
 # DevSecShield — Client Demo Script (Detailed)
 
 > **Audience:** Business leaders, security decision-makers, engineering managers  
-> **Duration:** ~30 to 35 minutes  
+> **Duration:** ~30 to 35 minutes (includes ~90-second demo context + walkthrough)  
 > **Format:** Frontend-first, screen-by-screen walkthrough  
-> **Tone:** Sales-focused, non-technical, outcome-driven
+> **Tone:** Clear, explanatory, outcome-driven — set context first, then show the product
 
 ---
 
-## 1. What Is DevSecShield?
+## 1. What Is DevSecShield? (Reference — not spoken verbatim)
+
+**Elevator version (use in intros, emails, or when asked "what do you do?"):**
+
+> **DevSecShield is one security platform for everything you ship** — code, dependencies, cloud, crypto, and AI. Find what's broken. Fix it fast. Prove it to auditors. That's it.
 
 DevSecShield is a unified, AI-powered DevSecOps platform that helps organizations identify, prioritize, and remediate risk across:
 
@@ -54,14 +58,77 @@ A fintech product team is preparing a release with new APIs, frontend updates, T
 
 ---
 
-## 3. Demo Opening (30-45 seconds)
+## 3. Demo Opening — Context Before the Walkthrough (~90 seconds)
 
-> "In this walkthrough, I'll show how DevSecShield helps teams ship secure releases faster using one frontend workflow.  
-> We'll go from team-level visibility to scan execution across supply chain, cryptography, and AI inventory, then AI-guided remediation, CI/CD automation, Guardrails, and Jira-based closure."
+**Purpose:** Before clicking through screens, answer four questions the audience will have: *What is this? What's broken in the market? Why do we need it? How is this different?* This is setup for the demo — not a sales close.
+
+**Delivery tips:**
+- Speak plainly. You're explaining, not selling.
+- Use the four headers below as natural beats — don't rush the market problem.
+- End by telling them exactly what they'll see in the walkthrough.
 
 ---
 
-## 4. Frontend Walkthrough (Detailed)
+### 1) What DevSecShield is
+
+> "DevSecShield is a unified DevSecOps platform. From one frontend, teams can scan and manage security across:
+> - **Source code** — SAST
+> - **Open-source dependencies** — SCA and SBOM
+> - **Cryptography** — CBOM: algorithms, keys, certificates, TLS
+> - **AI and ML components** — AI BOM: models, datasets, frameworks, compliance
+> - **Cloud infrastructure** — IAC scanning on Terraform and similar
+> - **Running applications** — DAST on live APIs and web apps
+> - **AI behavior** — LLM security testing and MCP tool exposure
+>
+> On top of scanning, it includes AI-assisted triage, CI/CD integration, Guardrails for runtime AI policy, Jira ticketing, and PDF reporting — so findings move from detection to fix, not just a dashboard."
+
+---
+
+### 2) The actual problem in the market
+
+> "Most organizations don't have one security problem — they have a **fragmentation** problem.
+>
+> Code scanning lives in one tool. Dependency/CVE tracking in another. Cloud misconfigs in a third. AI governance? Often a spreadsheet — or nothing at all.
+>
+> Each tool uses different severity scales, different dashboards, and different export formats. Security teams reconcile reports manually. Engineering teams get alert fatigue. Leadership can't get a single answer to: *'Are we safe to release?'*
+>
+> On top of that, modern software added new blind spots that legacy AppSec stacks weren't built for: **weak or outdated cryptography**, **untracked AI models and shadow AI**, **LLM prompt injection**, and **agent/MCP tool over-permissioning**. These don't show up in a traditional SAST scan."
+
+---
+
+### 3) Why teams need this now
+
+> "A typical release today isn't just code. It's APIs, npm packages, Terraform, TLS configs, and an AI feature — all shipping together.
+>
+> Regulators and auditors are starting to ask questions AppSec tools from five years ago can't answer: *What AI is in our product? What crypto are we using? Are we post-quantum ready?*
+>
+> Teams need one place to see risk across the full stack — before release, not after an incident or audit scramble."
+
+---
+
+### 4) How DevSecShield is different (vs. point tools)
+
+> "We're not asking you to rip out your dev workflow. The difference is **coverage and workflow in one product**:
+>
+> | Typical approach | DevSecShield |
+> |---|---|
+> | 5–6 separate tools, separate dashboards | One frontend, one severity model, one report |
+> | SCA tool finds CVEs; no AI/crypto visibility | Code + deps + cloud + crypto + AI in the same scan cycle |
+> | Findings exported as raw lists | AI chat helps explain and prioritize what to fix first |
+> | Manual handoff to Jira or email | Built-in Jira sync, CI/CD gates, Guardrails for live AI |
+> | Audit prep = weeks of manual report assembly | One-click PDF export across scan types |
+>
+> Point tools are good at one layer. DevSecShield is built for teams where **one release touches every layer** — and they need one answer, not six."
+
+---
+
+### Transition into the demo (~10 seconds)
+
+> "With that context, I'll walk you through the product — starting from login and team dashboard, then each scan type, results, integrations, and reporting. Same flow your engineers and security team would use day to day."
+
+---
+
+## 5. Frontend Walkthrough (Detailed)
 
 This walkthrough follows the actual product flow:
 `/login` -> `/home` -> `/[team_id]` -> scan modules -> results -> integrations -> settings.
@@ -291,7 +358,7 @@ Any scan detail page and results page
 
 ---
 
-## 5. Scenario Wrap-Up (1 minute)
+## 6. Scenario Wrap-Up (1 minute)
 
 > "In one release cycle, the team used DevSecShield to secure code, dependencies, cryptography, AI inventory, infrastructure, runtime behavior, LLM safety, and MCP exposure."
 
@@ -299,14 +366,19 @@ Any scan detail page and results page
 
 ---
 
-## 6. Closing Message (30 seconds)
+## 7. Closing — Wrap the Demo (~30 seconds)
 
-> "DevSecShield gives organizations one practical path from detection to remediation across modern software and AI environments.  
-> It helps teams ship faster, safer, and with stronger governance."
+**Purpose:** Tie back to the opening context. Invite questions.
+
+> "So that's DevSecShield — one platform covering code, dependencies, cloud, cryptography, and AI, with the workflow to actually fix issues and report on them.
+>
+> The market problem we started with was tool sprawl and blind spots. What you saw is one place to answer *'Are we safe to release?'* without juggling six dashboards.
+>
+> Happy to go deeper on any scan type, integration, or how this would fit your team's setup."
 
 ---
 
-## 7. Common Questions (Optional Q&A)
+## 8. Common Questions (Optional Q&A)
 
 | Question | Answer |
 |---|---|
