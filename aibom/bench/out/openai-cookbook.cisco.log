@@ -1,0 +1,402 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/ex │
+│ amples                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Stage 1/4 — scanning 1 path(s)
+INFO: Pass 1: discovered 4 AI package(s) from manifests: datasets, fastmcp, openai, openai-agents
+INFO: Pass 2 prep: pre-cached 2497 / 2497 files via async I/O
+INFO: HTTP Request: GET https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: GET https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: POST https://api.osv.dev/v1/querybatch "HTTP/1.1 200 OK"
+INFO: Stage 2/4 — cross-reference resolution
+INFO: Detected 1 external repo dependency(ies)
+INFO: Stage 3/4 — agentic classification (all 726 components)
+INFO: Pre-agentic dedup: 726 → 484 components (242 context-free duplicates removed)
+INFO: Running agentic enrichment with global.anthropic.claude-haiku-4-5-20251001-v1:0 (64 simple, 420 complex, 0 relationships, concurrency=1)
+INFO: Built agent-evidence dossier index with 3 class entries
+INFO: Found credentials in shared credentials file: ~/.aws/credentials
+INFO: Tier 1 (simple confirmations): 64 candidates via global.anthropic.claude-haiku-4-5-20251001-v1:0 (batch=5)
+INFO: 64 components → 13 locality-aware batches (concurrency=1)
+INFO: Agentic batch 1/13 — 5 components [gpt-4o-mini, whisper-1, gpt-4-1106-preview, dall-e-3, gpt-4o]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 3.6s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/13 — 5 components [text-embedding-3-small, gpt-4.1, text-embedding-3-large, gpt-4.1-mini, gpt-4o-mini-tts]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 0.9s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 3/13 — 5 components [o3, gpt-4o-transcribe, gpt-4o-2024-08-06, gpt-4, gpt-4-turbo]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 3 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+WARNING: Agentic circuit breaker: skipping batches 4–13 after 3 consecutive failures
+INFO: Retry pass: 64 degraded components, cooling down 30s
+INFO: Retrying 32 batches sequentially (batch_size=2)
+INFO: Agentic batch 1/32 — 2 components [gpt-4o-mini, whisper-1]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 0.7s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/32 — 2 components [gpt-4-1106-preview, dall-e-3]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 0.7s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 3/32 — 2 components [gpt-4o, text-embedding-3-small]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 3 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+WARNING: Retry circuit breaker: skipping retry batches 4–32
+INFO: Retry pass complete: 0/64 recovered, 64 still degraded
+INFO: Decision memo now holds 64 verdicts
+INFO: Tier 2 (complex reasoning): 420 candidates via global.anthropic.claude-haiku-4-5-20251001-v1:0
+INFO: 420 components → 84 locality-aware batches (concurrency=1)
+INFO: Agentic batch 1/84 — 5 components [transformers, torch, langchain, pinecone-client, env:OPENAI_API_KEY]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/84 — 5 components [env:OPENAI_API_KEY, env:OPENAI_API_KEY, env:OPENAI_API_KEY, env:OPENAI_API_KEY, env:OPENAI_API_KEY]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 3/84 — 5 components [env:OPENAI_API_KEY, env:OPENAI_API_KEY, env:OPENAI_API_KEY, env:OPENAI_API_KEY, env:OPENAI_API_KEY]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 3 failed after 0.7s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+WARNING: Agentic circuit breaker: skipping batches 4–84 after 3 consecutive failures
+INFO: Retry pass: 420 degraded components, cooling down 30s
+INFO: Retrying 210 batches sequentially (batch_size=2)
+INFO: Agentic batch 1/210 — 2 components [transformers, torch]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/210 — 2 components [langchain, pinecone-client]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 0.7s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 3/210 — 2 components [env:OPENAI_API_KEY, env:OPENAI_API_KEY]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 3 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+WARNING: Retry circuit breaker: skipping retry batches 4–210
+INFO: Retry pass complete: 0/420 recovered, 420 still degraded
+INFO: Decision memo now holds 86 verdicts
+INFO: Agentic enrichment complete: 484 enriched, 0 new components, 0 new relationships, 0 risk flags, tokens=0 (prompt=0, completion=0)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_JUDGE_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/agents_sdk/agent_improvement_loop.ipynb:48)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AGENTS_SDK_MANAGER_TRACE_ENDPOINT' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/agents_sdk/deployment_manager/runtime/trace_capture/agents_sdk_trace_capture.py:17)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AGENTS_SDK_DEPLOYMENT_ID' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/agents_sdk/deployment_manager/runtime/trace_capture/agents_sdk_trace_capture.py:32)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AGENTS_SDK_PROJECT_ID' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/agents_sdk/deployment_manager/runtime/trace_capture/agents_sdk_trace_capture.py:33)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/agents_sdk/sandboxed-code-migration/sandboxed_code_migration_agent.ipynb:123)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/partners/schemaflow_design_guide/schemaflow_cookbook.ipynb:66)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AZURE_OPENAI_ENDPOINT' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/whisper.ipynb:13)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AZURE_OPENAI_ENDPOINT' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/embeddings.ipynb:13)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AZURE_OPENAI_ENDPOINT' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/chat_with_your_own_data.ipynb:13)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AZURE_OPENAI_ENDPOINT' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/functions.ipynb:13)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:AZURE_OPENAI_ENDPOINT' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/chat.ipynb:13)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:OPENAI_API_BASE' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/archive/whisper.ipynb:11)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:OPENAI_API_BASE' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/azure/archive/chat_with_your_own_data.ipynb:10)
+INFO: Env-placeholder gate: dropping unresolved llm_endpoint component 'env:SEARCH_SERVICE_API_KEY' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/chatgpt/rag-quickstart/azure/function_app.py:101)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:REPAIR_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/codex/Build_iterative_repair_loops_with_Codex.ipynb:28)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:COOKBOOK_CHAT_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/codex/Build_iterative_repair_loops_with_Codex.ipynb:29)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/partners/schemaflow_design_guide/schemaflow_cookbook.ipynb:67)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_ORG_ID' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/partners/schemaflow_design_guide/schemaflow_cookbook.ipynb:76)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_TRANSLATION_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/voice_solutions/realtime_translation_guide/browser-translation-demo/scripts/smoke-realtime.mjs:28)
+INFO: Env-placeholder gate: dropping unresolved model component 'env:OPENAI_TRANSLATION_MODEL' (file=/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/examples/voice_solutions/realtime_translation_guide/livekit-translation-demo/app/api/realtime/translation-token/route.ts:52)
+INFO: Stage 4/4 — assembling results
+INFO: Embedding reclassification: 47 model(s) relabeled as embedding via registry (mode=embedding)
+INFO: Consolidation: 705 → 148 components (-557 duplicates)
+INFO: AI-only dependency policy: 148 → 134 components (-14 non-AI dependencies)
+INFO: Cached result: 691f8907e9ec → /Users/anshsinghal/.aibom/cache/scan/691f8907e9ec9b96dc62b0026d1d52c9.json
+Report written to 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/out/openai-cookbook.cisco.js
+on
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analysis Summary (v2) •                                                      │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/ex │
+│ amples                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+        Components in         
+/Users/anshsinghal/Desktop/Dev
+SecShield/aibom/bench/repos/op
+    enai-cookbook/examples    
+                              
+  Category             Count  
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  dataset              40     
+  dependency           4      
+  embedding            3      
+  experiment_tracker   1      
+  hyperparameter       2      
+  mcp_server           3      
+  model                57     
+  secret               19     
+  skill                1      
+  tool                 3      
+  training_run         1      
+                              
+╭─────────────────╮
+│ DATASET details │
+╰─────────────────╯
+  dataset framework=huggingface/datasets 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Reinforcement_Fine_Tuning.ipynb:2
+  parsed_pdf_docs_with_embeddings.csv 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/data/parsed_pdf_docs_with_embeddings.csv:0
+  cookbook_recipes_nlg_10k.csv 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/data/cookbook_recipes_nlg_10k.csv:0
+  imdb_top_1000.csv 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/data/imdb_top_1000.csv:0
+  items_tagged_and_captioned.csv 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/data/items_tagged_and_captioned.csv:0
+╭────────────────────╮
+│ DEPENDENCY details │
+╰────────────────────╯
+  openai-agents 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/agents_sdk/computer_use_with_daytona/requirements.txt:1
+  fastmcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/deep_research_api/how_to_build_a_deep_research_mcp_server/requirements.txt:2
+  openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/evals/imagegen_evals/requirements.txt:1
+  datasets 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/gpt-5/prompt-optimization-cookbook/requirements.txt:4
+╭───────────────────╮
+│ EMBEDDING details │
+╰───────────────────╯
+  text-embedding-3-small model=text-embedding-3-small provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/vector_databases/SingleStoreDB/OpenAI_wikipedia_semantic_search.ipynb:4
+  text-embedding-3-large model=text-embedding-3-large provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/chatgpt/rag-quickstart/pinecone-retool/gpt-action-pinecone-retool-rag.ipynb:2
+3
+  text-embedding-ada-002 model=text-embedding-ada-002 provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/codex/data/docs/qdrant_embeddings_search_pre_repair.ipynb:2
+╭────────────────────────────╮
+│ EXPERIMENT_TRACKER details │
+╰────────────────────────────╯
+  experiment_tracker framework=wandb 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/third_party/Openai_monitoring_with_wandb_weave.ipynb:4
+╭────────────────────────╮
+│ HYPERPARAMETER details │
+╰────────────────────────╯
+  hyperparameter:learning_rate framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Visualizing_embeddings_in_2D.ipynb:14
+  hyperparameter:batch_size framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/responses_api/responses_api_tool_orchestration.ipynb:67
+╭────────────────────╮
+│ MCP_SERVER details │
+╰────────────────────╯
+  yfinance framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/agents_sdk/multi-agent-portfolio-collaboration/mcp/yahoo_finance_server.py:91
+  main_mcp_server framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/deep_research_api/how_to_build_a_deep_research_mcp_server/main.py:32
+  Search Server framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/partners/mcp_powered_voice_agents/search_server.py:7
+╭───────────────╮
+│ MODEL details │
+╰───────────────╯
+  gpt-4o-mini model=gpt-4o-mini provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/How_to_use_guardrails.ipynb:2
+  whisper-1 model=whisper-1 provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Whisper_correct_misspelling.ipynb:23
+  gpt-4-1106-preview model=gpt-4-1106-preview provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Creating_slides_with_Assistants_API_and_DALL-E3.ipynb:47
+  dall-e-3 model=dall-e-3 provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/dalle/Image_generations_edits_and_variations_with_DALL-E.ipynb:28
+  gpt-4o model=gpt-4o provider=openai 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/third_party/Web_search_with_google_api_bring_your_own_browser_tool.ipynb:9
+╭────────────────╮
+│ SECRET details │
+╰────────────────╯
+  env:OPENAI_API_KEY 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/responses_api/responses_example.ipynb:3
+  env:BRAINTRUST_API_KEY 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Custom-LLM-as-a-Judge.ipynb:8
+  env:OPENAI_BUILD_HOUR_KEY 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Fine_tuning_for_function_calling.ipynb:22
+  env:PINECONE_API_KEY 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/vector_databases/pinecone/Using_vision_modality_for_RAG_with_Pinecone.ipynb:1
+1
+  env:STRIPE_SECRET_KEY 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/agents_sdk/dispute_agent.ipynb:21
+╭───────────────╮
+│ SKILL details │
+╰───────────────╯
+  Code migration agent 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/agents_sdk/sandboxed-code-migration/migration_agent/AGENTS.md:0
+╭──────────────╮
+│ TOOL details │
+╰──────────────╯
+  yahoo_finance_server_mcp_tooling framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/agents_sdk/multi-agent-portfolio-collaboration/mcp/yahoo_finance_server.py:13
+2
+  main_mcp_tooling framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/deep_research_api/how_to_build_a_deep_research_mcp_server/main.py:39
+  search_server_mcp_tooling framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/partners/mcp_powered_voice_agents/search_server.py:36
+╭──────────────────────╮
+│ TRAINING_RUN details │
+╰──────────────────────╯
+  training_run framework=keras/pytorch 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/openai-cookbook/exampl
+es/Regression_using_embeddings.ipynb:17

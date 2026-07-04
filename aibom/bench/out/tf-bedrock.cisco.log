@@ -1,0 +1,30 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/tf-bedrock         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Cache hit: 75868ddad710 (cached 2026-06-26T05:39:34Z)
+Cache hit for 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/tf-bedrock 
+(75868ddad710…)
+Report written to 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/out/tf-bedrock.cisco.json
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analysis Summary (v2) •                                                      │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/tf-bedrock         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+   Components in    
+/Users/anshsinghal/D
+esktop/DevSecShield/
+aibom/bench/repos/tf
+      -bedrock      
+                    
+  Category   Count  
+ ━━━━━━━━━━━━━━━━━━ 
+  model      1      
+                    
+╭───────────────╮
+│ MODEL details │
+╰───────────────╯
+  amazon.titan-text-express-v1 model=amazon.titan-text-express-v1 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/variables.tf:1
+468

@@ -1,0 +1,607 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:84254617-73c1-551e-bce8-a2eae76bd4c5",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "core"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-2",
+      "name": "claude-2",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-haiku-20240307",
+      "name": "claude-3-haiku-20240307",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-4",
+      "name": "claude-4",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-haiku-4-5-20251001",
+      "name": "claude-haiku-4-5-20251001",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-20250514-v1",
+      "name": "claude-sonnet-4-20250514-v1",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-5-20250929",
+      "name": "claude-sonnet-4-5-20250929",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-6",
+      "name": "claude-sonnet-4-6",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-2",
+      "name": "GPT-2",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4",
+      "name": "GPT-4",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5",
+      "name": "GPT-5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-mini",
+      "name": "gpt-5.4-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-5",
+      "name": "gpt-5.5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-oss",
+      "name": "GPT-OSS",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3-1",
+      "name": "llama3.1",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-jsonpatch",
+      "name": "jsonpatch",
+      "purl": "pkg:pypi/jsonpatch"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain",
+      "name": "langchain",
+      "purl": "pkg:pypi/langchain",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-protocol",
+      "name": "langchain-protocol",
+      "purl": "pkg:pypi/langchain-protocol"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langgraph",
+      "name": "langgraph",
+      "purl": "pkg:pypi/langgraph",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langsmith",
+      "name": "langsmith",
+      "purl": "pkg:pypi/langsmith"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-packaging",
+      "name": "packaging",
+      "purl": "pkg:pypi/packaging"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydantic",
+      "name": "pydantic",
+      "purl": "pkg:pypi/pydantic",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pyyaml",
+      "name": "PyYAML",
+      "purl": "pkg:pypi/pyyaml",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tenacity",
+      "name": "tenacity",
+      "purl": "pkg:pypi/tenacity",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-transformers",
+      "name": "transformers",
+      "purl": "pkg:pypi/transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-typing-extensions",
+      "name": "typing-extensions",
+      "purl": "pkg:pypi/typing-extensions",
+      "licenses": [
+        {
+          "license": {
+            "name": "PSF-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-uuid-utils",
+      "name": "uuid-utils",
+      "purl": "pkg:pypi/uuid-utils"
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-anthropic",
+      "name": "Anthropic",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-openai",
+      "name": "OpenAI",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "secret-8823547085",
+      "name": "generic_credential",
+      "properties": [
+        {
+          "name": "discovery:source",
+          "value": "langchain_core/messages/block_translators/openai.py"
+        },
+        {
+          "name": "secret:kind",
+          "value": "generic_credential"
+        },
+        {
+          "name": "secret:masked",
+          "value": "__open\u2026(28 chars)"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "modelref-claude-2",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-haiku-20240307",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-4",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-haiku-4-5-20251001",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-20250514-v1",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-5-20250929",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-6",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-2",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-mini",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-5",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-oss",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-llama3-1",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    }
+  ]
+}

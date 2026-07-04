@@ -1,0 +1,8 @@
+[hf-model] cloning https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 (shallow)…
+[hf-model] SHA=1110a243fdf4706b3f48f1d95db1a4f5529b4d41
+[hf-model] scan path: /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model
+[hf-model] trusera done (trusera_exit=0)
+[hf-model] ours done (ours_exit=0)
+[hf-model] cisco analyze (agentic/bedrock)…
+[hf-model] cisco done (exit=0)
+[hf-model] DONE (clone removed)

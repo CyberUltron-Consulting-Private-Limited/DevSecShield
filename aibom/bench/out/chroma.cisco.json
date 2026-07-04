@@ -1,0 +1,60 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "85fd0c5d-84d8-44e0-9aac-116784ad2830",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:40:50Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T05:46:27Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "chroma-core/chroma": {
+        "source_name": "chroma-core/chroma",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb",
+        "components": {},
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 0,
+          "last_generated_at": "2026-06-26T05:46:27Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/chroma-core/chroma",
+          "source_ref_version": "207de398a18c703cd69b43aae54078d9e3064747",
+          "elapsed_s": 336.67,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 0,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {},
+      "total_relationships": 0,
+      "risk_score": 0,
+      "risk_severity": "info"
+    },
+    "risk": {
+      "score": 0,
+      "severity": "info",
+      "flags": []
+    },
+    "errors": []
+  }
+}

@@ -1,0 +1,2270 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "71654b95-997a-4171-936f-a5be010497da",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T06:11:01Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T06:19:19Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "Project-MONAI/MONAI": {
+        "source_name": "Project-MONAI/MONAI",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai",
+        "components": {
+          "model": [
+            {
+              "name": "model.pt",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+              "line_number": 314,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "model.pt",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'model.pt' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "start_line": 314,
+                    "end_line": 314,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=model.pt",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py"
+                ]
+              },
+              "instance_id": "model.pt_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py_314",
+              "confidence": 0.4
+            },
+            {
+              "name": "fl_best_model",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+              "line_number": 23,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "fl_best_model",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'fl_best_model' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+                    "start_line": 23,
+                    "end_line": 23,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=fl_best_model",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py"
+                ]
+              },
+              "instance_id": "fl_best_model_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py_23",
+              "confidence": 0.4
+            },
+            {
+              "name": "fl_final_model",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+              "line_number": 24,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "fl_final_model",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'fl_final_model' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+                    "start_line": 24,
+                    "end_line": 24,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=fl_final_model",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py"
+                ]
+              },
+              "instance_id": "fl_final_model_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py_24",
+              "confidence": 0.4
+            }
+          ],
+          "training_run": [
+            {
+              "name": "training_run",
+              "component_type": "training_run",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py",
+              "line_number": 17,
+              "framework": "pytorch/tensorflow",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Model training execution",
+              "text": "from torch.optim.lr_scheduler import LambdaLR, _LRScheduler",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Training run 'training_run' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py",
+                    "start_line": 17,
+                    "end_line": 17,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/hpo_gen.py",
+                    "line": 233,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/hpo_gen.py",
+                    "line": 396,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/auto_runner.py",
+                    "line": 737,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/auto_runner.py",
+                    "line": 739,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                    "line": 175,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunetv2_runner.py",
+                    "line": 1028,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                    "line": 42,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                    "line": 274,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                    "line": 713,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                    "line": 761,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/evaluator.py",
+                    "line": 74,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/evaluator.py",
+                    "line": 206,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/evaluator.py",
+                    "line": 386,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/client/client_algo.py",
+                    "line": 93,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 18,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 38,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 46,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 47,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 50,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 53,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 59,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 87,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                    "line": 89,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/checkpoint_saver.py",
+                    "line": 43,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/checkpoint_loader.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/checkpoint_loader.py",
+                    "line": 45,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/checkpoint_loader.py",
+                    "line": 59,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/parameter_scheduler.py",
+                    "line": 129,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/parameter_scheduler.py",
+                    "line": 147,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/parameter_scheduler.py",
+                    "line": 166,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/embedding_collapse.py",
+                    "line": 448,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/utils.py",
+                    "line": 489,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/utils.py",
+                    "line": 520,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                    "line": 399,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/__init__.py",
+                    "line": 15,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/utils.py",
+                    "line": 65,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/visualize/class_activation_maps.py",
+                    "line": 149,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 39,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/hpo_gen.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/auto_runner.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunetv2_runner.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/evaluator.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/client/client_algo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/lr_schedule_handler.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/checkpoint_saver.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/checkpoint_loader.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/parameter_scheduler.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/embedding_collapse.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/__init__.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/visualize/class_activation_maps.py"
+                ],
+                "consolidated_count": 39
+              },
+              "instance_id": "training_run_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py_17",
+              "confidence": 0.9
+            }
+          ],
+          "dataset": [
+            {
+              "name": "dataset",
+              "component_type": "dataset",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+              "line_number": 26,
+              "framework": "pytorch",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Training or analytics data loading",
+              "text": "class DataLoader(_TorchDataLoader):",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dataset 'dataset' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                    "start_line": 26,
+                    "end_line": 26,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/data_analyzer.py",
+                    "line": 317,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/tcia/utils.py",
+                    "line": 112,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/auto3dseg/seg_summarizer.py",
+                    "line": 74,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/test_time_augmentation.py",
+                    "line": 204,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": true
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/iterable_dataset.py",
+                    "line": 80,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/iterable_dataset.py",
+                    "line": 89,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/iterable_dataset.py",
+                    "line": 245,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/grid_dataset.py",
+                    "line": 184,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/grid_dataset.py",
+                    "line": 400,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/meta_tensor.py",
+                    "line": 140,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset_summary.py",
+                    "line": 74,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                    "line": 1536,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                    "line": 32,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                    "line": 42,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                    "line": 43,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                    "line": 64,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/workflow.py",
+                    "line": 97,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                    "line": 51,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                    "line": 168,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/inverse_batch_transform.py",
+                    "line": 102,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 21,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/data_analyzer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/tcia/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/auto3dseg/seg_summarizer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/test_time_augmentation.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/iterable_dataset.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/grid_dataset.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/meta_tensor.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset_summary.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/workflow.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/inverse_batch_transform.py"
+                ],
+                "consolidated_count": 21
+              },
+              "instance_id": "dataset_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py_26",
+              "confidence": 0.85
+            }
+          ],
+          "hyperparameter": [
+            {
+              "name": "hyperparameter:batch_size",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/cumulative_average.py",
+              "line_number": 36,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter batch_size",
+              "text": "batch_size = 8",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "batch_size": 8
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:batch_size' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/cumulative_average.py",
+                    "start_line": 36,
+                    "end_line": 36,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/data_analyzer.py",
+                    "line": 319,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                    "line": 598,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/auto3dseg/seg_summarizer.py",
+                    "line": 74,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/test_time_augmentation.py",
+                    "line": 108,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": true
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/test_time_augmentation.py",
+                    "line": 135,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": true
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/test_time_augmentation.py",
+                    "line": 204,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": true
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/iterable_dataset.py",
+                    "line": 90,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/grid_dataset.py",
+                    "line": 184,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/grid_dataset.py",
+                    "line": 400,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset_summary.py",
+                    "line": 70,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset_summary.py",
+                    "line": 74,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/utils.py",
+                    "line": 537,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                    "line": 64,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                    "line": 458,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/inferers/inferer.py",
+                    "line": 182,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/inferers/inferer.py",
+                    "line": 207,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dints.py",
+                    "line": 882,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                    "line": 168,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/inverse_batch_transform.py",
+                    "line": 89,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/inverse_batch_transform.py",
+                    "line": 103,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/regularization/array.py",
+                    "line": 44,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/regularization/array.py",
+                    "line": 122,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 23,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/auto3dseg/data_analyzer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/auto3dseg/seg_summarizer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/test_time_augmentation.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/iterable_dataset.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/grid_dataset.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset_summary.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataloader.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/engines/trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/inferers/inferer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/cumulative_average.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dints.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_finder.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/inverse_batch_transform.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/transforms/regularization/array.py"
+                ],
+                "consolidated_count": 23
+              },
+              "instance_id": "hyperparameter:batch_size_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/cumulative_average.py_36",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:weight_decay",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/novograd.py",
+              "line_number": 63,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter weight_decay",
+              "text": "lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, grad_averaging=grad_averaging, amsgrad=amsgrad",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "weight_decay": "weight_decay"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:weight_decay' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/novograd.py",
+                    "start_line": 63,
+                    "end_line": 63,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                    "line": 179,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/novograd.py"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "hyperparameter:weight_decay_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/novograd.py_63",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:dropout",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py",
+              "line_number": 27,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter dropout",
+              "text": "return ADN(act=act, dropout=dropout, dropout_dim=1, ordering=ordering)",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "dropout": "dropout"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:dropout' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py",
+                    "start_line": 27,
+                    "end_line": 27,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/generation/maisi/networks/autoencoderkl_maisi.py",
+                    "line": 168,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/networks/nets/coil_sensitivity_model.py",
+                    "line": 75,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/networks/nets/complex_unet.py",
+                    "line": 80,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/convolutions.py",
+                    "line": 47,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/convolutions.py",
+                    "line": 168,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/convolutions.py",
+                    "line": 289,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 61,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 72,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 91,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 150,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 161,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 221,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 234,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 259,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                    "line": 295,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/acti_norm.py",
+                    "line": 45,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/acti_norm.py",
+                    "line": 54,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/denseblock.py",
+                    "line": 86,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/denseblock.py",
+                    "line": 115,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/denseblock.py",
+                    "line": 128,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/patchembedding.py",
+                    "line": 115,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/diffusion_model_unet.py",
+                    "line": 191,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/diffusion_model_unet.py",
+                    "line": 726,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/diffusion_model_unet.py",
+                    "line": 902,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/diffusion_model_unet.py",
+                    "line": 1247,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/transchex.py",
+                    "line": 126,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/transchex.py",
+                    "line": 160,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vnet.py",
+                    "line": 119,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vnet.py",
+                    "line": 152,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/milmodel.py",
+                    "line": 132,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/milmodel.py",
+                    "line": 140,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/milmodel.py",
+                    "line": 145,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/milmodel.py",
+                    "line": 152,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/milmodel.py",
+                    "line": 157,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/senet.py",
+                    "line": 202,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dynunet.py",
+                    "line": 156,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dynunet.py",
+                    "line": 287,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dynunet.py",
+                    "line": 299,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dynunet.py",
+                    "line": 303,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/unet.py",
+                    "line": 147,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/unet.py",
+                    "line": 221,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/unet.py",
+                    "line": 234,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/unet.py",
+                    "line": 271,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/unet.py",
+                    "line": 288,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/patchgan_discriminator.py",
+                    "line": 90,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/patchgan_discriminator.py",
+                    "line": 168,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/patchgan_discriminator.py",
+                    "line": 191,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/patchgan_discriminator.py",
+                    "line": 210,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/flexible_unet.py",
+                    "line": 148,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/flexible_unet.py",
+                    "line": 314,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/highresnet.py",
+                    "line": 203,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/highresnet.py",
+                    "line": 219,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/generator.py",
+                    "line": 86,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/generator.py",
+                    "line": 124,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/generator.py",
+                    "line": 138,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 122,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 182,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 196,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 238,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 252,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 273,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                    "line": 292,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 59,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 68,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 121,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 136,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 150,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 213,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 241,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 254,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 400,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                    "line": 412,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/voxelmorph.py",
+                    "line": 112,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/voxelmorph.py",
+                    "line": 176,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/voxelmorph.py",
+                    "line": 192,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/voxelmorph.py",
+                    "line": 245,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/voxelmorph.py",
+                    "line": 309,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/regressor.py",
+                    "line": 84,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/regressor.py",
+                    "line": 126,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/regressor.py",
+                    "line": 139,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/basic_unet.py",
+                    "line": 52,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/basic_unet.py",
+                    "line": 54,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py",
+                    "line": 28,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py",
+                    "line": 49,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py",
+                    "line": 72,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 48,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 60,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 72,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 83,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 94,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 104,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 118,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 132,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 160,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 174,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 220,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 226,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 253,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 260,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 280,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                    "line": 285,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/segresnet.py",
+                    "line": 101,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 104,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/generation/maisi/networks/autoencoderkl_maisi.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/networks/nets/coil_sensitivity_model.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/networks/nets/complex_unet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/convolutions.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/dynunet_block.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/acti_norm.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/denseblock.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/blocks/patchembedding.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/diffusion_model_unet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/transchex.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vnet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/milmodel.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/senet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/dynunet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/unet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/patchgan_discriminator.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/flexible_unet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/highresnet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/generator.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/autoencoder.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/vqvae.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/voxelmorph.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/regressor.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/basic_unet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/attentionunet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/segresnet.py"
+                ],
+                "consolidated_count": 104
+              },
+              "instance_id": "hyperparameter:dropout_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/fullyconnectednet.py_27",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:num_epochs",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/stats_handler.py",
+              "line_number": 287,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter num_epochs",
+              "text": "num_epochs = engine.state.max_epochs",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "num_epochs": "engine.state.max_epochs"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:num_epochs' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/stats_handler.py",
+                    "start_line": 287,
+                    "end_line": 287,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/stats_handler.py"
+                ]
+              },
+              "instance_id": "hyperparameter:num_epochs_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/stats_handler.py_287",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:warmup_steps",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py",
+              "line_number": 89,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter warmup_steps",
+              "text": "self.warmup_steps = min(max(warmup_steps, 0), t_total)",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "warmup_steps": "min(max(warmup_steps"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:warmup_steps' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py",
+                    "start_line": 89,
+                    "end_line": 89,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py"
+                ]
+              },
+              "instance_id": "hyperparameter:warmup_steps_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers/lr_scheduler.py_89",
+              "confidence": 0.85
+            }
+          ],
+          "secret": [
+            {
+              "name": "env:NGC_API_KEY",
+              "component_type": "secret",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scripts.py",
+              "line_number": 572,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env:NGC_API_KEY' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scripts.py",
+                    "start_line": 572,
+                    "end_line": 572,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env": "NGC_API_KEY",
+                "env_context": "api_key_kwarg",
+                "unresolved_env_var": "NGC_API_KEY",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scripts.py"
+                ]
+              },
+              "instance_id": "env:NGC_API_KEY_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scripts.py_572",
+              "confidence": 0.3
+            }
+          ],
+          "experiment_tracker": [
+            {
+              "name": "experiment_tracker",
+              "component_type": "experiment_tracker",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/tensorboard_handlers.py",
+              "line_number": 29,
+              "framework": "tensorboard",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Experiment metrics and run tracking",
+              "text": "from torch.utils.tensorboard import SummaryWriter",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Experiment tracker 'experiment_tracker' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/tensorboard_handlers.py",
+                    "start_line": 29,
+                    "end_line": 29,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/tensorboard_handlers.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/tensorboard_handlers.py",
+                    "line": 53,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/clearml_handlers.py",
+                    "line": 64,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/clearml_handlers.py",
+                    "line": 65,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/clearml_handlers.py",
+                    "line": 67,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/visualize/img2tensorboard.py",
+                    "line": 30,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/visualize/img2tensorboard.py",
+                    "line": 36,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 8,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/tensorboard_handlers.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/clearml_handlers.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/visualize/img2tensorboard.py"
+                ],
+                "consolidated_count": 8
+              },
+              "instance_id": "experiment_tracker_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/tensorboard_handlers.py_29",
+              "confidence": 0.85
+            }
+          ],
+          "model_artifact": [
+            {
+              "name": "model_artifact",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/fastmri_reader.py",
+              "line_number": 31,
+              "framework": "keras",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Serialized model weights or export",
+              "text": "Load fastMRI files with '.h5' suffix. fastMRI files, when loaded with \"h5py\",",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'model_artifact' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/fastmri_reader.py",
+                    "start_line": 31,
+                    "end_line": 31,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/utils/misc.py",
+                    "line": 669,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/utils/state_cacher.py",
+                    "line": 104,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/utils/state_cacher.py",
+                    "line": 106,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/utils.py",
+                    "line": 646,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/transchex.py",
+                    "line": 64,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/transchex.py",
+                    "line": 289,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/resnet.py",
+                    "line": 648,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/resnet.py",
+                    "line": 659,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                    "line": 395,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                    "line": 419,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                    "line": 626,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                    "line": 1629,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                    "line": 1701,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/fastmri_reader.py",
+                    "line": 53,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                    "line": 182,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 402,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 407,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 411,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 551,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 556,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 564,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 569,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 584,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                    "line": 593,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 25,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/utils/misc.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/utils/state_cacher.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/transchex.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/nets/resnet.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/dataset.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/fastmri_reader.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/detection/networks/retinanet_detector.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py"
+                ],
+                "consolidated_count": 25
+              },
+              "instance_id": "model_artifact_/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/reconstruction/fastmri_reader.py_31",
+              "confidence": 0.9
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 13,
+          "last_generated_at": "2026-06-26T06:19:19Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/Project-MONAI/MONAI",
+          "source_ref_version": "4ba89bd818a44395842f11f3316b5aaad48353a6",
+          "elapsed_s": 498.21,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 13,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "model": 3,
+        "training_run": 1,
+        "dataset": 1,
+        "hyperparameter": 5,
+        "secret": 1,
+        "experiment_tracker": 1,
+        "model_artifact": 1
+      },
+      "total_relationships": 0,
+      "risk_score": 65,
+      "risk_severity": "high"
+    },
+    "risk": {
+      "score": 65,
+      "severity": "high",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+          "line_number": 314,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnunet/nnunet_bundle.py",
+                "start_line": 314,
+                "end_line": 314,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+          "line_number": 23,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+                "start_line": 23,
+                "end_line": 23,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+          "line_number": 24,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/constants.py",
+                "start_line": 24,
+                "end_line": 24,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scripts.py",
+          "line_number": 572,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scripts.py",
+                "start_line": 572,
+                "end_line": 572,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

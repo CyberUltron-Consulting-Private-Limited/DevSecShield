@@ -1,0 +1,26 @@
+{
+  "fixture": "synthetic-ai-app",
+  "description": "Hand-labeled ground truth. The ORACLE for precision/recall + the chart-data/contract tests. Every count below is exact.",
+  "model_references": ["gpt-4o", "claude-3-5-sonnet-20241022", "all-MiniLM-L6-v2"],
+  "providers": ["openai", "anthropic", "chromadb"],
+  "agent_frameworks": ["langchain"],
+  "secrets": [
+    {"name": "OPENAI_API_KEY", "value_prefix": "sk-FAKE", "kind": "hardcoded_api_key", "file": "app.py"}
+  ],
+  "model_files": ["model.safetensors"],
+  "library_licenses": {
+    "numpy": "BSD-3-Clause",
+    "torch": "BSD-3-Clause",
+    "requests": "Apache-2.0",
+    "pydantic": "MIT",
+    "chromadb": "Apache-2.0"
+  },
+  "counts": {
+    "model_references": 3,
+    "providers": 3,
+    "agent_frameworks": 1,
+    "secrets": 1,
+    "model_files": 1,
+    "licensed_libraries": 5
+  }
+}

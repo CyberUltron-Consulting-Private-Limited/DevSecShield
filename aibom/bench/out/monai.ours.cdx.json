@@ -1,0 +1,56 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:348e8201-65d5-50ee-bbad-96d2b33c3ad4",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "monai"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "endpoint-huggingface-co",
+      "name": "Hugging Face Hub",
+      "publisher": "Hugging Face",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "huggingface.co"
+        },
+        {
+          "name": "discovery:source",
+          "value": "resnet.py"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/langchain          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Stage 1/4 — scanning 1 path(s)
+INFO: Pass 1: discovered 30 AI package(s) from manifests: anthropic, chromadb, google-cloud-aiplatform, google-genai, langchain, langchain-anthropic, langchain-aws, langchain-chroma, langchain-cohere, langchain-community…
+INFO: Pass 2 prep: pre-cached 3019 / 3019 files via async I/O
+INFO: HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/paraphrase-albert-small-v2 "HTTP/1.1 200 OK"
+INFO: HTTP Request: POST https://api.osv.dev/v1/querybatch "HTTP/1.1 200 OK"
+INFO: HTTP Request: GET https://huggingface.co/api/models/groq/compound "HTTP/1.1 401 Unauthorized"
+INFO: HTTP Request: GET https://huggingface.co/api/models/groq/compound-mini "HTTP/1.1 401 Unauthorized"
+INFO: HTTP Request: GET https://huggingface.co/api/models/test/model "HTTP/1.1 401 Unauthorized"
+INFO: HTTP Request: GET https://huggingface.co/api/models/openai-community/gpt2 "HTTP/1.1 200 OK"
+INFO: HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-mpnet-base-v2 "HTTP/1.1 200 OK"
+INFO: HTTP Request: GET https://huggingface.co/api/models/mlx-community/QwQ-32B-4bit "HTTP/1.1 200 OK"
+note: langchain.cisco will be absent (timeout); Trusera+ours still compared

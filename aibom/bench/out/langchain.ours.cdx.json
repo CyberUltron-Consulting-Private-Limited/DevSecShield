@@ -1,0 +1,8052 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:2fc9b67e-a655-509d-985a-28689feb1068",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "langchain"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-amazon-titan-embed-text-v1",
+      "name": "amazon.titan-embed-text-v1",
+      "publisher": "Amazon",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-amazon-titan-text-express-v1",
+      "name": "amazon.titan-text-express-v1",
+      "publisher": "Amazon",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-baai-bge-base-en",
+      "name": "BAAI/bge-base-en",
+      "publisher": "HuggingFace",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "sentence-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "BGE (BERT-family)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-2",
+      "name": "claude-2",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-haiku",
+      "name": "claude-3-5-haiku",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-haiku-20241022",
+      "name": "claude-3-5-haiku-20241022",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-haiku-latest",
+      "name": "claude-3-5-haiku-latest",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-sonnet-20240620",
+      "name": "claude-3-5-sonnet-20240620",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-sonnet-20241022",
+      "name": "claude-3-5-sonnet-20241022",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-7-sonnet",
+      "name": "claude-3-7-sonnet",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-7-sonnet-20250219",
+      "name": "claude-3-7-sonnet-20250219",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-7-sonnet-latest",
+      "name": "claude-3-7-sonnet-latest",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-haiku",
+      "name": "claude-3-haiku",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-haiku-20240307",
+      "name": "claude-3-haiku-20240307",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-opus",
+      "name": "claude-3-opus",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-opus-20240229",
+      "name": "claude-3-opus-20240229",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-sonnet",
+      "name": "claude-3-sonnet",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-sonnet-20240229",
+      "name": "claude-3-sonnet-20240229",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-4",
+      "name": "claude-4",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-haiku-4-5",
+      "name": "claude-haiku-4-5",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-haiku-4-5-20251001",
+      "name": "claude-haiku-4-5-20251001",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-haiku-latest",
+      "name": "claude-haiku-latest",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4",
+      "name": "claude-opus-4",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-0",
+      "name": "claude-opus-4-0",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-1",
+      "name": "claude-opus-4-1",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-1-20250805",
+      "name": "claude-opus-4-1-20250805",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-20250514",
+      "name": "claude-opus-4-20250514",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-5",
+      "name": "claude-opus-4-5",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-5-20251101",
+      "name": "claude-opus-4-5-20251101",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-6",
+      "name": "claude-opus-4-6",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-6-fast",
+      "name": "claude-opus-4.6-fast",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-7",
+      "name": "claude-opus-4-7",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-7-fast",
+      "name": "claude-opus-4.7-fast",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-8",
+      "name": "claude-opus-4-8",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-4-8-fast",
+      "name": "claude-opus-4.8-fast",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-opus-latest",
+      "name": "claude-opus-latest",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4",
+      "name": "claude-sonnet-4",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-0",
+      "name": "claude-sonnet-4-0",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-20250514",
+      "name": "claude-sonnet-4-20250514",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-20250514-v1",
+      "name": "claude-sonnet-4-20250514-v1",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-5",
+      "name": "claude-sonnet-4-5",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-5-20250929",
+      "name": "claude-sonnet-4-5-20250929",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-5-20250929-v1",
+      "name": "claude-sonnet-4-5-20250929-v1",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-4-6",
+      "name": "claude-sonnet-4-6",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-sonnet-latest",
+      "name": "claude-sonnet-latest",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-codestral-2508",
+      "name": "codestral-2508",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-codestral-latest",
+      "name": "codestral-latest",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-command-r-08-2024",
+      "name": "command-r-08-2024",
+      "publisher": "Cohere",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-command-r-plus",
+      "name": "command-r-plus",
+      "publisher": "Cohere",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-command-r-plus-08-2024",
+      "name": "command-r-plus-08-2024",
+      "publisher": "Cohere",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-embed-english-v2-0",
+      "name": "embed-english-v2.0",
+      "publisher": "Cohere",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Cohere Embed (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-embed-english-v3-0",
+      "name": "embed-english-v3.0",
+      "publisher": "Cohere",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Cohere Embed (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-1-5-pro",
+      "name": "gemini-1.5-pro",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-flash",
+      "name": "gemini-2.5-flash",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-flash-image",
+      "name": "gemini-2.5-flash-image",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-flash-lite",
+      "name": "gemini-2.5-flash-lite",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-flash-lite-preview-09-2025",
+      "name": "gemini-2.5-flash-lite-preview-09-2025",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-pro",
+      "name": "gemini-2.5-pro",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-pro-preview",
+      "name": "gemini-2.5-pro-preview",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-pro-preview-05-06",
+      "name": "gemini-2.5-pro-preview-05-06",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3",
+      "name": "gemini-3",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-1-flash-image",
+      "name": "gemini-3.1-flash-image",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-1-flash-image-preview",
+      "name": "gemini-3.1-flash-image-preview",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-1-flash-lite",
+      "name": "gemini-3.1-flash-lite",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-1-flash-lite-preview",
+      "name": "gemini-3.1-flash-lite-preview",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-1-pro-preview",
+      "name": "gemini-3.1-pro-preview",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-1-pro-preview-customtools",
+      "name": "gemini-3.1-pro-preview-customtools",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-5-flash",
+      "name": "gemini-3.5-flash",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-flash-preview",
+      "name": "gemini-3-flash-preview",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-pro-image",
+      "name": "gemini-3-pro-image",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-3-pro-image-preview",
+      "name": "gemini-3-pro-image-preview",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-embedding-001",
+      "name": "gemini-embedding-001",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-flash-latest",
+      "name": "gemini-flash-latest",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-flash-lite-latest",
+      "name": "gemini-flash-lite-latest",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-pro-latest",
+      "name": "gemini-pro-latest",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-2",
+      "name": "GPT-2",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3",
+      "name": "GPT-3",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5",
+      "name": "GPT-3.5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-0125",
+      "name": "gpt-3.5-0125",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo",
+      "name": "gpt-3.5-turbo",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-0301",
+      "name": "gpt-3.5-turbo-0301",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-0613",
+      "name": "gpt-3.5-turbo-0613",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-16k",
+      "name": "gpt-3.5-turbo-16k",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-16k-0613",
+      "name": "gpt-3.5-turbo-16k-0613",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-instruct",
+      "name": "gpt-3.5-turbo-instruct",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-legacy",
+      "name": "gpt-3-legacy",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-35-turbo",
+      "name": "gpt-35-turbo",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-35-turbo-0125",
+      "name": "gpt-35-turbo-0125",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-35-turbo-instruct",
+      "name": "gpt-35-turbo-instruct",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4",
+      "name": "GPT-4",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-0314",
+      "name": "gpt-4-0314",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-0613",
+      "name": "gpt-4-0613",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-1",
+      "name": "gpt-4.1",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-1-mini",
+      "name": "gpt-4.1-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-1-nano",
+      "name": "gpt-4.1-nano",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-32k",
+      "name": "gpt-4-32k",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-32k-0314",
+      "name": "gpt-4-32k-0314",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-32k-0613",
+      "name": "gpt-4-32k-0613",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-turbo",
+      "name": "gpt-4-turbo",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-turbo-preview",
+      "name": "gpt-4-turbo-preview",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o",
+      "name": "gpt-4o",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-2024-05-13",
+      "name": "gpt-4o-2024-05-13",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-2024-08-06",
+      "name": "gpt-4o-2024-08-06",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-2024-11-20",
+      "name": "gpt-4o-2024-11-20",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-mini",
+      "name": "gpt-4o-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-mini-2024-07-18",
+      "name": "gpt-4o-mini-2024-07-18",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-mini-search-preview",
+      "name": "gpt-4o-mini-search-preview",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o-search-preview",
+      "name": "gpt-4o-search-preview",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5",
+      "name": "GPT-5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-1",
+      "name": "gpt-5.1",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-1-chat",
+      "name": "gpt-5.1-chat",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-1-chat-latest",
+      "name": "gpt-5.1-chat-latest",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-1-codex",
+      "name": "gpt-5.1-codex",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-1-codex-max",
+      "name": "gpt-5.1-codex-max",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-1-codex-mini",
+      "name": "gpt-5.1-codex-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2",
+      "name": "gpt-5.2",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2-2025-12-01",
+      "name": "gpt-5.2-2025-12-01",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2-chat",
+      "name": "gpt-5.2-chat",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2-chat-latest",
+      "name": "gpt-5.2-chat-latest",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2-codex",
+      "name": "gpt-5.2-codex",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2-pro",
+      "name": "gpt-5.2-pro",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2-pro-2025-12-11",
+      "name": "gpt-5.2-pro-2025-12-11",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-2025-01-01",
+      "name": "GPT-5-2025-01-01",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-3",
+      "name": "gpt-5.3",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-3-chat",
+      "name": "gpt-5.3-chat",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-3-chat-latest",
+      "name": "gpt-5.3-chat-latest",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-3-codex",
+      "name": "gpt-5.3-codex",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-3-codex-spark",
+      "name": "gpt-5.3-codex-spark",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4",
+      "name": "gpt-5.4",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-2026-03-05",
+      "name": "gpt-5.4-2026-03-05",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-image-2",
+      "name": "gpt-5.4-image-2",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-mini",
+      "name": "gpt-5.4-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-nano",
+      "name": "gpt-5.4-nano",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-pro",
+      "name": "gpt-5.4-pro",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-4-pro-2026-03-05",
+      "name": "gpt-5.4-pro-2026-03-05",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-5",
+      "name": "gpt-5.5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-5-pro",
+      "name": "gpt-5.5-pro",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-chat",
+      "name": "gpt-5-chat",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-chat-latest",
+      "name": "gpt-5-chat-latest",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-codex",
+      "name": "gpt-5-codex",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-image",
+      "name": "gpt-5-image",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-image-mini",
+      "name": "gpt-5-image-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-mini",
+      "name": "gpt-5-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-nano",
+      "name": "gpt-5-nano",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-pro",
+      "name": "gpt-5-pro",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-pro-2025-10-06",
+      "name": "gpt-5-pro-2025-10-06",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5-turbo",
+      "name": "Gpt-5-Turbo",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-audio",
+      "name": "gpt-audio",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-audio-mini",
+      "name": "gpt-audio-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-image-1",
+      "name": "gpt-image-1",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-image-1-5",
+      "name": "gpt-image-1.5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-image-1-mini",
+      "name": "gpt-image-1-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-image-2",
+      "name": "gpt-image-2",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-oss",
+      "name": "GPT-OSS",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-oss-120b",
+      "name": "gpt-oss-120b",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-oss-20b",
+      "name": "gpt-oss-20b",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-oss-safeguard-20b",
+      "name": "gpt-oss-safeguard-20b",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-2-7b-chat-hf",
+      "name": "Llama-2-7b-chat-hf",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-1",
+      "name": "llama-3.1",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-1-70b-instruct",
+      "name": "llama-3.1-70b-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-1-8b-instant",
+      "name": "llama-3.1-8b-instant",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-1-8b-instruct",
+      "name": "llama-3.1-8b-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-1-sonar-small-128k-online",
+      "name": "llama-3.1-sonar-small-128k-online",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-2-11b-vision-instruct",
+      "name": "llama-3.2-11b-vision-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-2-1b-instruct",
+      "name": "llama-3.2-1b-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-2-3b-instruct",
+      "name": "llama-3.2-3b-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-3-70b-instruct",
+      "name": "llama-3.3-70b-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-3-70b-versatile",
+      "name": "llama-3.3-70b-versatile",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-3-nemotron-super-49b-v1-5",
+      "name": "llama-3.3-nemotron-super-49b-v1.5",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-8b-instruct",
+      "name": "llama-3-8b-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-4-maverick",
+      "name": "llama-4-maverick",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-4-scout",
+      "name": "llama-4-scout",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-4-scout-17b-16e-instruct",
+      "name": "llama-4-scout-17b-16e-instruct",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3",
+      "name": "llama3",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3-1",
+      "name": "llama3.1",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3-2",
+      "name": "llama3.2",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama4",
+      "name": "llama4",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-compatible",
+      "name": "Mistral-compatible",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-embed",
+      "name": "mistral-embed",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-large",
+      "name": "mistral-large",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-large-2407",
+      "name": "mistral-large-2407",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-large-2411",
+      "name": "mistral-large-2411",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-large-2512",
+      "name": "mistral-large-2512",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-large-latest",
+      "name": "mistral-large-latest",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-2505",
+      "name": "mistral-medium-2505",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-2508",
+      "name": "mistral-medium-2508",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-2604",
+      "name": "mistral-medium-2604",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-3",
+      "name": "mistral-medium-3",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-3-1",
+      "name": "mistral-medium-3.1",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-3-5",
+      "name": "mistral-medium-3-5",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-medium-latest",
+      "name": "mistral-medium-latest",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-nemo",
+      "name": "mistral-nemo",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-nemo-base-2407",
+      "name": "Mistral-Nemo-Base-2407",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-saba",
+      "name": "mistral-saba",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small",
+      "name": "mistral-small",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small-24b-instruct-2501",
+      "name": "mistral-small-24b-instruct-2501",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small-2506",
+      "name": "mistral-small-2506",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small-2603",
+      "name": "mistral-small-2603",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small-3-1-24b-instruct",
+      "name": "mistral-small-3.1-24b-instruct",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small-3-2-24b-instruct",
+      "name": "mistral-small-3.2-24b-instruct",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small-latest",
+      "name": "mistral-small-latest",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small3-1",
+      "name": "mistral-small3.1",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-small3-2",
+      "name": "mistral-small3.2",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-specific",
+      "name": "Mistral-specific",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mixtral-8x22b-instruct",
+      "name": "mixtral-8x22b-instruct",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer (sparse MoE)",
+          "modelArchitecture": "Mixtral"
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "Mistral"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mixtral-8x7b",
+      "name": "mixtral-8x7b",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer (sparse MoE)",
+          "modelArchitecture": "Mixtral"
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "Mistral"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mixtral-8x7b-32768",
+      "name": "mixtral-8x7b-32768",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer (sparse MoE)",
+          "modelArchitecture": "Mixtral"
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "Mistral"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mixtral-8x7b-instruct",
+      "name": "mixtral-8x7b-instruct",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer (sparse MoE)",
+          "modelArchitecture": "Mixtral"
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "Mistral"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mixtral-8x7b-v0-1",
+      "name": "Mixtral-8x7B-v0.1",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer (sparse MoE)",
+          "modelArchitecture": "Mixtral"
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "Mistral"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-nomic-embed-text-v1",
+      "name": "nomic-embed-text-v1",
+      "publisher": "Nomic",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "sentence-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Nomic Embed"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-nomic-embed-text-v1-5",
+      "name": "nomic-embed-text-v1.5",
+      "publisher": "Nomic",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "sentence-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Nomic Embed"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-nova-lite-v1",
+      "name": "nova-lite-v1",
+      "publisher": "Amazon",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-nova-micro-v1",
+      "name": "nova-micro-v1",
+      "publisher": "Amazon",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-nova-premier-v1",
+      "name": "nova-premier-v1",
+      "publisher": "Amazon",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-nova-pro-v1",
+      "name": "nova-pro-v1",
+      "publisher": "Amazon",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o1-pro",
+      "name": "o1-pro",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o3-deep-research",
+      "name": "o3-deep-research",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o3-mini",
+      "name": "o3-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o3-mini-high",
+      "name": "o3-mini-high",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o3-pro",
+      "name": "o3-pro",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o4-mini",
+      "name": "o4-mini",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o4-mini-deep-research",
+      "name": "o4-mini-deep-research",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-o4-mini-high",
+      "name": "o4-mini-high",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-sentence-transformers-all-mpnet-base-v2",
+      "name": "sentence-transformers/all-mpnet-base-v2",
+      "publisher": "sentence-transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "sentence-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "MPNet"
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "MPNet"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-ada-001",
+      "name": "text-ada-001",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-babbage-001",
+      "name": "text-babbage-001",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-curie-001",
+      "name": "text-curie-001",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-davinci-002",
+      "name": "text-davinci-002",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-davinci-003",
+      "name": "text-davinci-003",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-3",
+      "name": "text-embedding-3",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-3-large",
+      "name": "text-embedding-3-large",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-3-small",
+      "name": "text-embedding-3-small",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-ada-002",
+      "name": "text-embedding-ada-002",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-gecko",
+      "name": "text-embedding-gecko",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-large",
+      "name": "text-embedding-large",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-aiohttp",
+      "name": "aiohttp",
+      "purl": "pkg:pypi/aiohttp"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-anthropic",
+      "name": "anthropic",
+      "purl": "pkg:pypi/anthropic",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-async-timeout",
+      "name": "async-timeout",
+      "purl": "pkg:pypi/async-timeout"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-chromadb",
+      "name": "chromadb",
+      "purl": "pkg:pypi/chromadb",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-cohere",
+      "name": "cohere",
+      "purl": "pkg:pypi/cohere",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-datasets",
+      "name": "datasets",
+      "purl": "pkg:pypi/datasets",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-exa-py",
+      "name": "exa-py",
+      "purl": "pkg:pypi/exa-py"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-fireworks-ai",
+      "name": "fireworks-ai",
+      "purl": "pkg:pypi/fireworks-ai"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-groq",
+      "name": "groq",
+      "purl": "pkg:pypi/groq"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-httpx",
+      "name": "httpx",
+      "purl": "pkg:pypi/httpx",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-httpx-sse",
+      "name": "httpx-sse",
+      "purl": "pkg:pypi/httpx-sse"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-huggingface-hub",
+      "name": "huggingface-hub",
+      "purl": "pkg:pypi/huggingface-hub",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-jsonpatch",
+      "name": "jsonpatch",
+      "purl": "pkg:pypi/jsonpatch"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain",
+      "name": "langchain",
+      "version": "1.3.11",
+      "purl": "pkg:pypi/langchain@1.3.11",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-anthropic",
+      "name": "langchain-anthropic",
+      "version": "1.4.7",
+      "purl": "pkg:pypi/langchain-anthropic@1.4.7"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-chroma",
+      "name": "langchain-chroma",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/langchain-chroma@1.1.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-classic",
+      "name": "langchain-classic",
+      "version": "1.0.8",
+      "purl": "pkg:pypi/langchain-classic@1.0.8"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-core",
+      "name": "langchain-core",
+      "version": "1.4.8",
+      "purl": "pkg:pypi/langchain-core@1.4.8",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-deepseek",
+      "name": "langchain-deepseek",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/langchain-deepseek@1.1.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-exa",
+      "name": "langchain-exa",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/langchain-exa@1.1.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-fireworks",
+      "name": "langchain-fireworks",
+      "version": "1.4.3",
+      "purl": "pkg:pypi/langchain-fireworks@1.4.3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-groq",
+      "name": "langchain-groq",
+      "version": "1.1.3",
+      "purl": "pkg:pypi/langchain-groq@1.1.3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-huggingface",
+      "name": "langchain-huggingface",
+      "version": "1.2.2",
+      "purl": "pkg:pypi/langchain-huggingface@1.2.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-mistralai",
+      "name": "langchain-mistralai",
+      "version": "1.1.5",
+      "purl": "pkg:pypi/langchain-mistralai@1.1.5"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-model-profiles",
+      "name": "langchain-model-profiles",
+      "version": "0.0.6",
+      "purl": "pkg:pypi/langchain-model-profiles@0.0.6"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-nomic",
+      "name": "langchain-nomic",
+      "version": "1.0.1",
+      "purl": "pkg:pypi/langchain-nomic@1.0.1"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-ollama",
+      "name": "langchain-ollama",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/langchain-ollama@1.1.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-openai",
+      "name": "langchain-openai",
+      "purl": "pkg:pypi/langchain-openai"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-openrouter",
+      "name": "langchain-openrouter",
+      "version": "0.2.4",
+      "purl": "pkg:pypi/langchain-openrouter@0.2.4"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-perplexity",
+      "name": "langchain-perplexity",
+      "version": "1.4.0",
+      "purl": "pkg:pypi/langchain-perplexity@1.4.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-protocol",
+      "name": "langchain-protocol",
+      "purl": "pkg:pypi/langchain-protocol"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-qdrant",
+      "name": "langchain-qdrant",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/langchain-qdrant@1.1.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-tests",
+      "name": "langchain-tests",
+      "version": "1.1.9",
+      "purl": "pkg:pypi/langchain-tests@1.1.9"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-text-splitters",
+      "name": "langchain-text-splitters",
+      "purl": "pkg:pypi/langchain-text-splitters"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain-xai",
+      "name": "langchain-xai",
+      "version": "1.2.2",
+      "purl": "pkg:pypi/langchain-xai@1.2.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langgraph",
+      "name": "langgraph",
+      "purl": "pkg:pypi/langgraph",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langsmith",
+      "name": "langsmith",
+      "purl": "pkg:pypi/langsmith"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-nomic",
+      "name": "nomic",
+      "purl": "pkg:pypi/nomic"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-numpy",
+      "name": "numpy",
+      "purl": "pkg:pypi/numpy",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-ollama",
+      "name": "ollama",
+      "purl": "pkg:pypi/ollama"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-openai",
+      "name": "openai",
+      "purl": "pkg:pypi/openai",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-openrouter",
+      "name": "openrouter",
+      "purl": "pkg:pypi/openrouter"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-packaging",
+      "name": "packaging",
+      "purl": "pkg:pypi/packaging"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-perplexityai",
+      "name": "perplexityai",
+      "purl": "pkg:pypi/perplexityai"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pillow",
+      "name": "pillow",
+      "purl": "pkg:pypi/pillow",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT-CMU"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydantic",
+      "name": "pydantic",
+      "purl": "pkg:pypi/pydantic",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pytest",
+      "name": "pytest",
+      "purl": "pkg:pypi/pytest"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pytest-asyncio",
+      "name": "pytest-asyncio",
+      "purl": "pkg:pypi/pytest-asyncio"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pytest-benchmark",
+      "name": "pytest-benchmark",
+      "purl": "pkg:pypi/pytest-benchmark"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pytest-codspeed",
+      "name": "pytest-codspeed",
+      "purl": "pkg:pypi/pytest-codspeed"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pytest-recording",
+      "name": "pytest-recording",
+      "purl": "pkg:pypi/pytest-recording"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pytest-socket",
+      "name": "pytest-socket",
+      "purl": "pkg:pypi/pytest-socket"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pyyaml",
+      "name": "PyYAML",
+      "purl": "pkg:pypi/pyyaml",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-qdrant",
+      "name": "qdrant",
+      "purl": "pkg:pypi/qdrant"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-qdrant-client",
+      "name": "qdrant-client",
+      "purl": "pkg:pypi/qdrant-client",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-requests",
+      "name": "requests",
+      "purl": "pkg:pypi/requests",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-sentence-transformers",
+      "name": "sentence-transformers",
+      "purl": "pkg:pypi/sentence-transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-spacy",
+      "name": "spacy",
+      "purl": "pkg:pypi/spacy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-sqlalchemy",
+      "name": "SQLAlchemy",
+      "purl": "pkg:pypi/sqlalchemy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-syrupy",
+      "name": "syrupy",
+      "purl": "pkg:pypi/syrupy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tenacity",
+      "name": "tenacity",
+      "purl": "pkg:pypi/tenacity",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tiktoken",
+      "name": "tiktoken",
+      "purl": "pkg:pypi/tiktoken",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tokenizers",
+      "name": "tokenizers",
+      "purl": "pkg:pypi/tokenizers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tomli",
+      "name": "tomli",
+      "purl": "pkg:pypi/tomli"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-transformers",
+      "name": "transformers",
+      "purl": "pkg:pypi/transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-typing-extensions",
+      "name": "typing-extensions",
+      "purl": "pkg:pypi/typing-extensions",
+      "licenses": [
+        {
+          "license": {
+            "name": "PSF-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-uuid-utils",
+      "name": "uuid-utils",
+      "purl": "pkg:pypi/uuid-utils"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-vcrpy",
+      "name": "vcrpy",
+      "purl": "pkg:pypi/vcrpy"
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-amazon",
+      "name": "Amazon",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-google",
+      "name": "Google",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-mistral",
+      "name": "Mistral",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "secret-2407123622",
+      "name": "generic_credential",
+      "properties": [
+        {
+          "name": "discovery:source",
+          "value": "libs/partners/openai/langchain_openai/chatgpt_oauth.py"
+        },
+        {
+          "name": "secret:kind",
+          "value": "generic_credential"
+        },
+        {
+          "name": "secret:masked",
+          "value": "https:\u2026(35 chars)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "secret-2718894355",
+      "name": "generic_credential",
+      "properties": [
+        {
+          "name": "discovery:source",
+          "value": "libs/partners/openai/langchain_openai/chatgpt_oauth.py"
+        },
+        {
+          "name": "secret:kind",
+          "value": "generic_credential"
+        },
+        {
+          "name": "secret:masked",
+          "value": "https:\u2026(53 chars)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "secret-288968578",
+      "name": "generic_credential",
+      "properties": [
+        {
+          "name": "discovery:source",
+          "value": "libs/core/langchain_core/messages/block_translators/openai.py"
+        },
+        {
+          "name": "secret:kind",
+          "value": "generic_credential"
+        },
+        {
+          "name": "secret:masked",
+          "value": "__open\u2026(28 chars)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "secret-494831703",
+      "name": "openai_api_key",
+      "properties": [
+        {
+          "name": "discovery:source",
+          "value": "libs/partners/openai/scripts/record_codex_cassettes.sh"
+        },
+        {
+          "name": "secret:kind",
+          "value": "openai_api_key"
+        },
+        {
+          "name": "secret:masked",
+          "value": "sk-cod\u2026(20 chars)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "secret-7126380425",
+      "name": "openai_api_key",
+      "properties": [
+        {
+          "name": "discovery:source",
+          "value": "libs/partners/anthropic/langchain_anthropic/chat_models.py"
+        },
+        {
+          "name": "secret:kind",
+          "value": "openai_api_key"
+        },
+        {
+          "name": "secret:masked",
+          "value": "sk-bud\u2026(21 chars)"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-api-anthropic-com",
+      "name": "Anthropic API",
+      "publisher": "Anthropic",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "api.anthropic.com"
+        },
+        {
+          "name": "discovery:source",
+          "value": "test_base.py"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-api-mistral-ai",
+      "name": "Mistral API",
+      "publisher": "Mistral",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "api.mistral.ai"
+        },
+        {
+          "name": "discovery:source",
+          "value": "chat_models.py"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-api-openai-com",
+      "name": "OpenAI API",
+      "publisher": "OpenAI",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "api.openai.com"
+        },
+        {
+          "name": "discovery:source",
+          "value": "test_chat_models.py"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-azure-openai",
+      "name": "Azure OpenAI",
+      "publisher": "Microsoft",
+      "properties": [
+        {
+          "name": "discovery:iac",
+          "value": "azure_openai"
+        },
+        {
+          "name": "discovery:source",
+          "value": "_release.yml"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-google-vertex-ai",
+      "name": "Google Vertex AI",
+      "publisher": "Google",
+      "properties": [
+        {
+          "name": "discovery:iac",
+          "value": "vertex"
+        },
+        {
+          "name": "discovery:source",
+          "value": "integration_tests.yml"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-openai-azure-com",
+      "name": "Azure OpenAI",
+      "publisher": "Microsoft",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "openai.azure.com"
+        },
+        {
+          "name": "discovery:source",
+          "value": "test_chat_models.py"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "endpoint-127-0-0-1-11434",
+      "name": "Ollama (local)",
+      "publisher": "local",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "127.0.0.1:11434"
+        },
+        {
+          "name": "discovery:source",
+          "value": "TestChatOllama.test_stream_time.yaml"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "endpoint-huggingface-co",
+      "name": "Hugging Face Hub",
+      "publisher": "Hugging Face",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "huggingface.co"
+        },
+        {
+          "name": "discovery:source",
+          "value": "loading.py"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "endpoint-localhost-11434",
+      "name": "Ollama (local)",
+      "publisher": "local",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "localhost:11434"
+        },
+        {
+          "name": "discovery:source",
+          "value": "chat_models.py"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "endpoint-localhost-8000",
+      "name": "Local inference (:8000)",
+      "publisher": "local",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "localhost:8000"
+        },
+        {
+          "name": "discovery:source",
+          "value": "server.py"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "modelref-amazon-titan-embed-text-v1",
+      "dependsOn": [
+        "provider-amazon"
+      ]
+    },
+    {
+      "ref": "modelref-amazon-titan-text-express-v1",
+      "dependsOn": [
+        "provider-amazon"
+      ]
+    },
+    {
+      "ref": "modelref-baai-bge-base-en",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-claude-2",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-5-haiku",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-5-haiku-20241022",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-5-haiku-latest",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-5-sonnet-20240620",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-5-sonnet-20241022",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-7-sonnet",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-7-sonnet-20250219",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-7-sonnet-latest",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-haiku",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-haiku-20240307",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-opus",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-opus-20240229",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-sonnet",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-sonnet-20240229",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-4",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-haiku-4-5",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-haiku-4-5-20251001",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-haiku-latest",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-0",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-1",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-1-20250805",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-20250514",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-5",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-5-20251101",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-6",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-6-fast",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-7",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-7-fast",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-8",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-4-8-fast",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-opus-latest",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-0",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-20250514",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-20250514-v1",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-5",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-5-20250929",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-5-20250929-v1",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-4-6",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-sonnet-latest",
+      "dependsOn": [
+        "lib-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-codestral-2508",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-codestral-latest",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-command-r-08-2024",
+      "dependsOn": [
+        "lib-cohere"
+      ]
+    },
+    {
+      "ref": "modelref-command-r-plus",
+      "dependsOn": [
+        "lib-cohere"
+      ]
+    },
+    {
+      "ref": "modelref-command-r-plus-08-2024",
+      "dependsOn": [
+        "lib-cohere"
+      ]
+    },
+    {
+      "ref": "modelref-embed-english-v2-0",
+      "dependsOn": [
+        "lib-cohere"
+      ]
+    },
+    {
+      "ref": "modelref-embed-english-v3-0",
+      "dependsOn": [
+        "lib-cohere"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-1-5-pro",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-flash",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-flash-image",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-flash-lite",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-flash-lite-preview-09-2025",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-pro",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-pro-preview",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-pro-preview-05-06",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-1-flash-image",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-1-flash-image-preview",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-1-flash-lite",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-1-flash-lite-preview",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-1-pro-preview",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-1-pro-preview-customtools",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-5-flash",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-flash-preview",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-pro-image",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-3-pro-image-preview",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-embedding-001",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-flash-latest",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-flash-lite-latest",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-pro-latest",
+      "dependsOn": [
+        "provider-google"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-2",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-0125",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-0301",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-0613",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-16k",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-16k-0613",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-instruct",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-legacy",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-35-turbo",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-35-turbo-0125",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-35-turbo-instruct",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-0314",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-0613",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-1",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-1-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-1-nano",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-32k",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-32k-0314",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-32k-0613",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-turbo",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-turbo-preview",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-2024-05-13",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-2024-08-06",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-2024-11-20",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-mini-2024-07-18",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-mini-search-preview",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o-search-preview",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-1",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-1-chat",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-1-chat-latest",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-1-codex",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-1-codex-max",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-1-codex-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2-2025-12-01",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2-chat",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2-chat-latest",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2-codex",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2-pro",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2-pro-2025-12-11",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-2025-01-01",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-3",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-3-chat",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-3-chat-latest",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-3-codex",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-3-codex-spark",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-2026-03-05",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-image-2",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-nano",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-pro",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-4-pro-2026-03-05",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-5",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-5-pro",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-chat",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-chat-latest",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-codex",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-image",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-image-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-nano",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-pro",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-pro-2025-10-06",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5-turbo",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-audio",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-audio-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-image-1",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-image-1-5",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-image-1-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-image-2",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-oss",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-oss-120b",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-oss-20b",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-oss-safeguard-20b",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-llama-2-7b-chat-hf",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-1",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-1-70b-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-1-8b-instant",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-1-8b-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-1-sonar-small-128k-online",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-2-11b-vision-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-2-1b-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-2-3b-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-3-70b-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-3-70b-versatile",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-3-nemotron-super-49b-v1-5",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-8b-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-4-maverick",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-4-scout",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-4-scout-17b-16e-instruct",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama3",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama3-1",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama3-2",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama4",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-compatible",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-embed",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-large",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-large-2407",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-large-2411",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-large-2512",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-large-latest",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-2505",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-2508",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-2604",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-3",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-3-1",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-3-5",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-medium-latest",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-nemo",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-nemo-base-2407",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-saba",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small-24b-instruct-2501",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small-2506",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small-2603",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small-3-1-24b-instruct",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small-3-2-24b-instruct",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small-latest",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small3-1",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-small3-2",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-specific",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mixtral-8x22b-instruct",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mixtral-8x7b",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mixtral-8x7b-32768",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mixtral-8x7b-instruct",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-mixtral-8x7b-v0-1",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-nomic-embed-text-v1",
+      "dependsOn": [
+        "lib-nomic"
+      ]
+    },
+    {
+      "ref": "modelref-nomic-embed-text-v1-5",
+      "dependsOn": [
+        "lib-nomic"
+      ]
+    },
+    {
+      "ref": "modelref-nova-lite-v1",
+      "dependsOn": [
+        "provider-amazon"
+      ]
+    },
+    {
+      "ref": "modelref-nova-micro-v1",
+      "dependsOn": [
+        "provider-amazon"
+      ]
+    },
+    {
+      "ref": "modelref-nova-premier-v1",
+      "dependsOn": [
+        "provider-amazon"
+      ]
+    },
+    {
+      "ref": "modelref-nova-pro-v1",
+      "dependsOn": [
+        "provider-amazon"
+      ]
+    },
+    {
+      "ref": "modelref-o1-pro",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o3-deep-research",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o3-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o3-mini-high",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o3-pro",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o4-mini",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o4-mini-deep-research",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-o4-mini-high",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-sentence-transformers-all-mpnet-base-v2",
+      "dependsOn": [
+        "lib-sentence-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-text-ada-001",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-babbage-001",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-curie-001",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-davinci-002",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-davinci-003",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-3",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-3-large",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-3-small",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-ada-002",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-gecko",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-large",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    }
+  ]
+}

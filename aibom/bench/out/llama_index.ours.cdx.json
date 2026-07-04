@@ -1,0 +1,407 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:978d9e82-f7f1-5d1e-9c29-ed0acea6ffd9",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "llama_index"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3",
+      "name": "GPT-3",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo",
+      "name": "gpt-3.5-turbo",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-16k",
+      "name": "gpt-3.5-turbo-16k",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-1",
+      "name": "gpt-4.1",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3",
+      "name": "llama3",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-ada-002",
+      "name": "text-embedding-ada-002",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-boto3",
+      "name": "boto3",
+      "purl": "pkg:pypi/boto3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-cohere",
+      "name": "cohere",
+      "purl": "pkg:pypi/cohere",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-haystack",
+      "name": "haystack",
+      "purl": "pkg:pypi/haystack"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain",
+      "name": "langchain",
+      "purl": "pkg:pypi/langchain",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-llama-index",
+      "name": "llama-index",
+      "purl": "pkg:pypi/llama-index",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-semantic-kernel",
+      "name": "semantic-kernel",
+      "purl": "pkg:pypi/semantic-kernel"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-sentence-transformers",
+      "name": "sentence-transformers",
+      "purl": "pkg:pypi/sentence-transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-spacy",
+      "name": "spacy",
+      "purl": "pkg:pypi/spacy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tiktoken",
+      "name": "tiktoken",
+      "purl": "pkg:pypi/tiktoken",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-transformers",
+      "name": "transformers",
+      "purl": "pkg:pypi/transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-openai",
+      "name": "OpenAI",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-aws-bedrock",
+      "name": "AWS Bedrock",
+      "publisher": "AWS",
+      "properties": [
+        {
+          "name": "discovery:iac",
+          "value": "bedrock"
+        },
+        {
+          "name": "discovery:source",
+          "value": "mappings.json"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-aws-sagemaker",
+      "name": "AWS SageMaker",
+      "publisher": "AWS",
+      "properties": [
+        {
+          "name": "discovery:iac",
+          "value": "sagemaker"
+        },
+        {
+          "name": "discovery:source",
+          "value": "mappings.json"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-azure-openai",
+      "name": "Azure OpenAI",
+      "publisher": "Microsoft",
+      "properties": [
+        {
+          "name": "discovery:iac",
+          "value": "azure_openai"
+        },
+        {
+          "name": "discovery:source",
+          "value": "mappings.json"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "cloud_service-google-vertex-ai",
+      "name": "Google Vertex AI",
+      "publisher": "Google",
+      "properties": [
+        {
+          "name": "discovery:iac",
+          "value": "vertex"
+        },
+        {
+          "name": "discovery:source",
+          "value": "mappings.json"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "modelref-gpt-3",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-16k",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-1",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-llama3",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-ada-002",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,601 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:5d76ec33-c8a9-5315-b861-34d2cb413c87",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "llama-index-core"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3",
+      "name": "GPT-3",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo",
+      "name": "gpt-3.5-turbo",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-3-5-turbo-16k",
+      "name": "gpt-3.5-turbo-16k",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-1",
+      "name": "gpt-4.1",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3",
+      "name": "llama3",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-span-marker-mbert-base-multinerd",
+      "name": "span-marker-mbert-base-multinerd",
+      "publisher": "HuggingFace",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-text-embedding-ada-002",
+      "name": "text-embedding-ada-002",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "text-embedding",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "OpenAI Embedding (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-aiohttp",
+      "name": "aiohttp",
+      "purl": "pkg:pypi/aiohttp"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-aiosqlite",
+      "name": "aiosqlite",
+      "purl": "pkg:pypi/aiosqlite"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-banks",
+      "name": "banks",
+      "purl": "pkg:pypi/banks"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-boto3",
+      "name": "boto3",
+      "purl": "pkg:pypi/boto3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-cohere",
+      "name": "cohere",
+      "purl": "pkg:pypi/cohere",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-dataclasses-json",
+      "name": "dataclasses-json",
+      "purl": "pkg:pypi/dataclasses-json"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-deprecated",
+      "name": "deprecated",
+      "purl": "pkg:pypi/deprecated"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-dirtyjson",
+      "name": "dirtyjson",
+      "purl": "pkg:pypi/dirtyjson"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-eval-type-backport",
+      "name": "eval-type-backport",
+      "purl": "pkg:pypi/eval-type-backport"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-filetype",
+      "name": "filetype",
+      "purl": "pkg:pypi/filetype"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-fsspec",
+      "name": "fsspec",
+      "purl": "pkg:pypi/fsspec"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-haystack",
+      "name": "haystack",
+      "purl": "pkg:pypi/haystack"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-httpx",
+      "name": "httpx",
+      "purl": "pkg:pypi/httpx",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-langchain",
+      "name": "langchain",
+      "purl": "pkg:pypi/langchain",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-llama-index",
+      "name": "llama-index",
+      "purl": "pkg:pypi/llama-index",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-llama-index-workflows",
+      "name": "llama-index-workflows",
+      "purl": "pkg:pypi/llama-index-workflows"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-nest-asyncio",
+      "name": "nest-asyncio",
+      "purl": "pkg:pypi/nest-asyncio"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-networkx",
+      "name": "networkx",
+      "purl": "pkg:pypi/networkx"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-nltk",
+      "name": "nltk",
+      "purl": "pkg:pypi/nltk"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-numpy",
+      "name": "numpy",
+      "purl": "pkg:pypi/numpy",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-openai",
+      "name": "openai",
+      "purl": "pkg:pypi/openai",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pillow",
+      "name": "pillow",
+      "purl": "pkg:pypi/pillow",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT-CMU"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-platformdirs",
+      "name": "platformdirs",
+      "purl": "pkg:pypi/platformdirs"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydantic",
+      "name": "pydantic",
+      "purl": "pkg:pypi/pydantic",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pyyaml",
+      "name": "PyYAML",
+      "purl": "pkg:pypi/pyyaml",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-requests",
+      "name": "requests",
+      "purl": "pkg:pypi/requests",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-semantic-kernel",
+      "name": "semantic-kernel",
+      "purl": "pkg:pypi/semantic-kernel"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-sentence-transformers",
+      "name": "sentence-transformers",
+      "purl": "pkg:pypi/sentence-transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-setuptools",
+      "name": "setuptools",
+      "purl": "pkg:pypi/setuptools"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-spacy",
+      "name": "spacy",
+      "purl": "pkg:pypi/spacy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-sqlalchemy",
+      "name": "SQLAlchemy",
+      "purl": "pkg:pypi/sqlalchemy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tenacity",
+      "name": "tenacity",
+      "purl": "pkg:pypi/tenacity",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tiktoken",
+      "name": "tiktoken",
+      "purl": "pkg:pypi/tiktoken",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tinytag",
+      "name": "tinytag",
+      "purl": "pkg:pypi/tinytag"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tqdm",
+      "name": "tqdm",
+      "purl": "pkg:pypi/tqdm",
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-transformers",
+      "name": "transformers",
+      "purl": "pkg:pypi/transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-typing-extensions",
+      "name": "typing-extensions",
+      "purl": "pkg:pypi/typing-extensions",
+      "licenses": [
+        {
+          "license": {
+            "name": "PSF-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-typing-inspect",
+      "name": "typing-inspect",
+      "purl": "pkg:pypi/typing-inspect"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-wrapt",
+      "name": "wrapt",
+      "purl": "pkg:pypi/wrapt"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "modelref-gpt-3",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-3-5-turbo-16k",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-1",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    },
+    {
+      "ref": "modelref-llama3",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-span-marker-mbert-base-multinerd",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-text-embedding-ada-002",
+      "dependsOn": [
+        "lib-openai"
+      ]
+    }
+  ]
+}

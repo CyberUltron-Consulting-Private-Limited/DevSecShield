@@ -1,0 +1,960 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:b833798d-462f-5c5a-a63b-899515d71ed4",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "autogen-core"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-haiku",
+      "name": "claude-3-5-haiku",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-5-sonnet",
+      "name": "claude-3-5-sonnet",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-7-sonnet",
+      "name": "claude-3-7-sonnet",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-haiku",
+      "name": "claude-3-haiku",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-opus",
+      "name": "claude-3-opus",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-3-sonnet",
+      "name": "claude-3-sonnet",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-4-opus",
+      "name": "claude-4-opus",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-claude-4-sonnet",
+      "name": "claude-4-sonnet",
+      "publisher": "Anthropic",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Claude (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-1-5-flash",
+      "name": "gemini-1.5-flash",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-1-5-pro",
+      "name": "gemini-1.5-pro",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-0-flash",
+      "name": "gemini-2.0-flash",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-flash",
+      "name": "gemini-2.5-flash",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gemini-2-5-pro",
+      "name": "gemini-2.5-pro",
+      "publisher": "Google",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Gemini (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-35",
+      "name": "gpt-35",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4",
+      "name": "gpt-4",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4-1-nano",
+      "name": "gpt-4.1-nano",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-41",
+      "name": "gpt-41",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-45",
+      "name": "gpt-45",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-4o",
+      "name": "gpt-4o",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "GPT (proprietary)"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-5",
+      "name": "gpt-5",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-3-70b",
+      "name": "llama-3.3-70b",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-3-8b",
+      "name": "llama-3.3-8b",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-4-maverick",
+      "name": "llama-4-maverick",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-4-scout",
+      "name": "llama-4-scout",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3-3",
+      "name": "llama3.3",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-autogen",
+      "name": "autogen",
+      "purl": "pkg:pypi/autogen",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-google-generativeai",
+      "name": "google-generativeai",
+      "purl": "pkg:pypi/google-generativeai",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-jsonref",
+      "name": "jsonref",
+      "purl": "pkg:pypi/jsonref"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-opentelemetry-api",
+      "name": "opentelemetry-api",
+      "purl": "pkg:pypi/opentelemetry-api",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pillow",
+      "name": "pillow",
+      "purl": "pkg:pypi/pillow",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT-CMU"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-protobuf",
+      "name": "protobuf",
+      "purl": "pkg:pypi/protobuf",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydantic",
+      "name": "pydantic",
+      "purl": "pkg:pypi/pydantic",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-typing-extensions",
+      "name": "typing-extensions",
+      "purl": "pkg:pypi/typing-extensions",
+      "licenses": [
+        {
+          "license": {
+            "name": "PSF-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-anthropic",
+      "name": "Anthropic",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-meta",
+      "name": "Meta",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-openai",
+      "name": "OpenAI",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "modelref-claude-3-5-haiku",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-5-sonnet",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-7-sonnet",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-haiku",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-opus",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-3-sonnet",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-4-opus",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-claude-4-sonnet",
+      "dependsOn": [
+        "provider-anthropic"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-1-5-flash",
+      "dependsOn": [
+        "lib-google-generativeai"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-1-5-pro",
+      "dependsOn": [
+        "lib-google-generativeai"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-0-flash",
+      "dependsOn": [
+        "lib-google-generativeai"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-flash",
+      "dependsOn": [
+        "lib-google-generativeai"
+      ]
+    },
+    {
+      "ref": "modelref-gemini-2-5-pro",
+      "dependsOn": [
+        "lib-google-generativeai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-35",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4-1-nano",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-41",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-45",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-4o",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-gpt-5",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-3-70b",
+      "dependsOn": [
+        "provider-meta"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-3-8b",
+      "dependsOn": [
+        "provider-meta"
+      ]
+    },
+    {
+      "ref": "modelref-llama-4-maverick",
+      "dependsOn": [
+        "provider-meta"
+      ]
+    },
+    {
+      "ref": "modelref-llama-4-scout",
+      "dependsOn": [
+        "provider-meta"
+      ]
+    },
+    {
+      "ref": "modelref-llama3-3",
+      "dependsOn": [
+        "provider-meta"
+      ]
+    }
+  ]
+}

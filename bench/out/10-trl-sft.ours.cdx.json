@@ -1,0 +1,795 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:a422a941-cc91-5026-82ae-78ed8c560899",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "trl"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-gpt-oss",
+      "name": "GPT-OSS",
+      "publisher": "OpenAI",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-proprietary"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-2",
+      "name": "Llama-2",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3",
+      "name": "Llama-3",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama-3-2-1b",
+      "name": "Llama-3.2-1B",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-llama3",
+      "name": "llama3",
+      "publisher": "Meta",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-llama-community"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "LLaMA"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-mistral-based",
+      "name": "mistral-based",
+      "publisher": "Mistral",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "self-supervised"
+          },
+          "task": "chat/completion",
+          "architectureFamily": "transformer",
+          "modelArchitecture": "Mistral"
+        }
+      },
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen",
+      "name": "Qwen.",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen1-5-1",
+      "name": "qwen1.5-1",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-0",
+      "name": "Qwen2-0",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-5",
+      "name": "Qwen2.5",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-5-0",
+      "name": "Qwen2.5-0",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-5-7b",
+      "name": "Qwen2.5-7B",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-5-vl",
+      "name": "Qwen2.5-VL",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-5-vl-7b-instruct",
+      "name": "Qwen2.5-VL-7B-Instruct",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-vl",
+      "name": "Qwen2-VL",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2-vl-2b-instruct",
+      "name": "Qwen2-VL-2B-Instruct",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen2moe",
+      "name": "Qwen2Moe",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3",
+      "name": "Qwen3",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-0",
+      "name": "Qwen3-0",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-1",
+      "name": "Qwen3-1",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-4b",
+      "name": "Qwen3-4B",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-5",
+      "name": "Qwen3.5",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-5-2b",
+      "name": "Qwen3.5-2B",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-5-4b",
+      "name": "Qwen3.5-4B",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "usage"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-6",
+      "name": "Qwen3.6",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-6-27b",
+      "name": "Qwen3.6-27B",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-6-35b-a3b",
+      "name": "Qwen3.6-35B-A3B",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-jinja",
+      "name": "qwen3.jinja",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-moe",
+      "name": "Qwen3-MoE",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3-vl",
+      "name": "Qwen3-VL",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelref-qwen3moe",
+      "name": "Qwen3Moe",
+      "publisher": "Alibaba",
+      "properties": [
+        {
+          "name": "model:reference_type",
+          "value": "catalog"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-accelerate",
+      "name": "accelerate",
+      "purl": "pkg:pypi/accelerate",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-datasets",
+      "name": "datasets",
+      "purl": "pkg:pypi/datasets",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-huggingface-hub",
+      "name": "huggingface-hub",
+      "purl": "pkg:pypi/huggingface-hub",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-peft",
+      "name": "peft",
+      "purl": "pkg:pypi/peft"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-transformers",
+      "name": "transformers",
+      "purl": "pkg:pypi/transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-trl",
+      "name": "trl",
+      "purl": "pkg:pypi/trl"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-vllm",
+      "name": "vllm",
+      "purl": "pkg:pypi/vllm"
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-alibaba",
+      "name": "Alibaba",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-mistral",
+      "name": "Mistral",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "provider-openai",
+      "name": "OpenAI",
+      "properties": [
+        {
+          "name": "provider:kind",
+          "value": "model_provider"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "modelref-gpt-oss",
+      "dependsOn": [
+        "provider-openai"
+      ]
+    },
+    {
+      "ref": "modelref-llama-2",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama-3-2-1b",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-llama3",
+      "dependsOn": [
+        "lib-transformers"
+      ]
+    },
+    {
+      "ref": "modelref-mistral-based",
+      "dependsOn": [
+        "provider-mistral"
+      ]
+    },
+    {
+      "ref": "modelref-qwen",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen1-5-1",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-0",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-5",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-5-0",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-5-7b",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-5-vl",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-5-vl-7b-instruct",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-vl",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2-vl-2b-instruct",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen2moe",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-0",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-1",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-4b",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-5",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-5-2b",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-5-4b",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-6",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-6-27b",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-6-35b-a3b",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-jinja",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-moe",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3-vl",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    },
+    {
+      "ref": "modelref-qwen3moe",
+      "dependsOn": [
+        "provider-alibaba"
+      ]
+    }
+  ]
+}

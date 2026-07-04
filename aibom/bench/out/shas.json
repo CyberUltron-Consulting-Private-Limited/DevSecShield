@@ -1,0 +1,13 @@
+{
+  "repo0-synthetic": "local-fixture",
+  "hf-model": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "autogen": "027ecf0a379bcc1d09956d46d12d44a3ad9cee14",
+  "llama_index": "520aa4ec48c084c7d0fdf93cb22d567046118ad2",
+  "chroma": "207de398a18c703cd69b43aae54078d9e3064747",
+  "langchain": "57c83d44bc8ae89a189ad521b9756cfac996039c",
+  "mcp-servers": "7b1170d1da1e36bc9f553f51e76e64cbfd652b3e",
+  "openai-cookbook": "abd1e286b3b9dc472c8e050c94321559f2b36420",
+  "tf-bedrock": "4b74b7dd5110292cb34ca911448581153484f13f",
+  "transformers-ft": "c96378c4136f5882fee50d8ff8ee1e9588a17eb6",
+  "monai": "4ba89bd818a44395842f11f3316b5aaad48353a6"
+}
