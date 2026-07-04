@@ -463,6 +463,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "boto3", marker = "extra == 'llm'", specifier = ">=1.34" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.111" },
     { name = "jsonschema", specifier = ">=4.20" },
     { name = "libcst", marker = "extra == 'scan'", specifier = ">=1.4" },
@@ -476,7 +477,7 @@ requires-dist = [
     { name = "tree-sitter", marker = "extra == 'scan'", specifier = ">=0.22" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["scan", "imaging", "api", "report"]
+provides-extras = ["scan", "imaging", "api", "llm", "report"]
 
 [package.metadata.requires-dev]
 dev = [
