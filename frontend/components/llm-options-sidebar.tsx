@@ -332,7 +332,7 @@ export function LLMOptionsSidebar({
               {creationData.model_type == "custom" && <div className="space-y-2">
                 <Label htmlFor="modelName" className="text-zinc-300">Model Name *</Label>
                 <Input 
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
+                  className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="modelName" 
                   placeholder="e.g., gpt-4o, claude-3-sonnet" 
                   value={creationData.model_name} 
@@ -351,7 +351,7 @@ export function LLMOptionsSidebar({
               {creationData.model_type !== "custom" && <div className="space-y-2">
                 <Label htmlFor="apiKey" className="text-zinc-300">API Key *</Label>
                 <Input 
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
+                  className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="apiKey" 
                   type="password"
                   placeholder="Enter your API key" 
@@ -362,7 +362,7 @@ export function LLMOptionsSidebar({
               <div className="space-y-2">
                 <Label htmlFor="generations" className="text-zinc-300">Generations per benchmark</Label>
                 <Input 
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
+                  className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="generations" 
                   type="number"
                   min="1"
@@ -385,7 +385,7 @@ export function LLMOptionsSidebar({
               <div className="space-y-2">
                 <Label htmlFor="modelUri" className="text-zinc-300">Model URI *</Label>
                 <Input 
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
+                  className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="modelUri" 
                   placeholder="https://api.example.com/v1/chat/completions" 
                   value={creationData.model_uri} 
@@ -393,31 +393,35 @@ export function LLMOptionsSidebar({
                   required 
                 />
               </div>
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <Label htmlFor="headersJson" className="text-zinc-300">Headers (JSON)</Label>
-                <Textarea
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
-                  id="headersJson"
-                  placeholder='{"Authorization": "Bearer <API_KEY>", "Content-Type": "application/json"}'
-                  value={creationData.headers}
-                  onChange={(e) => updateCreationData("headers", e.target.value)}
-                />
+                <div className="min-w-0 overflow-hidden">
+                  <Textarea
+                    className="w-full min-w-0 max-w-full cursor-pointer resize-none overflow-x-auto bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500 field-sizing-fixed"
+                    id="headersJson"
+                    placeholder='{"Authorization": "Bearer <API_KEY>", "Content-Type": "application/json"}'
+                    value={creationData.headers}
+                    onChange={(e) => updateCreationData("headers", e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <Label htmlFor="requestTemplate" className="text-zinc-300">Request Template *</Label>
-                <Textarea
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
-                  id="requestTemplate"
-                  placeholder='{"model": "gpt-4o", "messages": [{"role": "user", "content": "$INPUT"}]}'
-                  value={creationData.request_template}
-                  onChange={(e) => updateCreationData("request_template", e.target.value)}
-                  required
-                />
+                <div className="min-w-0 overflow-hidden">
+                  <Textarea
+                    className="w-full min-w-0 max-w-full cursor-pointer resize-none overflow-x-auto bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500 field-sizing-fixed"
+                    id="requestTemplate"
+                    placeholder='{"model": "gpt-4o", "messages": [{"role": "user", "content": "$INPUT"}]}'
+                    value={creationData.request_template}
+                    onChange={(e) => updateCreationData("request_template", e.target.value)}
+                    required
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="responseJsonField" className="text-zinc-300">Response JSON Field *</Label>
                 <Input 
-                  className="cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
+                  className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white placeholder:text-zinc-500"
                   id="responseJsonField" 
                   placeholder="$.choices[0].message.content" 
                   value={creationData.response_json_field} 

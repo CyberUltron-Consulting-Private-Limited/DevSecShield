@@ -31,6 +31,7 @@ MapPrompt = """
 For example : A LLM Benchmarking Vulnerability could be "Prompt Injection vulnerability found in XXXX model" , "Insecure Output Handling vulnerability found in XXXX model" , ... or any other feature specific LLM Benchmarking Vulnerability . 
 Note : This was only an example to help you understand the task better , remember to only extract the LLM Benchmarking Vulnerabilities mentioned in the scan results provided . 
 Important : Extract only the LLM Benchmarking Vulnerabilities that you think are noteworthy and important to be identified by a cybersecurity professional ( don't mention any false positives )
+Note : Extract as many vulnerabilities as possible from the scan results provided , extract all possible vulnerabilities from the scan results provided . 
 \n\n
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## LLM Benchmarking Scan Results  :

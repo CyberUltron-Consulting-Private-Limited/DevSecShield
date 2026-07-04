@@ -1,8 +1,7 @@
 "use client";
 
-import {
-  Loader2,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { IACOptionsSidebar } from "@/components/iac-options-sidebar";
 import ChatWindow, { ChatMessage } from "@/components/ai/ChatWindow";
 import { useEffect, useState } from "react";

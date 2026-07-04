@@ -1,8 +1,7 @@
 "use client";
 
-import {
-  Loader2,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { SCASBOMOptionsSidebar } from "@/components/sca-sbom-options-sidebar";
 import ChatWindow from "@/components/ai/ChatWindow";
 import { useEffect, useState } from "react";
