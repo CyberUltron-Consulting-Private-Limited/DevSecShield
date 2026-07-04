@@ -1,0 +1,20 @@
+{
+  "00-synthetic": {
+    "cbomkit": 6,
+    "ours": 12,
+    "true_misses": [],
+    "our_unique_count": 9
+  },
+  "01-pyjwt": {
+    "cbomkit": 9,
+    "ours": 13,
+    "true_misses": [],
+    "our_unique_count": 11
+  },
+  "02-pyopenssl": {
+    "cbomkit": 0,
+    "ours": 10,
+    "true_misses": [],
+    "our_unique_count": 10
+  }
+}

@@ -1,0 +1,887 @@
+{
+ "cbom_json": {
+  "bomFormat": "CycloneDX",
+  "components": [
+   {
+    "bom-ref": "crypto-algo-3des-cbc-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "mode": "cbc",
+      "parameterSetIdentifier": "168",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "3DES-CBC",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "168"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "CBC"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "moderate"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-ecb-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "mode": "ecb",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "AES-ECB",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "ECB"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-gcm-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "mode": "gcm",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "AES-GCM",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "GCM"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-tls-config-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "AES",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "tls_config.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-md5-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "hash"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "MD5",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-rc4-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "stream-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "RC4",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "stream-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-rsa-1024-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "nistQuantumSecurityLevel": 0,
+      "parameterSetIdentifier": "1024",
+      "primitive": "pke"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "RSA-1024",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "1024"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "0"
+     },
+     {
+      "name": "crypto:pqcMigrationTarget",
+      "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "pke"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "true"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-rsa-2048-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "nistQuantumSecurityLevel": 0,
+      "parameterSetIdentifier": "2048",
+      "primitive": "pke"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "RSA-2048",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "2048"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "0"
+     },
+     {
+      "name": "crypto:pqcMigrationTarget",
+      "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "pke"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "true"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-sha-256-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "hash"
+     },
+     "assetType": "algorithm"
+    },
+    "name": "SHA-256",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-cert-cert-pem-synthetic-crypto-app-test",
+    "cryptoProperties": {
+     "assetType": "certificate",
+     "certificateProperties": {
+      "issuerName": "synthetic-crypto-app.test",
+      "notValidAfter": "2027-06-29T09:56:21Z",
+      "notValidBefore": "2026-06-29T09:56:21Z",
+      "subjectName": "synthetic-crypto-app.test"
+     }
+    },
+    "name": "cert.pem",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "certificate"
+     },
+     {
+      "name": "crypto:issuerName",
+      "value": "synthetic-crypto-app.test"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "2048"
+     },
+     {
+      "name": "crypto:notValidAfter",
+      "value": "2027-06-29T09:56:21Z"
+     },
+     {
+      "name": "crypto:notValidBefore",
+      "value": "2026-06-29T09:56:21Z"
+     },
+     {
+      "name": "crypto:publicKeyAlgorithm",
+      "value": "rsaEncryption"
+     },
+     {
+      "name": "crypto:selfSigned",
+      "value": "true"
+     },
+     {
+      "name": "crypto:signatureAlgorithm",
+      "value": "sha256WithRSAEncryption"
+     },
+     {
+      "name": "crypto:subjectName",
+      "value": "synthetic-crypto-app.test"
+     },
+     {
+      "name": "discovery:source",
+      "value": "cert.pem"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-private-key-crypto-app-py",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "private-key"
+     }
+    },
+    "name": "private-key (crypto_app.py)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "private-key"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-protocol-tls-tls-config-py",
+    "cryptoProperties": {
+     "assetType": "protocol",
+     "protocolProperties": {
+      "cipherSuites": [
+       {
+        "name": "ECDHE-RSA-AES128-SHA"
+       }
+      ],
+      "type": "tls",
+      "version": "1.0"
+     }
+    },
+    "name": "TLS 1.0",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "protocol"
+     },
+     {
+      "name": "crypto:cipherSuite",
+      "value": "ECDHE-RSA-AES128-SHA"
+     },
+     {
+      "name": "crypto:protocolType",
+      "value": "tls"
+     },
+     {
+      "name": "crypto:protocolVersion",
+      "value": "1.0"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "tls_config.py"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-lib-hashlib-stdlib",
+    "name": "hashlib (stdlib)",
+    "properties": [
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-pyca-cryptography",
+    "name": "pyca/cryptography",
+    "properties": [
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-pyopenssl",
+    "name": "pyOpenSSL",
+    "properties": [
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-ssl-stdlib",
+    "name": "ssl (stdlib)",
+    "properties": [
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "tls_config.py"
+     }
+    ],
+    "type": "library"
+   }
+  ],
+  "metadata": {
+   "component": {
+    "name": "synthetic-crypto-app",
+    "type": "application"
+   },
+   "properties": [
+    {
+     "name": "regulatory:disclaimer",
+     "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+    }
+   ],
+   "timestamp": "2026-06-21T00:00:00Z",
+   "tools": [
+    {
+     "name": "clinithread-aibom",
+     "version": "0.1.0"
+    }
+   ]
+  },
+  "serialNumber": "urn:uuid:b8003b5a-93e2-5188-a6c1-e707f60ccd56",
+  "specVersion": "1.6",
+  "version": 1
+ },
+ "results": [
+  {
+   "algorithm_name": "3DES-CBC",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "weak",
+   "curve": null,
+   "description": "Broken or deprecated algorithm 3DES-CBC: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "finding_codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "impact": "High",
+   "key_size": "168",
+   "location": "crypto_app.py",
+   "mode": "CBC",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Replace this weak cryptographic asset with a current, standards-approved algorithm and parameterization.",
+   "title": "3DES-CBC",
+   "weak": true
+  },
+  {
+   "algorithm_name": "AES-ECB",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "weak",
+   "curve": null,
+   "description": "Insecure ECB cipher mode on AES-ECB: identical plaintext blocks map to identical ciphertext; use an authenticated mode (GCM/CCM).",
+   "finding_codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "impact": "High",
+   "key_size": null,
+   "location": "crypto_app.py",
+   "mode": "ECB",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Replace this weak cryptographic asset with a current, standards-approved algorithm and parameterization.",
+   "title": "AES-ECB",
+   "weak": true
+  },
+  {
+   "algorithm_name": "MD5",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "weak",
+   "curve": null,
+   "description": "Broken or deprecated algorithm MD5: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "finding_codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "impact": "High",
+   "key_size": null,
+   "location": "crypto_app.py",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Replace this weak cryptographic asset with a current, standards-approved algorithm and parameterization.",
+   "title": "MD5",
+   "weak": true
+  },
+  {
+   "algorithm_name": "RC4",
+   "algorithm_type": "stream-cipher",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "weak",
+   "curve": null,
+   "description": "Broken or deprecated algorithm RC4: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "finding_codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "impact": "High",
+   "key_size": null,
+   "location": "crypto_app.py",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "stream-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Replace this weak cryptographic asset with a current, standards-approved algorithm and parameterization.",
+   "title": "RC4",
+   "weak": true
+  },
+  {
+   "algorithm_name": "RSA-1024",
+   "algorithm_type": "pke",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "weak",
+   "curve": null,
+   "description": "Quantum-vulnerable algorithm RSA-1024: broken by Shor's algorithm on a cryptographically-relevant quantum computer (nistQuantumSecurityLevel 0). NIST deprecates RSA/ECC/DH after 2030 and disallows them from 2035 (NIST SP 1800-38 / IR 8547); migrate to ML-KEM (FIPS 203) / ML-DSA (FIPS 204).; Broken or deprecated algorithm RSA-1024: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "finding_codes": [
+    "QUANTUM_VULNERABLE",
+    "WEAK_ALGORITHM"
+   ],
+   "impact": "High",
+   "key_size": "1024",
+   "location": "crypto_app.py",
+   "mode": null,
+   "nist_quantum_security_level": 0,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)",
+   "primitive": "pke",
+   "protocol_version": null,
+   "quantum_safe": false,
+   "quantum_vulnerable": true,
+   "snippet": "",
+   "suggested_fix": "Plan migration to post-quantum cryptography (ML-KEM (FIPS 203) / ML-DSA (FIPS 204)); NIST deprecates quantum-vulnerable public-key cryptography after 2030 and disallows it after 2035.",
+   "title": "RSA-1024",
+   "weak": true
+  },
+  {
+   "algorithm_name": "TLS 1.0",
+   "algorithm_type": "protocol",
+   "asset_type": "protocol",
+   "compliance_controls": {},
+   "crypto_strength": "weak",
+   "curve": null,
+   "description": "Weak transport protocol TLS 1.0 1.0: TLS below 1.2 / SSL is deprecated (RFC 8996); negotiate TLS 1.2+ (prefer 1.3).",
+   "finding_codes": [
+    "WEAK_PROTOCOL"
+   ],
+   "impact": "High",
+   "key_size": null,
+   "location": "tls_config.py",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": "1.0",
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Replace this weak cryptographic asset with a current, standards-approved algorithm and parameterization.",
+   "title": "TLS 1.0",
+   "weak": true
+  },
+  {
+   "algorithm_name": "RSA-2048",
+   "algorithm_type": "pke",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "strong",
+   "curve": null,
+   "description": "Quantum-vulnerable algorithm RSA-2048: broken by Shor's algorithm on a cryptographically-relevant quantum computer (nistQuantumSecurityLevel 0). NIST deprecates RSA/ECC/DH after 2030 and disallows them from 2035 (NIST SP 1800-38 / IR 8547); migrate to ML-KEM (FIPS 203) / ML-DSA (FIPS 204).",
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "impact": "Medium",
+   "key_size": "2048",
+   "location": "crypto_app.py",
+   "mode": null,
+   "nist_quantum_security_level": 0,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)",
+   "primitive": "pke",
+   "protocol_version": null,
+   "quantum_safe": false,
+   "quantum_vulnerable": true,
+   "snippet": "",
+   "suggested_fix": "Plan migration to post-quantum cryptography (ML-KEM (FIPS 203) / ML-DSA (FIPS 204)); NIST deprecates quantum-vulnerable public-key cryptography after 2030 and disallows it after 2035.",
+   "title": "RSA-2048",
+   "weak": false
+  },
+  {
+   "algorithm_name": "AES",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "description": "Inventoried crypto asset (algorithm).",
+   "finding_codes": [],
+   "impact": "Low",
+   "key_size": null,
+   "location": "tls_config.py",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "AES",
+   "weak": false
+  },
+  {
+   "algorithm_name": "AES-GCM",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "description": "Inventoried crypto asset (algorithm).",
+   "finding_codes": [],
+   "impact": "Low",
+   "key_size": null,
+   "location": "crypto_app.py",
+   "mode": "GCM",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "AES-GCM",
+   "weak": false
+  },
+  {
+   "algorithm_name": "SHA-256",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "compliance_controls": {},
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "description": "Inventoried crypto asset (algorithm).",
+   "finding_codes": [],
+   "impact": "Low",
+   "key_size": null,
+   "location": "crypto_app.py",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "SHA-256",
+   "weak": false
+  },
+  {
+   "algorithm_name": "cert.pem",
+   "algorithm_type": "certificate",
+   "asset_type": "certificate",
+   "compliance_controls": {},
+   "crypto_strength": "strong",
+   "curve": null,
+   "description": "Inventoried crypto asset (certificate).",
+   "finding_codes": [],
+   "impact": "Low",
+   "key_size": "2048",
+   "location": "cert.pem",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": "2027-06-29T09:56:21Z",
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "cert.pem",
+   "weak": false
+  },
+  {
+   "algorithm_name": "private-key (crypto_app.py)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "compliance_controls": {},
+   "crypto_strength": "strong",
+   "curve": null,
+   "description": "Inventoried crypto asset (related-crypto-material).",
+   "finding_codes": [],
+   "impact": "Low",
+   "key_size": null,
+   "location": "crypto_app.py",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "private-key (crypto_app.py)",
+   "weak": false
+  }
+ ]
+}

@@ -1,0 +1,221 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:c79b4e34-4cc0-4139-98df-fb96c75ecdfb",
+  "metadata": {
+    "timestamp": "2026-06-26T05:21:49.847602+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "5"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "5"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "0.01"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "4220489a-36f1-4088-9221-fb009938632d",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "682d0b4d-9548-453b-a21b-cb66ffdc383a",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic-ai-app/app.py:11"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "7f140428-dc95-425e-8144-9b6003d0ef92",
+      "type": "machine-learning-model",
+      "name": "Anthropic",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic-ai-app/app.py:12"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic"
+    },
+    {
+      "bom-ref": "32231d1f-dd42-4e27-89c3-cc29180320b2",
+      "type": "framework",
+      "name": "LangChain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic-ai-app/app.py:13"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "ec4da524-b383-4dfe-be31-8270891896bf",
+      "type": "machine-learning-model",
+      "name": "model.safetensors",
+      "description": "HuggingFace unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/synthetic-ai-app/model.safetensors"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:source",
+          "value": "model-file"
+        }
+      ],
+      "purl": "pkg:pypi/model.safetensors"
+    }
+  ]
+}

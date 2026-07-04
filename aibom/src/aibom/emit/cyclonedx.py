@@ -272,14 +272,171 @@ def _emit_plain(comp: Any, cdx_type: str) -> dict[str, Any]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# CBOM crypto-asset serializer (C4) — hand-built CycloneDX 1.6 cryptoProperties
+# --------------------------------------------------------------------------- #
+
+# CycloneDX 1.6 algorithm mode-of-operation enum (lower-case). The scanner emits
+# the upper-case token off the source line; anything outside the spec enum
+# (e.g. XTS) maps to "other" so the BOM still validates.
+_CDX_MODE = {
+    "GCM": "gcm",
+    "CBC": "cbc",
+    "ECB": "ecb",
+    "CTR": "ctr",
+    "CFB": "cfb",
+    "OFB": "ofb",
+    "CCM": "ccm",
+}
+
+# CycloneDX 1.6 algorithmProperties.primitive enum.
+_CDX_PRIMITIVE = {
+    "drbg", "mac", "block-cipher", "stream-cipher", "signature", "hash",
+    "pke", "xof", "kdf", "key-agree", "kem", "ae", "combiner", "other",
+    "unknown",
+}
+
+# CycloneDX 1.6 relatedCryptoMaterialProperties.type enum.
+_CDX_MATERIAL = {
+    "private-key", "public-key", "secret-key", "key", "ciphertext",
+    "signature", "digest", "initialization-vector", "nonce", "seed", "salt",
+    "shared-secret", "tag", "additional-data", "password", "credential",
+    "token", "other", "unknown",
+}
+
+# CycloneDX 1.6 protocolProperties.type enum.
+_CDX_PROTOCOL = {"tls", "ssh", "ipsec", "ike", "sstp", "wpa", "other", "unknown"}
+
+
+def _nist_quantum_level(props: dict[str, str]) -> int | None:
+    """Resolve ``nistQuantumSecurityLevel`` (0-6) from the scanner properties.
+
+    Honours an explicit ``crypto:nistQuantumSecurityLevel`` when a later story
+    (C6 PQC grading) sets one; otherwise a quantum-vulnerable public-key
+    algorithm has no quantum security (level 0). Strong symmetric/hash
+    primitives are left ungraded here — their detailed level is C6's job.
+    """
+    raw = props.get("crypto:nistQuantumSecurityLevel")
+    if raw is not None:
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+    if props.get("crypto:quantumVulnerable") == "true":
+        return 0
+    return None
+
+
+def _algorithm_properties(props: dict[str, str]) -> dict[str, Any]:
+    algo: dict[str, Any] = {}
+    primitive = props.get("crypto:primitive")
+    if primitive in _CDX_PRIMITIVE:
+        algo["primitive"] = primitive
+    if props.get("crypto:keySize"):
+        algo["parameterSetIdentifier"] = props["crypto:keySize"]
+    if props.get("crypto:curve"):
+        algo["curve"] = props["crypto:curve"]
+    mode = props.get("crypto:mode")
+    if mode:
+        algo["mode"] = _CDX_MODE.get(mode.upper(), "other")
+    level = _nist_quantum_level(props)
+    if level is not None:
+        algo["nistQuantumSecurityLevel"] = level
+    return algo
+
+
+def _certificate_properties(props: dict[str, str]) -> dict[str, Any]:
+    certp: dict[str, Any] = {}
+    for src, dst in (
+        ("crypto:subjectName", "subjectName"),
+        ("crypto:issuerName", "issuerName"),
+        ("crypto:notValidBefore", "notValidBefore"),
+        ("crypto:notValidAfter", "notValidAfter"),
+    ):
+        if props.get(src):
+            certp[dst] = props[src]
+    return certp
+
+
+def _related_material_properties(props: dict[str, str]) -> dict[str, Any]:
+    relp: dict[str, Any] = {}
+    kind = props.get("crypto:materialKind")
+    if kind in _CDX_MATERIAL:
+        relp["type"] = kind
+    return relp
+
+
+def _protocol_properties(props: dict[str, str]) -> dict[str, Any]:
+    protp: dict[str, Any] = {}
+    ptype = props.get("crypto:protocolType")
+    if ptype in _CDX_PROTOCOL:
+        protp["type"] = ptype
+    if props.get("crypto:protocolVersion"):
+        protp["version"] = props["crypto:protocolVersion"]
+    if props.get("crypto:cipherSuite"):
+        protp["cipherSuites"] = [{"name": props["crypto:cipherSuite"]}]
+    return protp
+
+
+def _crypto_properties(props: dict[str, str]) -> dict[str, Any] | None:
+    """Build the CycloneDX 1.6 ``cryptoProperties`` block from ``crypto:`` props.
+
+    Returns ``None`` when the asset carries no recognized ``crypto:assetType``
+    (so the component falls back to a plain serialization rather than emitting an
+    invalid crypto-asset).
+    """
+    asset_type = props.get("crypto:assetType")
+    if asset_type not in {
+        "algorithm",
+        "certificate",
+        "protocol",
+        "related-crypto-material",
+    }:
+        return None
+    cp: dict[str, Any] = {"assetType": asset_type}
+    if asset_type == "algorithm":
+        _add(cp, "algorithmProperties", _algorithm_properties(props))
+    elif asset_type == "certificate":
+        _add(cp, "certificateProperties", _certificate_properties(props))
+    elif asset_type == "related-crypto-material":
+        _add(
+            cp,
+            "relatedCryptoMaterialProperties",
+            _related_material_properties(props),
+        )
+    elif asset_type == "protocol":
+        _add(cp, "protocolProperties", _protocol_properties(props))
+    return cp
+
+
+def _emit_crypto_asset(comp: Any) -> dict[str, Any]:
+    """Serialize a ``crypto_asset`` to a CycloneDX 1.6 ``cryptographic-asset``.
+
+    The crypto detail is rendered into the spec ``cryptoProperties`` block; the
+    raw ``crypto:`` (and ``discovery:``) properties are also carried through as
+    ``properties[]`` so the dashboard reads one consistent place.
+    """
+    out = _base_component(comp, "cryptographic-asset")
+    props = dict(comp.properties or {})
+    crypto = _crypto_properties(props)
+    if crypto is not None:
+        out["cryptoProperties"] = crypto
+    if props:
+        out["properties"] = _properties_list(props)
+    return out
+
+
 def _emit_component(comp: Any) -> dict[str, Any]:
-    # model + dataset have rich, bespoke serializers; every other kind (the full
+    # model + dataset have rich, bespoke serializers; crypto assets render the
+    # hand-built cryptoProperties block (C4); every other kind (the full
     # shadow-AI taxonomy) maps to a CycloneDX type via KIND_TO_CDX — one place,
     # no per-kind special-casing (decision D4).
     if isinstance(comp, ModelComponent):
         return _emit_model(comp)
     if isinstance(comp, DatasetComponent):
         return _emit_dataset(comp)
+    if comp.kind == "crypto_asset":
+        return _emit_crypto_asset(comp)
     cdx_type = KIND_TO_CDX.get(comp.kind)
     if cdx_type is None:
         raise TypeError(f"Unknown component kind: {comp.kind!r}")

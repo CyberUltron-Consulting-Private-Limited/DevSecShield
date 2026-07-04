@@ -43,7 +43,10 @@ def test_run_all_writes_compliance_and_disclaimer() -> None:
     assert r.compliance is report
     assert "advisory only" in report["disclaimer"]
     for fw in C.FRAMEWORKS:
-        assert set(report[fw]) == {"pass", "fail", "na", "coverage", "requirements"}
+        assert set(report[fw]) == {
+            "pass", "pass_with_evidence", "fail", "out_of_scope",
+            "not_bom_evidenceable", "na", "coverage", "requirements",
+        }
 
 
 def test_clinical_imaging_flagship_and_subcategory_verdicts() -> None:
@@ -57,13 +60,17 @@ def test_clinical_imaging_flagship_and_subcategory_verdicts() -> None:
     # NIST subcategories that are graph-evidenceable.
     nist = _verdicts(report, "nist_rmf")
     assert nist["GV-2"] == "pass" and nist["MP-1"] == "pass" and nist["ME-2"] == "pass"
-    assert nist["MG-1"] == "na" and nist["GV-1"] == "na"  # process subcategories
+    # process subcategories -> not_bom_evidenceable (distinct from a generic na)
+    assert nist["MG-1"] == "not_bom_evidenceable"
+    assert nist["GV-1"] == "not_bom_evidenceable"
 
 
-def test_coverage_excludes_na_from_denominator() -> None:
+def test_coverage_excludes_non_applicable_from_denominator() -> None:
     nist = _report("clinical-imaging")["nist_rmf"]
-    # 6 pass, 0 fail, 10 na -> coverage = 6/6 = 1.0 (NA excluded), not 6/16.
-    assert nist["pass"] == 6 and nist["fail"] == 0 and nist["na"] == 10
+    # 6 pass, 0 fail, 10 process subcategories -> coverage = 6/6 = 1.0. The
+    # not_bom_evidenceable / out_of_scope / na buckets are ALL excluded.
+    assert nist["pass"] == 6 and nist["fail"] == 0
+    assert nist["not_bom_evidenceable"] == 10 and nist["na"] == 0
     assert nist["coverage"] == 1.0
 
 
@@ -85,12 +92,16 @@ def test_no_check_reads_flags() -> None:
             )
 
 
-def test_every_verdict_is_pass_fail_or_na() -> None:
+def test_every_verdict_is_a_known_state() -> None:
+    states = {
+        "pass", "pass_with_evidence", "fail",
+        "out_of_scope", "not_bom_evidenceable", "na",
+    }
     for fixture in ("clinical-imaging", "no-phi-model", "multi-site"):
         report = _report(fixture)
         for fw in C.FRAMEWORKS:
             for q in report[fw]["requirements"]:
-                assert q["verdict"] in {"pass", "fail", "na"}
+                assert q["verdict"] in states
 
 
 def test_resolve_framework_aliases() -> None:

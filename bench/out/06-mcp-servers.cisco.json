@@ -1,0 +1,402 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "3022bf2b-1037-4244-93ba-1fd68e1d6e2a",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:38:51Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T05:40:12Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "modelcontextprotocol/servers": {
+        "source_name": "modelcontextprotocol/servers",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src",
+        "components": {
+          "dependency": [
+            {
+              "name": "@modelcontextprotocol/sdk",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/memory/package.json",
+              "line_number": 28,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency '@modelcontextprotocol/sdk' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/memory/package.json",
+                    "start_line": 28,
+                    "end_line": 28,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "npm",
+                "version_spec": "^1.29.0",
+                "manifest": "package.json",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/memory/package.json"
+                ]
+              },
+              "instance_id": "@modelcontextprotocol/sdk_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/memory/package.json_28",
+              "confidence": 1.0
+            },
+            {
+              "name": "mcp",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/uv.lock",
+              "line_number": 323,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "1.25.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'mcp' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/uv.lock",
+                    "start_line": 323,
+                    "end_line": 323,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "1.25.0",
+                "manifest": "uv.lock",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/uv.lock"
+                ]
+              },
+              "instance_id": "mcp_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/uv.lock_323",
+              "confidence": 1.0
+            }
+          ],
+          "skill": [
+            {
+              "name": "MCP \"Everything\" Server - Development Guidelines",
+              "component_type": "skill",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/everything/AGENTS.md",
+              "line_number": 0,
+              "framework": "",
+              "detection_source": "config_file",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": "agents_md",
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Skill 'MCP \"Everything\" Server - Development Guidelines' detected by config_file; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/everything/AGENTS.md",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "trigger_patterns": [],
+                "file_count": 1,
+                "files": [
+                  "AGENTS.md"
+                ],
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/everything/AGENTS.md"
+                ]
+              },
+              "instance_id": "MCP \"Everything\" Server - Development Guidelines_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/everything/AGENTS.md_0",
+              "confidence": 1.0
+            }
+          ],
+          "mcp_server": [
+            {
+              "name": "mcp-fetch",
+              "component_type": "mcp_server",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/fetch/src/mcp_server_fetch/server.py",
+              "line_number": 193,
+              "framework": "mcp",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Mcp server 'mcp-fetch' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/fetch/src/mcp_server_fetch/server.py",
+                    "start_line": 193,
+                    "end_line": 193,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "patterns": [
+                  "from_mcp_server_import",
+                  "Server"
+                ],
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/fetch/src/mcp_server_fetch/server.py"
+                ]
+              },
+              "instance_id": "mcp-fetch_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/fetch/src/mcp_server_fetch/server.py_193",
+              "confidence": 1.0
+            },
+            {
+              "name": "mcp-git",
+              "component_type": "mcp_server",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/git/src/mcp_server_git/server.py",
+              "line_number": 319,
+              "framework": "mcp",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Mcp server 'mcp-git' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/git/src/mcp_server_git/server.py",
+                    "start_line": 319,
+                    "end_line": 319,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "patterns": [
+                  "from_mcp_server_import",
+                  "Server"
+                ],
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/git/src/mcp_server_git/server.py"
+                ]
+              },
+              "instance_id": "mcp-git_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/git/src/mcp_server_git/server.py_319",
+              "confidence": 1.0
+            },
+            {
+              "name": "mcp-time",
+              "component_type": "mcp_server",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/src/mcp_server_time/server.py",
+              "line_number": 124,
+              "framework": "mcp",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Mcp server 'mcp-time' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/src/mcp_server_time/server.py",
+                    "start_line": 124,
+                    "end_line": 124,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "patterns": [
+                  "from_mcp_server_import",
+                  "Server"
+                ],
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/src/mcp_server_time/server.py"
+                ]
+              },
+              "instance_id": "mcp-time_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/src/mcp_server_time/server.py_124",
+              "confidence": 1.0
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 6,
+          "last_generated_at": "2026-06-26T05:40:12Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/modelcontextprotocol/servers",
+          "source_ref_version": "7b1170d1da1e36bc9f553f51e76e64cbfd652b3e",
+          "elapsed_s": 79.99,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 6,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "dependency": 2,
+        "skill": 1,
+        "mcp_server": 3
+      },
+      "total_relationships": 0,
+      "risk_score": 0,
+      "risk_severity": "info"
+    },
+    "risk": {
+      "score": 0,
+      "severity": "info",
+      "flags": []
+    },
+    "errors": []
+  }
+}

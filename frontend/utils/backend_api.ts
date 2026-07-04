@@ -2070,6 +2070,13 @@ export interface CbomScanMetadata {
   cbom_file_used?: boolean
   scan_binaries?: boolean
   cbom_json?: Record<string, unknown> | null
+  // Additive chart/compliance payload from the reconciled aibom CBOM lane (I1).
+  // Present on reconciled scans; null/absent on legacy worker CBOM scans (the
+  // C9 CbomCryptoCharts then don't render). cbom_distributions feeds the 5 C9
+  // crypto charts (algorithms/weakness/pqc/certificates/protocols).
+  cbom_distributions?: Record<string, unknown> | null
+  cbom_compliance?: Record<string, unknown> | null
+  cbom_scores?: Record<string, unknown> | null
 }
 
 /** CBOM single-scan dashboard from backend generate_scan_dashboard (scan.py cbom branch) */
@@ -2342,6 +2349,11 @@ export interface AiBomScanMetadata {
   ai_bom_file_used?: boolean
   scan_binaries?: boolean
   ai_bom_json?: Record<string, unknown>
+  ai_bom_compliance?: Record<string, unknown>
+  ai_bom_graph?: { nodes?: unknown[]; edges?: unknown[] }
+  ai_bom_scores?: Record<string, unknown>
+  ai_bom_spdx?: Record<string, unknown>
+  ai_bom_sarif?: Record<string, unknown>
   error_message?: string
 }
 

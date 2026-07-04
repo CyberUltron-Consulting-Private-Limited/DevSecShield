@@ -7,18 +7,18 @@
       "specVersion": "3.0.1",
       "created": "2026-06-21T00:00:00Z",
       "createdBy": [
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/tool/clinithread-aibom"
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/tool/clinithread-aibom"
       ]
     },
     {
       "type": "Tool",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/tool/clinithread-aibom",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/tool/clinithread-aibom",
       "creationInfo": "_:creationinfo",
       "name": "clinithread-aibom"
     },
     {
       "type": "ai_AIPackage",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-nodule-detector",
       "software_packageVersion": "2.1.0",
@@ -44,13 +44,13 @@
     },
     {
       "type": "simplelicensing_LicenseExpression",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/license/model-chestxr-cnn",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/license/model-chestxr-cnn",
       "creationInfo": "_:creationinfo",
       "simplelicensing_licenseExpression": "Apache-2.0"
     },
     {
       "type": "dataset_DatasetPackage",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/dataset-chestxr-train",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/dataset-chestxr-train",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-training-cohort",
       "dataset_datasetType": [
@@ -75,7 +75,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-numpy",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-numpy",
       "creationInfo": "_:creationinfo",
       "name": "numpy",
       "software_packageVersion": "1.26.4",
@@ -83,7 +83,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-pydicom",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-pydicom",
       "creationInfo": "_:creationinfo",
       "name": "pydicom",
       "software_packageVersion": "2.4.4",
@@ -91,7 +91,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-safetensors",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-safetensors",
       "creationInfo": "_:creationinfo",
       "name": "safetensors",
       "software_packageVersion": "0.4.3",
@@ -99,7 +99,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torch",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torch",
       "creationInfo": "_:creationinfo",
       "name": "torch",
       "software_packageVersion": "2.3.1",
@@ -107,7 +107,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torchvision",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torchvision",
       "creationInfo": "_:creationinfo",
       "name": "torchvision",
       "software_packageVersion": "0.18.1",
@@ -115,63 +115,70 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/service-acme-cloud",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/service-acme-cloud",
       "creationInfo": "_:creationinfo",
       "name": "Acme Imaging AI Cloud"
     },
     {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors",
+      "creationInfo": "_:creationinfo",
+      "name": "model.safetensors"
+    },
+    {
       "type": "SpdxDocument",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/document",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/document",
       "creationInfo": "_:creationinfo",
       "name": "ChestXR-Triage-SaMD",
       "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
       "rootElement": [
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn"
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/1",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/1",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "hasConcludedLicense",
       "to": [
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/license/model-chestxr-cnn"
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/license/model-chestxr-cnn"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/2",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/2",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "trainedOn",
       "to": [
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/dataset-chestxr-train"
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/dataset-chestxr-train"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/3",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/3",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "dependsOn",
       "to": [
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-numpy",
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-pydicom",
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-safetensors",
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torch",
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/lib-torchvision"
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-numpy",
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-pydicom",
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-safetensors",
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torch",
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/lib-torchvision",
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/modelfile-model.safetensors"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/relationship/4",
+      "spdxId": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/relationship/4",
       "creationInfo": "_:creationinfo",
       "comment": "served_by",
-      "from": "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/model-chestxr-cnn",
+      "from": "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/model-chestxr-cnn",
       "relationshipType": "other",
       "to": [
-        "https://devsecshield.example/aibom/664d4e1b-f195-57a0-bec8-8b93c2b38bcd/package/service-acme-cloud"
+        "https://devsecshield.example/aibom/89c4ebba-2966-5f6f-962e-0a2af4f44f7f/package/service-acme-cloud"
       ]
     }
   ]

@@ -45,16 +45,15 @@ def write_docx(compliance: dict[str, Any], path: Path, subject: str) -> None:
     doc.add_heading("2. Per-framework gaps & actions", level=1)
     for fw, title in FRAMEWORK_TITLES.items():
         b = compliance[fw]
-        doc.add_heading(
-            f"{title} — coverage {coverage_label(b['coverage'])}", level=2
-        )
+        doc.add_heading(f"{title} — coverage {coverage_label(b['coverage'])}", level=2)
         gaps = [q for q in b["requirements"] if q["verdict"] == "fail"]
         nas = [q for q in b["requirements"] if q["verdict"] == "na"]
         if gaps:
             doc.add_paragraph("Open gaps (fail):", style="Intense Quote")
             for q in gaps:
-                doc.add_paragraph(f"{q['id']} — {q['title']}: {q['evidence']}",
-                                  style="List Bullet")
+                doc.add_paragraph(
+                    f"{q['id']} — {q['title']}: {q['evidence']}", style="List Bullet"
+                )
         else:
             doc.add_paragraph("No open gaps from BOM-evidenced checks.")
         if nas:

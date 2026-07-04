@@ -68,6 +68,10 @@ packages = ["src/aibom"]
 line-length = 88
 src = ["src", "tests"]
 target-version = "py311"
+# Detection fixtures are deliberately-crafted target apps (planted secrets, model
+# literals, weak-crypto on one line) that scanners match line-by-line; linting /
+# auto-formatting them would corrupt the ground truth, so they are not linted.
+extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "A", "C4", "SIM"]

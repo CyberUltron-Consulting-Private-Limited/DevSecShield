@@ -1,0 +1,3430 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:36f52dd3-dc9b-49a4-8f78-fbc41d0edc23",
+  "metadata": {
+    "timestamp": "2026-06-26T05:58:14.923731+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "90"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "90"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "7.90"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "30b5e92e-9175-4f14-a472-03241804c21c",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/chat_template_utils.py:21"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "08f5066b-9ffe-4a76-a218-f073a3da93c6",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/chat_template_utils.py:78"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "meta-llama/Llama-3.2-1B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "56c1bcc1-b241-4534-8ef6-560ff73281c7",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/chat_template_utils.py:79"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "meta-llama/Llama-3.2-1B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "aaa63726-347c-4afc-811c-2eb7a13b7a14",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/chat_template_utils.py:399"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen3-0.6B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "e8c1d7b2-9176-49b7-8628-0dacf8e592c2",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/chat_template_utils.py:732"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen3-0.6B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "691d4245-8080-4219-8035-5ab16099a394",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/chat_template_utils.py:920"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen3-0.6B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "77ab1116-4990-4fbf-8730-b0a5488b6e6e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "7ef57c14-7330-4675-b70a-d866972e99b6",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py:384"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "microsoft/Phi-3-mini-128k-instruct"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "3ddff1a2-02dd-4903-82dd-d2fca3943f26",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/_compat.py:97"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "99a6122c-a436-4e35-a4cd-5ba25a9426d4",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/merge_model_callback.py:20"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "df0c4a33-b0d6-4dd0-9ce4-6b0497a077ae",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/utils.py:31"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "448b8b72-aca0-48d7-a414-e869c3449bc8",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_config.py:18"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "9d190bab-f1a0-4671-9026-6a6651df3119",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py:39"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "f894c950-83b0-422b-b662-b6f970726381",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gfpo/gfpo_trainer.py:33"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "21e80ff3-37be-4d2a-afcc-3a70868af789",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_config.py:18"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "f3f13718-f44a-4b5d-aeae-6ebb456e4de0",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/teacher_sync.py:19"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "b5fb0c0e-fd14-4f5f-a18a-44040fafb2ff",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py:33"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "e4b67488-7d78-4cf0-9fa1-d9dbb0a759b5",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py:29"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "0c730401-3050-4d15-a8c0-dc9997efce0d",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py:20"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "49854299-4c97-4c10-bf87-d2034669fbfb",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py:34"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "18ae719e-1c38-47f5-bdd8-4113bb6d3d07",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "05b955fc-d1e0-4057-b306-1653ebf61e51",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_env.py:15"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "1233d924-7275-4967-a7bd-8a5f65eaeb63",
+      "type": "framework",
+      "name": "CrewAI",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_env.py:108"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "b0144d97-a814-4f28-ac3e-207305640088",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py:29"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "3819027c-a2f0-4eb6-8029-66ccb66da804",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py:27"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "2a049257-7781-4df5-8fad-9aa1aa3012fd",
+      "type": "machine-learning-model",
+      "name": "vLLM",
+      "description": "vLLM completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py:80"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "vLLM"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/vllm"
+    },
+    {
+      "bom-ref": "e04c2cb4-fc87-4384-8a27-b883e9f2172f",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py:18"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "c2b6d063-7d9d-4fbd-b78d-66d2b43fa8dd",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/dpo_trainer.py:19"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "237caeab-8bdc-4822-bebe-7a5d82e2c57c",
+      "type": "machine-learning-model",
+      "name": "vLLM",
+      "description": "vLLM completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openenv/utils.py:25"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "vLLM"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/vllm"
+    },
+    {
+      "bom-ref": "ef80b507-0020-40b8-9ec1-65ea20b68742",
+      "type": "machine-learning-model",
+      "name": "Mistral",
+      "description": "Mistral completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openenv/utils.py:131"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Mistral"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/mistral"
+    },
+    {
+      "bom-ref": "bf299394-6a9d-4992-aafa-46a96dd6f08b",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py:23"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "0d9a2143-f0b5-46d1-8f9a-4bdb8f0ae2fe",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/teacher_sync.py:19"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "ae1a8953-c841-4f0c-8c63-5f61c01338a2",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py:31"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "51f5bdd5-d709-496d-ad40-29adb8f5fa2b",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_config.py:18"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "4fe6672e-1f64-4347-9fed-558d4f11a7d2",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py:31"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "eec6a3ae-5f14-4315-8382-3a57e2e7ad1a",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_config.py:44"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "cb5b6de7-29e5-4c2d-8dfc-4b3f69586053",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/grpo_with_replay_buffer/grpo_with_replay_buffer_trainer.py:60"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "d4097cd9-9249-48d8-902a-f13fc8a103d4",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py:27"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "cfc62360-dc0f-491f-9a3d-16f149420b9c",
+      "type": "framework",
+      "name": "CrewAI",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py:104"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "823535e1-3e91-44df-8889-4ebda0bfb87d",
+      "type": "framework",
+      "name": "CrewAI",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/environment.py:228"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "d47c5a9b-55e4-4f6a-b64f-7ef96a1b8db2",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gkd/gkd_trainer.py:24"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "f44197c9-6db2-4496-a95d-1e4099acf074",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py:32"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "b3da383b-348d-4c79-ac2a-94ee39882e9c",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gspo_token/grpo_trainer.py:21"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "c1911445-5c3d-4ddf-949e-d3f06875dc94",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py:23"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "732fd83e-b8a8-480b-b9de-82f796df2f8b",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py:311"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen2.5-0.5B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "5ee67cf3-b5be-442b-99d2-c944d7164984",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py:30"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "8c37e2e3-9a02-41ea-9e01-df5b32ec80d7",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_config.py:39"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "5cb6e95a-b36b-4c7a-849e-63df938e3bcf",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_rollout_worker.py:35"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "1f9dd2b6-a5e5-43e7-878c-accb63c8f598",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py:23"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "98916b57-b369-45e6-91c2-2845a8bdb765",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "c8c04485-1f4b-4a16-9e8f-825f4a80a72c",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py:30"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "24e9345e-29bd-4999-b270-bd8cd2c569a3",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py:29"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "d0b09aa1-3529-433a-a6f9-e6d2de36589e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py:20"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "442b6d6e-5725-4b5f-b019-c9f7f49ef2c6",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/tpo/tpo_trainer.py:25"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "26db268e-4777-490e-b4db-6432272299fe",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gmpo/gmpo_trainer.py:22"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "316e49b0-4838-4472-98e0-3dd3d789cd8c",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py:25"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "73930105-a1da-4ac6-a007-0b74d602cfa2",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_config.py:38"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "749d7302-9ee2-4074-9190-9b39fee60e73",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py:25"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "042199d8-3e90-4675-8a82-03334f4a0d20",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/models/activation_offloading.py:30"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "94dd985c-077f-4224-9ab1-49d97fdf74e7",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/models/utils.py:24"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "c272a7e6-145c-4c10-9e05-cfe9acc61062",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/env.py:29"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "a12ec0a9-da13-4bd0-9df2-ea510b6e8631",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py:73"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "6c876d87-070f-4072-8dfa-085fe0915edd",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/vllm_serve.py:70"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "0955775b-b39a-4d0e-8263-b4ca95f0db3e",
+      "type": "machine-learning-model",
+      "name": "vLLM",
+      "description": "vLLM completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/vllm_serve.py:219"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "vLLM"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/vllm"
+    },
+    {
+      "bom-ref": "c33be4e8-6da5-4759-9d4c-484f384e1018",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py:139"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "a6b87d6f-6fdb-4e9a-8794-fc9dfa67818e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py:103"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "589d027f-db23-4410-8cda-01f29d4dc644",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py:139"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "65deeec2-e42e-4751-a776-a4d18f07c426",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py:64"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "7a6ed69d-40ea-44b2-8f62-1ea77fcf6f6e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py:101"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "156d0eac-9bb5-453c-8066-e7fe3b353893",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py:17"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "f0129a99-b3cd-49b2-bf42-9a8b8d1268b7",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py:30"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "9a970cff-7a18-4647-9cac-d97f11342f6e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_config.py:45"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "bbff77a0-90e4-4ffb-a341-591f612db167",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_trainer.py:20"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "c8049d4e-19a4-455c-8a6f-ca7b54ed6cb4",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py:29"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "cb147c02-6d3f-41fa-b15b-d59ca08d6c72",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py:607"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen2.5-VL-7B-Instruct"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "ec0970f2-d90d-4238-bb10-4e030576a1c4",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py:33"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "9e860770-7ff7-4ba1-9d1d-313c4bfac2b8",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py:1111"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "path/to/model"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "d1a1ceca-137e-49af-8b1b-a3296817fc3e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py:22"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "49d5d4df-1119-4597-a0a2-35237c43d54f",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py:31"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "1a20c81e-adf1-4b66-ae42-0d8cc2a8068f",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/kto_trainer.py:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "25668751-ff20-4b63-9f0b-a6ff2e55cc8b",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py:36"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "ff93dd47-7a56-47a1-873f-1fd90aeabd5e",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py:27"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "21734613-7e6f-466c-b996-cd0ddd0046b6",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py:254"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen2.5-VL-7B-Instruct"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "5e27064d-46de-4128-a23c-f0ff2c1eb113",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/generation/vllm_generation.py:27"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "e42e7655-c966-4f11-9e88-884f65b7e81a",
+      "type": "machine-learning-model",
+      "name": "vLLM",
+      "description": "vLLM completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/generation/vllm_generation.py:43"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "vLLM"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/vllm"
+    },
+    {
+      "bom-ref": "f708a3f7-59b6-4137-92c8-70a0dee7bf47",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/generation/vllm_client.py:28"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "35e13e6d-86da-47c5-9599-8b40708ef8d2",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/generation/vllm_client.py:107"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen2.5-7B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "6adac692-1bb7-4027-b690-817641d70aa6",
+      "type": "machine-learning-model",
+      "name": "vLLM",
+      "description": "vLLM completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/generation/vllm_client.py:750"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "vLLM"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/vllm"
+    },
+    {
+      "bom-ref": "f34fd6d0-5757-44f0-89b3-e78879c4327a",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers Model",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/generation/vllm_client.py:763"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "Qwen/Qwen2.5-7B"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers model"
+    },
+    {
+      "bom-ref": "b321f851-149f-4127-9da7-1f66f2ef018f",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py:19"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    }
+  ]
+}

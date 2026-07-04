@@ -1,0 +1,6 @@
+#id	slug	clone_url	scan_subdir	note
+00-synthetic	local/synthetic-crypto-app	-	.	ground-truth fixture (aibom/tests/fixtures/synthetic-crypto-app, copied to repos/00-synthetic)
+01-pyjwt	jpadilla/pyjwt	https://github.com/jpadilla/pyjwt	.	JWT/auth lib: RS/ES/HS algorithms + tests/keys/*.pem (RSA/EC/Ed25519)
+02-pyopenssl	pyca/pyopenssl	https://github.com/pyca/pyopenssl	.	OpenSSL wrapper: TLS/SSL methods + test certs/keys under tests/
+03-cryptography	pyca/cryptography	https://github.com/pyca/cryptography	src	pyca/cryptography users' baseline: AEAD/hashes/x509; scoped to src
+04-mitmproxy	mitmproxy/mitmproxy	https://github.com/mitmproxy/mitmproxy	mitmproxy	TLS proxy server: ssl/TLS protocol config + bundled cert material

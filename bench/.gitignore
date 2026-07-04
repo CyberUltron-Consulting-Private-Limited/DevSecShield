@@ -1,0 +1,13 @@
+# Cloned upstream repos (large; CI clones them at the pinned SHA in shas.tsv).
+repos/
+# Our regenerated output (the gate re-runs `aibom emit`); the FROZEN OSS oracle
+# outputs (*.trusera.cdx.json / *.cisco.json) ARE committed as the baseline.
+out/*.ours.cdx.json
+out/*.log
+# scratch
+__pycache__/
+*.bak
+ruvector.db
+agentdb.rvf*
+triage_args.json
+raw_misses.json

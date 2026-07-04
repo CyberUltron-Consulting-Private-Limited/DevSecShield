@@ -84,6 +84,12 @@ import {
   YAxis,
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp, Search, Filter, ChevronDown, Check, X } from "lucide-react";
+import {
+  AiBomVisualizations,
+  type Compliance as AiBomCompliance,
+  type Graph as AiBomGraph,
+  type Scores as AiBomScores,
+} from "@/components/ai-bom/AiBomVisualizations";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -396,6 +402,31 @@ export default function AiBomResults({
     }
   };
 
+  // Raw BOM artifacts (SPDX 3.0 / SARIF 2.1.0) — same client-side blob download
+  // as the CycloneDX JSON above.
+  const handleDownloadArtifact = (
+    key: "ai_bom_spdx" | "ai_bom_sarif",
+    ext: string,
+    label: string,
+  ) => {
+    const metaRecord = scanMetadata as Record<string, unknown> | null;
+    const artifact =
+      metaRecord?.[key] ?? (data as Record<string, unknown> | null)?.[key];
+    if (!artifact) { toast.error(`No ${label} available`); return; }
+    try {
+      const blob = new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ai-bom-${scan_id}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${label} downloaded`);
+    } catch (err) {
+      showErrorToast(err, `Failed to download ${label}`);
+    }
+  };
+
   const cardData = dashboard?.card_data;
   const remediation = dashboard?.remediation_actions_required;
   const remediationKpis = dashboard?.remediation_metrics;
@@ -539,14 +570,33 @@ export default function AiBomResults({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            className="cursor-pointer"
-            onClick={handleDownloadAiBomJson}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            AI BOM JSON
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="cursor-pointer">
+                <Download className="h-4 w-4 mr-2" />
+                Download BOM
+                <ChevronDown className="h-4 w-4 ml-1.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[210px]">
+              <DropdownMenuLabel>Bill of Materials</DropdownMenuLabel>
+              <DropdownMenuItem className="cursor-pointer" onClick={handleDownloadAiBomJson}>
+                CycloneDX 1.6 (JSON)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => handleDownloadArtifact("ai_bom_spdx", "spdx.json", "SPDX 3.0")}
+              >
+                SPDX 3.0 (JSON-LD)
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => handleDownloadArtifact("ai_bom_sarif", "sarif", "SARIF 2.1.0")}
+              >
+                SARIF 2.1.0
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             className="cursor-pointer"
@@ -816,7 +866,7 @@ export default function AiBomResults({
                     {!hasComplianceData ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No compliance data available</div>
                     ) : (
-                      <ChartContainer config={complianceBarChartConfig} className="mx-auto aspect-auto max-h-[280px] cursor-pointer">
+                      <ChartContainer config={complianceBarChartConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px] cursor-pointer">
                         <BarChart data={complianceBarData.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
                           <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                           <XAxis type="number" hide />
@@ -845,7 +895,7 @@ export default function AiBomResults({
                     {assetTypeData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No asset type data available</div>
                     ) : (
-                      <ChartContainer config={barConfig} className="mx-auto aspect-auto max-h-[280px]">
+                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]">
                         <BarChart data={assetTypeData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
                           <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                           <XAxis type="number" tickLine={false} axisLine={false} className="text-xs" />
@@ -871,7 +921,7 @@ export default function AiBomResults({
                     {providerData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No provider data available</div>
                     ) : (
-                      <ChartContainer config={barConfig} className="mx-auto aspect-auto max-h-[280px]">
+                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]">
                         <BarChart data={providerData} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
                           <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                           <XAxis type="number" tickLine={false} axisLine={false} className="text-xs" />
@@ -897,7 +947,7 @@ export default function AiBomResults({
                     {licenseData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No license data available</div>
                     ) : (
-                      <ChartContainer config={barConfig} className="mx-auto aspect-auto max-h-[280px]">
+                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]">
                         <BarChart data={licenseData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
                           <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                           <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
@@ -927,7 +977,7 @@ export default function AiBomResults({
                     {riskCategoryData.length === 0 ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No risk category data available</div>
                     ) : (
-                      <ChartContainer config={barConfig} className="mx-auto aspect-auto max-h-[280px]">
+                      <ChartContainer config={barConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px]">
                         <BarChart data={riskCategoryData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
                           <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                           <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} className="text-xs" />
@@ -1089,6 +1139,15 @@ export default function AiBomResults({
               )}
             </div>
           )}
+
+          {/* AI BOM-specific governance & lineage visualizations */}
+          <AiBomVisualizations
+            compliance={meta?.ai_bom_compliance as AiBomCompliance | undefined}
+            graph={meta?.ai_bom_graph as AiBomGraph | undefined}
+            scores={meta?.ai_bom_scores as AiBomScores | undefined}
+            aiBomJson={meta?.ai_bom_json as Record<string, unknown> | undefined}
+            findings={(findingsList ?? []) as unknown as Record<string, unknown>[]}
+          />
 
           {/* Findings Table */}
           <Card>

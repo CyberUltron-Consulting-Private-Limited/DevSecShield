@@ -1,0 +1,57 @@
+name: CBOM Nightly Benchmark (full repos, live)
+
+# The FULL live CBOM benchmark: LIVE-runs the IBM cbomkit-theia oracle (docker)
+# and ours on every repo in bench/cbom/repos.tsv + the synthetic fixture, then
+# diffs (true-miss == 0, our-unique > 0). No AWS/Bedrock — CBOM detection is
+# offline/deterministic; the oracle is a public container image. The per-PR
+# cbom-gates.yml covers synthetic + 2 representative repos hermetically against
+# the FROZEN cbomkit-theia snapshots, so this nightly is the only place the live
+# oracle is re-run (and where the frozen snapshots are validated for drift).
+
+on:
+  schedule:
+    - cron: "30 7 * * *"   # 07:30 UTC nightly (after the AI-BOM nightly)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-cbom-benchmark:
+    name: Full live CBOM benchmark vs IBM cbomkit-theia
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: aibom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install aibom
+        run: uv sync --all-extras --dev || uv sync
+
+      - name: Pull IBM cbomkit-theia oracle image
+        run: docker pull ghcr.io/cbomkit/cbomkit-theia:latest
+
+      - name: Run full live CBOM benchmark (cbomkit-theia + ours on all repos)
+        run: MAXJ=2 bash ../bench/cbom/run_all.sh
+
+      - name: Diff matrix + gate (true-misses == 0, our-unique > 0)
+        run: cd ../bench/cbom && uv run python diff.py
+
+      - name: Upload CBOM benchmark report + outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbom-nightly-benchmark
+          path: |
+            bench/cbom/report.md
+            bench/cbom/out/*.json
+            bench/cbom/state/benchmark.json
+          retention-days: 14

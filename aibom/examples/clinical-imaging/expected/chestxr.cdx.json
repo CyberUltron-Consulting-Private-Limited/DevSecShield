@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:664d4e1b-f195-57a0-bec8-8b93c2b38bcd",
+  "serialNumber": "urn:uuid:89c4ebba-2966-5f6f-962e-0a2af4f44f7f",
   "version": 1,
   "metadata": {
     "timestamp": "2026-06-21T00:00:00Z",
@@ -242,35 +242,70 @@
       "bom-ref": "lib-numpy",
       "name": "numpy",
       "version": "1.26.4",
-      "purl": "pkg:pypi/numpy@1.26.4"
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-pydicom",
       "name": "pydicom",
       "version": "2.4.4",
-      "purl": "pkg:pypi/pydicom@2.4.4"
+      "purl": "pkg:pypi/pydicom@2.4.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-safetensors",
       "name": "safetensors",
       "version": "0.4.3",
-      "purl": "pkg:pypi/safetensors@0.4.3"
+      "purl": "pkg:pypi/safetensors@0.4.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-torch",
       "name": "torch",
       "version": "2.3.1",
-      "purl": "pkg:pypi/torch@2.3.1"
+      "purl": "pkg:pypi/torch@2.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-torchvision",
       "name": "torchvision",
       "version": "0.18.1",
-      "purl": "pkg:pypi/torchvision@0.18.1"
+      "purl": "pkg:pypi/torchvision@0.18.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
     },
     {
       "type": "application",
@@ -279,6 +314,23 @@
       "properties": [
         {
           "name": "service:baa",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelfile-model.safetensors",
+      "name": "model.safetensors",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d349927fae5ba5286759616c29c33e2e76876a5d0283cfb69780b9fb143fc330"
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:weight_file",
           "value": "true"
         }
       ]
@@ -294,6 +346,7 @@
         "lib-safetensors",
         "lib-torch",
         "lib-torchvision",
+        "modelfile-model.safetensors",
         "service-acme-cloud"
       ]
     }

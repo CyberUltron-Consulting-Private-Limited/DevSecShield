@@ -1,0 +1,62 @@
+name: AI-BOM Nightly Benchmark (full 10 repos, live)
+
+# The FULL live benchmark: installs both OSS oracles (Trusera + Cisco) and runs
+# them + ours on all 10 real repos + the synthetic fixture, then diffs (P7 gate).
+# Cisco's agentic pass calls Bedrock Haiku — real spend — so this is NIGHTLY, not
+# per-PR (the per-PR aibom-gates.yml covers synthetic + 2 representative repos
+# hermetically/pinned). Requires AWS_* repo secrets for Bedrock.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC nightly
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-benchmark:
+    name: Full 10-repo live benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: aibom
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      AIBOM_BEDROCK_MODEL: global.anthropic.claude-haiku-4-5-20251001-v1:0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install aibom
+        run: uv sync --all-extras --dev || uv sync
+
+      - name: Install Trusera (ai-bom) + Cisco (cisco-aibom, agentic+bedrock)
+        run: |
+          uv tool install ai-bom
+          uv tool install --python 3.13 "cisco-aibom[agentic,llm-aws]"
+
+      - name: Run full live benchmark (Trusera + Cisco + ours on all repos)
+        run: MAXJ=3 bash bench/run_all.sh
+
+      - name: Diff matrix + P7 gate (true-misses == 0, our-unique > 0)
+        run: cd bench && uv run python diff.py
+
+      - name: Upload benchmark report + outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aibom-nightly-benchmark
+          path: |
+            aibom/bench/report.md
+            aibom/bench/out/*.json
+            aibom/bench/out/benchmark_state.json
+          retention-days: 14

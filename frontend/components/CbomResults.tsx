@@ -82,6 +82,7 @@ import { PieChart, BarChart3, TrendingUp, Search } from "lucide-react";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
+import { CbomCryptoCharts, type CbomDistributions } from "@/components/cbom/CbomCryptoCharts";
 
 interface CbomResultsProps {
   data: unknown;
@@ -915,6 +916,16 @@ export default function CbomResults({
   const cardData = dashboard?.card_data;
   const meta = scanMetadata as CbomScanMetadata | null;
 
+  // Crypto-asset charts from the aibom CBOM lane's run-object (C9). Present only
+  // on scans produced by the reconciled aibom lane; legacy worker CBOM scans
+  // carry no `cbom_distributions`, so the charts simply don't render.
+  const cryptoDistributions = useMemo<CbomDistributions | null>(() => {
+    const fromData = (data as Record<string, unknown> | null)?.cbom_distributions;
+    const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_distributions;
+    const dist = (fromData ?? fromMeta) as CbomDistributions | undefined;
+    return dist ?? null;
+  }, [data, scanMetadata]);
+
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
 
@@ -1099,6 +1110,9 @@ export default function CbomResults({
               )}
             </div>
           )}
+
+          {/* Crypto-asset charts (aibom CBOM lane) */}
+          {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} />}
 
           {/* Dashboard */}
           {dashboard && cardData && (

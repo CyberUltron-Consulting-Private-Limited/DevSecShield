@@ -1,0 +1,10 @@
+# Ralph Progress Log
+Started: Mon Jun 29 15:23:34 IST 2026
+---
+[F3] CBOM synthetic fixture + manifest LANDED.
+- Fixture: aibom/tests/fixtures/synthetic-crypto-app/ {crypto_app.py, tls_config.py, cert.pem (REAL openssl self-signed RSA-2048, expiry 2027-06-29), requirements.txt} + expected_crypto.json (the CBOM oracle).
+- Ground truth: 8 algorithms (strong: RSA-2048/AES-256-GCM/SHA-256; weak: MD5/DES/RC4/AES-128-ECB/RSA-1024), 1 self-signed cert, 1 TLS-1.0 protocol, 1 hardcoded private key; quantum_vulnerable=[RSA-2048,RSA-1024]. Manifest mirrors CycloneDX 1.6 crypto-asset assetTypes (algorithm|certificate|protocol|related-crypto-material).
+- Test: aibom/tests/test_crypto_fixture_manifest.py (7 tests, self-consistency only — NO scanner yet; C1+ reconciles the worker cbom_agent into the lane). Asserts counts==list-lens, weak/strong partition, quantum flag↔list, and every asset is actually present in its named source file (manifest can't lie).
+- GOTCHA: conftest.py has collect_ignore=["fixtures"] so scan TARGETS aren't collected as tests — good, the new fixture won't run as a test.
+- GOTCHA: `uv run pytest -q` (full suite) shows 2 PRE-EXISTING fails: test_differential.py chroma-provider/chroma-framework (recall 0.50, missed crewai). Confirmed by stashing F3 — they fail on HEAD too. Caused by the local 71MB chroma clone being present (CI self-skips when absent) + known crewai gap. NOT an F3 regression.
+- GOTCHA: `ruff check .` reports 45 PRE-EXISTING errors in other fixtures/tests (synthetic-ai-app/app.py etc.); my files are clean. CI (aibom-gates.yml) runs targeted pytest only — no ruff/mypy gate. mypy packages=["aibom"] (src only) → unaffected by test/fixture additions.

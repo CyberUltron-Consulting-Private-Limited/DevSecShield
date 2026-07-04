@@ -196,9 +196,7 @@ def parse_model_card(path: Path) -> ParsedModelCard | None:
         served_by=(
             fm.get("served_by") if isinstance(fm.get("served_by"), dict) else None
         ),
-        deployed_at=[
-            s for s in (fm.get("deployed_at") or []) if isinstance(s, dict)
-        ],
+        deployed_at=[s for s in (fm.get("deployed_at") or []) if isinstance(s, dict)],
     )
 
 

@@ -1,0 +1,4 @@
+# LOW: chromadb is a vector store with a known license (Apache-2.0) -> no flag.
+chromadb==0.5.0
+# MEDIUM: a private package whose license cannot be resolved -> FRAMEWORK_NO_LICENSE.
+internal-scorer-lib>=0.1.0

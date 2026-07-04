@@ -65,8 +65,10 @@ class CloudIacScanner(Scanner):
                             bom_ref=ref,
                             name=label,
                             publisher=vendor,
-                            properties={"discovery:source": path.name,
-                                        "discovery:iac": needle},
+                            properties={
+                                "discovery:source": path.name,
+                                "discovery:iac": needle,
+                            },
                         )
                     )
 

@@ -65,6 +65,10 @@ ComponentKind = Literal[
     "pipeline",
     "fine_tuning",
     "evaluation",
+    # model artifacts
+    "model_file",
+    # cryptographic inventory (CBOM — CycloneDX 1.6 crypto-asset)
+    "crypto_asset",
 ]
 
 
@@ -226,9 +230,9 @@ class ModelCard(BaseModel):
     # SPDX 3.0 AI-Profile signal: does the model use sensitive personal info
     # (e.g. PHI at inference)? Maps to ai_useSensitivePersonalInformation
     # (PresenceType). Also emitted as a clinical: property in CycloneDX.
-    uses_sensitive_personal_information: (
-        Literal["yes", "no", "noAssertion"] | None
-    ) = None
+    uses_sensitive_personal_information: Literal["yes", "no", "noAssertion"] | None = (
+        None
+    )
 
     # Structured human-oversight signal (EU AI Act Art 14 / GMLP-7). A boolean
     # graph fact a compliance check reads directly — NOT inferred by substring-
@@ -256,8 +260,7 @@ class _BaseComponent(BaseModel):
     licenses: list[dict] | None = Field(
         default=None,
         description=(
-            "CycloneDX licenseChoice entries, "
-            "e.g. [{'license': {'id': 'Apache-2.0'}}]."
+            "CycloneDX licenseChoice entries, e.g. [{'license': {'id': 'Apache-2.0'}}]."
         ),
     )
     hashes: list[Hash] | None = None
@@ -265,8 +268,7 @@ class _BaseComponent(BaseModel):
     properties: dict[str, str] | None = Field(
         default=None,
         description=(
-            "Namespaced healthcare key/value pairs "
-            "(clinical:/regulatory:/dataset:)."
+            "Namespaced healthcare key/value pairs (clinical:/regulatory:/dataset:)."
         ),
     )
     external_references: list[ExternalReference] | None = None
@@ -312,11 +314,11 @@ class DatasetComponent(_BaseComponent):
         default=None, description="SPDX dataset_confidentialityLevel (TLP-like)."
     )
     intended_use: str | None = None
-    has_sensitive_personal_information: (
-        Literal["yes", "no", "noAssertion"] | None
-    ) = Field(
-        default=None,
-        description="SPDX dataset_hasSensitivePersonalInformation (PresenceType).",
+    has_sensitive_personal_information: Literal["yes", "no", "noAssertion"] | None = (
+        Field(
+            default=None,
+            description="SPDX dataset_hasSensitivePersonalInformation (PresenceType).",
+        )
     )
 
 
@@ -425,6 +427,29 @@ class EmbeddingModelComponent(_BaseComponent):
     kind: Literal["embedding_model"] = "embedding_model"
 
 
+class ModelFileComponent(_BaseComponent):
+    """A serialized model weight FILE (.safetensors/.onnx/.bin/.h5 …) — a distinct
+    SBOM artifact of a model, carrying its own integrity hash."""
+
+    kind: Literal["model_file"] = "model_file"
+
+
+class CryptoAssetComponent(_BaseComponent):
+    """A cryptographic asset (CBOM — CycloneDX 1.6 ``cryptographic-asset``).
+
+    Covers all four CycloneDX crypto-asset categories (algorithm, certificate,
+    protocol, related-crypto-material). The crypto-specific detail — assetType,
+    primitive, key size, mode, curve, certificate validity, protocol version,
+    weak/quantum-vulnerable flags — lives entirely in namespaced ``crypto:``
+    ``properties`` (per the repo convention: no invented top-level spec keys).
+    The C4 emitter reads those ``crypto:`` properties to build the CycloneDX
+    ``cryptoProperties`` block. Scanners EMIT these components; the scorer
+    weights, the checks query, the emitter renders — nothing crosses lanes.
+    """
+
+    kind: Literal["crypto_asset"] = "crypto_asset"
+
+
 class NotebookComponent(_BaseComponent):
     """A discovered notebook (.ipynb)."""
 
@@ -493,6 +518,8 @@ AIComponent = Annotated[
     | RetrieverComponent
     | RerankerComponent
     | EmbeddingModelComponent
+    | ModelFileComponent
+    | CryptoAssetComponent
     | NotebookComponent
     | ContainerComponent
     | CloudServiceComponent
@@ -527,6 +554,8 @@ KIND_TO_CDX: dict[str, str] = {
     "retriever": "application",
     "reranker": "application",
     "embedding_model": "machine-learning-model",
+    "model_file": "machine-learning-model",
+    "crypto_asset": "cryptographic-asset",
     "notebook": "file",
     "container": "container",
     "cloud_service": "application",
@@ -606,6 +635,8 @@ __all__ = [
     "RetrieverComponent",
     "RerankerComponent",
     "EmbeddingModelComponent",
+    "ModelFileComponent",
+    "CryptoAssetComponent",
     "NotebookComponent",
     "ContainerComponent",
     "CloudServiceComponent",

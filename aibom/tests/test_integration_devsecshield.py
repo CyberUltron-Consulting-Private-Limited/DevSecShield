@@ -48,7 +48,7 @@ _FINDING_FIELDS = {
     "title", "description", "impact", "owasp_top_10", "compliance_controls",
     "suggested_fix", "component_name", "component_type", "framework", "version",
     "source", "license", "location", "snippet", "risk_category",
-    "owasp_top_10_llm",
+    "owasp_top_10_llm", "model_card",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}
@@ -86,7 +86,11 @@ def test_every_finding_matches_the_locked_finding_schema() -> None:
         assert f["source"] in _MODEL_PROVIDER
         assert f["risk_category"] in _AI_RISK_CATEGORY
         assert isinstance(f["owasp_top_10"], list)
-        assert isinstance(f["owasp_top_10_llm"], list)
+        # owasp_top_10_llm is the SERIALIZED platform shape: {ENUM_NAME: label}
+        # (the worker's base_vuln dumps list[OWASPTop10LLM] -> dict, and the
+        # backend dashboard reads it via .items()). A list would crash the
+        # dashboard's aggregation, so the stored contract is a dict.
+        assert isinstance(f["owasp_top_10_llm"], dict)
         assert isinstance(f["compliance_controls"], list)
         # str|None scalar fields must never leak a dict/object (worker schema).
         for scalar in ("framework", "version", "license", "location", "snippet"):
@@ -109,9 +113,13 @@ def test_findings_are_the_component_inventory() -> None:
     # (total_ai_assets = len(results)), so the inventory unit is the component.
     assert len(out["results"]) == len(result.components)
     assert len(out["results"]) > 0
-    # The 5 shadow UNSANCTIONED components surface as High-impact findings.
-    high = [f for f in out["results"] if f["impact"] == "High"]
-    assert len(high) >= 5
+    # The 5 shadow UNSANCTIONED components surface as >= Medium-impact findings
+    # (UNSANCTIONED_COMPONENT=6 -> medium under the recalibrated scorer; stacking
+    # with other flags may elevate further, but never below medium).
+    flagged = [
+        f for f in out["results"] if f["impact"] in ("Medium", "High", "Critical")
+    ]
+    assert len(flagged) >= 5
 
 
 def test_clinical_imaging_findings_carry_component_metadata() -> None:

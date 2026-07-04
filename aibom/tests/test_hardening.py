@@ -144,10 +144,16 @@ def test_multi_site_golden_valid() -> None:
 
 
 def test_scores_carry_normalized_and_band() -> None:
+    # Recalibrated weights: PHI-at-inference=8 + EU-high-risk=6 = 14 raw on the
+    # clinical model. max_raw auto = sum of all flag weights (71), so the OVERALL
+    # normalized score is 14/71*100 = 19.7 (low band). NB: the GLOBAL risk_band is
+    # an internal aggregate; the dashboard rates each FINDING by its stacked
+    # per-component severity (here the clinical model is component-severity critical).
     scores = scan_repo(_CLINICAL).scores
-    assert scores["risk_total"] == 9.0  # raw internal sum preserved
-    assert scores["risk_normalized"] == 33.3  # 9 / 27 * 100
-    assert scores["risk_band"] == "medium"
+    assert scores["risk_total"] == 14.0  # 8 + 6 (raw internal sum)
+    assert scores["risk_normalized"] == 19.7  # 14 / 71 * 100
+    assert scores["risk_band"] == "low"
+    assert scores["component_severity"]["model-chestxr-cnn"] == "critical"
 
 
 def test_no_phi_scores_low_band() -> None:
@@ -159,7 +165,7 @@ def test_no_phi_scores_low_band() -> None:
 
 def test_normalize_score_caps_at_100() -> None:
     assert normalize_score(0) == 0.0
-    assert normalize_score(27) == 100.0  # every defined flag once
+    assert normalize_score(71) == 100.0  # every defined flag once (sum of weights)
     assert normalize_score(1000) == 100.0  # capped
     assert risk_band(0.0) == "low"
     assert risk_band(50.0) == "medium"

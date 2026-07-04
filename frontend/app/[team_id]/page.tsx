@@ -33,6 +33,8 @@ const SCAN_TYPE_LABELS: Record<string, string> = {
   sbom_sca: "SBOM/SCA",
   agent_discovery: "Agent Discovery",
   dast: "DAST",
+  cbom: "CBOM",
+  ai_bom: "AI BOM",
 };
 
 /** Blue shades for chart fills (light to dark) */

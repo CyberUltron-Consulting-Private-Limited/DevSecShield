@@ -1,0 +1,963 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "f18af7b7-5ba4-4399-ba2a-2c3121443a8c",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:29:21Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T05:29:28Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "AnshSinghal-CyberUltron/DevSecShield": {
+        "source_name": "AnshSinghal-CyberUltron/DevSecShield",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic",
+        "components": {
+          "model": [
+            {
+              "name": "gpt-4o",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+              "line_number": 20,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "gpt-4o",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-4o' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                    "start_line": 20,
+                    "end_line": 20,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "gpt",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py"
+                ]
+              },
+              "instance_id": "gpt-4o_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py_20",
+              "confidence": 1.0
+            },
+            {
+              "name": "claude-3-5-sonnet-20241022",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+              "line_number": 21,
+              "framework": "anthropic",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "claude-3-5-sonnet-20241022",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'claude-3-5-sonnet-20241022' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                    "start_line": 21,
+                    "end_line": 21,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://docs.anthropic.com/en/docs/about-claude/models",
+                "provider": "anthropic",
+                "family": "claude-3-5-sonnet",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "builtin",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py"
+                ]
+              },
+              "instance_id": "claude-3-5-sonnet-20241022_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py_21",
+              "confidence": 1.0
+            },
+            {
+              "name": "all-MiniLM-L6-v2",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+              "line_number": 22,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "all-MiniLM-L6-v2",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'all-MiniLM-L6-v2' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                    "start_line": 22,
+                    "end_line": 22,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=all-MiniLM-L6-v2",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py"
+                ]
+              },
+              "instance_id": "all-MiniLM-L6-v2_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py_22",
+              "confidence": 0.4
+            }
+          ],
+          "dependency": [
+            {
+              "name": "torch",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt",
+              "line_number": 3,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'torch' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt",
+                    "start_line": 3,
+                    "end_line": 3,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "2.2.0         # BSD-3-Clause",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "vulnerabilities": [
+                  {
+                    "id": "GHSA-3749-ghw9-m3mg",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-47fc-vmwq-366v",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-53q9-r3pm-6pq6",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-5pcm-hx3q-hm94",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-887c-mr87-cxwp",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-c678-jfcj-6jmf",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-f4hp-rmr7-r7v8",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-pg7h-5qx3-wjr3",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-qfhq-4f3w-5fph",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-rrmf-rvhw-rf47",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-vgrw-7cvw-pwgx",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "GHSA-x3gm-94wq-g975",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2022-43015",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2024-250",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2024-251",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2024-252",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2024-259",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-189",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-190",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-191",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-192",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-193",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-194",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-195",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-196",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-197",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-198",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-203",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-204",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-205",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-206",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-207",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-208",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-209",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-210",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2025-41",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  },
+                  {
+                    "id": "PYSEC-2026-139",
+                    "summary": "",
+                    "severity": "info",
+                    "cvss_score": 0.0,
+                    "affected_package": "torch",
+                    "affected_version": "2.2.0         # BSD-3-Clause",
+                    "fixed_version": "",
+                    "source": "osv",
+                    "url": ""
+                  }
+                ],
+                "risk_flag": {
+                  "flag": "vulnerable_dependency:torch",
+                  "severity": "info",
+                  "weight": 1,
+                  "description": "37 known vulnerabilities in torch 2.2.0         # BSD-3-Clause"
+                },
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt",
+                    "line": 3,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "torch_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt_3",
+              "confidence": 1.0
+            },
+            {
+              "name": "chromadb",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt",
+              "line_number": 6,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'chromadb' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt",
+                    "start_line": 6,
+                    "end_line": 6,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.5.0      # Apache-2.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt"
+                ]
+              },
+              "instance_id": "chromadb_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/requirements.txt_6",
+              "confidence": 1.0
+            }
+          ],
+          "model_artifact": [
+            {
+              "name": "model.safetensors",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/model.safetensors",
+              "line_number": 0,
+              "framework": "safetensors",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'model.safetensors' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/model.safetensors",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_format": "safetensors",
+                "file_size_bytes": 0,
+                "file_extension": ".safetensors",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/model.safetensors"
+                ]
+              },
+              "instance_id": "model.safetensors_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/model.safetensors_0",
+              "confidence": 1.0
+            }
+          ],
+          "secret": [
+            {
+              "name": "env:ANTHROPIC_API_KEY",
+              "component_type": "secret",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+              "line_number": 25,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env:ANTHROPIC_API_KEY' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                    "start_line": 25,
+                    "end_line": 25,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env": "ANTHROPIC_API_KEY",
+                "env_context": "api_key_kwarg",
+                "unresolved_env_var": "ANTHROPIC_API_KEY",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py"
+                ]
+              },
+              "instance_id": "env:ANTHROPIC_API_KEY_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py_25",
+              "confidence": 0.3
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 7,
+          "last_generated_at": "2026-06-26T05:29:28Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/AnshSinghal-CyberUltron/DevSecShield",
+          "source_ref_version": "1de6e2767f8debd340ab77e7b49d46ea38feef41",
+          "elapsed_s": 5.85,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 7,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "model": 3,
+        "dependency": 2,
+        "model_artifact": 1,
+        "secret": 1
+      },
+      "total_relationships": 0,
+      "risk_score": 55,
+      "risk_severity": "high"
+    },
+    "risk": {
+      "score": 55,
+      "severity": "high",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+          "line_number": 20,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                "start_line": 20,
+                "end_line": 20,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+          "line_number": 22,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                "start_line": 22,
+                "end_line": 22,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+          "line_number": 25,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/00-synthetic/app.py",
+                "start_line": 25,
+                "end_line": 25,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

@@ -1,5 +1,12 @@
-/** OWASP Top 10 for LLM enum key → display value (matches backend OWASPTop10LLM enum) */
+/**
+ * OWASP Top 10 for LLM key → display value.
+ * Two key forms are accepted so both producers render correctly:
+ *  - legacy platform enum names (the LLM scan type's OWASPTop10LLM enum), and
+ *  - the AI-BOM adapter's real OWASP-LLM-2025 short codes (LLM01..LLM10), whose
+ *    2025 meanings differ from the legacy enum (LLM06 = Excessive Agency, etc.).
+ */
 export const OWASP_LLM_KEY_TO_LABEL: Record<string, string> = {
+  // legacy platform enum (LLM scan type) — unchanged
   PROMPT_INJECTION: "LLM01:2025 - Prompt Injection",
   INSECURE_OUTPUT_HANDLING: "LLM02:2025 - Insecure Output Handling",
   TRAINING_DATA_POISONING: "LLM03:2025 - Training Data Poisoning",
@@ -10,6 +17,17 @@ export const OWASP_LLM_KEY_TO_LABEL: Record<string, string> = {
   EXCESSIVE_AGENCY: "LLM08:2025 - Excessive Agency",
   OVERRELIANCE: "LLM09:2025 - Overreliance",
   MODEL_THEFT: "LLM10:2025 - Model Theft",
+  // AI-BOM real OWASP-LLM-2025 codes (aibom.owasp.OWASP_LLM_LABELS)
+  LLM01: "LLM01:2025 - Prompt Injection",
+  LLM02: "LLM02:2025 - Sensitive Information Disclosure",
+  LLM03: "LLM03:2025 - Supply Chain",
+  LLM04: "LLM04:2025 - Data and Model Poisoning",
+  LLM05: "LLM05:2025 - Improper Output Handling",
+  LLM06: "LLM06:2025 - Excessive Agency",
+  LLM07: "LLM07:2025 - System Prompt Leakage",
+  LLM08: "LLM08:2025 - Vector and Embedding Weaknesses",
+  LLM09: "LLM09:2025 - Misinformation",
+  LLM10: "LLM10:2025 - Unbounded Consumption",
 };
 
 /** OWASP Top 10 enum key → display value (matches backend OWASPTop10 enum) */

@@ -1,0 +1,8 @@
+{
+  "model_architecture": "DemoNet",
+  "approach": "supervised",
+  "task": "classification",
+  "inputs": ["DICOM DX image"],
+  "outputs": ["risk score"],
+  "framework": "pytorch"
+}

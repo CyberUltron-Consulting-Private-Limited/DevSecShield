@@ -72,6 +72,12 @@ def scan_repo(
     )
     result.sort()  # deterministic, golden-stable edge/flag ordering
     score_result(result, weights_path)  # writes result.scores
+    # OWASP-LLM mapping is a pure, cheap projection of components+flags; populate
+    # it on every scan so result.owasp is always available (imported here to keep
+    # the module graph acyclic and the core pipeline thin).
+    from aibom.owasp import annotate as annotate_owasp
+
+    annotate_owasp(result)  # writes result.owasp
     return result
 
 

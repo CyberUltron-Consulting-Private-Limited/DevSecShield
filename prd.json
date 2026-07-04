@@ -1,0 +1,339 @@
+{
+  "feature": "DevSecShield CBOM best-of-breed: clean-room re-implement the best techniques of every leading OSS CBOM tool, extend backend + frontend, benchmark vs the OSS oracles",
+  "branchName": "feat/cbom-best-of-breed",
+  "notes": "Ralph picks the lowest-priority story with passes:false whose dependencies are all passes:true. RESEARCH (Rx) stories produce docs/cbom-research/LEDGER.md provenance rows + may APPEND new BUILD stories. BUILD stories (Cx) clean-room implement ONE capability into aibom/src/aibom/cbom/ + tests + bench/cbom differential gate. FRONTEND (Fx) extend CbomResults.tsx + charts + sidebar matching the existing theme. BENCH/CI (Bx) extend oracles + gates. HARD RULE: product ships NO OSS BOM tool; OSS tools are oracles in bench/cbom only; techniques are re-implemented clean-room (spec/behavior, never copied code); no runtime LLM in product; tri-state compliance; hand-built CycloneDX 1.6 crypto-asset.",
+  "userStories": [
+    {
+      "id": "R1",
+      "priority": 1,
+      "dependencies": [],
+      "passes": true,
+      "title": "Research IBM CBOMkit / cbomkit-theia + Sonar-Cryptography: architecture, detection model, CycloneDX output; write ledger + gap-list vs our lane"
+    },
+    {
+      "id": "R2",
+      "priority": 2,
+      "dependencies": [
+        "R1"
+      ],
+      "passes": true,
+      "title": "Research multi-language AST crypto-API detection + library/API->asset maps (OpenSSL/BouncyCastle/PyCA/Go-crypto/WebCrypto/JCA/.NET/RustCrypto); design our clean-room rule model"
+    },
+    {
+      "id": "R3",
+      "priority": 3,
+      "dependencies": [
+        "R1"
+      ],
+      "passes": true,
+      "title": "Research certificate/protocol/related-crypto-material depth + weakness catalogs (weak primitives, ECB, static IV/nonce, hardcoded keys, weak RNG, cert weaknesses)"
+    },
+    {
+      "id": "R4",
+      "priority": 4,
+      "dependencies": [
+        "R1"
+      ],
+      "passes": true,
+      "title": "Research PQC grading + standards (CNSA 2.0, FIPS 203/204/205, NIST PQC migration, nistQuantumSecurityLevel, quantum-vulnerable classification)"
+    },
+    {
+      "id": "R5",
+      "priority": 5,
+      "dependencies": [
+        "R1"
+      ],
+      "passes": true,
+      "title": "Research compliance frameworks (NIST SP 1800-38B/C, SP 800-57, FIPS 140-3, OMB M-23-02, EU CRA, DORA, PCI-DSS 4.0 crypto, BSI TR-02102); map each to graph-queryable checks"
+    },
+    {
+      "id": "C1",
+      "priority": 6,
+      "dependencies": [
+        "R2"
+      ],
+      "passes": true,
+      "title": "Clean-room AST crypto-API scanner core + detection-rule model (Python first): emit algorithm/related-material components with params (keysize/mode/padding/curve)"
+    },
+    {
+      "id": "C2",
+      "priority": 7,
+      "dependencies": [
+        "C1"
+      ],
+      "passes": true,
+      "title": "Extend AST crypto-API scanner to Java + Go (BouncyCastle/JCA, crypto + x/crypto) with library->asset maps"
+    },
+    {
+      "id": "C3",
+      "priority": 8,
+      "dependencies": [
+        "C1"
+      ],
+      "passes": true,
+      "title": "Extend AST crypto-API scanner to JS/TS (Node crypto/WebCrypto) + C/C++ (OpenSSL) + Rust (ring/RustCrypto) + .NET"
+    },
+    {
+      "id": "C4",
+      "priority": 9,
+      "dependencies": [
+        "R3"
+      ],
+      "passes": true,
+      "title": "Certificate depth scanner: x509 fields, chain, expiry, weak sig algos, key size, self-signed-in-prod; emit certificate crypto-assets"
+    },
+    {
+      "id": "C5",
+      "priority": 10,
+      "dependencies": [
+        "R3"
+      ],
+      "passes": false,
+      "title": "Protocol scanner: TLS/SSH/IPsec versions + cipher suites from config/source; emit protocol crypto-assets with weakness flags"
+    },
+    {
+      "id": "C6",
+      "priority": 11,
+      "dependencies": [
+        "R3"
+      ],
+      "passes": false,
+      "title": "Related-crypto-material + weakness analysis: hardcoded keys/IV/nonce/salt, weak RNG, ECB mode, deprecated primitives; emit flags + edges"
+    },
+    {
+      "id": "C7",
+      "priority": 12,
+      "dependencies": [
+        "R4"
+      ],
+      "passes": false,
+      "title": "PQC readiness: nistQuantumSecurityLevel grading, quantum-vulnerable flagging, ML-KEM/ML-DSA/SLH-DSA detection, hybrid + migration roadmap"
+    },
+    {
+      "id": "C8",
+      "priority": 13,
+      "dependencies": [
+        "R5"
+      ],
+      "passes": false,
+      "title": "Expanded tri-state compliance frameworks (graph-queried, coverage = pass/(pass+fail)); add the frameworks from R5"
+    },
+    {
+      "id": "C9",
+      "priority": 14,
+      "dependencies": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7"
+      ],
+      "passes": false,
+      "title": "Harden hand-built CycloneDX 1.6 crypto-asset emission + dependency graph (cryptoRefArray) across all new asset types; schema-valid"
+    },
+    {
+      "id": "I1",
+      "priority": 15,
+      "dependencies": [
+        "C8",
+        "C9"
+      ],
+      "passes": false,
+      "title": "Worker route + scan-metadata contract: surface all new CBOM capabilities (distributions/compliance/scores/graph) through get_scan_metadata to the results page"
+    },
+    {
+      "id": "F1",
+      "priority": 16,
+      "dependencies": [
+        "I1"
+      ],
+      "passes": false,
+      "title": "Frontend: new asset-type + weakness-breakdown + dependency-graph visualizations in CbomResults, matching the existing scanner theme/charts/palette"
+    },
+    {
+      "id": "F2",
+      "priority": 17,
+      "dependencies": [
+        "I1"
+      ],
+      "passes": false,
+      "title": "Frontend: PQC readiness gauge + quantum-vulnerable list + migration-roadmap panel"
+    },
+    {
+      "id": "F3",
+      "priority": 18,
+      "dependencies": [
+        "I1"
+      ],
+      "passes": false,
+      "title": "Frontend: expanded compliance tri-state matrix + options sidebar controls (level/frameworks/language toggles)"
+    },
+    {
+      "id": "B1",
+      "priority": 19,
+      "dependencies": [
+        "C9",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18",
+        "C19",
+        "C20",
+        "C21",
+        "C22"
+      ],
+      "passes": false,
+      "title": "Extend bench/cbom oracles (add Sonar-Cryptography and/or cryptobom-forge as oracles) + refresh frozen baselines + differential gate (true-miss==0, our-unique>0)"
+    },
+    {
+      "id": "B2",
+      "priority": 20,
+      "dependencies": [
+        "F1",
+        "F2",
+        "F3",
+        "B1"
+      ],
+      "passes": false,
+      "title": "CI gates + nightly + regression lock + full live e2e (frontend + backend) for the extended CBOM scanner"
+    },
+    {
+      "id": "C10",
+      "priority": 21,
+      "dependencies": [
+        "R1",
+        "C1"
+      ],
+      "passes": false,
+      "title": "Algorithm OID enrichment (clean-room re R1 row 3 / Sonar enricher): deterministic algorithm->OID known-crypto KB; emit CycloneDX 1.6 cryptoProperties.oid so assets canonicalize/dedup on OID; bench parity vs oracle OID-keyed assets"
+    },
+    {
+      "id": "C11",
+      "priority": 22,
+      "dependencies": [
+        "R1",
+        "C5"
+      ],
+      "passes": false,
+      "title": "Environment-restriction executability (clean-room re R1 row 7 / theia java.security+opensslconf): parse java.security jdk.tls.disabledAlgorithms + openssl.cnf; mark detected assets crypto:executable=false + crypto:confidence + DISABLED_BY_POLICY flag"
+    },
+    {
+      "id": "C12",
+      "priority": 23,
+      "dependencies": [
+        "R1",
+        "C4"
+      ],
+      "passes": false,
+      "title": "Certificate trust analysis (clean-room re R1 row 8 / theia problematic-CA): known-bad/distrusted-CA KB -> UNTRUSTED_CA flag; self-signed-in-prod severity in the cert lane"
+    },
+    {
+      "id": "C13",
+      "priority": 24,
+      "dependencies": [
+        "R1",
+        "C2"
+      ],
+      "passes": false,
+      "title": "Cross-call crypto dataflow linker (clean-room re R1 row 2 / Sonar rule-dependencies): link a separately-defined key size/curve to the cipher/signature that consumes the same variable; split composed transformation strings (AES/CBC/PKCS5Padding) into algorithm+mode+padding"
+    },
+    {
+      "id": "C14",
+      "priority": 25,
+      "dependencies": [
+        "R2",
+        "C1"
+      ],
+      "passes": false,
+      "title": "Library-keyed detection-context rule model (clean-room re R2 row 11 / Sonar engine): data-driven (library, symbol)->{primitive_context, algorithm, param_extractors} corpus; resolve primitive ROLE from the entry-point (MessageDigest vs Signature), stamp crypto:detectedBy=<library> + confidence"
+    },
+    {
+      "id": "C15",
+      "priority": 26,
+      "dependencies": [
+        "R2",
+        "C3"
+      ],
+      "passes": false,
+      "title": "High-level construction decomposition (clean-room re R2 row 12 / libsodium+Fernet+JWT): expand crypto_secretbox/box/sign/pwhash + Fernet + JWT alg into constituent primitive crypto-assets + a relatedTo edge to the construction asset"
+    },
+    {
+      "id": "C16",
+      "priority": 27,
+      "dependencies": [
+        "R2",
+        "C1"
+      ],
+      "passes": false,
+      "title": "Padding-scheme capture (clean-room re R2 row 13 / Sonar transformation split + CycloneDX algorithmProperties.padding): extract_padding (JCA 3rd field, pyca padding.*, WebCrypto RSA-OAEP, .NET RSAEncryptionPadding) -> crypto:padding + WEAK_PADDING flag for PKCS1v1.5/NoPadding"
+    },
+    {
+      "id": "C17",
+      "priority": 28,
+      "dependencies": [
+        "R3",
+        "C1"
+      ],
+      "passes": false,
+      "title": "KDF / password-hashing work-factor scanner (clean-room re R3 row 18 / OWASP Password Storage + CWE-916/759/760): detect PBKDF2/bcrypt/scrypt/Argon2/pwhash calls, bind iteration/cost/memory/salt params, emit KDF algorithm asset with crypto:iterations/costFactor/memoryKiB; raise WEAK_KDF_PARAMS below OWASP floors (PBKDF2<600k or HMAC-SHA1, bcrypt<10, scrypt N<2^17, Argon2 mem<19MiB/non-id) + MISSING_SALT (CWE-759/760)"
+    },
+    {
+      "id": "C18",
+      "priority": 29,
+      "dependencies": [
+        "R4",
+        "C7"
+      ],
+      "passes": false,
+      "title": "Quantum-weakened symmetric/hash + harvest-now-decrypt-later (clean-room re R4 row 21 / Grover + CNSA 2.0 symmetric-hash floor + NIST PQC FAQ): weakness.py raises QUANTUM_WEAKENED_SYMMETRIC (Low) for symmetric/hash below the CNSA-2.0 floor (AES-128/3DES->AES-256, SHA-1/SHA-256-for-storage->SHA-384+) and HARVEST_NOW_DECRYPT_LATER (Medium) on a confidentiality asset reachable from a quantum-vulnerable key-establishment edge; scanner enriches the category, scorer weights the verdict"
+    },
+    {
+      "id": "C19",
+      "priority": 30,
+      "dependencies": [
+        "R4",
+        "C7",
+        "C8"
+      ],
+      "passes": false,
+      "title": "CNSA 2.0 tri-state PQC compliance framework (clean-room re R4 row 23(c) / NSA CNSA 2.0 FAQ): graph-queried checks (key-establishment==ML-KEM-1024, signatures==ML-DSA-87, firmware-signing in {ML-DSA-87,LMS,XMSS}, symmetric==AES-256, hashing in {SHA-384,SHA-512}); coverage = pass/(pass+fail); per-category 2027/2030/2033 deadline annotation; distinct from the generic R5/C8 frameworks"
+    },
+    {
+      "id": "C20",
+      "priority": 31,
+      "dependencies": [
+        "R5",
+        "C7"
+      ],
+      "passes": false,
+      "title": "FIPS 140-3 approved-algorithm compliance framework (tri-state, graph-queried): approved-primitive allow-list (SP 800-140C) + banned-algorithm deny-list + key-size/curve/ECB checks; CMVP cert#/FIPS-mode/self-tests/entropy as register_manual"
+    },
+    {
+      "id": "C21",
+      "priority": 32,
+      "dependencies": [
+        "R5",
+        "C7"
+      ],
+      "passes": false,
+      "title": "PCI-DSS 4.0.1 strong-cryptography compliance framework (tri-state, graph-queried): effective-strength floor (AES128/RSA2048/ECC224) + no weak algos + TLS 1.2+ transport + trusted transmission certs + no hardcoded keys; key lifecycle/HSM/disk-encryption as register_manual"
+    },
+    {
+      "id": "C22",
+      "priority": 33,
+      "dependencies": [
+        "R5",
+        "C7"
+      ],
+      "passes": false,
+      "title": "BSI TR-02102 recommendations compliance framework (tri-state, graph-queried): SEPARATE 3000-bit asymmetric floor (stricter than NIST-2048) + Brainpool curves + SHA>=256 + AES-only + ECB ban + TLS-PFS/version; RNG class/ephemeral-key-deletion/side-channel as register_manual"
+    }
+  ]
+}

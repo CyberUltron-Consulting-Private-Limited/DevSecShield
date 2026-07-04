@@ -1,0 +1,5 @@
+{
+  "synthetic": {"fixture": "tests/fixtures/synthetic-ai-app", "hermetic": true},
+  "hf-model":  {"url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2", "sha": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41", "subdir": ".", "nolfs": true},
+  "tf-bedrock":{"url": "https://github.com/aws-ia/terraform-aws-bedrock", "sha": "4b74b7dd5110292cb34ca911448581153484f13f", "subdir": "."}
+}

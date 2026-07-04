@@ -22,10 +22,26 @@ if TYPE_CHECKING:
 # the sanctioned baseline and is never shadow-flagged.
 SHADOW_KINDS = frozenset(
     {
-        "agent", "tool", "mcp_server", "mcp_client", "guardrail", "orchestrator",
-        "plugin", "vector_store", "knowledge_base", "retriever", "reranker",
-        "embedding_model", "notebook", "container", "cloud_service", "endpoint",
-        "registry", "pipeline", "fine_tuning", "evaluation",
+        "agent",
+        "tool",
+        "mcp_server",
+        "mcp_client",
+        "guardrail",
+        "orchestrator",
+        "plugin",
+        "vector_store",
+        "knowledge_base",
+        "retriever",
+        "reranker",
+        "embedding_model",
+        "notebook",
+        "container",
+        "cloud_service",
+        "endpoint",
+        "registry",
+        "pipeline",
+        "fine_tuning",
+        "evaluation",
     }
 )
 

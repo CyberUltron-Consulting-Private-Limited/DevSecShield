@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from aibom.compliance.base import ADVISORY_DISCLAIMER, checks_for
+from aibom.compliance.base import (
+    ADVISORY_DISCLAIMER,
+    CheckResult,
+    applicability_for,
+    checks_for,
+)
 from aibom.model.result import ScanResult
 
 # Canonical framework keys (must match Requirement.framework) + CLI aliases.
@@ -31,23 +36,51 @@ def resolve_framework(name: str) -> str:
         return name
     if name in ALIASES:
         return ALIASES[name]
-    raise KeyError(
-        f"unknown framework {name!r}; choose: {', '.join(ALIASES)} | all"
-    )
+    raise KeyError(f"unknown framework {name!r}; choose: {', '.join(ALIASES)} | all")
 
 
-def run_framework(result: ScanResult, framework: str) -> dict[str, Any]:
-    """Run one framework's checks; return its {pass,fail,na,coverage,requirements}."""
-    n_pass = n_fail = n_na = 0
+#: The five distinct verdict states (coverage uses pass + pass_with_evidence).
+_STATES = (
+    "pass",
+    "pass_with_evidence",
+    "fail",
+    "out_of_scope",
+    "not_bom_evidenceable",
+    "na",
+)
+
+
+def run_framework(
+    result: ScanResult,
+    framework: str,
+    evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run one framework; return {pass, pass_with_evidence, fail, out_of_scope,
+    not_bom_evidenceable, na, coverage, requirements}.
+
+    APPLICABILITY: if the framework's predicate is False (e.g. GMLP on an artifact
+    with no clinical model), EVERY requirement is ``out_of_scope`` — never fail,
+    never a generic na. EVIDENCE: an uploaded attestation keyed by requirement id
+    flips a ``not_bom_evidenceable`` verdict to ``pass_with_evidence``.
+    """
+    evidence = evidence or {}
+    gate = applicability_for(framework)
+    oos_reason = gate[1] if (gate is not None and not gate[0](result)) else None
+
+    counts = dict.fromkeys(_STATES, 0)
     requirements: list[dict[str, Any]] = []
     for requirement, check in checks_for(framework):
-        cr = check(result, requirement)
-        if cr.verdict == "pass":
-            n_pass += 1
-        elif cr.verdict == "fail":
-            n_fail += 1
+        if oos_reason is not None:
+            cr = CheckResult("out_of_scope", oos_reason)
         else:
-            n_na += 1
+            cr = check(result, requirement)
+            if cr.verdict == "not_bom_evidenceable" and requirement.id in evidence:
+                cr = CheckResult(
+                    "pass_with_evidence",
+                    f"attested: {evidence[requirement.id]}",
+                    cr.refs,
+                )
+        counts[cr.verdict] = counts.get(cr.verdict, 0) + 1
         requirements.append(
             {
                 "id": requirement.id,
@@ -56,26 +89,39 @@ def run_framework(result: ScanResult, framework: str) -> dict[str, Any]:
                 "verdict": cr.verdict,
                 "evidence": cr.evidence,
                 "refs": list(cr.refs),
+                "attestable": cr.verdict
+                in ("not_bom_evidenceable", "pass_with_evidence"),
             }
         )
-    applicable = n_pass + n_fail
+    n_pass = counts["pass"] + counts["pass_with_evidence"]  # evidence counts as pass
+    applicable = n_pass + counts["fail"]
     coverage = round(n_pass / applicable, 3) if applicable else None
     return {
-        "pass": n_pass,
-        "fail": n_fail,
-        "na": n_na,
-        "coverage": coverage,  # None when 0 applicable
+        "pass": counts["pass"],
+        "pass_with_evidence": counts["pass_with_evidence"],
+        "fail": counts["fail"],
+        "out_of_scope": counts["out_of_scope"],
+        "not_bom_evidenceable": counts["not_bom_evidenceable"],
+        "na": counts["na"],
+        "coverage": coverage,  # pass/(pass+fail); None when 0 applicable
         "requirements": requirements,
     }
 
 
-def run_all(result: ScanResult) -> dict[str, Any]:
+def run_all(
+    result: ScanResult, evidence: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """Run every framework, write ``result.compliance`` in place, and return it.
 
-    Importing :mod:`aibom.compliance` (done by the CLI) self-registers all five
-    framework modules before this runs.
+    ``evidence`` is an optional ``{framework: {requirement_id: attestation}}`` map
+    of uploaded attestations that flip ``not_bom_evidenceable`` requirements to
+    ``pass_with_evidence``. Importing :mod:`aibom.compliance` self-registers all
+    five framework modules before this runs.
     """
-    report: dict[str, Any] = {fw: run_framework(result, fw) for fw in FRAMEWORKS}
+    evidence = evidence or {}
+    report: dict[str, Any] = {
+        fw: run_framework(result, fw, evidence.get(fw)) for fw in FRAMEWORKS
+    }
     report["disclaimer"] = ADVISORY_DISCLAIMER
     result.compliance = report
     return report

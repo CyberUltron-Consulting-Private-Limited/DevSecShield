@@ -1,0 +1,534 @@
+{
+  "feature": "Fix AI BOM and build/fix CBOM in DevSecShield end-to-end (backend + frontend)",
+  "branchName": "fix/devsecshield-aibom-cbom",
+  "notes": "RECONCILED 2026-06-29: the AIBOM track (F1,F2,F4,A1-A13,B1) is ALREADY built + CI-locked this session \u2014 those stories are passes:true; Ralph starts at F3. CBOM (F3,C1-C10) = RECONCILE the existing worker cbom_agent into the aibom/ lane design (not build fresh). Stories are right-sized for one context window each. Ralph picks the lowest-priority-number story with passes:false whose dependencies are all passes:true. Honor the Ruflo memory contract (lanes, Bedrock-only LLM, no-OSS-in-product, tri-state compliance, match-don't-invent).",
+  "userStories": [
+    {
+      "id": "F1",
+      "epic": "foundations",
+      "title": "AIBOM synthetic labeled fixture + expected-assets manifest",
+      "priority": 1,
+      "passes": true,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "tests/fixtures/synthetic-ai-app/ contains requirements.txt (numpy, torch, requests, pydantic, chromadb with known licenses), app.py importing openai/anthropic/langchain with model literals 'gpt-4o'/'claude-3-5-sonnet-20241022'/'all-MiniLM-L6-v2', a ChromaDB client, a planted FAKE secret sk-FAKE-DO-NOT-USE-..., and a 0-byte model.safetensors",
+        "expected_assets.json states exact ground truth: 3 model references, 3 providers, 1 framework, 1 secret, 1 model file, 5 resolved library licenses",
+        "A test loads the manifest and asserts its internal consistency"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "F2",
+      "epic": "foundations",
+      "title": "AIBOM synthetic clinical SaMD fixture (for tri-state compliance)",
+      "priority": 2,
+      "passes": true,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "tests/fixtures/synthetic-clinical-samd/ has a chest-X-ray model with a model card (architecture, AUROC), a trained_on edge to a de-identified dataset, a deployed_at site, and an intended-use statement",
+        "Enough graph facts exist for GMLP/EU/FDA checks to produce real pass/fail later"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "F3",
+      "epic": "foundations",
+      "title": "CBOM synthetic labeled fixture + manifest (crypto assets)",
+      "priority": 3,
+      "passes": false,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "tests/fixtures/synthetic-crypto-app/ uses RSA-2048, AES-256-GCM, SHA-256 (strong) AND MD5, DES, RC4, ECB, RSA-1024 (weak); includes a self-signed cert.pem, a TLS 1.0 config, and a hardcoded private key",
+        "expected_crypto.json manifest lists exact ground truth per asset category (algorithm/certificate/protocol/related-crypto-material) and which are weak/quantum-vulnerable"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "F4",
+      "epic": "foundations",
+      "title": "Deterministic enrichment interface + known-model KB (no product LLM)",
+      "priority": 4,
+      "passes": true,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "aibom/enrich/ defines a provider interface for model-name/model-card enrichment with a DETERMINISTIC default backed by a known-model knowledge base (regex/AST + KB lookups) \u2014 no runtime LLM, no service credentials",
+        "The interface allows a future LLM provider (Anthropic API or Bedrock) to be added later without touching callers; product code calls no LLM",
+        "Tests assert KB-only enrichment works with no network or credentials"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A1",
+      "epic": "aibom-backend",
+      "title": "Secret scanner (HARDCODED_SECRET)",
+      "priority": 10,
+      "passes": true,
+      "dependencies": [
+        "F1"
+      ],
+      "acceptanceCriteria": [
+        "scan/ registry entry detects sk-*, sk-ant-*, hf_*, AKIA*, and high-entropy key assignments; emits HARDCODED_SECRET flag severity high",
+        "Detects the planted key in the synthetic fixture exactly once; none in the clinical fixture"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A2",
+      "epic": "aibom-backend",
+      "title": "Canonical model node type + used-vs-catalog dedupe (keystone)",
+      "priority": 11,
+      "passes": true,
+      "dependencies": [
+        "F1"
+      ],
+      "acceptanceCriteria": [
+        "Models from the scanner become the canonical model node type the compliance checks query (fixes 'no model component')",
+        "A model name in a provider's supported-model registry is tagged catalog, not used; dedupe applied",
+        "On chroma the model count drops from the inflated ~46 toward the true used count; a graph query returns the model nodes"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A3",
+      "epic": "aibom-backend",
+      "title": "Model graph edges + integrity (fix supply-chain graph)",
+      "priority": 12,
+      "passes": true,
+      "dependencies": [
+        "A2"
+      ],
+      "acceptanceCriteria": [
+        "model--served_by-->provider, model--depends_on-->framework, model--trained_on-->dataset edges are created where evidence exists",
+        "Graph-integrity test: zero orphan model nodes; the AI Supply-Chain Graph renders correctly"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A4",
+      "epic": "aibom-backend",
+      "title": "License resolver split (libs vs model refs) \u2014 fix 53 unlicensed",
+      "priority": 13,
+      "passes": true,
+      "dependencies": [
+        "A2"
+      ],
+      "acceptanceCriteria": [
+        "Library licenses resolved via PyPI JSON / importlib.metadata (numpy->BSD, torch->BSD, requests->Apache, pydantic->MIT, chromadb->Apache)",
+        "Model references get a distinct 'model-license-unknown' finding (or known-model license), never counted as 'unlicensed'",
+        "On the synthetic fixture unlicensed-count is 0; on chroma it drops to true unknowns and governance lifts off 0%"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A5",
+      "epic": "aibom-backend",
+      "title": "Model-card enrichment (known-model KB, deterministic)",
+      "priority": 14,
+      "passes": true,
+      "dependencies": [
+        "A2",
+        "F4"
+      ],
+      "acceptanceCriteria": [
+        "all-MiniLM-L6-v2 card populates approach/task/architectureFamily/modelArchitecture/lineage from the KB (no LLM)",
+        "Unknown models leave '\u2014' gracefully with no LLM call; the provider interface allows an LLM fallback to be added later if a customer requires it"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A6",
+      "epic": "aibom-backend",
+      "title": "Scorer recalibration (flag stacking + severity bands) \u2014 fix all-low risk",
+      "priority": 15,
+      "passes": true,
+      "dependencies": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "acceptanceCriteria": [
+        "config/risk-weights.yaml + scorer: per-component flags stack; score maps to severity bands; every finding carries severity",
+        "Calibration: hardcoded secret->high/critical; unsanctioned external model w/o card->medium; unknown-license lib->medium; vector store->low/info",
+        "Synthetic fixture yields >=1 finding in EACH severity band; chroma is no longer all-low"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A7",
+      "epic": "aibom-backend",
+      "title": "OWASP LLM Top 10 mapper",
+      "priority": 16,
+      "passes": true,
+      "dependencies": [
+        "A1",
+        "A2"
+      ],
+      "acceptanceCriteria": [
+        "Pure finding-type->LLM0x mapper + ScanResult.owasp distribution (ChromaDB->LLM08, hardcoded secret->LLM02, unknown-license dep->LLM03, agent w/ tools->LLM06, endpoint w/o rate limit->LLM10)",
+        "Synthetic fixture asserts the expected categories; chroma shows non-empty OWASP {LLM03, LLM08, ...}"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A8",
+      "epic": "aibom-backend",
+      "title": "Normalizer carry-through (no flatten)",
+      "priority": 17,
+      "passes": true,
+      "dependencies": [
+        "A6",
+        "A7"
+      ],
+      "acceptanceCriteria": [
+        "normalize -> API response carries per-finding severity, the OWASP distribution, compliance {framework->verdict + per-requirement}, and the asset-type/provider/license/risk-category/risk-per-finding distributions",
+        "A test asserts none of these are dropped (the flattening regression cannot recur)"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A9",
+      "epic": "aibom-backend",
+      "title": "Compliance tri-state + clinical pass/fail",
+      "priority": 18,
+      "passes": true,
+      "dependencies": [
+        "A2",
+        "A3",
+        "A5",
+        "F2"
+      ],
+      "acceptanceCriteria": [
+        "Verdicts are OUT_OF_SCOPE / NOT_BOM_EVIDENCEABLE / pass-fail; coverage%=pass/(pass+fail), others counted separately",
+        "Clinical fixture yields real pass/fail across GMLP/EU/FDA; chroma shows GMLP/FDA/HIPAA as OUT_OF_SCOPE (not fail), NIST + supply-chain as pass/fail"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A10",
+      "epic": "aibom-backend",
+      "title": "Evidence-attachment mechanism",
+      "priority": 19,
+      "passes": true,
+      "dependencies": [
+        "A9"
+      ],
+      "acceptanceCriteria": [
+        "A requirement can be satisfied by an uploaded attestation, flipping NOT_BOM_EVIDENCEABLE -> pass-with-evidence",
+        "Data path + minimal UI affordance; a test asserts the flip"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A11",
+      "epic": "aibom-frontend",
+      "title": "Bind empty charts batch 1 (theme-consistent)",
+      "priority": 20,
+      "passes": true,
+      "dependencies": [
+        "A8"
+      ],
+      "acceptanceCriteria": [
+        "Asset Types, Providers, License Distribution, Risk Categories charts bind to the populated fields using the existing DevSecShield chart library + severity palette",
+        "Verify in browser using dev-browser skill: all four render non-empty on a chroma scan"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A12",
+      "epic": "aibom-frontend",
+      "title": "Bind empty charts batch 2 (theme-consistent)",
+      "priority": 21,
+      "passes": true,
+      "dependencies": [
+        "A8"
+      ],
+      "acceptanceCriteria": [
+        "Risk Scores per Finding, OWASP LLM Top 10, Compliance Controls, Risk by Component charts bind to populated fields, matching theme",
+        "Verify in browser: all four render non-empty; OWASP shows {LLM03, LLM08, ...}; Compliance shows tri-state"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "A13",
+      "epic": "aibom-frontend",
+      "title": "AIBOM chart-data-contract tests (regression guard)",
+      "priority": 22,
+      "passes": true,
+      "dependencies": [
+        "A11",
+        "A12"
+      ],
+      "acceptanceCriteria": [
+        "Scanning the synthetic fixture (>=1 finding/severity, >=1 OWASP category, >=1 compliance gap) asserts the API carries non-empty severity[]/owasp[]/compliance[] + all distributions AND the rendered charts are non-empty",
+        "The build fails if any chart can go empty"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "C1",
+      "epic": "cbom-backend",
+      "title": "Crypto algorithm + library scanner",
+      "priority": 30,
+      "passes": false,
+      "dependencies": [
+        "F3"
+      ],
+      "acceptanceCriteria": [
+        "scan/ registry entry detects crypto libraries (cryptography/pyca, pycryptodome, openssl bindings, hashlib) and algorithm references (RSA, AES, SHA-2, ECDSA, MD5, DES, RC4) with key size/mode/curve where present",
+        "On the synthetic crypto fixture all manifest algorithms are detected"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C2",
+      "epic": "cbom-backend",
+      "title": "Certificate / key / related-crypto-material scanner",
+      "priority": 31,
+      "passes": false,
+      "dependencies": [
+        "F3"
+      ],
+      "acceptanceCriteria": [
+        "Detects .pem/.crt/.key, x509 certs (with validity/expiry), and related crypto material (private/public/secret keys, IV, salt) including the hardcoded private key",
+        "Certificate expiry is captured"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C3",
+      "epic": "cbom-backend",
+      "title": "Protocol / TLS scanner",
+      "priority": 32,
+      "passes": false,
+      "dependencies": [
+        "F3"
+      ],
+      "acceptanceCriteria": [
+        "Detects TLS/SSH protocol usage with version + cipher suites; flags the TLS 1.0 config",
+        "Protocol assets carry version and cipher detail"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C4",
+      "epic": "cbom-backend",
+      "title": "CycloneDX crypto-asset emitter (hand-built)",
+      "priority": 33,
+      "passes": false,
+      "dependencies": [
+        "C1",
+        "C2",
+        "C3"
+      ],
+      "acceptanceCriteria": [
+        "Emits CycloneDX 1.6 crypto-asset components: assetType algorithm/certificate/protocol/related-crypto-material with cryptographicProperties and nistQuantumSecurityLevel",
+        "Output validates against the bundled CycloneDX 1.6 schema"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C5",
+      "epic": "cbom-backend",
+      "title": "Weak-algorithm detection",
+      "priority": 34,
+      "passes": false,
+      "dependencies": [
+        "C1"
+      ],
+      "acceptanceCriteria": [
+        "Flags MD5, SHA-1, DES, 3DES, RC4, RSA<2048, ECB mode, TLS<1.2 with appropriate severity (weak crypto -> high)",
+        "Synthetic fixture's weak assets are all flagged; strong assets are not"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C6",
+      "epic": "cbom-backend",
+      "title": "PQC readiness mapping",
+      "priority": 35,
+      "passes": false,
+      "dependencies": [
+        "C1",
+        "C4"
+      ],
+      "acceptanceCriteria": [
+        "Quantum-vulnerable RSA/ECC/DH are graded via nistQuantumSecurityLevel and tagged with migration targets ML-KEM/ML-DSA/SLH-DSA (FIPS 203/204/205)",
+        "Findings note the NIST 2030 deprecation / 2035 disallow timeline"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C7",
+      "epic": "cbom-backend",
+      "title": "CBOM compliance mapping",
+      "priority": 36,
+      "passes": false,
+      "dependencies": [
+        "C5",
+        "C6"
+      ],
+      "acceptanceCriteria": [
+        "Maps findings to NIST SP 1800-38B (PQC readiness), SP 800-57 (key/cert mgmt), OMB M-23-02 (crypto inventory); optional CRA/DORA",
+        "Uses the same tri-state verdict model as AIBOM"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C8",
+      "epic": "cbom-backend",
+      "title": "CBOM scorer + severity + normalizer carry-through",
+      "priority": 37,
+      "passes": false,
+      "dependencies": [
+        "C5",
+        "C6",
+        "C7"
+      ],
+      "acceptanceCriteria": [
+        "Severity: weak crypto -> high; quantum-vulnerable -> medium; expired cert -> high; per-asset flags stack",
+        "normalize -> API carries algorithm/weak/PQC/cert-expiry/protocol distributions + compliance (no flatten)"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C9",
+      "epic": "cbom-frontend",
+      "title": "CBOM charts (theme-consistent)",
+      "priority": 38,
+      "passes": false,
+      "dependencies": [
+        "C8"
+      ],
+      "acceptanceCriteria": [
+        "Algorithm distribution, weak-crypto findings, PQC readiness gauge (nistQuantumSecurityLevel), certificate-expiry, and protocol/TLS charts bind to populated fields using the existing DevSecShield theme + chart library",
+        "Verify in browser: all render non-empty on the crypto fixture"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "C10",
+      "epic": "cbom-frontend",
+      "title": "CBOM chart-data-contract tests",
+      "priority": 39,
+      "passes": false,
+      "dependencies": [
+        "C9"
+      ],
+      "acceptanceCriteria": [
+        "Scanning the crypto fixture asserts the API carries non-empty algorithm/weak/PQC/cert/protocol arrays AND charts render non-empty",
+        "Build fails if any CBOM chart can go empty"
+      ],
+      "reconcileNote": "RECONCILE the existing worker agent at RabbitMQ/worker/helpers/tools/cbom_agent/ (crypto_rules.py / binary_scanner.py / source_scanner.py / parser.py / summary_manager.py) into the aibom/ ScanResult lane design \u2014 do NOT build fresh, do NOT discard real existing detection. Add the missing pieces (hand-built CycloneDX 1.6 crypto-asset, nistQuantumSecurityLevel/PQC, tri-state compliance)."
+    },
+    {
+      "id": "I1",
+      "epic": "integration",
+      "title": "Register AIBOM + CBOM as peer scanners (backend orchestration)",
+      "priority": 50,
+      "passes": false,
+      "dependencies": [
+        "A8",
+        "C8"
+      ],
+      "acceptanceCriteria": [
+        "Both scanners register in DevSecShield's existing orchestration with the same async job lifecycle as SBOM/SAST/DAST",
+        "Triggering each via the platform's normal mechanism persists + returns results; SBOM/SAST/DAST still pass"
+      ],
+      "reconcileNote": "ai_bom + cbom scan types ALREADY register in backend/utilities/dashboard/scan.py (lines ~1149 cbom, ~1291 ai_bom). Verify both share the async job lifecycle after the CBOM reconcile; keep SBOM/SAST/DAST green."
+    },
+    {
+      "id": "I2",
+      "epic": "integration",
+      "title": "Scanner-list + trigger UI for both (theme-consistent)",
+      "priority": 51,
+      "passes": false,
+      "dependencies": [
+        "I1",
+        "A13",
+        "C10"
+      ],
+      "acceptanceCriteria": [
+        "AIBOM and CBOM appear as peers in the scanner list/dashboard with the existing scanner-card + trigger components and theme",
+        "Verify in browser: both can be launched and show in-progress/results states like other scanners"
+      ]
+    },
+    {
+      "id": "I3",
+      "epic": "integration",
+      "title": "Export \u2014 CycloneDX downloads + reports (existing pattern)",
+      "priority": 52,
+      "passes": false,
+      "dependencies": [
+        "I1"
+      ],
+      "acceptanceCriteria": [
+        "AIBOM ML-BOM + CBOM crypto CycloneDX downloads and the compliance/PQC reports (pdf/xlsx) wire into DevSecShield's existing export pattern",
+        "Same button placement + flow as other scanners"
+      ]
+    },
+    {
+      "id": "I4",
+      "epic": "integration",
+      "title": "E2E click-to-result for both scanners",
+      "priority": 53,
+      "passes": false,
+      "dependencies": [
+        "I2",
+        "I3"
+      ],
+      "acceptanceCriteria": [
+        "Full UI -> backend -> results E2E for AIBOM and CBOM, matching how existing scanners are E2E-tested (await terminal job state, never sleep)",
+        "Verify in browser using dev-browser skill: scanner list -> trigger -> in-progress -> results -> charts -> export"
+      ]
+    },
+    {
+      "id": "B1",
+      "epic": "benchmark",
+      "title": "AIBOM live benchmark vs Cisco + Trusera (isolated harness)",
+      "priority": 60,
+      "passes": true,
+      "dependencies": [
+        "I1"
+      ],
+      "acceptanceCriteria": [
+        "bench/ harness live-runs Trusera (deterministic, no LLM) + Cisco (needs its own LLM key \u2014 oracle-only) + ours on >=10 real repos; builds a canonical-key normalizer to compare across schemas",
+        "Per-repo + aggregate diff matrix; every oracle-only finding triaged as real-miss (fix) or documented false positive",
+        "Gate: true-positive misses = 0 across all repos; OurUnique > 0"
+      ],
+      "reconcileNote": "ALREADY LANDED this session (AIBOM track) \u2014 implemented, tested, CI-locked (.github/workflows/aibom-gates.yml). Ralph: skip."
+    },
+    {
+      "id": "B2",
+      "epic": "benchmark",
+      "title": "CBOM live benchmark vs IBM CBOMkit (isolated harness)",
+      "priority": 61,
+      "passes": false,
+      "dependencies": [
+        "I1"
+      ],
+      "acceptanceCriteria": [
+        "bench/ runs IBM CBOMkit + ours on crypto-heavy repos (TLS server, pyca/cryptography users, a JWT/auth lib, an openssl wrapper)",
+        "Diff matrix with the same true-positive miss gate; OurUnique > 0 (PQC grading + compliance the oracle lacks)"
+      ],
+      "reconcileNote": "CBOMkit oracle already pulled (ghcr.io/cbomkit/cbomkit-theia). Mirror the AIBOM bench/ harness (normalize.py/diff.py/ci_gate.py)."
+    },
+    {
+      "id": "B3",
+      "epic": "benchmark",
+      "title": "Regression lock + CI gates",
+      "priority": 62,
+      "passes": false,
+      "dependencies": [
+        "A13",
+        "C10",
+        "B1",
+        "B2"
+      ],
+      "acceptanceCriteria": [
+        "CI gates on: chart-data-contract tests (AIBOM + CBOM), benchmark true-miss (synthetic + 2-3 repos in CI, full set nightly), model-recall threshold, and compliance tri-state (out-of-scope never silently becomes fail)",
+        "All goldens locked; harness re-run documented"
+      ],
+      "reconcileNote": "AIBOM half ALREADY locked (aibom-gates.yml Gates A-F + aibom-nightly.yml). This story EXTENDS the lock to CBOM (C10 contract + B2 benchmark)."
+    }
+  ]
+}

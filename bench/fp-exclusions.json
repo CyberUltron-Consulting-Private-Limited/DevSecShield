@@ -1,0 +1,506 @@
+[
+ {
+  "name": "*",
+  "type_class": "secret",
+  "repo": "*",
+  "reason": "Cisco/Trusera flag env-var NAMES/references (env:ANTHROPIC_API_KEY) as hardcoded secrets; an env-var reference is the secure pattern, not a leak. Our scanner rejects name/reference-shaped values and flags only literal credentials (verified parity on the planted sk-FAKE key)."
+ },
+ {
+  "name_re": "^hyperparameter:",
+  "type_class": "*",
+  "repo": "*",
+  "reason": "Cisco LLM-enrichment extracts training HYPERPARAMETER labels (hyperparameter:batch-size, hyperparameter:max-seq-length) from model-card/notebook prose as pseudo-components. A hyperparameter is config, not an AI component."
+ },
+ {
+  "name_re": "(guideline|instruction|best practice|getting started|overview|introduction|table of contents|codebase)",
+  "type_class": "*",
+  "repo": "*",
+  "reason": "Cisco lifts README/doc HEADINGS + prose ('... development guidelines', 'AI instructions', 'codebase guidelines for AI agents') into pseudo-components. Documentation text, not components."
+ },
+ {
+  "name_re": "^(ai|ml|model|dataset|large|small|base|training-run|model-artifact|config-model|custom-model|new-model|the-model|example-model|test-model|your-model|my-model|ai instructions)$",
+  "type_class": "*",
+  "repo": "*",
+  "reason": "Cisco extracts GENERIC placeholder nouns ('ai', 'model', 'dataset', 'large', 'custom-model', 'training-run') from prose/examples. Not concrete named artifacts (no vendor, version, or resolvable identity)."
+ },
+ {
+  "name_re": "[)(]$|^[)(]",
+  "type_class": "*",
+  "repo": "*",
+  "reason": "Malformed Cisco extraction with an unbalanced parenthesis ('text-embeddings-inference)') \u2014 a truncated prose fragment, not a component name."
+ },
+ {
+  "name_re": "\\.(csv|jsonl|tsv|parquet|json|ndjson)\\)?$",
+  "type_class": "*",
+  "repo": "*",
+  "reason": "Raw DATA FILE path (.csv/.jsonl/...) enumerated by the OSS filesystem walk \u2014 overwhelmingly tutorial/example data in notebooks (winemag, imdb-top-1000, fine-food-reviews, *-samples). Not a DECLARED, governed dataset component. Our tool inventories datasets declared via dataset cards (the governance-relevant unit), not every data file on disk. Cisco also mislabels some .csv as type=model."
+ },
+ {
+  "name": "env:anthropic-api-key",
+  "type_class": "secret",
+  "repo": "00-synthetic",
+  "reason": "[env_var_reference] This is an environment variable NAME reference (via os.environ.get('ANTHROPIC_API_KEY')), not a hardcoded literal secret. The secure pattern should not be flagged as a vulnerability. File: /Users/anshsinghal/Desktop/DevSecShield/bench/repos"
+ },
+ {
+  "name": "ai",
+  "type_class": "library",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic noun 'ai' with no resolvable identity or package reference in the code"
+ },
+ {
+  "name": "ai instructions",
+  "type_class": "library",
+  "repo": "01-chroma",
+  "reason": "[prose_extraction] Prose heading from docs/mintlify/AGENTS.md file describing AI agent guidance documentation, not a declared component"
+ },
+ {
+  "name": "chroma codebase guidelines for ai agents",
+  "type_class": "library",
+  "repo": "01-chroma",
+  "reason": "[doc_heading] Document heading and prose from AGENTS.md and CLAUDE.md files providing coding guidelines"
+ },
+ {
+  "name": "config-model",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic placeholder name found only in test context as part of model config, no real component"
+ },
+ {
+  "name": "custom-model",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Test placeholder strings like 'custom_model_v2' and 'custom_model_v3' in chromadb/test/api/test_schema.py used for testing schema validation"
+ },
+ {
+  "name": "dataset",
+  "type_class": "dataset",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic word 'dataset' used in test function names and notebook prose; no declared dataset component"
+ },
+ {
+  "name": "env-secret-jina-api-key",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[env_var_reference] Environment variable reference pattern, not a hardcoded secret; secure practice"
+ },
+ {
+  "name": "env:cohere-api-key",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[env_var_reference] Environment variable reference format (env:NAME), secure pattern not actual hardcoded secret"
+ },
+ {
+  "name": "env:google-api-key",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[env_var_reference] Environment variable reference format, not a hardcoded literal"
+ },
+ {
+  "name": "env:huggingface-api-key",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[env_var_reference] Environment variable reference format, secure pattern"
+ },
+ {
+  "name": "env:mistral-api-key",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[env_var_reference] Environment variable reference format"
+ },
+ {
+  "name": "env:openai-api-key",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[env_var_reference] Environment variable reference, not hardcoded literal; found in code as os.environ.get() patterns"
+ },
+ {
+  "name": "google ai",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[name_variant] We detect this under canonical names: 'google.generativeai', 'GooglePalmEmbeddingFunction', 'GoogleGenerativeAiEmbeddingFunction', 'GoogleVertexEmbeddingFunction'"
+ },
+ {
+  "name": "hyperparameter:batch-size",
+  "type_class": "library",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic hyperparameter reference; batch_size is a standard Python variable in test code, not a package or framework"
+ },
+ {
+  "name": "large",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic word 'large' used in default model names like 'voyage-large-2' and cohere model_name='large', not a distinct component"
+ },
+ {
+  "name": "model-artifact",
+  "type_class": "library",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic placeholder term with zero matches in repository; not a declared component"
+ },
+ {
+  "name": "new-model",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic placeholder string with zero concrete matches in code"
+ },
+ {
+  "name": "text-embeddings-inference)",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[malformed] Malformed name with trailing parenthesis ')' - appears as a typo or truncation of HuggingFace text-embeddings-inference reference"
+ },
+ {
+  "name": "together ai",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "[name_variant] We detect this as 'TogetherAIEmbeddingFunction' from chromadb/utils/embedding_functions/together_ai_embedding_function.py - canonical name already captured"
+ },
+ {
+  "name": "training-run",
+  "type_class": "library",
+  "repo": "01-chroma",
+  "reason": "[generic_placeholder] Generic placeholder term with zero matches; not a declared component or artifact in the codebase"
+ },
+ {
+  "name": "vault-secret",
+  "type_class": "secret",
+  "repo": "01-chroma",
+  "reason": "[hallucination_zero_hits] No matches found for 'vault', 'Vault', or vault-secret pattern in the entire repository"
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "01-chroma",
+  "reason": "OSS FP: present only as a TEST MOCK, not a real source dependency/import. chromadb test/conftest.py mocks crewai as a dependency (line shows crewai in MagicMock); however grep shows only mock in test, not real imports in source code"
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "02-langchain",
+  "reason": "[hallucination_zero_hits] Zero grep hits across the entire repository. No imports, references, or mentions of 'crewai' or 'from crewai' found in any .py, .txt, .md, or .ipynb files in bench/repos/02-langchain/libs/core."
+ },
+ {
+  "name": "model-name",
+  "type_class": "model",
+  "repo": "02-langchain",
+  "reason": "[generic_placeholder] This is a generic placeholder string used in docstring examples throughout /Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/language_models/chat_models.py. It represents a placeholder model name in e"
+ },
+ {
+  "name": "runnablesequence",
+  "type_class": "library",
+  "repo": "02-langchain",
+  "reason": "[name_variant] RunnableSequence is a class defined in /Users/anshsinghal/Desktop/DevSecShield/bench/repos/02-langchain/libs/core/langchain_core/runnables/base.py and exported from langchain_core.runnables. It is part of the langchain-core library itself ("
+ },
+ {
+  "name": "vllm",
+  "type_class": "model",
+  "repo": "02-langchain",
+  "reason": "[hallucination_zero_hits] Zero grep hits across the entire repository. No imports, references, or mentions of 'vllm' found in any .py, .txt, .md files in bench/repos/02-langchain/libs/core."
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "03-llama-index",
+  "reason": "[hallucination_zero_hits] No imports, code references, or dependencies found for crewai in the repository"
+ },
+ {
+  "name": "vllm",
+  "type_class": "model",
+  "repo": "03-llama-index",
+  "reason": "[hallucination_zero_hits] No imports, code references, or dependencies found for vllm in the repository"
+ },
+ {
+  "name": "dataset",
+  "type_class": "dataset",
+  "repo": "03-llama-index",
+  "reason": "[generic_placeholder] Generic noun used as Python variable names (dataset_len, dataset, etc.) with no specific dataset package/component"
+ },
+ {
+  "name": "ml-pipeline",
+  "type_class": "library",
+  "repo": "03-llama-index",
+  "reason": "[generic_placeholder] No actual ml-pipeline package or component imported or referenced in codebase"
+ },
+ {
+  "name": "model",
+  "type_class": "model",
+  "repo": "03-llama-index",
+  "reason": "[generic_placeholder] Generic noun used in variable names and comments, not a specific model component"
+ },
+ {
+  "name": "training-run",
+  "type_class": "library",
+  "repo": "03-llama-index",
+  "reason": "[generic_placeholder] Generic term with no corresponding actual component or package in the repository"
+ },
+ {
+  "name": "llamaindex",
+  "type_class": "framework",
+  "repo": "03-llama-index",
+  "reason": "[name_variant] Repository itself is llama-index-core which we detect; llamaindex is a normalized variant of the same project name"
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "04-autogen",
+  "reason": "[hallucination_zero_hits] grep -r 'crewai' across entire autogen-core repo yields zero hits. This is regex noise from external scanner."
+ },
+ {
+  "name": "mistral api key",
+  "type_class": "model",
+  "repo": "04-autogen",
+  "reason": "[generic_placeholder] Only string constant 'mistral' appears in ModelFamily enum at /Users/anshsinghal/Desktop/DevSecShield/bench/repos/04-autogen/python/packages/autogen-core/src/autogen_core/models/_model_client.py (lines 50, 87, 90, 147, 151). No actual Mistr"
+ },
+ {
+  "name": "code migration agent",
+  "type_class": "library",
+  "repo": "05-openai-cookbook",
+  "reason": "[prose_extraction] Found as descriptive text in notebook markdown: 'A code-migration agent should work in a controlled environment' - not a code-imported component"
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "05-openai-cookbook",
+  "reason": "[hallucination_zero_hits] Zero grep hits in the entire repo - false detection"
+ },
+ {
+  "name": "dataset",
+  "type_class": "dataset",
+  "repo": "05-openai-cookbook",
+  "reason": "[generic_placeholder] Generic concept noun used in variable names and prose (build_dataset, dataset splitting) - not a declared component"
+ },
+ {
+  "name": "hyperparameter:batch-size",
+  "type_class": "library",
+  "repo": "05-openai-cookbook",
+  "reason": "[malformed] Malformed resource address with no context; zero hits in repo"
+ },
+ {
+  "name": "training-run",
+  "type_class": "library",
+  "repo": "05-openai-cookbook",
+  "reason": "[generic_placeholder] Generic descriptor word used in prose/comments, not an actual declared or imported component"
+ },
+ {
+  "name": "{-m}",
+  "type_class": "model",
+  "repo": "05-openai-cookbook",
+  "reason": "[malformed] Truncated/garbled placeholder string with no semantic meaning"
+ },
+ {
+  "name": "ag-news-samples.csv",
+  "type_class": "dataset",
+  "repo": "05-openai-cookbook",
+  "reason": "[hallucination_zero_hits] Zero hits in repo; file does not exist. Trusera noise"
+ },
+ {
+  "name": "winemag-data-130k-v2.csv",
+  "type_class": "data_file",
+  "repo": "05-openai-cookbook",
+  "reason": "OSS FP: a raw tutorial DATA FILE (.csv/.jsonl), not a declared/governed dataset or AI/ML component. Actual file exists at ./data/winemag/winemag-data-130k-v2.csv"
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "06-mcp-servers",
+  "reason": "[hallucination_zero_hits] Zero grep hits across entire repo. No imports, declarations, or references to 'crewai', 'crew', or variants in any code, config, or documentation files. Pure regex noise."
+ },
+ {
+  "name": "mcp everything server - development guidelines",
+  "type_class": "library",
+  "repo": "06-mcp-servers",
+  "reason": "[prose_extraction] Extracted from markdown heading in /src/everything/AGENTS.md (line 1). This is documentation prose, not a declared library component. The file is a developer guide for extending the Everything MCP server, not an AI/ML library dependency."
+ },
+ {
+  "name": "model-artifact",
+  "type_class": "library",
+  "repo": "07-hf-minilm",
+  "reason": "[generic_placeholder] model-artifact is a generic placeholder noun, not a resolvable library/framework. Our tool correctly detects concrete weight files (model.safetensors, pytorch_model.bin) as machine-learning-model components. Trusera/Cisco mislabeled this ge"
+ },
+ {
+  "name": "training-run",
+  "type_class": "library",
+  "repo": "07-hf-minilm",
+  "reason": "[generic_placeholder] training-run is a generic activity descriptor and process artifact, not a library. While the repo contains actual training code (train_script.py with optimizer, training loops), 'training-run' as a library type_class is a semantic misclassi"
+ },
+ {
+  "name": "dataset",
+  "type_class": "dataset",
+  "repo": "08-monai",
+  "reason": "[generic_placeholder] Generic configuration parameter key used in bundle configs (e.g., inference.json) with '_target_': 'need override'. The word 'dataset' is a placeholder parameter name, not an actual AI/ML component library or declared dataset."
+ },
+ {
+  "name": "env:ngc-api-key",
+  "type_class": "secret",
+  "repo": "08-monai",
+  "reason": "[env_var_reference] monai/bundle/scripts.py line 572 uses os.getenv('NGC_API_KEY', None), which is the secure pattern for environment variable reference, not a hardcoded secret literal."
+ },
+ {
+  "name": "experiment-tracker",
+  "type_class": "library",
+  "repo": "08-monai",
+  "reason": "[hallucination_zero_hits] Grep search across entire repo yields zero matches. This is a false positive hallucination from OSS scanner regex patterns."
+ },
+ {
+  "name": "fl-best-model",
+  "type_class": "model",
+  "repo": "08-monai",
+  "reason": "[generic_placeholder] monai/fl/utils/constants.py line 23 defines BEST_MODEL = 'fl_best_model' as an enum constant string value, not an actual model component or artifact."
+ },
+ {
+  "name": "hyperparameter:dropout",
+  "type_class": "library",
+  "repo": "08-monai",
+  "reason": "[generic_placeholder] Dropout is a hyperparameter used in Conv layer definitions (e.g., monai/networks/blocks/convolutions.py), not an importable library or AI/ML component."
+ },
+ {
+  "name": "model-artifact",
+  "type_class": "library",
+  "repo": "08-monai",
+  "reason": "[hallucination_zero_hits] Grep search across entire repo yields zero matches. This is a false positive hallucination."
+ },
+ {
+  "name": "model.pt",
+  "type_class": "model_file",
+  "repo": "08-monai",
+  "reason": "[generic_placeholder] Appears in monai/bundle/scripts.py and monai/fl/client/monai_algo.py as a default file path reference ('models/model.pt'), not an actual model artifact stored in the repo. This is a generic placeholder filename."
+ },
+ {
+  "name": "training-run",
+  "type_class": "library",
+  "repo": "08-monai",
+  "reason": "[prose_extraction] References appear only in docstrings and comments (e.g., 'metrics from a training run' in monai/utils/jupyter_utils.py). This is documentation prose, not an actual imported or used library component."
+ },
+ {
+  "name": "aws-bedrock-custom-model.custom-model",
+  "type_class": "model",
+  "repo": "09-tf-bedrock",
+  "reason": "[resource_address] Terraform resource address (aws_bedrock_custom_model.custom_model from main.tf line 267). The OSS tool detected this from README table (line 647) listing Terraform resources. This is infrastructure-as-code configuration, not an actual AI mo"
+ },
+ {
+  "name": "aws-bedrockagent-agent.agent-supervisor",
+  "type_class": "framework",
+  "repo": "09-tf-bedrock",
+  "reason": "[resource_address] Terraform resource address (aws_bedrockagent_agent.agent_supervisor from main.tf line 174). The OSS tool detected this from README table (line 648) listing Terraform resources. This is an AWS Bedrock Agent resource definition in HCL, not a "
+ },
+ {
+  "name": "crewai",
+  "type_class": "framework",
+  "repo": "10-trl-sft",
+  "reason": "[hallucination_zero_hits] Zero grep hits across the entire repository. The string 'crewai' or any variant does not appear in any Python files, manifests, or documentation."
+ },
+ {
+  "name": "dataset",
+  "type_class": "dataset",
+  "repo": "10-trl-sft",
+  "reason": "[generic_placeholder] Generic noun with no resolvable identity. The code imports the HuggingFace `datasets` library (from datasets import Dataset...), not a standalone 'dataset' component. This is a generic placeholder."
+ },
+ {
+  "name": "experiment-tracker",
+  "type_class": "library",
+  "repo": "10-trl-sft",
+  "reason": "[hallucination_zero_hits] Zero grep hits. The terms 'experiment', 'tracker', 'experiment_tracker', 'experiment-tracker' do not appear in the codebase."
+ },
+ {
+  "name": "hyperparameter:batch-size",
+  "type_class": "library",
+  "repo": "10-trl-sft",
+  "reason": "[generic_placeholder] Generic placeholder with no resolvable identity. While batch_size is used as a variable name throughout training code, there is no distinct 'hyperparameter:batch-size' component or library. This is a fabricated entity."
+ },
+ {
+  "name": "model-artifact",
+  "type_class": "library",
+  "repo": "10-trl-sft",
+  "reason": "[generic_placeholder] Generic placeholder with no resolvable identity. Code references model file paths as strings (model.safetensors, pytorch_model.bin) but these are file path references in string literals, not actual artifact declarations or libraries."
+ },
+ {
+  "name": "model.safetensors",
+  "type_class": "model_file",
+  "repo": "10-trl-sft",
+  "reason": "[resource_address] Referenced as a file path string in /trl/experimental/ppo/modeling_value_head.py (lines 50-53) within path construction logic (os.path.join(..., 'model.safetensors')), not an actual model weight file present in the repository."
+ },
+ {
+  "name": "pytorch-model.bin",
+  "type_class": "model_file",
+  "repo": "10-trl-sft",
+  "reason": "[resource_address] Referenced as a file path string in /trl/experimental/ppo/modeling_value_head.py (lines 50-53) within path construction logic, not an actual model weight file present in the repository."
+ },
+ {
+  "name": "qwen2.5-0.5b-instruct",
+  "type_class": "model",
+  "repo": "10-trl-sft",
+  "reason": "[hallucination_zero_hits] Zero grep hits for this specific model identifier. The code contains references to Qwen2.5 and Qwen3 chat templates, but no reference to 'qwen2.5-0.5b-instruct' as a model name."
+ },
+ {
+  "name": "qwen3-0.6b",
+  "type_class": "model",
+  "repo": "10-trl-sft",
+  "reason": "[prose_extraction] Found only in a docstring example in /trl/chat_template_utils.py line 80: `clone_chat_template(model, tokenizer, 'Qwen/Qwen3-0.6B')` as documentation/prose, not as an actual imported or declared component in the codebase."
+ },
+ {
+  "name_re": "^huggingface transformers",
+  "type_class": "model",
+  "repo": "*",
+  "reason": "MISLABEL: Trusera/Cisco tag the transformers LIBRARY as type=model named \"huggingface transformers\". We detect it correctly as framework:transformers (via pyproject + code-import). Same component, OSS wrong class+name."
+ },
+ {
+  "name_re": "^(aws bedrock|azure openai|google ai|google ai model|openai endpoint|openai model|together ai)$",
+  "type_class": "*",
+  "repo": "*",
+  "reason": "NAME_VARIANT of a provider we DO detect via its SDK code-import (boto3 for AWS Bedrock, openai for Azure OpenAI, google-generativeai for Google). The OSS use the service display-name; we inventory the integration under the SDK package name."
+ },
+ {
+  "name_re": "^(model-name|langchain model|model)$",
+  "type_class": "model",
+  "repo": "*",
+  "reason": "GENERIC placeholder noun (\"model\", \"model-name\", \"langchain model\") extracted from prose/examples \u2014 no resolvable model identity."
+ },
+ {
+  "name_re": "(gpt-5\\.|gpt-5:|:gpt-5|qwen3\\.5|claude-haiku-4-5-20251001)",
+  "type_class": "model",
+  "repo": "*",
+  "reason": "DOCSTRING-EXAMPLE / non-existent version: model ids appearing only in docstring/example prose (init_chat_model(\"anthropic:claude-haiku-4-5\"), \"openai:gpt-5.5\") or referencing versions that do not exist at the repo HEAD \u2014 documentation, not a used component (triage: docstring-example-model-ref)."
+ },
+ {
+  "name_re": "^runnable",
+  "type_class": "library",
+  "repo": "02-langchain",
+  "reason": "Cisco extracted langchain-core internal CLASS names (RunnableBranch, RunnableRetry, RunnableWithFallbacks, RunnableSequence) as pseudo-components. These are Python classes of the langchain package (which we detect as framework:langchain), not separate components."
+ },
+ {
+  "name_re": "(-mcp-tooling|^main-mcp|^search server$)",
+  "type_class": "mcp_server",
+  "repo": "05-openai-cookbook",
+  "reason": "Cisco invented MCP pseudo-servers from notebook prose/variable names (\"main-mcp-tooling\", \"search-server-mcp-tooling\", \"search server\"). Not declared MCP server packages; the real MCP dep (mcp/fastmcp) is detected via code-import."
+ },
+ {
+  "name": "experiment-tracker",
+  "type_class": "library",
+  "repo": "*",
+  "reason": "Generic placeholder noun from model-card/notebook prose (\"experiment tracker\"); not a named package."
+ },
+ {
+  "name_re": "^aws-bedrock",
+  "type_class": "*",
+  "repo": "09-tf-bedrock",
+  "reason": "Terraform RESOURCE ADDRESS (aws-bedrockagent-agent-alias.bedrock-agent-alias = resource_type.local_name), not a portable AI component."
+ },
+ {
+  "name": "baseten-embedding-model",
+  "type_class": "model",
+  "repo": "01-chroma",
+  "reason": "Generic PLACEHOLDER default in chromadb/utils/embedding_functions/baseten_embedding_function.py (self.model_name=\"baseten-embedding-model\") \u2014 Baseten lets the user deploy ANY model; this is a stand-in name, not a concrete published model id."
+ },
+ {
+  "name": "fl-final-model",
+  "type_class": "model",
+  "repo": "08-monai",
+  "reason": "Generic federated-learning checkpoint label (\"final model\"), not a published/resolvable model id \u2014 a run-output filename, not a component."
+ },
+ {
+  "name_re": "^ft:",
+  "type_class": "model",
+  "repo": "*",
+  "reason": "A PRIVATE OpenAI fine-tune id (ft:gpt-4o-2024-08-06:openai::aoy1m8vg) unique to one example author. The base model (gpt-4o) IS detected; the private fine-tune handle is not a portable, resolvable component."
+ }
+]

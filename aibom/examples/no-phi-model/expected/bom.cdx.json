@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:a0198bd9-15b1-53b2-9994-4f807557fd1e",
+  "serialNumber": "urn:uuid:13999169-4151-588c-ab38-4aff6dc617d0",
   "version": 1,
   "metadata": {
     "timestamp": "2026-06-21T00:00:00Z",
@@ -146,14 +146,45 @@
       "bom-ref": "lib-numpy",
       "name": "numpy",
       "version": "1.26.4",
-      "purl": "pkg:pypi/numpy@1.26.4"
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-torch",
       "name": "torch",
       "version": "2.3.1",
-      "purl": "pkg:pypi/torch@2.3.1"
+      "purl": "pkg:pypi/torch@2.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelfile-model.safetensors",
+      "name": "model.safetensors",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c758692e0123cc39801afedb60db5e6d681f2c135f9f988b2c07dbd97a52a8af"
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:weight_file",
+          "value": "true"
+        }
+      ]
     }
   ],
   "dependencies": [
@@ -162,7 +193,8 @@
       "dependsOn": [
         "dataset-rsna-boneage",
         "lib-numpy",
-        "lib-torch"
+        "lib-torch",
+        "modelfile-model.safetensors"
       ]
     }
   ]

@@ -7,18 +7,18 @@
       "specVersion": "3.0.1",
       "created": "2026-06-21T00:00:00Z",
       "createdBy": [
-        "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/tool/clinithread-aibom"
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/tool/clinithread-aibom"
       ]
     },
     {
       "type": "Tool",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/tool/clinithread-aibom",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/tool/clinithread-aibom",
       "creationInfo": "_:creationinfo",
       "name": "clinithread-aibom"
     },
     {
       "type": "ai_AIPackage",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/model-bone-age",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age",
       "creationInfo": "_:creationinfo",
       "name": "bone-age-estimator",
       "software_packageVersion": "1.0.0",
@@ -31,13 +31,13 @@
     },
     {
       "type": "simplelicensing_LicenseExpression",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/license/model-bone-age",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/license/model-bone-age",
       "creationInfo": "_:creationinfo",
       "simplelicensing_licenseExpression": "MIT"
     },
     {
       "type": "dataset_DatasetPackage",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/dataset-rsna-boneage",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/dataset-rsna-boneage",
       "creationInfo": "_:creationinfo",
       "name": "rsna-boneage",
       "dataset_datasetType": [
@@ -55,7 +55,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/lib-numpy",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/lib-numpy",
       "creationInfo": "_:creationinfo",
       "name": "numpy",
       "software_packageVersion": "1.26.4",
@@ -63,51 +63,58 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/lib-torch",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/lib-torch",
       "creationInfo": "_:creationinfo",
       "name": "torch",
       "software_packageVersion": "2.3.1",
       "software_packageUrl": "pkg:pypi/torch@2.3.1"
     },
     {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/modelfile-model.safetensors",
+      "creationInfo": "_:creationinfo",
+      "name": "model.safetensors"
+    },
+    {
       "type": "SpdxDocument",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/document",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/document",
       "creationInfo": "_:creationinfo",
       "name": "BoneAge-Research-Tool",
       "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
       "rootElement": [
-        "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/model-bone-age"
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/relationship/1",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/relationship/1",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/model-bone-age",
+      "from": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age",
       "relationshipType": "hasConcludedLicense",
       "to": [
-        "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/license/model-bone-age"
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/license/model-bone-age"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/relationship/2",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/relationship/2",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/model-bone-age",
+      "from": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age",
       "relationshipType": "trainedOn",
       "to": [
-        "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/dataset-rsna-boneage"
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/dataset-rsna-boneage"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/relationship/3",
+      "spdxId": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/relationship/3",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/model-bone-age",
+      "from": "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/model-bone-age",
       "relationshipType": "dependsOn",
       "to": [
-        "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/lib-numpy",
-        "https://devsecshield.example/aibom/a0198bd9-15b1-53b2-9994-4f807557fd1e/package/lib-torch"
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/lib-numpy",
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/lib-torch",
+        "https://devsecshield.example/aibom/13999169-4151-588c-ab38-4aff6dc617d0/package/modelfile-model.safetensors"
       ]
     }
   ]

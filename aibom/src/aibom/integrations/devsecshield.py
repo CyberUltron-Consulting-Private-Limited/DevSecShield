@@ -22,7 +22,9 @@ Design (verified against the Phase-5 recon):
   ``AIComponentVulnerability``, enriched with its target component's metadata.
   The full inventory + relationships survive as ``ai_bom_json`` (CycloneDX) and
   ``ai_bom_graph`` (nodes + edges) so the frontend can render the dependency
-  graph; compliance ``{pass, fail, na}`` is preserved verbatim.
+  graph; the full per-framework tri-state compliance breakdown (pass /
+  pass_with_evidence / fail / out_of_scope / not_bom_evidenceable / na +
+  coverage + per-requirement reasons) is preserved verbatim.
 
 The run-object adds fields beyond the four locked ones; all additions are
 additive (``ai_bom_spdx``, ``ai_bom_sarif``, ``ai_bom_graph``, ``ai_bom_scores``)
@@ -42,6 +44,8 @@ import aibom.compliance as _compliance
 from aibom.emit import get_reporter
 from aibom.model.component import AIComponent
 from aibom.model.result import Flag, ScanResult
+from aibom.owasp import OWASP_LLM_LABELS as _OWASP_2025_LABELS
+from aibom.owasp import categories_for_component as _owasp_categories
 from aibom.scan.pipeline import scan_repo
 
 # --- enum mappings (values mirror worker helpers/context/enums.py) ---------- #
@@ -73,6 +77,9 @@ _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none":
 # (an ungoverned/under-documented component) — the conservative governance bucket.
 _CODE_RISK = {
     "MODEL_NO_LICENSE": "license_compliance_gap",
+    "FRAMEWORK_NO_LICENSE": "license_compliance_gap",  # unresolved library license
+    "MODEL_LICENSE_UNKNOWN": "license_compliance_gap",  # model with no known license
+    "HARDCODED_SECRET": "model_theft_exposure",  # leaked credential -> model access
     "DATASET_NO_DEIDENT": "data_privacy_training_config",
     "MODEL_PHI_AT_INFERENCE": "data_privacy_training_config",
     "MODEL_EU_AI_ACT_HIGH_RISK": "missing_model_card_lineage",
@@ -124,6 +131,35 @@ def _component_type(kind: str) -> str:
     return _KIND_TO_AI_TYPE.get(kind, "external_provider")
 
 
+def _is_catalog_model(comp: AIComponent) -> bool:
+    """A model merely LISTED in a registry/catalog (``model:reference_type ==
+    "catalog"``) — e.g. a supported-models table — rather than one the scanned code
+    actually instantiates/uses. Kept in the full CycloneDX BOM (``ai_bom_json``) for
+    completeness, but excluded from the risk-asset findings + dashboard graph so the
+    headline model count reflects the models the application USES (not the catalog
+    over-count)."""
+    return (
+        comp.kind == "model"
+        and (comp.properties or {}).get("model:reference_type") == "catalog"
+    )
+
+
+def _inventory(result: ScanResult) -> list[AIComponent]:
+    """The components surfaced as risk-assets / graph nodes: every component EXCEPT
+    catalog-only model references (which remain in the complete BOM)."""
+    return [c for c in result.components if not _is_catalog_model(c)]
+
+
+def _card_summary(comp: AIComponent) -> dict[str, Any] | None:
+    """Populated model-card fields for a model component (None if no card / empty) —
+    so the dashboard's governance-readiness score can see which models carry a card."""
+    card = getattr(comp, "model_card", None)
+    if card is None:
+        return None
+    data = card.model_dump(exclude_none=True, exclude_defaults=True)
+    return data or None
+
+
 def _license_str(licenses: Any) -> str | None:
     """Flatten a CycloneDX-style licenses list to a single string (or None).
 
@@ -166,16 +202,20 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
     """
     props = comp.properties or {}
     flags = result.flags_for(comp.bom_ref)
+    # Finding severity = the STACKED per-component severity from the recalibrated
+    # scorer (flags stack per component); fall back to the top-flag mapping, then
+    # Low — so a component accumulating several flags is rated by their sum.
+    stacked = (result.scores or {}).get("component_severity", {}).get(comp.bom_ref)
     if flags:
         primary = min(flags, key=lambda f: _IMPACT_RANK[_impact(f)])
-        impact = _impact(primary)
+        impact = stacked.capitalize() if stacked else _impact(primary)
         risk_category = _CODE_RISK.get(primary.code, _DEFAULT_RISK)
         suggested_fix = _CODE_FIX.get(primary.code, _DEFAULT_FIX)
-        description = (
-            "; ".join(f.message for f in flags if f.message) or _humanize(primary.code)
+        description = "; ".join(f.message for f in flags if f.message) or _humanize(
+            primary.code
         )
     else:
-        impact = "Low"
+        impact = stacked.capitalize() if stacked else "Low"
         risk_category = _DEFAULT_RISK
         suggested_fix = _DEFAULT_FIX
         description = f"Inventoried AI component ({comp.kind})."
@@ -188,6 +228,9 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "suggested_fix": suggested_fix,
         "component_name": comp.name,
         "component_type": _component_type(comp.kind),
+        # populated model-card fields (None if absent) — the dashboard's
+        # governance-readiness score credits models that carry BOTH a license + card.
+        "model_card": _card_summary(comp),
         "framework": comp.name if comp.kind == "framework" else None,
         "version": comp.version,
         "source": _provider(comp.publisher, comp.name, comp.kind),
@@ -195,15 +238,30 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "location": props.get("discovery:source") or props.get("discovery:host") or "",
         "snippet": props.get("discovery:snippet", ""),
         "risk_category": risk_category,
-        "owasp_top_10_llm": [],
+        # OWASP-LLM categories (dict {ENUM_NAME: platform_label}) so the backend
+        # dashboard can aggregate them into the results-page OWASP chart. Reads
+        # the component + its flags via the pure mapper — never flattened to [].
+        # Real OWASP-LLM-Top-10:2025 categories (the canonical aibom.owasp mapper),
+        # emitted as full "LLMxx:2025 - <meaning>" labels so the dashboard chart
+        # shows the correct 2025 names (LLM08 Vector & Embedding, LLM02 Sensitive
+        # Information Disclosure, LLM03 Supply Chain) regardless of the frontend's
+        # legacy label map. Consistent with ScanResult.owasp (same mapper).
+        "owasp_top_10_llm": {
+            code: f"{code}:2025 - {_OWASP_2025_LABELS[code]}"
+            for code in sorted(_owasp_categories(comp, flags))
+        },
     }
 
 
 def _graph(result: ScanResult) -> dict[str, list[dict[str, str]]]:
     """Inventory + relationships for the frontend graph (edges preserved)."""
     nodes = [
-        {"id": c.bom_ref, "label": c.name, "kind": c.kind,
-         "type": _component_type(c.kind)}
+        {
+            "id": c.bom_ref,
+            "label": c.name,
+            "kind": c.kind,
+            "type": _component_type(c.kind),
+        }
         for c in result.components
     ]
     edges = [{"source": e.src, "target": e.dst, "rel": e.rel} for e in result.edges]
@@ -222,12 +280,16 @@ def normalize(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
 
     Pure + deterministic for a given ScanResult (``duration_of_scan`` aside).
     Assumes the compliance checks have already run (``run_native_scan`` does
-    this); reads ``result.compliance`` as-is, preserving ``{pass, fail, na}``.
+    this); reads ``result.compliance`` as-is, preserving the full tri-state
+    breakdown per framework ({pass, pass_with_evidence, fail, out_of_scope,
+    not_bom_evidenceable, na, coverage, requirements}).
     """
-    findings = [_finding_from_component(c, result) for c in result.components]
+    findings = [_finding_from_component(c, result) for c in _inventory(result)]
     findings.sort(
         key=lambda f: (
-            _IMPACT_RANK.get(f["impact"], 9), f["component_name"], f["title"]
+            _IMPACT_RANK.get(f["impact"], 9),
+            f["component_name"],
+            f["title"],
         )
     )
     return {
@@ -241,6 +303,9 @@ def normalize(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
         "ai_bom_sarif": _bom(result, "sarif"),
         "ai_bom_graph": _graph(result),
         "ai_bom_scores": result.scores or {},
+        # OWASP-LLM-2025 distribution {code: count} (aibom.owasp; populated on
+        # every scan by the pipeline). Carried THROUGH — never flattened.
+        "ai_bom_owasp": result.owasp or {},
     }
 
 
@@ -250,16 +315,23 @@ def run_native_scan(
     level: int = 1,
     allowlist: str | Path | None = None,
     progress: ProgressCb | None = None,
+    attestations: dict[str, dict[str, str]] | None = None,
 ) -> ScanResult:
     """Invoke the engine: scan the target, then run compliance. Lanes intact.
 
     Returns the scored ScanResult (scorer + checks already applied inside the
     engine). No host imports; this only orchestrates engine entry points.
+
+    ``attestations`` is an optional ``{framework: {requirement_id: note}}`` map of
+    uploaded process-evidence attestations; a matching ``not_bom_evidenceable``
+    requirement flips to ``pass_with_evidence`` (the evidence-attachment path).
     """
     _report(progress, 10, "scanning repository for AI components")
     result = scan_repo(target, level=level, allowlist=allowlist)
     _report(progress, 70, "mapping compliance frameworks")
-    _compliance.run_all(result)  # populates result.compliance ({pass,fail,na}/fw)
+    # tri-state compliance: pass/fail (graph) + out_of_scope (framework N/A) +
+    # not_bom_evidenceable (process evidence) -> pass_with_evidence via attestations.
+    _compliance.run_all(result, evidence=attestations or {})
     _report(progress, 95, "normalizing results")
     return result
 
@@ -270,11 +342,20 @@ def scan_to_devsecshield(
     level: int = 1,
     allowlist: str | Path | None = None,
     progress: ProgressCb | None = None,
+    attestations: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """One-call entry for the worker: scan + normalize -> locked run-object."""
+    """One-call entry for the worker: scan + normalize -> locked run-object.
+
+    ``attestations`` (optional ``{framework: {requirement_id: note}}``) flips
+    matching ``not_bom_evidenceable`` requirements to ``pass_with_evidence``.
+    """
     start = time.monotonic()
     result = run_native_scan(
-        target, level=level, allowlist=allowlist, progress=progress
+        target,
+        level=level,
+        allowlist=allowlist,
+        progress=progress,
+        attestations=attestations,
     )
     out = normalize(result, duration_of_scan=time.monotonic() - start)
     _report(progress, 100, "scan complete")

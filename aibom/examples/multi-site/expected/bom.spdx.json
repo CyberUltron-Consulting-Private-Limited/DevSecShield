@@ -7,18 +7,18 @@
       "specVersion": "3.0.1",
       "created": "2026-06-21T00:00:00Z",
       "createdBy": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/tool/clinithread-aibom"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/tool/clinithread-aibom"
       ]
     },
     {
       "type": "Tool",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/tool/clinithread-aibom",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/tool/clinithread-aibom",
       "creationInfo": "_:creationinfo",
       "name": "clinithread-aibom"
     },
     {
       "type": "ai_AIPackage",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-triage-multisite",
       "software_packageVersion": "2.1.0",
@@ -31,13 +31,13 @@
     },
     {
       "type": "simplelicensing_LicenseExpression",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/license/model-chestxr-multisite",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/license/model-chestxr-multisite",
       "creationInfo": "_:creationinfo",
       "simplelicensing_licenseExpression": "Apache-2.0"
     },
     {
       "type": "dataset_DatasetPackage",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/dataset-chestxr-train",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/dataset-chestxr-train",
       "creationInfo": "_:creationinfo",
       "name": "chestxr-training-cohort",
       "dataset_datasetType": [
@@ -55,7 +55,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/lib-numpy",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/lib-numpy",
       "creationInfo": "_:creationinfo",
       "name": "numpy",
       "software_packageVersion": "1.26.4",
@@ -63,7 +63,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/lib-pydicom",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/lib-pydicom",
       "creationInfo": "_:creationinfo",
       "name": "pydicom",
       "software_packageVersion": "2.4.4",
@@ -71,7 +71,7 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/lib-torch",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/lib-torch",
       "creationInfo": "_:creationinfo",
       "name": "torch",
       "software_packageVersion": "2.3.1",
@@ -79,85 +79,92 @@
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/service-acme-cloud",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/service-acme-cloud",
       "creationInfo": "_:creationinfo",
       "name": "Acme Imaging AI Cloud"
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/site-lakeside-regional",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/site-lakeside-regional",
       "creationInfo": "_:creationinfo",
       "name": "Lakeside Regional Medical Center"
     },
     {
       "type": "software_Package",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/site-mercy-general",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/site-mercy-general",
       "creationInfo": "_:creationinfo",
       "name": "Mercy General Hospital"
     },
     {
+      "type": "software_Package",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/modelfile-model.safetensors",
+      "creationInfo": "_:creationinfo",
+      "name": "model.safetensors"
+    },
+    {
       "type": "SpdxDocument",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/document",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/document",
       "creationInfo": "_:creationinfo",
       "name": "ChestXR-Triage-MultiSite",
       "comment": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
       "rootElement": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/relationship/1",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/relationship/1",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite",
+      "from": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite",
       "relationshipType": "hasConcludedLicense",
       "to": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/license/model-chestxr-multisite"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/license/model-chestxr-multisite"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/relationship/2",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/relationship/2",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite",
+      "from": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite",
       "relationshipType": "trainedOn",
       "to": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/dataset-chestxr-train"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/dataset-chestxr-train"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/relationship/3",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/relationship/3",
       "creationInfo": "_:creationinfo",
-      "from": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite",
+      "from": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite",
       "relationshipType": "dependsOn",
       "to": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/lib-numpy",
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/lib-pydicom",
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/lib-torch"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/lib-numpy",
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/lib-pydicom",
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/lib-torch",
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/modelfile-model.safetensors"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/relationship/4",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/relationship/4",
       "creationInfo": "_:creationinfo",
       "comment": "served_by",
-      "from": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite",
+      "from": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite",
       "relationshipType": "other",
       "to": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/service-acme-cloud"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/service-acme-cloud"
       ]
     },
     {
       "type": "Relationship",
-      "spdxId": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/relationship/5",
+      "spdxId": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/relationship/5",
       "creationInfo": "_:creationinfo",
       "comment": "deployed_at",
-      "from": "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/model-chestxr-multisite",
+      "from": "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/model-chestxr-multisite",
       "relationshipType": "other",
       "to": [
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/site-lakeside-regional",
-        "https://devsecshield.example/aibom/9e00a2aa-1683-5382-8ba5-9f02f7dab0c4/package/site-mercy-general"
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/site-lakeside-regional",
+        "https://devsecshield.example/aibom/1ababad2-4874-59e2-b613-686eaf8c1e9f/package/site-mercy-general"
       ]
     }
   ]

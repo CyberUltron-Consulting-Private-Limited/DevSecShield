@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:9e00a2aa-1683-5382-8ba5-9f02f7dab0c4",
+  "serialNumber": "urn:uuid:1ababad2-4874-59e2-b613-686eaf8c1e9f",
   "version": 1,
   "metadata": {
     "timestamp": "2026-06-21T00:00:00Z",
@@ -150,21 +150,42 @@
       "bom-ref": "lib-numpy",
       "name": "numpy",
       "version": "1.26.4",
-      "purl": "pkg:pypi/numpy@1.26.4"
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-pydicom",
       "name": "pydicom",
       "version": "2.4.4",
-      "purl": "pkg:pypi/pydicom@2.4.4"
+      "purl": "pkg:pypi/pydicom@2.4.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
     },
     {
       "type": "library",
       "bom-ref": "lib-torch",
       "name": "torch",
       "version": "2.3.1",
-      "purl": "pkg:pypi/torch@2.3.1"
+      "purl": "pkg:pypi/torch@2.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
     },
     {
       "type": "application",
@@ -214,6 +235,23 @@
           "value": "2.1.0"
         }
       ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelfile-model.safetensors",
+      "name": "model.safetensors",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "eca8fb4fe4a32d2f6e8a1ea367a0698aa19e3bab06965825cc1bd6db12679c97"
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:weight_file",
+          "value": "true"
+        }
+      ]
     }
   ],
   "dependencies": [
@@ -224,6 +262,7 @@
         "lib-numpy",
         "lib-pydicom",
         "lib-torch",
+        "modelfile-model.safetensors",
         "service-acme-cloud",
         "site-lakeside-regional",
         "site-mercy-general"
