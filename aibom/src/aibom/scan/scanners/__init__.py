@@ -29,4 +29,5 @@ __all__ = [
     "net_env_scan",
     "cloud_iac_scan",
     "live_cloud_scan",
+    "secret_scan",
 ]
