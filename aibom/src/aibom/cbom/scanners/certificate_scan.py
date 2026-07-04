@@ -110,12 +110,18 @@ class CertificateMaterialScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
-        self._scan_cert_files(ctx, seen)
+        # (bom_ref, subject_cn, issuer_cn, self_signed) of every discovered cert,
+        # so the chain lane can link a leaf to a co-located issuer certificate.
+        chain: list[tuple[str, str | None, str | None, bool]] = []
+        self._scan_cert_files(ctx, seen, chain)
         self._scan_embedded_material(ctx, seen)
+        self._emit_chain_edges(ctx, chain)
 
     # --- certificate / key container files -------------------------------- #
 
-    def _scan_cert_files(self, ctx: ScanContext, seen: set[str]) -> None:
+    def _scan_cert_files(
+        self, ctx: ScanContext, seen: set[str], chain: list
+    ) -> None:
         for path in _iter_files(ctx.root, _CERT_EXTS):
             rel = path.relative_to(ctx.root).as_posix()
             try:
@@ -125,19 +131,25 @@ class CertificateMaterialScanner(Scanner):
             if b"-----BEGIN" in raw:
                 text = raw.decode("utf-8", "ignore")
                 for label, body in _PEM_BLOCK.findall(text):
-                    self._emit_pem(ctx, seen, label.strip().upper(), body, rel)
+                    self._emit_pem(ctx, seen, chain, label.strip().upper(), body, rel)
             elif path.suffix.lower() in _BINARY_CERT_EXTS:
                 cert = parse_certificate(raw)
                 if cert is not None:
-                    self._emit_certificate(ctx, seen, cert, rel)
+                    self._emit_certificate(ctx, seen, chain, cert, rel)
 
     def _emit_pem(
-        self, ctx: ScanContext, seen: set[str], label: str, body: str, rel: str
+        self,
+        ctx: ScanContext,
+        seen: set[str],
+        chain: list,
+        label: str,
+        body: str,
+        rel: str,
     ) -> None:
         if "CERTIFICATE" in label and "REQUEST" not in label:
             cert = _decode_cert(body)
             if cert is not None:
-                self._emit_certificate(ctx, seen, cert, rel)
+                self._emit_certificate(ctx, seen, chain, cert, rel)
         elif _PRIVATE_KEY_RE.search(label):
             self._emit_material(ctx, seen, "private-key", rel, _label_alg(label))
         elif _PUBLIC_KEY_RE.search(label):
@@ -171,7 +183,7 @@ class CertificateMaterialScanner(Scanner):
     # --- emit helpers ----------------------------------------------------- #
 
     def _emit_certificate(
-        self, ctx: ScanContext, seen: set[str], cert: Certificate, rel: str
+        self, ctx: ScanContext, seen: set[str], chain: list, cert: Certificate, rel: str
     ) -> None:
         ref = f"crypto-cert-{_slug(rel)}-{_slug(cert.subject_cn or 'cert')}"
         if ref in seen:
@@ -196,9 +208,35 @@ class CertificateMaterialScanner(Scanner):
             props["crypto:publicKeyAlgorithm"] = cert.public_key_algorithm
         if cert.key_size:
             props["crypto:keySize"] = str(cert.key_size)
+        if cert.curve:
+            props["crypto:curve"] = cert.curve
+        if cert.is_ca is not None:
+            props["crypto:isCertificateAuthority"] = str(cert.is_ca).lower()
         ctx.add_component(
             CryptoAssetComponent(bom_ref=ref, name=Path(rel).name, properties=props)
         )
+        chain.append((ref, cert.subject_cn, cert.issuer_cn, cert.self_signed))
+
+    # --- certificate chain linking ---------------------------------------- #
+
+    def _emit_chain_edges(self, ctx: ScanContext, chain: list) -> None:
+        """Link each non-self-signed leaf to a co-located issuer certificate.
+
+        A CA-signed certificate names its issuer by DN; when the issuer's own
+        certificate is present in the same scan (its subject CN equals this
+        cert's issuer CN), we record a ``signed_by`` edge so the CycloneDX
+        dependency graph reflects the trust chain. Self-signed certificates are
+        their own issuer and are skipped (no self-loop).
+        """
+        by_subject: dict[str, str] = {
+            subject: ref for ref, subject, _issuer, _ss in chain if subject
+        }
+        for ref, _subject, issuer, self_signed in chain:
+            if self_signed or not issuer:
+                continue
+            issuer_ref = by_subject.get(issuer)
+            if issuer_ref and issuer_ref != ref:
+                ctx.add_edge(ref, "signed_by", issuer_ref)
 
     def _emit_material(
         self,

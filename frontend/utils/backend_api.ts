@@ -2077,6 +2077,32 @@ export interface CbomScanMetadata {
   cbom_distributions?: Record<string, unknown> | null
   cbom_compliance?: Record<string, unknown> | null
   cbom_scores?: Record<string, unknown> | null
+  // Normalized crypto dependency graph (nodes + edges), the peer of the AIBOM
+  // lane's ai_bom_graph (I1). Pre-joined so the results-page dependency-graph
+  // (F1) never re-walks the CycloneDX dependsOn/cryptoRefArray structure.
+  // Absent on legacy worker CBOM scans (produced before the reconcile).
+  cbom_graph?: CbomGraph | null
+}
+
+/** Normalized crypto dependency graph surfaced in CBOM scan_metadata (I1). */
+export interface CbomGraphNode {
+  id: string
+  label: string
+  kind: string
+  asset_type?: string | null
+  primitive?: string | null
+  impact?: string | null
+  quantum_vulnerable?: boolean
+  weak?: boolean
+}
+export interface CbomGraphEdge {
+  source: string
+  target: string
+  rel: string
+}
+export interface CbomGraph {
+  nodes: CbomGraphNode[]
+  edges: CbomGraphEdge[]
 }
 
 /** CBOM single-scan dashboard from backend generate_scan_dashboard (scan.py cbom branch) */

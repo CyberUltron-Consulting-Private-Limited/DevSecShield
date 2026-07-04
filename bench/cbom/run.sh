@@ -32,11 +32,27 @@ echo "$ID	$slug	$sha	$subdir" >> "$HERE/state/shas.tsv"
 target="$dir/$subdir"
 echo "[$ID] target=$target sha=$sha"
 
-# --- Oracle: IBM cbomkit-theia (filesystem: certs/keys/secrets/openssl) -------
+# --- Oracle 1: IBM cbomkit-theia (filesystem: certs/keys/secrets/openssl) -----
 echo "[$ID] cbomkit-theia (oracle) ..."
 docker run --rm -v "$target:/scan:ro" "$ORACLE_IMG" dir /scan --log-level error \
   > "$OUT/$ID.cbomkit.cdx.json" 2>"$OUT/$ID.cbomkit.log"
 echo "[$ID] cbomkit exit=$?"
+
+# --- Oracle 2: @cyclonedx/cdxgen (dependency graph: crypto libraries) ----------
+# cdxgen is the reference CycloneDX BOM generator; with --include-crypto it
+# resolves the project's library graph. Compared in the crypto-LIBRARY lane
+# (diff.py filters to known crypto libs). No docker; runs via npx. Best-effort:
+# a cdxgen failure/absence just skips this oracle for the repo (diff.py handles a
+# missing snapshot). CDXGEN_TYPE overrides the auto -t (python|javascript|java).
+if command -v npx >/dev/null 2>&1; then
+  echo "[$ID] cdxgen (oracle) ..."
+  FETCH_LICENSE=false npx --yes @cyclonedx/cdxgen@11 -t "${CDXGEN_TYPE:-python}" \
+    --include-crypto --spec-version 1.6 -o "$OUT/$ID.cdxgen.cdx.json" "$target" \
+    > "$OUT/$ID.cdxgen.log" 2>&1 && echo "[$ID] cdxgen ok" \
+    || echo "[$ID] cdxgen unavailable — oracle skipped for this repo"
+else
+  echo "[$ID] npx not found — cdxgen oracle skipped"
+fi
 
 # --- Ours (source-code crypto scanner, level 4 production depth) --------------
 echo "[$ID] ours ..."

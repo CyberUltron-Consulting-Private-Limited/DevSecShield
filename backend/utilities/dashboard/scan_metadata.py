@@ -130,6 +130,11 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         cbom_distributions = None
         cbom_compliance = None
         cbom_scores = None
+        # Normalized crypto dependency graph (nodes + edges) — the peer of the
+        # ai_bom branch's ``ai_bom_graph``. The C9 ``cryptoRefArray`` graph is
+        # also embedded in ``cbom_json``, but the results-page dependency-graph
+        # (F1) reads this pre-joined payload rather than re-walking CycloneDX.
+        cbom_graph = None
         if scan.scan_data and isinstance(scan.scan_data, dict):
             if "cbom_json" in scan.scan_data:
                 cbom_json = scan.scan_data["cbom_json"]
@@ -139,6 +144,8 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 cbom_compliance = scan.scan_data["cbom_compliance"]
             if "cbom_scores" in scan.scan_data:
                 cbom_scores = scan.scan_data["cbom_scores"]
+            if "cbom_graph" in scan.scan_data:
+                cbom_graph = scan.scan_data["cbom_graph"]
 
         return {
             "repo_url": repo_url,
@@ -150,6 +157,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "cbom_distributions": cbom_distributions,
             "cbom_compliance": cbom_compliance,
             "cbom_scores": cbom_scores,
+            "cbom_graph": cbom_graph,
         }
 
     elif scan_type == "ai_bom":

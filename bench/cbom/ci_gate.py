@@ -23,6 +23,7 @@ from diff import _excluded, _load_exclusions  # noqa: E402
 from normalize import (  # noqa: E402
     all_cert_key_evidence,
     crypto_family_root,
+    crypto_libraries,
     evidence_index,
     normalize,
 )
@@ -34,12 +35,45 @@ _ALIAS = {
     "synthetic": "00-synthetic",
 }
 
+# Oracle registry (B1): each frozen oracle snapshot lives at
+# ``ci_baseline/{repo}.{oracle}.cdx.json`` and is compared in its own LANE.
+#   cbomkit — IBM cbomkit-theia, FILESYSTEM oracle, compared in the crypto-asset lane.
+#   cdxgen  — @cyclonedx/cdxgen, DEPENDENCY oracle, compared in the crypto-library lane.
+ORACLE_LANE = {"cbomkit": "crypto_asset", "cdxgen": "library"}
 
-def true_misses(repo_id: str, ours_cdx_path: str) -> list[tuple[str, str]]:
+
+def _snap(repo_id: str, oracle: str) -> Path:
+    return BASELINE / f"{_ALIAS.get(repo_id, repo_id)}.{oracle}.cdx.json"
+
+
+def available_oracles(repo_id: str) -> list[str]:
+    """Oracles that have a committed frozen baseline for this repo."""
+    return [o for o in ORACLE_LANE if _snap(repo_id, o).exists()]
+
+
+def _library_true_misses(repo_id: str, ours_cdx_path: str, oracle: str) -> list[tuple[str, str]]:
+    """Crypto-library lane: oracle crypto-libs \\ ours, minus documented FPs."""
+    rid = _ALIAS.get(repo_id, repo_id)
+    snap = _snap(repo_id, oracle)
+    ours = crypto_libraries(Path(ours_cdx_path))
+    oracle_set = crypto_libraries(snap) if snap.exists() else set()
+    rules = _load_exclusions()
+    return [
+        (nm, tc)
+        for nm, tc in sorted(oracle_set - ours)
+        if _excluded(nm, tc, rid, rules) is None
+    ]
+
+
+def true_misses(
+    repo_id: str, ours_cdx_path: str, oracle: str = "cbomkit"
+) -> list[tuple[str, str]]:
+    if ORACLE_LANE.get(oracle) == "library":
+        return _library_true_misses(repo_id, ours_cdx_path, oracle)
     rid = _ALIAS.get(repo_id, repo_id)
     ours = normalize(Path(ours_cdx_path), "ours")
-    snap = BASELINE / f"{rid}.cbomkit.cdx.json"
-    oracle = normalize(snap, "cbomkit") if snap.exists() else set()
+    snap = _snap(repo_id, oracle)
+    oracle_set = normalize(snap, "cbomkit") if snap.exists() else set()
 
     rules = _load_exclusions()
     our_names = {n for n, _ in ours}
@@ -49,7 +83,7 @@ def true_misses(repo_id: str, ours_cdx_path: str) -> list[tuple[str, str]]:
     )
     orc_evidence = evidence_index(snap) if snap.exists() else {}
     out: list[tuple[str, str]] = []
-    for nm, tc in sorted(oracle - ours):
+    for nm, tc in sorted(oracle_set - ours):
         if _excluded(nm, tc, rid, rules) is not None:
             continue
         if nm in our_names:  # detected under a different asset_class
@@ -66,22 +100,31 @@ def true_misses(repo_id: str, ours_cdx_path: str) -> list[tuple[str, str]]:
     return out
 
 
-def our_unique_count(repo_id: str, ours_cdx_path: str) -> int:
-    """Crypto assets OURS reports that the frozen oracle lacks (must be > 0)."""
-    rid = _ALIAS.get(repo_id, repo_id)
-    ours = normalize(Path(ours_cdx_path), "ours")
-    snap = BASELINE / f"{rid}.cbomkit.cdx.json"
-    oracle = normalize(snap, "cbomkit") if snap.exists() else set()
-    return len(ours - oracle)
+def our_unique_count(repo_id: str, ours_cdx_path: str, oracle: str = "cbomkit") -> int:
+    """Crypto assets/libraries OURS reports that the frozen oracle lacks (> 0)."""
+    lane = ORACLE_LANE.get(oracle)
+    extract = crypto_libraries if lane == "library" else (
+        lambda p: normalize(p, "ours")
+    )
+    snap = _snap(repo_id, oracle)
+    ours = extract(Path(ours_cdx_path))
+    oracle_set = extract(snap) if snap.exists() else set()
+    return len(ours - oracle_set)
 
 
 if __name__ == "__main__":  # CLI: ci_gate.py <repo_id> <ours.cdx.json> -> exit 1 on miss
-    misses = true_misses(sys.argv[1], sys.argv[2])
-    unique = our_unique_count(sys.argv[1], sys.argv[2])
-    if misses:
-        print(f"FAIL {sys.argv[1]}: {len(misses)} true-positive miss(es): {misses}")
-        sys.exit(1)
-    if unique <= 0:
-        print(f"FAIL {sys.argv[1]}: our-unique={unique} (must be > 0)")
-        sys.exit(1)
-    print(f"PASS {sys.argv[1]}: 0 true-positive misses, our-unique={unique}")
+    repo_id, ours_path = sys.argv[1], sys.argv[2]
+    oracles = available_oracles(repo_id) or ["cbomkit"]
+    fail = False
+    for orc in oracles:
+        misses = true_misses(repo_id, ours_path, oracle=orc)
+        unique = our_unique_count(repo_id, ours_path, oracle=orc)
+        if misses:
+            print(f"FAIL {repo_id} [{orc}]: {len(misses)} true-positive miss(es): {misses}")
+            fail = True
+        elif unique <= 0:
+            print(f"FAIL {repo_id} [{orc}]: our-unique={unique} (must be > 0)")
+            fail = True
+        else:
+            print(f"PASS {repo_id} [{orc}]: 0 true-positive misses, our-unique={unique}")
+    sys.exit(1 if fail else 0)

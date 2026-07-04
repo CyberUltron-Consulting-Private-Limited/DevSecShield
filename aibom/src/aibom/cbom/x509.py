@@ -19,9 +19,11 @@ from dataclasses import dataclass
 # ASN.1 tags we care about.
 _SEQUENCE = 0x30
 _OID = 0x06
+_BOOLEAN = 0x01
 _UTC_TIME = 0x17
 _GENERALIZED_TIME = 0x18
 _CTX_0 = 0xA0  # [0] EXPLICIT (TBSCertificate version)
+_CTX_3 = 0xA3  # [3] EXPLICIT (TBSCertificate extensions)
 
 # OID -> human name (signature + public-key algorithms seen in the wild).
 _OID_NAMES: dict[str, str] = {
@@ -36,10 +38,33 @@ _OID_NAMES: dict[str, str] = {
     "1.2.840.10045.4.3.2": "ecdsaWithSHA256",
     "1.2.840.10045.4.3.3": "ecdsaWithSHA384",
     "1.2.840.10045.4.3.4": "ecdsaWithSHA512",
+    "1.2.840.10045.4.3.1": "ecdsaWithSHA224",
+    "1.2.840.10045.4.1": "ecdsaWithSHA1",
     "1.3.101.112": "ed25519",
     "1.3.101.113": "ed448",
+    "1.2.840.113549.1.1.2": "md2WithRSAEncryption",
+    "1.2.840.113549.1.1.3": "md4WithRSAEncryption",
+    "1.2.840.10040.4.3": "dsaWithSHA1",
+    "2.16.840.1.101.3.4.3.2": "dsaWithSHA256",
 }
 _CN_OID = "2.5.4.3"
+
+# EC named-curve OID -> (display name, field size in bits). The public-key
+# "size" of an EC certificate is its curve field size (RFC 5480), not a modulus
+# bit length, so the certificate lane records the curve name and this comparable
+# strength figure exactly as it records an RSA modulus bit length.
+_CURVE_OIDS: dict[str, tuple[str, int]] = {
+    "1.2.840.10045.3.1.1": ("P-192", 192),
+    "1.3.132.0.33": ("P-224", 224),
+    "1.2.840.10045.3.1.7": ("P-256", 256),
+    "1.3.132.0.34": ("P-384", 384),
+    "1.3.132.0.35": ("P-521", 521),
+    "1.3.132.0.10": ("secp256k1", 256),
+}
+# X.509v3 BasicConstraints extension (RFC 5280 §4.2.1.9): carries the ``cA`` flag
+# that separates a certificate authority from an end-entity (leaf) certificate.
+_BASIC_CONSTRAINTS_OID = "2.5.29.19"
+_EC_PUBLIC_KEY = "ecPublicKey"
 
 
 class _Asn1Error(ValueError):
@@ -58,6 +83,8 @@ class Certificate:
     signature_algorithm: str | None
     public_key_algorithm: str | None
     key_size: int | None
+    curve: str | None  # EC named curve (e.g. "P-256"); None for non-EC keys
+    is_ca: bool | None  # BasicConstraints cA flag; None if the extension is absent
 
 
 # --------------------------------------------------------------------------- #
@@ -174,6 +201,61 @@ def _rsa_key_size(spki_value: bytes) -> int | None:
     return len(modulus) * 8 or None
 
 
+def _ec_curve(algid_value: bytes) -> tuple[str, int] | None:
+    """Named curve of an EC key: ``AlgorithmIdentifier { ecPublicKey, curveOID }``.
+
+    RFC 5480 encodes the curve as the AlgorithmIdentifier ``parameters`` OID
+    (right after the ``ecPublicKey`` OID). Returns ``(name, field_bits)`` for a
+    recognized curve, else ``None``.
+    """
+    oids = [val for tag, val, _ in _children(algid_value) if tag == _OID]
+    if len(oids) < 2:  # [ecPublicKey, namedCurve]
+        return None
+    return _CURVE_OIDS.get(_decode_oid(oids[1]))
+
+
+def _find_extensions(tbs_children: list, after_idx: int) -> bytes | None:
+    """The ``[3] EXPLICIT`` extensions block that follows the SPKI, if present."""
+    for tag, val, _ in tbs_children[after_idx + 1 :]:
+        if tag == _CTX_3:
+            return val
+    return None
+
+
+def _basic_constraints_ca(ext_explicit: bytes) -> bool | None:
+    """Read the BasicConstraints ``cA`` flag out of the extensions block.
+
+    Returns ``True`` (CA), ``False`` (explicitly not a CA, or the extension is
+    present with ``cA`` defaulted), or ``None`` when there is no BasicConstraints
+    extension at all (so a self-signed-leaf check can stay conservative).
+    """
+    try:
+        seq_tag, seq_val, _, _ = _read_tlv(ext_explicit, 0)
+        if seq_tag != _SEQUENCE:
+            return None
+    except _Asn1Error:
+        return None
+    for _tag, ext_val, _ in _children(seq_val):  # each Extension SEQUENCE
+        parts = _children(ext_val)
+        if not parts or parts[0][0] != _OID:
+            continue
+        if _decode_oid(parts[0][1]) != _BASIC_CONSTRAINTS_OID:
+            continue
+        # extnValue is the trailing OCTET STRING wrapping the BasicConstraints
+        # SEQUENCE { cA BOOLEAN DEFAULT FALSE, pathLenConstraint INTEGER OPT }.
+        try:
+            bc_tag, bc_val, _, _ = _read_tlv(parts[-1][1], 0)
+            if bc_tag != _SEQUENCE:
+                return None
+            bc = _children(bc_val)
+            if bc and bc[0][0] == _BOOLEAN:
+                return bc[0][1] not in (b"", b"\x00")
+            return False  # cA defaulted to FALSE
+        except (_Asn1Error, IndexError):
+            return None
+    return None  # no BasicConstraints extension
+
+
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
@@ -216,6 +298,14 @@ def parse_certificate(der: bytes) -> Certificate | None:
         # SPKI ::= SEQUENCE { algorithm AlgorithmIdentifier, subjectPublicKey BIT }
         pk_alg = _first_oid_name(spki_kids[0][1]) if spki_kids else None
         key_size = _rsa_key_size(spki_value) if pk_alg == "rsaEncryption" else None
+        curve: str | None = None
+        if pk_alg == _EC_PUBLIC_KEY and spki_kids:
+            ec = _ec_curve(spki_kids[0][1])
+            if ec is not None:
+                curve, key_size = ec  # curve field size == comparable key size
+
+        ext_block = _find_extensions(tbs, p)  # optional [3] extensions
+        is_ca = _basic_constraints_ca(ext_block) if ext_block is not None else None
 
         return Certificate(
             subject_cn=subject_cn,
@@ -226,6 +316,8 @@ def parse_certificate(der: bytes) -> Certificate | None:
             signature_algorithm=sig_alg,
             public_key_algorithm=pk_alg,
             key_size=key_size,
+            curve=curve,
+            is_ca=is_ca,
         )
     except (_Asn1Error, IndexError, ValueError):
         return None

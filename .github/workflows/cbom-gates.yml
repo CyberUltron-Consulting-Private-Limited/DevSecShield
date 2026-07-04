@@ -1,42 +1,59 @@
 name: CBOM Regression Gates
 
-# Locks the CBOM (cryptography BOM) half of the pipeline, mirroring
+# Locks the CBOM (cryptography BOM) half of the pipeline end-to-end, mirroring
 # aibom-gates.yml. Blocks merges on the regressions we never want back:
-#   (a) crypto detection (algorithm / certificate / protocol / weak-algo / PQC)
-#       dropping below the synthetic ground-truth and the benchmark true-miss gate,
+#   (a) crypto detection (Python/JVM/Go/native-API AST algorithm scan, certificate
+#       depth, protocol + policy config, related-material/misuse weakness, manifest
+#       libraries, OID enrichment, security-strength + PQC grading) dropping below
+#       the synthetic ground-truth and the benchmark true-miss gate,
 #   (b) any CBOM results-page chart being able to go EMPTY (the chart-data
 #       contract) or the normalizer flattening the carried-through distributions,
-#   (c) compliance tri-state collapsing OUT_OF_SCOPE into FAIL, and
-#   (d) the hand-built CycloneDX 1.6 crypto-asset BOM drifting from its golden.
+#   (c) compliance tri-state collapsing OUT_OF_SCOPE / NOT_BOM_EVIDENCEABLE into
+#       FAIL across the expanded framework set (PCI-DSS 4 / FIPS 140-3 / BSI /
+#       CNSA 2.0 / NIST 1800-38C),
+#   (d) the hand-built CycloneDX 1.6 crypto-asset BOM + dependency graph drifting
+#       from its golden, and
+#   (e) the CBOM results page (CbomResults.tsx + CbomCryptoCharts.tsx) failing to
+#       type-check against the scan-metadata contract.
 #
-# The benchmark oracle is the FROZEN cbomkit-theia snapshot committed under
-# bench/cbom/ci_baseline/ — no docker, no network, only OUR offline/deterministic
-# crypto scanner is exercised per-PR. The full LIVE benchmark vs IBM cbomkit-theia
-# runs on cbom-nightly.yml.
+# Gate A runs the WHOLE committed CBOM+crypto test suite (-k "cbom or crypto") so a
+# NEW capability scanner can never silently escape the regression lock the way it
+# could when the gate enumerated a fixed file list. The benchmark oracle is the
+# FROZEN cbomkit-theia + cdxgen snapshots committed under bench/cbom/ci_baseline/ —
+# no docker, no network, only OUR offline/deterministic crypto scanner is exercised
+# per-PR. The full LIVE benchmark vs IBM cbomkit-theia runs on cbom-nightly.yml.
 
 on:
   push:
-    branches: [main, develop, module_1, ansh]
+    branches: [main, develop, module_1, ansh, feat/cbom-best-of-breed]
     paths:
       - "aibom/src/aibom/cbom/**"
+      - "aibom/src/aibom/integrations/cbom_devsecshield.py"
       - "aibom/tests/test_cbom_*.py"
       - "aibom/tests/test_crypto_fixture_manifest.py"
-      - "aibom/tests/fixtures/synthetic-crypto-app/**"
+      - "aibom/tests/fixtures/synthetic-crypto-*/**"
       - "bench/cbom/**"
+      - "frontend/components/CbomResults.tsx"
+      - "frontend/components/cbom/**"
+      - "RabbitMQ/worker/scan_worker.py"
       - ".github/workflows/cbom-gates.yml"
   pull_request:
-    branches: [main, develop, module_1, ansh]
+    branches: [main, develop, module_1, ansh, feat/cbom-best-of-breed]
     paths:
       - "aibom/src/aibom/cbom/**"
+      - "aibom/src/aibom/integrations/cbom_devsecshield.py"
       - "aibom/tests/test_cbom_*.py"
       - "aibom/tests/test_crypto_fixture_manifest.py"
-      - "aibom/tests/fixtures/synthetic-crypto-app/**"
+      - "aibom/tests/fixtures/synthetic-crypto-*/**"
       - "bench/cbom/**"
+      - "frontend/components/CbomResults.tsx"
+      - "frontend/components/cbom/**"
+      - "RabbitMQ/worker/scan_worker.py"
       - ".github/workflows/cbom-gates.yml"
 
 jobs:
   cbom-gates:
-    name: CBOM regression gates
+    name: CBOM regression gates (backend)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,57 +72,64 @@ jobs:
       - name: Install aibom (+ test deps)
         run: uv sync --all-extras --dev || uv sync
 
-      # Gate (a): crypto detection on the synthetic ground-truth manifest. The
-      # algorithm / certificate / related-crypto-material / protocol scanners must
-      # find exactly the planted strong+weak assets; the weak-algo and PQC-readiness
-      # mappings must classify MD5/DES/RC4/ECB/RSA-1024 weak and RSA/ECC as
-      # quantum-vulnerable. A detection regression on the committed fixture fails.
-      - name: Gate A — crypto detection vs synthetic ground-truth
+      # Gate (a): the WHOLE committed CBOM + crypto test suite. This is the
+      # comprehensive regression lock — every clean-room capability scanner
+      # (algorithm/JVM+Go/native-API AST detection, certificate depth, protocol +
+      # crypto-policy config, related-material misuse, manifest libraries, OID +
+      # security-strength enrichment, PQC readiness), every emit/graph golden, the
+      # tri-state compliance frameworks, the scorer and the DevSecShield adapter
+      # e2e are exercised here. Selecting by the -k expression (not a fixed file
+      # list) means a NEW scanner's tests auto-join the lock and can never silently
+      # regress. A single failure fails the build.
+      - name: Gate A — full committed CBOM + crypto suite (no capability escapes the lock)
         run: >-
           AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
-          tests/test_crypto_fixture_manifest.py
-          tests/test_cbom_algorithm_scan.py
-          tests/test_cbom_certificate_scan.py
-          tests/test_cbom_protocol_scan.py
-          tests/test_cbom_weak_algorithm_scan.py
-          tests/test_cbom_pqc_scan.py -v
+          tests/ -k "cbom or crypto" -v
 
-      # Gate (b): chart-data contract — the CBOM results-page charts (crypto
-      # distributions / weak-vs-strong / PQC readiness / compliance / severity)
-      # must carry non-empty arrays, and the normalizer must carry every
-      # distribution through to the API response without flattening. Any empty or
-      # dropped chart dimension fails the build (C9/C10 regression guard).
-      - name: Gate B — chart-data contract + normalizer carry-through (no empty charts)
-        run: >-
-          AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
-          tests/test_cbom_chart_data_contract.py
-          tests/test_cbom_normalize.py -v
-
-      # Golden lock: the hand-built CycloneDX 1.6 crypto-asset BOM (algorithm /
-      # certificate / protocol / related-crypto-material components with
-      # nistQuantumSecurityLevel) must match the committed golden. Unintended BOM
-      # drift fails the build.
-      - name: Gate C — golden lock (CycloneDX 1.6 crypto-asset)
-        run: AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest tests/test_cbom_cyclonedx_emit.py -v
-
-      # Gate (d): compliance tri-state — OUT_OF_SCOPE / NOT_BOM_EVIDENCEABLE must
-      # never silently become FAIL. The scorer/severity bands and the DevSecShield
-      # adapter mapping are locked here too.
-      - name: Gate D — compliance tri-state + scorer + adapter (out-of-scope != fail)
-        run: >-
-          AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
-          tests/test_cbom_compliance.py
-          tests/test_cbom_scorer.py
-          tests/test_cbom_devsecshield_adapter.py -v
-
-      # Gate (e): benchmark true-miss gate (hermetic) + crypto recall. Ours vs the
-      # FROZEN cbomkit-theia oracle on the synthetic fixture must have ZERO
-      # true-positive misses (FP-triaged) AND our-unique > 0.
-      - name: Gate E — benchmark true-miss + crypto recall (hermetic / synthetic)
+      # Gate (b): benchmark true-miss gate (hermetic) + crypto recall. Ours vs the
+      # FROZEN cbomkit-theia + cdxgen oracles on the synthetic fixture must have
+      # ZERO true-positive misses (FP-triaged) AND our-unique > 0. Named separately
+      # from Gate A for emphasis — this is the differential-parity invariant.
+      - name: Gate B — benchmark true-miss + crypto recall (hermetic / synthetic)
         run: AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest tests/test_cbom_benchmark_gate.py -v
 
-      # Gate (f): the same true-miss gate on 2 representative REAL repos (pyjwt,
-      # pyopenssl) cloned at a pinned SHA, diffed vs the frozen cbomkit-theia
-      # snapshots. The full 4-repo LIVE benchmark runs on cbom-nightly.yml.
-      - name: Gate F — true-miss gate on representative repos (pinned SHA)
+      # Gate (c): lint + types on the CBOM lane. ruff and mypy must stay clean on
+      # every shipped crypto scanner / compliance / emit module (the product ships
+      # NO OSS BOM tool + NO runtime LLM — a type/lint regression here often flags a
+      # broken clean-room boundary).
+      - name: Gate C — ruff + mypy (CBOM lane)
+        run: |
+          uv run ruff check src/aibom/cbom/ src/aibom/integrations/cbom_devsecshield.py
+          uv run mypy src/aibom/cbom/
+
+      # Gate (d): the same true-miss gate on 2 representative REAL repos (pyjwt,
+      # pyopenssl) cloned at HEAD, diffed vs the frozen cbomkit-theia + cdxgen
+      # snapshots. The full multi-repo LIVE benchmark runs on cbom-nightly.yml.
+      - name: Gate D — true-miss gate on representative repos
         run: bash ../bench/cbom/ci_repos.sh
+
+  cbom-frontend-gate:
+    name: CBOM regression gates (frontend type contract)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      # Gate (e): the CBOM results page + charts must type-check against the
+      # scan-metadata contract (cbom_distributions / cbom_compliance / cbom_scores /
+      # cbom_graph). A drift between the backend run-object shape and the
+      # CbomCryptoCharts prop types fails the build before it can render an empty or
+      # broken CBOM results page.
+      - name: Gate E — CBOM results-page type contract (tsc --noEmit)
+        run: npx tsc --noEmit

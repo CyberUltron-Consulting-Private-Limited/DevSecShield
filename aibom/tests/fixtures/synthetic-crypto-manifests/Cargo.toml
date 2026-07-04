@@ -1,0 +1,16 @@
+[package]
+name = "cryptosvc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ring = "0.17"
+aes-gcm = "0.10"
+ed25519-dalek = "2.1"
+serde = { version = "1.0", features = ["derive"] }
+
+[dependencies.rustls]
+version = "0.23"
+
+[dev-dependencies]
+hex = "0.4"

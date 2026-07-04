@@ -106,8 +106,10 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     attempt=1
     while :; do
       OUTPUT=$(claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || true
-      if echo "$OUTPUT" | grep -q "API Error: Connection closed mid-response" && [ "$attempt" -lt 3 ]; then
-        echo "  API disconnect on attempt $attempt/3 — backing off 45s then retrying this iteration."
+      # Retry on ANY transient API/connectivity failure (connection closed mid-response, connection
+      # refused, connection error, overloaded/rate-limit, 5xx) so a blip doesn't burn the iteration.
+      if echo "$OUTPUT" | grep -qiE "API Error.*(connection closed|unable to connect|connection ?refused|connection error|overloaded|rate.?limit|timeout|5[0-9][0-9])" && [ "$attempt" -lt 5 ]; then
+        echo "  transient API error on attempt $attempt/5 — backing off 45s then retrying this iteration."
         attempt=$((attempt + 1))
         sleep 45
         continue

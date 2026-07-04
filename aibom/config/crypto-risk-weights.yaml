@@ -15,12 +15,19 @@ flags:
   WEAK_CIPHER_MODE: 8     # ECB — leaks plaintext structure
   WEAK_KEY_SIZE: 8        # RSA/DSA/DH below the 2048-bit floor
   WEAK_PROTOCOL: 8        # TLS < 1.2 / SSL (RFC 8996)
+  WEAK_CIPHER_SUITE: 8    # NULL/anon/EXPORT/RC4/DES/3DES suite, weak SSH/IKE (C13)
+  WEAK_PADDING: 8         # RSA PKCS#1 v1.5 / textbook encryption — CWE-780 (C16)
   EXPIRED_CERTIFICATE: 8  # an X.509 certificate past notValidAfter
-  WEAK_CERT_SIGNATURE: 8  # cert signed with MD2/MD4/MD5/SHA-1 (collision-broken)
-  WEAK_CERT_KEY_SIZE: 8   # cert RSA/DSA key below the 2048-bit floor
-  # ── quantum-vulnerable / migrate-soon -> MEDIUM (SARIF warning) ──
+  WEAK_CERTIFICATE_SIGNATURE: 8  # cert signed with MD5/SHA-1 — forgeable (C4)
+  WEAK_CERTIFICATE_KEY: 8        # cert public key below the asymmetric floor (C4)
+  # ── C6 crypto-material misuse -> HIGH (present-day breaks) ──
+  WEAK_RNG: 8             # key/IV/nonce/salt from a non-crypto PRNG (CWE-338)
+  STATIC_IV: 8            # constant/predictable IV or nonce reaching a cipher (CWE-329)
+  REUSED_NONCE: 8         # same static IV/nonce securing >1 encryption (CWE-323)
+  HARDCODED_KEY: 8        # symmetric/private key embedded as a source literal (CWE-321)
+  # ── quantum-vulnerable / trust smell -> MEDIUM (a future/latent risk; SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
-  CERT_NEAR_EXPIRY: 4     # a valid cert expiring within the warn window (rotate soon)
+  SELF_SIGNED_LEAF: 4     # self-signed end-entity cert — a production trust smell (C4)
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A crypto asset with no flags scores 0 -> low (the inventory floor; a strong

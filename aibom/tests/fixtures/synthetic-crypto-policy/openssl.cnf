@@ -1,0 +1,17 @@
+# Excerpt of an OpenSSL system config (openssl.cnf).
+# MinProtocol pins the negotiated TLS floor; TLSv1 (== TLS 1.0) is below the
+# TLS 1.2 baseline and is a weak protocol policy.
+
+openssl_conf = default_conf
+
+[default_conf]
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+MinProtocol = TLSv1
+MaxProtocol = TLSv1.3
+CipherString = DEFAULT@SECLEVEL=1
+Ciphersuites = TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256

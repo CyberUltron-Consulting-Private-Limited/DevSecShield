@@ -152,6 +152,75 @@ def normalize(path: Path, tool: str) -> set:
     return from_cyclonedx(path, crypto_only=True)
 
 
+# --------------------------------------------------------------------------- #
+# Crypto-LIBRARY lane (B1) — for the cdxgen oracle.
+#
+# cdxgen (@cyclonedx/cdxgen, the reference CycloneDX generator) is a
+# dependency-graph SBOM tool: with ``--include-crypto`` it resolves and emits the
+# project's library components (``type: library``). It does NOT, in this
+# environment, emit source-code algorithm crypto-assets (its atom code-slicer is
+# unavailable headless), so it is a *crypto-library* oracle, complementary to the
+# cbomkit-theia *filesystem* oracle and to our *source-code* algorithm lane.
+#
+# cdxgen resolves the FULL dependency graph (crypto + non-crypto, e.g.
+# ``typing-extensions``), so the library lane is scoped to KNOWN crypto libraries
+# via a bench-local allowlist (mirrors — but does not import — the product's
+# ``CRYPTO_LIBRARY_PACKAGES`` map). A non-crypto dependency is out of scope for a
+# CRYPTO bom benchmark, not a missed crypto asset.
+# --------------------------------------------------------------------------- #
+
+# Canonical crypto-library names (lower-case; purl/name collapse to these). Kept
+# in sync by hand with the product's crypto-library set — bench copy, no import.
+_CRYPTO_LIB_NAMES = frozenset(
+    {
+        "cryptography", "pyopenssl", "pycryptodome", "pycryptodomex", "pycrypto",
+        "pynacl", "nacl", "bcrypt", "argon2-cffi", "argon2", "passlib", "pyjwt",
+        "jwt", "python-jose", "jose", "ecdsa", "hashlib", "ssl", "secrets", "hmac",
+        "libsodium", "libsodium-wrappers", "sodium", "openssl", "bouncycastle",
+        "bcprov", "node-forge", "forge", "crypto-js", "elliptic", "tweetnacl",
+        "sshpk", "ring", "rustls", "libressl", "wolfssl", "mbedtls", "gnutls",
+    }
+)
+
+_PURL_NAME = re.compile(r"pkg:[^/]+/(.+)")
+
+
+def canon_lib(comp: dict) -> str:
+    """Canonical library name for the crypto-library diff.
+
+    Prefers the purl coordinate (``pkg:pypi/cryptography@42.0.5`` -> ``cryptography``);
+    strips a scope/vendor prefix (``pyca/cryptography`` -> ``cryptography``,
+    ``@scope/name`` -> ``name``); drops a trailing ``(stdlib)`` annotation and a
+    version; lower-cases. So cdxgen's purl-derived ``cryptography`` and our label
+    ``pyca/cryptography`` collapse to one key."""
+    purl = comp.get("purl") or ""
+    name = ""
+    m = _PURL_NAME.match(purl)
+    if m:
+        name = m.group(1)
+        name = re.split(r"[@?#]", name, maxsplit=1)[0]   # drop @version / qualifiers
+    if not name:
+        name = comp.get("name") or ""
+    name = _PAREN_SUFFIX.sub("", name).strip()     # "hashlib (stdlib)" -> hashlib
+    name = name.split("/")[-1]                      # pyca/cryptography, @scope/n -> n
+    return name.lower()
+
+
+def crypto_libraries(path: Path) -> set:
+    """Extract the set of ``(canon_lib, "library")`` for KNOWN crypto libraries
+    from a CycloneDX doc (cdxgen or ours). Non-crypto dependencies are skipped —
+    they are out of scope for the crypto-library benchmark lane, not misses."""
+    doc = json.loads(Path(path).read_text())
+    out: set = set()
+    for c in (doc.get("components") or []):
+        if c.get("type") != "library":
+            continue
+        nm = canon_lib(c)
+        if nm and nm in _CRYPTO_LIB_NAMES:
+            out.add((nm, "library"))
+    return out
+
+
 # binary certificate / key file suffixes — a filesystem oracle "decomposes" these
 # into their embedded algorithm + key-material; a source-code lane inventories the
 # file itself as a certificate / key asset instead.

@@ -43,6 +43,7 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
     ".rs": "rust",
     ".php": "php",
     ".phtml": "php",
+    ".cs": "csharp",
 }
 
 # --------------------------------------------------------------------------- #
@@ -132,6 +133,19 @@ STANDARD_ALGORITHMS: dict[str, dict] = {
                  "quantum_vulnerable": False},
     "falcon": {"primitive": "signature", "strength": _STRONG,
                "quantum_vulnerable": False},
+    # PQC stateful-hash signatures (NIST SP 800-208; CNSA 2.0 firmware signing).
+    # Hash-based => quantum-safe (Grover only halves preimage strength).
+    "lms": {"primitive": "signature", "strength": _STRONG,
+            "quantum_vulnerable": False},
+    "hss": {"primitive": "signature", "strength": _STRONG,
+            "quantum_vulnerable": False},
+    "xmss": {"primitive": "signature", "strength": _STRONG,
+             "quantum_vulnerable": False},
+    # Hybrid / composite key-establishment (classical KEX xor PQC KEM). The whole
+    # construction is quantum-safe: an attacker must break BOTH halves. Graded at
+    # its ML-KEM component's NIST category (C7 grader).
+    "hybrid": {"primitive": "key-agree", "strength": _STRONG,
+               "quantum_vulnerable": False},
 }
 
 
@@ -160,6 +174,28 @@ ALGORITHM_NORMALIZE: dict[str, str] = {
     "hkdf": "HKDF", "hmac": "HMAC", "cmac": "CMAC", "poly1305": "Poly1305",
     "kyber": "CRYSTALS-Kyber", "dilithium": "CRYSTALS-Dilithium",
     "sphincs+": "SPHINCS+", "falcon": "FALCON",
+    "lms": "LMS", "hss": "HSS", "xmss": "XMSS", "hybrid": "Hybrid ML-KEM",
+}
+
+# PQC family -> FIPS 203/204/205 canonical spelling, used to build the SIZED
+# display name when a parameter set is captured (``ML-KEM-768`` vs the unsized
+# research name ``CRYSTALS-Kyber``). Only applied when a parameter is present, so
+# an unsized detection (``new MLKEMEngine(0)``) keeps its ALGORITHM_NORMALIZE name.
+PQC_FIPS_NAME: dict[str, str] = {
+    "kyber": "ML-KEM",
+    "dilithium": "ML-DSA",
+    "sphincs+": "SLH-DSA",
+    "falcon": "FALCON",
+}
+
+# Valid NIST parameter sets per PQC family (guards the parameter extractor so a
+# stray digit — e.g. ``MLKEMEngine(0)`` — is never mistaken for a parameter set).
+PQC_PARAM_SETS: dict[str, frozenset[str]] = {
+    "kyber": frozenset({"512", "768", "1024"}),
+    "dilithium": frozenset({"44", "65", "87"}),
+    "sphincs+": frozenset({"128", "192", "256"}),
+    "falcon": frozenset({"512", "1024"}),
+    "hybrid": frozenset({"512", "768", "1024"}),  # the ML-KEM component's set
 }
 
 # Whole-token aliases -> canonical algorithm key (port: LITERAL_ALGO_ALIASES).
@@ -183,7 +219,8 @@ LITERAL_ALGO_ALIASES: dict[str, str] = {
     "argon2": "argon2", "hkdf": "hkdf",
     "kyber": "kyber", "mlkem": "kyber", "dilithium": "dilithium",
     "mldsa": "dilithium", "sphincs": "sphincs+", "slhdsa": "sphincs+",
-    "falcon": "falcon",
+    "falcon": "falcon", "lms": "lms", "hss": "hss", "xmss": "xmss",
+    "xmssmt": "xmss",
 }
 
 # JWT "alg" header values -> component algorithm keys (port: JWT_ALG_MAP).
@@ -263,7 +300,205 @@ CRYPTO_IMPORT_MODULES: dict[str, str] = {
     "nacl": "PyNaCl",
     "jwt": "PyJWT",
     "jose": "python-jose",
+    # Go (C2) — stdlib crypto/* import roots + golang.org/x/crypto.
+    "crypto/aes": "Go crypto (stdlib)",
+    "crypto/des": "Go crypto (stdlib)",
+    "crypto/rc4": "Go crypto (stdlib)",
+    "crypto/rsa": "Go crypto (stdlib)",
+    "crypto/ecdsa": "Go crypto (stdlib)",
+    "crypto/ed25519": "Go crypto (stdlib)",
+    "crypto/elliptic": "Go crypto (stdlib)",
+    "crypto/tls": "Go crypto (stdlib)",
+    "crypto/x509": "Go crypto (stdlib)",
+    "golang.org/x/crypto": "golang.org/x/crypto",
+    # Java (C2) — JCA/JCE import roots + Bouncy Castle.
+    "javax.crypto": "JCA/JCE (javax.crypto)",
+    "java.security": "JCA/JCE (java.security)",
+    "org.bouncycastle": "Bouncy Castle",
+    "bouncycastle": "Bouncy Castle",
 }
+
+# --------------------------------------------------------------------------- #
+# Language-scoped import-module maps (C3). Node's ``crypto`` module root and
+# C/C++'s ``openssl`` include root are spelled identically to the Python keys
+# above (``crypto`` -> PyCryptodome, ``openssl`` -> pyOpenSSL), so a flat lookup
+# would MIS-attribute a JS/C file. The scanner therefore consults the scoped map
+# for these languages (and falls back to the global one for Python/Go/Java, whose
+# roots are distinctive). Bare crate/module roots (``ring``/``hmac``/``rsa``) are
+# safe here precisely because they are scoped to their own language.
+# --------------------------------------------------------------------------- #
+CRYPTO_IMPORT_MODULES_BY_LANG: dict[str, dict[str, str]] = {
+    "javascript": {
+        "node:crypto": "Node.js crypto (stdlib)",
+        "crypto": "Node.js crypto (stdlib)",
+        "node-forge": "node-forge",
+        "crypto-js": "crypto-js",
+        "tweetnacl": "TweetNaCl",
+        "libsodium-wrappers": "libsodium.js",
+        "jsonwebtoken": "jsonwebtoken",
+        "bcrypt": "bcrypt (npm)",
+        "bcryptjs": "bcrypt (npm)",
+    },
+    "c": {
+        "openssl/evp": "OpenSSL",
+        "openssl/aes": "OpenSSL",
+        "openssl/sha": "OpenSSL",
+        "openssl/rsa": "OpenSSL",
+        "openssl/ec": "OpenSSL",
+        "openssl/hmac": "OpenSSL",
+        "openssl/rand": "OpenSSL",
+        "openssl/des": "OpenSSL",
+        "openssl": "OpenSSL",
+        "sodium": "libsodium",
+        "mbedtls": "mbed TLS",
+    },
+    "rust": {
+        "ring": "ring (Rust)",
+        "aes_gcm": "RustCrypto",
+        "aes": "RustCrypto",
+        "chacha20poly1305": "RustCrypto",
+        "sha2": "RustCrypto",
+        "sha1": "RustCrypto",
+        "sha3": "RustCrypto",
+        "md5": "RustCrypto",
+        "hmac": "RustCrypto",
+        "rsa": "RustCrypto",
+        "ed25519_dalek": "RustCrypto",
+        "p256": "RustCrypto",
+        "p384": "RustCrypto",
+        "pbkdf2": "RustCrypto",
+    },
+    "csharp": {
+        "system.security.cryptography": ".NET (System.Security.Cryptography)",
+        "bouncycastle": "Bouncy Castle",
+        "org.bouncycastle": "Bouncy Castle",
+    },
+}
+
+# --------------------------------------------------------------------------- #
+# Dependency-MANIFEST crypto-library coordinates (C12). The Python-only
+# ``CRYPTO_LIBRARY_PACKAGES`` above reads requirements.txt / pyproject; this map
+# does the same job for the other ecosystems' declared dependencies — Maven
+# (pom.xml / build.gradle), Go (go.mod), npm (package.json), Cargo (Cargo.toml)
+# and NuGet (*.csproj / packages.config) — keyed by that ecosystem's native
+# coordinate so a crypto library is inventoried the moment it is DECLARED, not
+# only where it is imported. Keys are stored lowercase (coordinates are matched
+# case-folded). Maven supports a ``group:*`` group-wildcard (a vendor ships many
+# artifacts — bcprov/bcpkix/bctls all = Bouncy Castle); Go is matched by longest
+# module-path prefix (so ``golang.org/x/crypto/ssh`` resolves to the root).
+# --------------------------------------------------------------------------- #
+CRYPTO_DEP_COORDINATES: dict[str, dict[str, str]] = {
+    # Maven: "groupId:artifactId" (exact) or "groupId:*" (any artifact).
+    "maven": {
+        "org.bouncycastle:*": "Bouncy Castle",
+        "com.google.crypto.tink:*": "Google Tink",
+        "org.conscrypt:*": "Conscrypt",
+        "io.jsonwebtoken:*": "JJWT",
+        "com.nimbusds:nimbus-jose-jwt": "Nimbus JOSE+JWT",
+        "org.mindrot:jbcrypt": "jBCrypt",
+        "at.favre.lib:bcrypt": "favre bcrypt",
+        "de.mkammerer:argon2-jvm": "argon2-jvm",
+        "com.password4j:password4j": "Password4j",
+        "org.wildfly.security:*": "WildFly Elytron",
+    },
+    # Go: module path (matched by exact or longest-prefix so subpaths resolve).
+    "go": {
+        "golang.org/x/crypto": "golang.org/x/crypto",
+        "github.com/golang-jwt/jwt": "golang-jwt",
+        "github.com/dgrijalva/jwt-go": "jwt-go",
+        "github.com/cloudflare/circl": "CIRCL (PQC)",
+        "filippo.io/age": "age",
+        "filippo.io/edwards25519": "edwards25519",
+        "github.com/minio/sha256-simd": "sha256-simd",
+    },
+    # npm: package name (including scoped "@scope/name").
+    "npm": {
+        "node-forge": "node-forge",
+        "crypto-js": "crypto-js",
+        "tweetnacl": "TweetNaCl",
+        "libsodium-wrappers": "libsodium.js",
+        "libsodium-wrappers-sumo": "libsodium.js",
+        "jsonwebtoken": "jsonwebtoken",
+        "jose": "jose (npm)",
+        "bcrypt": "bcrypt (npm)",
+        "bcryptjs": "bcrypt (npm)",
+        "elliptic": "elliptic",
+        "sjcl": "SJCL",
+        "@noble/hashes": "noble-hashes",
+        "@noble/curves": "noble-curves",
+        "@noble/ciphers": "noble-ciphers",
+        "argon2": "argon2 (npm)",
+    },
+    # Cargo: crate name.
+    "crate": {
+        "ring": "ring (Rust)",
+        "aes-gcm": "RustCrypto",
+        "aes": "RustCrypto",
+        "chacha20poly1305": "RustCrypto",
+        "sha2": "RustCrypto",
+        "sha1": "RustCrypto",
+        "sha3": "RustCrypto",
+        "md-5": "RustCrypto",
+        "hmac": "RustCrypto",
+        "rsa": "RustCrypto",
+        "ed25519-dalek": "RustCrypto",
+        "p256": "RustCrypto",
+        "p384": "RustCrypto",
+        "pbkdf2": "RustCrypto",
+        "argon2": "RustCrypto",
+        "rustls": "Rustls",
+        "openssl": "rust-openssl",
+        "sodiumoxide": "sodiumoxide",
+        "orion": "orion",
+        "pqcrypto": "PQClean (pqcrypto)",
+    },
+    # NuGet: package id (from *.csproj PackageReference / packages.config).
+    "nuget": {
+        "bouncycastle.cryptography": "Bouncy Castle",
+        "bouncycastle": "Bouncy Castle",
+        "portable.bouncycastle": "Bouncy Castle",
+        "nsec.cryptography": "NSec",
+        "libsodium": "libsodium",
+        "sodium.core": "libsodium",
+        "bcrypt.net-next": "BCrypt.Net",
+        "konscious.security.cryptography.argon2": "Konscious Argon2",
+        "jose-jwt": "jose-jwt",
+        "system.identitymodel.tokens.jwt": "Microsoft JWT",
+        "system.security.cryptography.cng": ".NET (System.Security.Cryptography)",
+        "system.security.cryptography.pkcs": ".NET (System.Security.Cryptography)",
+    },
+}
+
+
+def match_dep_coordinate(ecosystem: str, coordinate: str) -> str | None:
+    """Resolve a declared dependency ``coordinate`` to a crypto-library label.
+
+    ``maven`` coordinates (``group:artifact``) try an exact match then a
+    ``group:*`` wildcard; ``go`` module paths match exactly or by longest prefix
+    (``golang.org/x/crypto/ssh`` -> ``golang.org/x/crypto``); the flat ecosystems
+    (``npm``/``crate``/``nuget``) match the case-folded name exactly.
+    """
+    table = CRYPTO_DEP_COORDINATES.get(ecosystem)
+    if not table:
+        return None
+    low = coordinate.strip().lower()
+    if not low:
+        return None
+    if ecosystem == "maven":
+        if low in table:
+            return table[low]
+        group = low.split(":", 1)[0]
+        return table.get(f"{group}:*")
+    if ecosystem == "go":
+        best_len = -1
+        best_label: str | None = None
+        for key, label in table.items():
+            matched = low == key or low.startswith(key + "/")
+            if matched and len(key) > best_len:
+                best_len, best_label = len(key), label
+        return best_label
+    return table.get(low)
+
 
 # --------------------------------------------------------------------------- #
 # Parametrization extraction (THE ADDED PIECE). Pulls key size / mode / curve
@@ -334,6 +569,9 @@ __all__ = [
     "CRYPTO_METHOD_HINTS",
     "CRYPTO_LIBRARY_PACKAGES",
     "CRYPTO_IMPORT_MODULES",
+    "CRYPTO_IMPORT_MODULES_BY_LANG",
+    "CRYPTO_DEP_COORDINATES",
+    "match_dep_coordinate",
     "algo_info",
     "extract_key_size",
     "extract_mode",

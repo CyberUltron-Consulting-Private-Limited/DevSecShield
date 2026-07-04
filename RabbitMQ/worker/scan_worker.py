@@ -90,7 +90,7 @@ try:
     If you are enabling this , then make sure the frontend polls even status is "started" , becase as of now it only polls when status is "pending".
     """
     
-    @app.task(track_started=True , bind=True)
+    @app.task(track_started=True, bind=True, soft_time_limit=7200, time_limit=9000)
     def sast(
         self,
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],

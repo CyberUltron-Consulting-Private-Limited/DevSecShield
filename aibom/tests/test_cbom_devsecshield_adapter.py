@@ -41,10 +41,17 @@ def test_run_object_carries_locked_and_additive_fields() -> None:
     assert run["results"], "no crypto findings — CBOM scan returns nothing"
     assert isinstance(run["cbom_json"], dict) and run["cbom_json"].get("components")
     assert isinstance(run["duration_of_scan"], float)
-    # additive carry-through (charts + compliance + scores) — never flattened
+    # additive carry-through (charts + compliance + scores + graph) — never flattened
     assert run["cbom_distributions"]["algorithms"]
     assert run["cbom_compliance"], "tri-state compliance dropped"
     assert run["cbom_scores"], "scores dropped"
+    # I1: the normalized crypto dependency graph reaches the run-object so the
+    # backend scan-metadata branch (and the F1 dependency-graph viz) can read it.
+    graph = run["cbom_graph"]
+    assert graph["nodes"], "cbom_graph nodes dropped"
+    assert graph["edges"], "cbom_graph edges dropped (cert->algorithm links)"
+    ids = {n["id"] for n in graph["nodes"]}
+    assert all(e["source"] in ids and e["target"] in ids for e in graph["edges"])
 
 
 def test_every_finding_carries_host_dashboard_keys() -> None:

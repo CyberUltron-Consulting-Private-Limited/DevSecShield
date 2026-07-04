@@ -1,0 +1,13 @@
+{
+  "name": "crypto-frontend",
+  "version": "1.0.0",
+  "dependencies": {
+    "node-forge": "^1.3.1",
+    "jsonwebtoken": "^9.0.2",
+    "@noble/hashes": "^1.4.0",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "tweetnacl": "^1.0.3"
+  }
+}

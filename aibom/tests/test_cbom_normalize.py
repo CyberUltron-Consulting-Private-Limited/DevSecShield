@@ -34,10 +34,57 @@ def test_run_object_has_locked_keys() -> None:
         "cbom_json",
         "cbom_compliance",
         "cbom_scores",
+        "cbom_graph",
         "cbom_distributions",
         "duration_of_scan",
     ):
         assert key in run, f"missing {key}"
+
+
+def test_crypto_graph_carries_nodes_and_edges() -> None:
+    """I1: the normalized crypto dependency graph (peer of ``ai_bom_graph``) is
+    surfaced with a node per component and an edge per scanner relationship, each
+    node carrying its chart-relevant metadata so the F1 graph never re-walks the
+    CycloneDX ``dependsOn``/``cryptoRefArray`` structure."""
+    result = scan_crypto(_FX)
+    run = normalize_crypto(result, duration_of_scan=0.0)
+    graph = run["cbom_graph"]
+    # one node per scanned component
+    assert len(graph["nodes"]) == len(result.components)
+    # edges are the C9 CycloneDX crypto refs (the fixture cert links to its
+    # subject-public-key + signature-digest algorithm assets)
+    assert graph["edges"], "no dependency edges projected from cbom_json refs"
+    # nodes carry the crypto metadata the graph colors/labels by
+    for node in graph["nodes"]:
+        assert set(node) >= {
+            "id",
+            "label",
+            "kind",
+            "asset_type",
+            "primitive",
+            "impact",
+            "quantum_vulnerable",
+            "weak",
+        }
+        assert node["impact"] in {"Critical", "High", "Medium", "Low"}
+    # every edge endpoint resolves to a real node (no dangling refs)
+    ids = {n["id"] for n in graph["nodes"]}
+    for edge in graph["edges"]:
+        assert set(edge) == {"source", "target", "rel"}
+        assert edge["source"] in ids and edge["target"] in ids
+    # weak/quantum-vulnerable assets are correctly flagged on their node
+    by_label = {n["label"]: n for n in graph["nodes"]}
+    assert by_label["MD5"]["weak"] is True
+    assert by_label["RSA-2048"]["quantum_vulnerable"] is True
+    # the certificate's C9 refs become graph edges to the algorithm assets it names
+    id_to_label = {n["id"]: n["label"] for n in graph["nodes"]}
+    cert_id = next(
+        n["id"] for n in graph["nodes"] if n["asset_type"] == "certificate"
+    )
+    cert_targets = {
+        id_to_label[e["target"]] for e in graph["edges"] if e["source"] == cert_id
+    }
+    assert {"RSA-2048", "SHA-256"} <= cert_targets
 
 
 def test_scores_carried_through_not_flattened() -> None:

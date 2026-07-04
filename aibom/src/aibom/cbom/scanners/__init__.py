@@ -7,10 +7,11 @@ from aibom.cbom.scanners import (  # noqa: F401
     algorithm_scan,
     ast_crypto_scan,
     certificate_scan,
-    jvm_go_crypto_scan,
-    native_crypto_scan,
+    crypto_misuse_scan,
+    crypto_policy_scan,
     pqc_scan,
     protocol_scan,
+    strength_scan,
     weak_algorithm_scan,
 )
 
@@ -18,9 +19,10 @@ __all__ = [
     "algorithm_scan",
     "ast_crypto_scan",
     "certificate_scan",
-    "jvm_go_crypto_scan",
-    "native_crypto_scan",
+    "crypto_misuse_scan",
+    "crypto_policy_scan",
     "pqc_scan",
     "protocol_scan",
+    "strength_scan",
     "weak_algorithm_scan",
 ]
