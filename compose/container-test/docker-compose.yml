@@ -6,8 +6,8 @@ services:
   scan-worker-test:
     container_name: devsecshield-scan-worker-test
     build:
-      context: ../../RabbitMQ/worker
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: RabbitMQ/worker/Dockerfile
     env_file:
       - ../../RabbitMQ/worker/.env
     environment:
@@ -42,6 +42,18 @@ services:
       RABBITMQ_PORT: "4672"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  frontend-test:
+    container_name: devsecshield-frontend-test
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_URL: "http://127.0.0.1:9001"
+    ports:
+      - "4000:3000"
+    depends_on:
+      - backend-test
 
   dast-worker-test:
     container_name: devsecshield-dast-worker-test

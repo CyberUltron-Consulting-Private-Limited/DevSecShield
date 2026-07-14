@@ -23,6 +23,7 @@ import {
 } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { LayoutDashboard, LineChart, Link2, Shield, Bug, PlayCircle, CheckCircle, Circle, Wrench, Percent } from "lucide-react";
+import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 
 const SCAN_TYPE_LABELS: Record<string, string> = {
   sast: "SAST",
@@ -339,6 +340,12 @@ export default function TeamPage() {
               </CardContent>
             </Card>
           </div>
+
+          {dashboard.rbi_csf_rollup && (
+            <div className="mt-9">
+              <RbiCsfRollup rollup={dashboard.rbi_csf_rollup as RbiCsfRollupData} />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-9">
           {/* Scan activity by type — custom bar chart (same pattern as GuardrailsDashboardData) */}

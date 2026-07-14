@@ -263,6 +263,32 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Local-only: fixed OTP for demo login (set in backend/.env; omit in prod).
+LOCAL_DEV_VERIFICATION_EMAIL = os.getenv("LOCAL_DEV_VERIFICATION_EMAIL", "").strip().lower()
+LOCAL_DEV_VERIFICATION_CODE = os.getenv("LOCAL_DEV_VERIFICATION_CODE", "").strip()
+
+
+def local_dev_verification_enabled(email: str) -> bool:
+    return bool(
+        LOCAL_DEV_VERIFICATION_EMAIL
+        and LOCAL_DEV_VERIFICATION_CODE
+        and email.strip().lower() == LOCAL_DEV_VERIFICATION_EMAIL
+    )
+
+
+def verification_code_is_valid(session: Session, email: str, code: str) -> bool:
+    if local_dev_verification_enabled(email) and code == LOCAL_DEV_VERIFICATION_CODE:
+        return True
+    row = session.exec(
+        select(VerificationCode).where(
+            VerificationCode.email == email,
+            VerificationCode.code == code,
+            VerificationCode.expires_at >= datetime.now(timezone.utc),
+        )
+    ).first()
+    return row is not None
+
+
 def generate_verification_code():
     import secrets
     code = ''.join(secrets.choice('0123456789') for _ in range(6))
@@ -270,6 +296,8 @@ def generate_verification_code():
 
 def create_and_store_verification_code(recipient_email: str, engine: Engine) -> str:
     """Fast DB-only insert. Returns 6-digit code."""
+    if local_dev_verification_enabled(recipient_email):
+        return LOCAL_DEV_VERIFICATION_CODE
     code = generate_verification_code()
     with Session(engine) as session:
         verification_code = VerificationCode(email=recipient_email, code=code)

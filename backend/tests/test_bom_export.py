@@ -69,6 +69,31 @@ def _assert_valid_pdf(path):
 
 
 @pytest.mark.parametrize("scan_type,fixture,_bom_key", _CASES)
+def test_export_pdf_with_rbi_compliance_appendix(scan_type, fixture, _bom_key, tmp_path):
+    """Full scan_data dict (export route shape) still produces a valid PDF."""
+    payload = _load(fixture)
+    out = tmp_path / f"{scan_type}_rbi_report.pdf"
+    enriched = {
+        **payload,
+        f"{'ai_bom' if scan_type == 'ai_bom' else 'cbom'}_compliance": {
+            "rbi_free_ai" if scan_type == "ai_bom" else "rbi_free_ai_protection": {
+                "pass": 1,
+                "fail": 0,
+                "out_of_scope": 0,
+                "not_bom_evidenceable": 0,
+                "na": 0,
+                "coverage": 1.0,
+                "requirements": [],
+            },
+            "disclaimer": "advisory",
+        },
+    }
+    generate_pdf_for_type(scan_type, enriched, str(out))
+    _assert_valid_pdf(str(out))
+    assert out.stat().st_size > 1000
+
+
+@pytest.mark.parametrize("scan_type,fixture,_bom_key", _CASES)
 def test_export_pdf_from_reconciled_run_object(scan_type, fixture, _bom_key, tmp_path):
     """The export route's ``generate_pdf_for_type(type, results, path)`` produces a
     valid PDF from the I1-reconciled adapter run-object — for both BOM scanners."""

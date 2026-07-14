@@ -11,8 +11,6 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_HTTP_RETRIES=5 \
     PYTHONUNBUFFERED=1
 
-WORKDIR /app
-
 # Install build-time system dependencies (not carried to final image)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config libssl-dev curl git \
@@ -22,14 +20,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+WORKDIR /build
+
+# Monorepo path dependency (clinithread-aibom → ../../aibom from worker dir)
+COPY aibom /build/aibom
+COPY RabbitMQ/worker/pyproject.toml RabbitMQ/worker/uv.lock /build/RabbitMQ/worker/
+WORKDIR /build/RabbitMQ/worker
+
 # Install dependencies first (cached layer — only rebuilds when lockfile changes)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project
 
 # Copy application source and install the project
-COPY . /app
+COPY RabbitMQ/worker /build/RabbitMQ/worker
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked
 
@@ -55,7 +58,7 @@ ENV PYTHONUNBUFFERED=1 \
     IS_DOCKER_CONTAINER="True" \
     LINUX_GITLEAKS="True"
     
-WORKDIR /app
+WORKDIR /build/RabbitMQ/worker
 
 # Install only runtime system dependencies (no build-essential, no rust)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -70,6 +73,7 @@ COPY --from=cbomkit-builder /usr/local/bin/cbomkit-theia /usr/local/bin/cbomkit-
 
 
 # Copy the entire app + venv from builder (includes compiled wheels)
-COPY --from=builder /app /app
+COPY --from=builder /build/RabbitMQ/worker /build/RabbitMQ/worker
+COPY --from=builder /build/aibom /build/aibom
 
 CMD ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info"]

@@ -82,6 +82,8 @@ import { BarChart3, TrendingUp, Search, Filter, Check, X, ChevronDown } from "lu
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
+import { ComplianceCoverage, type Compliance } from "@/components/ai-bom/AiBomVisualizations";
+import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 
 // SBOM agent output format (from worker_sbom_agent_results_testing.json): array of flat vulnerability objects
 type OwaspOrCompliance = Record<string, string> | null | undefined;
@@ -919,6 +921,20 @@ function SbomResultsView({
         </div>
       )}
       {dashboard && "card_data" in dashboard && <SbomDashboardCharts dashboard={dashboard as SbomScanDashboardData} />}
+
+      {scanMetadata &&
+        typeof scanMetadata === "object" &&
+        "sbom_compliance" in scanMetadata &&
+        scanMetadata.sbom_compliance != null && (
+          <ComplianceCoverage
+            compliance={scanMetadata.sbom_compliance as Compliance}
+          />
+        )}
+      {scanMetadata &&
+        typeof scanMetadata === "object" &&
+        "rbi_csf_rollup" in scanMetadata && (
+          <RbiCsfRollup rollup={scanMetadata.rbi_csf_rollup as RbiCsfRollupData | undefined} />
+        )}
 
       <Card>
         <CardHeader>

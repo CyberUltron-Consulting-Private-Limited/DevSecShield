@@ -202,10 +202,8 @@ try:
                 parsed_output = agent.to_dict_list(result)
                 end_time = time.time()
                 duration_of_scan = end_time - start_time
-                return {
-                    "results": parsed_output,
-                    "duration_of_scan": duration_of_scan,
-                }
+                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
+                return enrich_sbom_scan(parsed_output, duration_of_scan)
             elif zip_context:
                 agent = SCASBOMAgent(
                     zip_context=zip_context,
@@ -215,10 +213,8 @@ try:
                 parsed_output = agent.to_dict_list(result)
                 end_time = time.time()
                 duration_of_scan = end_time - start_time
-                return {
-                    "results": parsed_output,
-                    "duration_of_scan": duration_of_scan,
-                }
+                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
+                return enrich_sbom_scan(parsed_output, duration_of_scan)
             elif file_context:
                 agent = SCASBOMAgent(
                     sbom_json_file_context=file_context,
@@ -228,10 +224,8 @@ try:
                 parsed_output = agent.to_dict_list(result)
                 end_time = time.time()
                 duration_of_scan = end_time - start_time
-                return {
-                    "results": parsed_output,
-                    "duration_of_scan": duration_of_scan,
-                }
+                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
+                return enrich_sbom_scan(parsed_output, duration_of_scan)
             else:
                 raise Exception("Unable to run sbom_sca scan with the provided context")
 

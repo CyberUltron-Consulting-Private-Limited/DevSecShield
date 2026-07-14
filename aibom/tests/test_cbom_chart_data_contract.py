@@ -220,6 +220,7 @@ _EXPECTED_FRAMEWORKS = {
     "bsi_tr_02102",
     "nist_1800_38c",
     "cnsa_2_0",
+    "rbi_free_ai_protection",
 }
 _VERDICTS = {
     "pass",

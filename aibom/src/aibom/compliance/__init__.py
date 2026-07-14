@@ -13,6 +13,7 @@ from aibom.compliance import (  # noqa: F401
     gmlp,
     hipaa,
     nist_rmf,
+    rbi_free_ai,
 )
 from aibom.compliance.base import ADVISORY_DISCLAIMER, Requirement
 from aibom.compliance.engine import ALIASES, FRAMEWORKS, resolve_framework, run_all

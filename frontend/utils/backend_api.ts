@@ -321,6 +321,8 @@ export interface SbomScanMetadata {
   repo_url?: string | null
   branch?: string | null
   zip_file_used?: boolean
+  sbom_compliance?: Record<string, unknown> | null
+  rbi_csf_rollup?: Record<string, unknown> | null
 }
 
 /** SBOM/SCA single-scan dashboard from backend generate_scan_dashboard (scan.py sbom_sca branch) */
@@ -1214,6 +1216,21 @@ export interface TeamDashboardCardData {
     remediation_percentage: number
 }
 
+/** RBI CSF pillar rollup (team or per-scan metadata) */
+export interface RbiCsfRollupPayload {
+    rbi_csf_rollup?: Record<string, {
+        pass?: number
+        pass_with_evidence?: number
+        fail?: number
+        out_of_scope?: number
+        not_bom_evidenceable?: number
+        na?: number
+        coverage?: number | null
+        requirements?: Array<{ id: string; framework: string; verdict: string; title: string }>
+    }>
+    disclaimer?: string
+}
+
 export interface TeamDashboardData {
     scans_created_at_data: { date: string; count: number }[]
     guardrails_integrations_created_at_data: { date: string; count: number }[]
@@ -1232,6 +1249,8 @@ export interface TeamDashboardData {
     false_positive_trends?: Record<string, number>
     /** Summary card data (totals) */
     card_data?: TeamDashboardCardData
+    /** Aggregated RBI CSF posture from latest BOM scans */
+    rbi_csf_rollup?: RbiCsfRollupPayload | null
 }
 
 /** Utilization item per team (key is string representation of team) */
@@ -2082,6 +2101,7 @@ export interface CbomScanMetadata {
   // (F1) never re-walks the CycloneDX dependsOn/cryptoRefArray structure.
   // Absent on legacy worker CBOM scans (produced before the reconcile).
   cbom_graph?: CbomGraph | null
+  rbi_csf_rollup?: Record<string, unknown> | null
 }
 
 /** Normalized crypto dependency graph surfaced in CBOM scan_metadata (I1). */
@@ -2380,6 +2400,7 @@ export interface AiBomScanMetadata {
   ai_bom_scores?: Record<string, unknown>
   ai_bom_spdx?: Record<string, unknown>
   ai_bom_sarif?: Record<string, unknown>
+  rbi_csf_rollup?: Record<string, unknown> | null
   error_message?: string
 }
 

@@ -90,6 +90,7 @@ import {
   type Graph as AiBomGraph,
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
+import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -1148,6 +1149,7 @@ export default function AiBomResults({
             aiBomJson={meta?.ai_bom_json as Record<string, unknown> | undefined}
             findings={(findingsList ?? []) as unknown as Record<string, unknown>[]}
           />
+          <RbiCsfRollup rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined} />
 
           {/* Findings Table */}
           <Card>

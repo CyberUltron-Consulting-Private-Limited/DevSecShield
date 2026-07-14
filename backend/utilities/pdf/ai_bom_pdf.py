@@ -426,6 +426,13 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     else:
         story.append(Paragraph("No AI assets were detected.", normal_style))
 
+    if isinstance(scan_results, dict):
+        from backend.utilities.pdf.rbi_compliance_pdf import append_rbi_compliance_pdf_section
+
+        append_rbi_compliance_pdf_section(
+            story, scan_results, heading_style, normal_style, small_style
+        )
+
     # --- Build ---
     doc.build(story)
     return output_path

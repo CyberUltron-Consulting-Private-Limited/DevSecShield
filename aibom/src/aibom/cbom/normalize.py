@@ -351,7 +351,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
             "algorithms": _algorithm_distribution(assets),
             "weakness": _weakness_distribution(result),
             "pqc": _pqc_readiness(assets, result),
-            "certificates": _certificate_expiry(assets, expired_refs),
+            "certificates": _certificate_expiry(assets, result),
             "protocols": _protocol_distribution(assets),
         },
         "quantum_vulnerable_count": sum(

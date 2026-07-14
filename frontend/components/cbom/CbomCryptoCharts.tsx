@@ -321,6 +321,7 @@ const CBOM_FRAMEWORK_LABELS: Record<string, string> = {
   bsi_tr_02102: "BSI TR-02102",
   nist_1800_38c: "NIST SP 1800-38C",
   cnsa_2_0: "CNSA 2.0",
+  rbi_free_ai_protection: "RBI FREE-AI (Protection)",
 };
 
 // Framework-filter groups (the "frameworks" toggle). Disjoint by regulatory
@@ -340,7 +341,7 @@ const FRAMEWORK_GROUPS: Array<{ id: string; label: string; keys: string[] }> = [
   {
     id: "regulatory",
     label: "Regulatory",
-    keys: ["pci_dss_4", "eu_cra", "eu_dora", "omb_m_23_02"],
+    keys: ["pci_dss_4", "eu_cra", "eu_dora", "omb_m_23_02", "rbi_free_ai_protection"],
   },
 ];
 

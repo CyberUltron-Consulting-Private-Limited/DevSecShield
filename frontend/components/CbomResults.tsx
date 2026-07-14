@@ -87,6 +87,7 @@ import {
   type CbomDistributions,
   type CbomCompliance,
 } from "@/components/cbom/CbomCryptoCharts";
+import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 
 interface CbomResultsProps {
   data: unknown;
@@ -1137,6 +1138,7 @@ export default function CbomResults({
 
           {/* Crypto-asset charts (aibom CBOM lane) */}
           {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} graph={cryptoGraph} compliance={cryptoCompliance} />}
+          <RbiCsfRollup rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined} />
 
           {/* Dashboard */}
           {dashboard && cardData && (

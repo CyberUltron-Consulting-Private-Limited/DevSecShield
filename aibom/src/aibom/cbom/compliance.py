@@ -63,6 +63,7 @@ CBOM_FRAMEWORKS = [
     "bsi_tr_02102",
     "nist_1800_38c",
     "cnsa_2_0",
+    "rbi_free_ai_protection",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -1219,6 +1220,154 @@ register_manual(
     "CNSA 2.0 NSS transition-timeline attestation (software/firmware signing by "
     "2030, default across NSS by 2033, exclusive by 2035) is a program milestone "
     "outside a static crypto inventory",
+)
+
+
+# --------------------------------------------------------------------------- #
+# RBI FREE-AI — Protection pillar (Rec 19 + Annexure IV Cyber Security Framework).
+# --------------------------------------------------------------------------- #
+
+_FW_RBI = "rbi_free_ai_protection"
+_S_RBI = "RBI FREE-AI Rec 19 / RBI Cyber Security Framework (2016)"
+
+R_RBI1 = _req(
+    "FREEAI-PROT-1",
+    _FW_RBI,
+    "No broken or deprecated cryptographic algorithms",
+    _S_RBI,
+)
+R_RBI2 = _req(
+    "FREEAI-PROT-2",
+    _FW_RBI,
+    "Transport security: no weak TLS / protocol versions",
+    _S_RBI,
+)
+R_RBI3 = _req(
+    "FREEAI-PROT-3",
+    _FW_RBI,
+    "No hardcoded private / secret key material",
+    _S_RBI,
+)
+R_RBI4 = _req(
+    "FREEAI-PROT-4",
+    _FW_RBI,
+    "Asymmetric keys meet the 2048-bit floor",
+    _S_RBI,
+)
+R_RBI5 = _req(
+    "FREEAI-PROT-5",
+    _FW_RBI,
+    "Security strength meets DPDP-aligned 112-bit floor",
+    _S_RBI,
+)
+R_RBI6 = _req(
+    "FREEAI-PROT-6",
+    _FW_RBI,
+    "Quantum-vulnerable PKI graded with migration target",
+    _S_RBI,
+)
+R_RBI7 = _req(
+    "FREEAI-PROT-7",
+    _FW_RBI,
+    "AI-specific cybersecurity incident response protocols",
+    _S_RBI,
+)
+R_RBI8 = _req(
+    "FREEAI-PROT-8",
+    _FW_RBI,
+    "Structured adversarial / red-team testing program",
+    _S_RBI,
+)
+
+
+@register_check(R_RBI1)
+def _rbi_prot1(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    weak = weak_algorithms(r)
+    if weak:
+        return FAIL(
+            f"{len(weak)} broken/deprecated algorithm(s) in use",
+            _refs(weak),
+        )
+    return PASS("no weak cryptographic algorithms detected", _refs(algorithms(r)))
+
+
+@register_check(R_RBI2)
+def _rbi_prot2(r: ScanResult, req: Requirement) -> CheckResult:
+    weak = weak_protocols(r)
+    if weak:
+        return FAIL(
+            f"{len(weak)} weak transport protocol(s) in use (TLS < 1.2 / IKEv1)",
+            _refs(weak),
+        )
+    return PASS("no weak transport protocols detected")
+
+
+@register_check(R_RBI3)
+def _rbi_prot3(r: ScanResult, req: Requirement) -> CheckResult:
+    hardcoded = hardcoded_key_material(r)
+    if hardcoded:
+        return FAIL(
+            f"{len(hardcoded)} hardcoded private/secret key(s) in source",
+            _refs(hardcoded),
+        )
+    return PASS("no hardcoded key material detected")
+
+
+@register_check(R_RBI4)
+def _rbi_prot4(r: ScanResult, req: Requirement) -> CheckResult:
+    small = undersized_keys(r)
+    if small:
+        return FAIL(
+            f"{len(small)} asymmetric key(s) below the 2048-bit floor",
+            _refs(small),
+        )
+    return PASS("no undersized asymmetric keys detected")
+
+
+@register_check(R_RBI5)
+def _rbi_prot5(r: ScanResult, req: Requirement) -> CheckResult:
+    if not algorithms(r):
+        return PASS("no cryptographic algorithms inventoried")
+    weak = under_strength(r, 112)
+    if weak:
+        return FAIL(
+            f"{len(weak)} algorithm(s) below 112-bit security strength (DPDP proxy)",
+            _refs(weak),
+        )
+    return PASS("all algorithms meet the 112-bit strength floor")
+
+
+@register_check(R_RBI6)
+def _rbi_prot6(r: ScanResult, req: Requirement) -> CheckResult:
+    qv = quantum_vulnerable(r)
+    if not qv:
+        return PASS("no quantum-vulnerable public-key cryptography in use")
+    missing = [
+        c
+        for c in qv
+        if not (c.properties or {}).get("crypto:pqcMigrationTarget")
+    ]
+    if missing:
+        return FAIL(
+            f"{len(missing)} quantum-vulnerable asset(s) lack a PQC migration target",
+            _refs(missing),
+        )
+    return PASS(
+        "every quantum-vulnerable asset names a migration target",
+        _refs(qv),
+    )
+
+
+register_manual(
+    R_RBI7,
+    "AI-specific cybersecurity incident monitoring and response protocols are "
+    "operational evidence not visible in a crypto inventory",
+)
+register_manual(
+    R_RBI8,
+    "structured red teaming / adversarial testing cadence is process evidence",
 )
 
 

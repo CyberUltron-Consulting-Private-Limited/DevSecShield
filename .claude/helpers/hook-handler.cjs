@@ -49,23 +49,27 @@ const intelligence = safeRequire(path.join(helpersDir, 'intelligence.cjs'));
 
 // ── Intelligence timeout protection (fixes #1530, #1531) ───────────────────
 const INTELLIGENCE_TIMEOUT_MS = 3000;
+// Race the (possibly-async) work against a real timeout. The previous version
+// called fn() and clearTimeout(timer) immediately, so an async fn returned a
+// pending promise that resolved THROUGH the race — the timeout protected
+// nothing. This settles on whichever finishes first, then clears the timer.
+//
+// LIMITATION: a synchronous blocking fn (the current intelligence.init() does
+// blocking fs reads) cannot be interrupted by any in-process timer — the event
+// loop is blocked. The real guard for that case is the readJSON file-size
+// limit in intelligence.cjs. This util only bounds work that yields (async I/O).
 function runWithTimeout(fn, label) {
-  // For synchronous blocking calls, we use a global safety timer.
-  // The readJSON file-size guard prevents loading huge files, but this
-  // is an additional safety net.
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => {
       process.stderr.write("[WARN] " + label + " timed out after " + INTELLIGENCE_TIMEOUT_MS + "ms, skipping\n");
       resolve(null);
     }, INTELLIGENCE_TIMEOUT_MS);
-    try {
-      const result = fn();
-      clearTimeout(timer);
-      resolve(result);
-    } catch (e) {
-      clearTimeout(timer);
-      resolve(null);
-    }
+  });
+  const work = Promise.resolve().then(fn).catch(() => null);
+  return Promise.race([work, timeout]).then((result) => {
+    clearTimeout(timer);
+    return result;
   });
 }
 
@@ -112,9 +116,32 @@ async function main() {
   const toolInput = hookInput.toolInput || hookInput.tool_input || {};
   const toolName = hookInput.toolName || hookInput.tool_name || '';
 
-  // Merge stdin data into prompt resolution: prefer stdin fields, then env, then argv
-  const prompt = hookInput.prompt || hookInput.command || toolInput
+  // Merge stdin data into prompt resolution: prefer stdin fields, then env, then argv.
+  // `toolInput` is an object (e.g. {command:"ls"}) — it's truthy but not a string,
+  // so falling back to it directly bound `prompt` to the object and tripped
+  // `.toLowerCase()` / `.substring()` on every Bash hook (#1944). Use the
+  // `.command` field instead, which is the actual string the hook needs.
+  const prompt = hookInput.prompt || hookInput.command || toolInput.command
     || process.env.PROMPT || process.env.TOOL_INPUT_command || args.join(' ') || '';
+
+  // ADR-174: capture FAILURES so the learning substrate has negative examples.
+  // Claude Code's PostToolUse payload carries the tool result; a failed
+  // Write/Edit/Bash surfaces as tool_response.is_error / an error string /
+  // a non-zero exit code. Conservative — only a positive error signal counts
+  // as failure (mirrors isToolFailure() in helpers-generator.ts).
+  const toolFailed = (function (hi) {
+    if (!hi || typeof hi !== 'object') return false;
+    const tr = hi.tool_response != null ? hi.tool_response : (hi.toolResponse != null ? hi.toolResponse : hi.result);
+    if (tr == null) return false;
+    if (typeof tr === 'string') return /\b(error|failed|failure|exception|not found|no such|permission denied|traceback)\b/i.test(tr);
+    if (typeof tr === 'object') {
+      if (tr.is_error === true || tr.isError === true || tr.success === false || tr.error != null) return true;
+      const code = tr.exit_code != null ? tr.exit_code : (tr.exitCode != null ? tr.exitCode : tr.code);
+      if (typeof code === 'number' && code !== 0) return true;
+      if (Array.isArray(tr.content) && tr.is_error === true) return true;
+    }
+    return false;
+  })(hookInput);
 
 const handlers = {
   'route': () => {
@@ -144,8 +171,12 @@ const handlers = {
   },
 
   'pre-bash': () => {
-    // Basic command safety check — prefer stdin command data from Claude Code
-    const cmd = (hookInput.command || prompt).toLowerCase();
+    // Basic command safety check — prefer stdin command data from Claude Code.
+    // String() wrap is belt-and-suspenders for #2017: even if a future regression
+    // re-binds `prompt` or `hookInput.command` to a non-string, `.toLowerCase()`
+    // can no longer throw a TypeError that the global try/catch would swallow
+    // (silently exiting 0 and letting the dangerous command through).
+    const cmd = String(hookInput.command || toolInput.command || prompt || '').toLowerCase();
     const dangerous = ['rm -rf /', 'format c:', 'del /s /q c:\\', ':(){:|:&};:'];
     for (const d of dangerous) {
       if (cmd.includes(d)) {
@@ -166,10 +197,10 @@ const handlers = {
       try {
         const file = hookInput.file_path || toolInput.file_path
           || process.env.TOOL_INPUT_file_path || args[0] || '';
-        intelligence.recordEdit(file);
+        intelligence.recordEdit(file, !toolFailed);
       } catch (e) { /* non-fatal */ }
     }
-    console.log('[OK] Edit recorded');
+    console.log(toolFailed ? '[LEARN] Edit FAILURE recorded' : '[OK] Edit recorded');
   },
 
   'session-restore': async () => {
@@ -234,13 +265,15 @@ const handlers = {
   },
 
   'post-task': () => {
-    // Implicit success feedback for intelligence
+    // ADR-174: feed the REAL outcome (feedback() boosts confidence on success,
+    // decays it on failure) instead of a hardcoded true — no more all-positive
+    // signal that the substrate can't learn from.
     if (intelligence && intelligence.feedback) {
       try {
-        intelligence.feedback(true);
+        intelligence.feedback(!toolFailed);
       } catch (e) { /* non-fatal */ }
     }
-    console.log('[OK] Task completed');
+    console.log(toolFailed ? '[LEARN] Task FAILURE recorded' : '[OK] Task completed');
   },
 
   'stats': () => {

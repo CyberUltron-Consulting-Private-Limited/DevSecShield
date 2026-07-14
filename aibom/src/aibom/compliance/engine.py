@@ -20,13 +20,22 @@ from aibom.compliance.base import (
 from aibom.model.result import ScanResult
 
 # Canonical framework keys (must match Requirement.framework) + CLI aliases.
-FRAMEWORKS = ["fda_524b", "eu_ai_act_annexIV", "gmlp", "hipaa", "nist_rmf"]
+FRAMEWORKS = [
+    "fda_524b",
+    "eu_ai_act_annexIV",
+    "gmlp",
+    "hipaa",
+    "nist_rmf",
+    "rbi_free_ai",
+]
 ALIASES = {
     "fda524b": "fda_524b",
     "euaiact": "eu_ai_act_annexIV",
     "gmlp": "gmlp",
     "hipaa": "hipaa",
     "nist": "nist_rmf",
+    "rbi": "rbi_free_ai",
+    "freeai": "rbi_free_ai",
 }
 
 

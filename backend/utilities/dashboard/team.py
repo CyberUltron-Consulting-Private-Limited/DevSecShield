@@ -254,6 +254,10 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
 
     
     # STEP [ 8 ] : ============================= Return the data ================================================
+    from backend.utilities.dashboard.rbi_posture import build_team_rbi_posture_from_scans
+
+    rbi_csf_rollup = build_team_rbi_posture_from_scans(scans)
+
     return {
         "scans_created_at_data": scans_created_at_data,
         "guardrails_integrations_created_at_data": guardrails_integrations_created_at_data,
@@ -266,6 +270,7 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         "fixes_per_day": fixes_per_day,
         "false_positive_trends": false_positive_trends,
         "card_data": card_data,
+        "rbi_csf_rollup": rbi_csf_rollup,
     }
 
 

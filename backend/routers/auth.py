@@ -16,7 +16,9 @@ from backend.utilities.auth.auth_utils import (
     get_current_user_from_access_token,
     get_user_from_header_or_raise_exception,
     create_and_store_verification_code,
+    local_dev_verification_enabled,
     send_verification_email,
+    verification_code_is_valid,
 )
 from backend.new_models import *
 from backend.utilities.auth.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
@@ -55,15 +57,12 @@ async def create_user(data: UserSignup):
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code, VerificationCode.expires_at >= datetime.datetime.now(datetime.timezone.utc))).first()
-        if verification_code is None:
-            print("invalid verification code 🔴")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code"
-            )
-        else:
-            # code verified and performing cleanup
+            if not verification_code_is_valid(session, data.email, data.verification_code):
+                print("invalid verification code 🔴")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired verification code",
+                )
             print("code verified and performing cleanup 🟩")
             session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))
             session.commit()
@@ -128,15 +127,12 @@ async def login(form_data: UserLogin):
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == form_data.email, VerificationCode.code == form_data.verification_code, VerificationCode.expires_at >= datetime.datetime.now(datetime.timezone.utc))).first()
-        if verification_code is None:
-            print("invalid verification code 🔴")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code"
-            )
-        else:
-            # code verified and performing cleanup
+            if not verification_code_is_valid(session, form_data.email, form_data.verification_code):
+                print("invalid verification code 🔴")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid verification code",
+                )
             print("code verified and performing cleanup 🟩")
             session.exec(delete(VerificationCode).where(VerificationCode.email == form_data.email))
             session.commit()
@@ -261,11 +257,12 @@ async def send_verification_code(data: CodeSend, background_tasks: BackgroundTas
         engine = get_db()
         mongo_client_db = get_mongo_client_db()
 
-        # STEP 1: Fast DB insert - returns immediately
+        # STEP 1: Fast DB insert - returns immediately (fixed code for local demo user)
         code = create_and_store_verification_code(data.email, engine)
-        
-        # STEP 2: Queue email sending to background task (runs after response sent)
-        background_tasks.add_task(send_verification_email, data.email, code)
+
+        # STEP 2: Queue email (skipped for local fixed-OTP demo account)
+        if not local_dev_verification_enabled(data.email):
+            background_tasks.add_task(send_verification_email, data.email, code)
         
         return {
             "message": "Verification code sent to user"
@@ -292,13 +289,14 @@ async def reset_password(data: ResetPassword):
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code, VerificationCode.expires_at >= datetime.datetime.now(datetime.timezone.utc))).first()
-        if verification_code is None:
-            Console().print("invalid verification code 🔴", style="bold red")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification code"
-            )
+            if not verification_code_is_valid(session, data.email, data.verification_code):
+                Console().print("invalid verification code 🔴", style="bold red")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired verification code",
+                )
+            session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))
+            session.commit()
 
         # STEP 2-------------updating password
         with Session(engine) as session:

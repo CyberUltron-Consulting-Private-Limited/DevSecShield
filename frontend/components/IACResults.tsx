@@ -44,6 +44,8 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -58,9 +60,6 @@ import {
   RadialBarChart,
   XAxis,
   YAxis,
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp, GitBranch, FileArchive, ImageIcon, Github, Search, Filter, Check, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";

@@ -66,10 +66,21 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         zip_file_used = bool(_meta.get("zip_file_used"))
         branch = _meta.get("branch",None)
 
+        sbom_compliance = None
+        rbi_csf_rollup = None
+        if scan.scan_data and isinstance(scan.scan_data, dict):
+            if "sbom_compliance" in scan.scan_data:
+                sbom_compliance = scan.scan_data["sbom_compliance"]
+        if sbom_compliance:
+            from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
+            rbi_csf_rollup = build_rbi_csf_rollup(sbom_compliance=sbom_compliance)
+
         return {
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
+            "sbom_compliance": sbom_compliance,
+            "rbi_csf_rollup": rbi_csf_rollup,
         }
     
     elif scan_type == "mcp":
@@ -147,6 +158,11 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             if "cbom_graph" in scan.scan_data:
                 cbom_graph = scan.scan_data["cbom_graph"]
 
+        rbi_csf_rollup = None
+        if cbom_compliance:
+            from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
+            rbi_csf_rollup = build_rbi_csf_rollup(cbom_compliance=cbom_compliance)
+
         return {
             "repo_url": repo_url,
             "branch": branch,
@@ -158,6 +174,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "cbom_compliance": cbom_compliance,
             "cbom_scores": cbom_scores,
             "cbom_graph": cbom_graph,
+            "rbi_csf_rollup": rbi_csf_rollup,
         }
 
     elif scan_type == "ai_bom":
@@ -196,6 +213,11 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             if "ai_bom_scores" in scan.scan_data:
                 ai_bom_scores = scan.scan_data["ai_bom_scores"]
 
+        rbi_csf_rollup = None
+        if ai_bom_compliance:
+            from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
+            rbi_csf_rollup = build_rbi_csf_rollup(ai_bom_compliance=ai_bom_compliance)
+
         return {
             "repo_url": repo_url,
             "branch": branch,
@@ -208,4 +230,5 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "ai_bom_scores": ai_bom_scores,
             "ai_bom_spdx": ai_bom_spdx,
             "ai_bom_sarif": ai_bom_sarif,
+            "rbi_csf_rollup": rbi_csf_rollup,
         }

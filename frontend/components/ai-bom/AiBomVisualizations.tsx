@@ -77,6 +77,8 @@ const FRAMEWORK_LABELS: Record<string, string> = {
   gmlp: "GMLP (IMDRF)",
   hipaa: "HIPAA",
   nist_rmf: "NIST AI RMF",
+  rbi_free_ai: "RBI FREE-AI",
+  rbi_free_ai_supply: "RBI FREE-AI (Supply Chain)",
 };
 const VERDICT_BADGE: Record<string, string> = {
   pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",

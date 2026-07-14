@@ -23,7 +23,7 @@ acceptance criterion "weak crypto -> high".
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, WEAK_ALGORITHMS
 from aibom.model.component import AIComponent
@@ -35,6 +35,8 @@ WEAK_KEY_SIZE = "WEAK_KEY_SIZE"
 WEAK_PROTOCOL = "WEAK_PROTOCOL"
 # An X.509 certificate past its notValidAfter date (C8: "expired cert -> high").
 EXPIRED_CERTIFICATE = "EXPIRED_CERTIFICATE"
+_NEAR_EXPIRY_DAYS = 90
+CERT_NEAR_EXPIRY = "CERT_NEAR_EXPIRY"
 # C4 certificate-depth weaknesses (distinct from the algorithm-asset codes above
 # so the scorer/charts can attribute them to the certificate lane):
 #   * a certificate signed with a broken digest (MD2/MD4/MD5/SHA-1) — forgeable;
@@ -42,6 +44,8 @@ EXPIRED_CERTIFICATE = "EXPIRED_CERTIFICATE"
 #   * a self-signed *leaf* (BasicConstraints CA:FALSE) — a production trust smell.
 WEAK_CERTIFICATE_SIGNATURE = "WEAK_CERTIFICATE_SIGNATURE"
 WEAK_CERTIFICATE_KEY = "WEAK_CERTIFICATE_KEY"
+WEAK_CERT_SIGNATURE = WEAK_CERTIFICATE_SIGNATURE
+WEAK_CERT_KEY_SIZE = WEAK_CERTIFICATE_KEY
 SELF_SIGNED_LEAF = "SELF_SIGNED_LEAF"
 # C6 related-crypto-material misuse codes (source-derived; see
 # :mod:`aibom.cbom.misuse` for detection). Each is a present-day break:
@@ -650,7 +654,7 @@ def cert_weakness_findings(
             findings.append(
                 (
                     CERT_NEAR_EXPIRY,
-                    _SEV_WARN,
+                    _SEV_MED,
                     f"Certificate {name} expires in {days_left} day(s) "
                     f"(notValidAfter {not_after.isoformat()}); schedule "
                     f"rotation before it lapses to avoid an outage.",

@@ -34,6 +34,7 @@ def test_registry_has_all_frameworks_with_expected_counts() -> None:
         "gmlp": 10,
         "hipaa": 13,
         "nist_rmf": 16,
+        "rbi_free_ai": 24,
     }
 
 
