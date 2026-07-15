@@ -182,11 +182,11 @@ export default function CicdIntegrationDashboardPage() {
     api_key: "",
     integration_active: false,
     logs: [],
-    vulns_over_time_chart_data: undefined,
+    dashboard_data: undefined,
   };
 
   const vulnsOverTimeChartArray = useMemo(() => {
-    const raw = dashboardData.vulns_over_time_chart_data;
+    const raw = dashboardData.dashboard_data;
     if (!raw || typeof raw !== "object") return [];
     return Object.entries(raw)
       .map(([date, counts]) => ({
@@ -197,7 +197,7 @@ export default function CicdIntegrationDashboardPage() {
         Low: counts?.Low ?? 0,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dashboardData.vulns_over_time_chart_data]);
+  }, [dashboardData.dashboard_data]);
 
   const hasVulnsOverTimeData = vulnsOverTimeChartArray.length > 0 && vulnsOverTimeChartArray.some(
     (d) => d.Critical > 0 || d.High > 0 || d.Medium > 0 || d.Low > 0

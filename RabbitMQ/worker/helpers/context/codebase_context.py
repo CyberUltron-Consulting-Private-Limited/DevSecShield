@@ -2,6 +2,7 @@ import json
 import os
 from typing import Iterable, Literal
 import uuid
+import hashlib
 from datetime import datetime
 from bson.regex import Regex
 from langchain_community.document_loaders.generic import GenericLoader
@@ -205,6 +206,7 @@ class CodebaseContext(BaseContextManager):
         """
         try:
             # --------------------------------------- Initialize the loader and other variables --------------------------------------------
+            console.print(f"Loading documents of extension: {lang_ext}",style="dim yellow1")
             loader = GenericLoader.from_filesystem(
                 self.directory,
                 glob="**/*",
@@ -224,17 +226,20 @@ class CodebaseContext(BaseContextManager):
 
             # ---------------------------------- Setting up document iterator with exclusion or inclusion --------------------------------------------
             if not self.exclude_path_arrays and not self.include_path_arrays:
-                iterator = get_documents(document_loader_object,metadata=self.metadata)
+                iterator = get_documents(document_loader_object,metadata=self.metadata,verbose=True)
             elif self.exclude_path_arrays and not self.include_path_arrays:
-                iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, metadata=self.metadata)
+                iterator = get_documents_after_exclusion(document_loader_object, self.exclude_path_arrays, metadata=self.metadata,verbose=True)
             elif self.include_path_arrays and not self.exclude_path_arrays:
-                iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, metadata=self.metadata)
+                iterator = get_documents_after_inclusion(document_loader_object, self.include_path_arrays, metadata=self.metadata,verbose=True)
             else:
                 raise ValueError(f"Only one of exclude_path_arrays or include_path_arrays can be provided")
             
             # --------------------------------------- Cycle through all the documents --------------------------------------------
             for document in iterator:
                 documents.append(document)
+
+            # Sort documents by source path for deterministic batch composition across runs
+            documents.sort(key=lambda doc: doc.metadata.get("source", ""))
 
             console.print(f"{len(documents)} Language: {lang_ext} Documents loaded successfully",style="dim green")
             included_set = set(self.metadata["included_documents"])
@@ -392,8 +397,62 @@ class CodebaseContext(BaseContextManager):
             if not split_documents:
                 raise ValueError(f"No split documents found")
 
-            # Adding agent_job_id to the documents metadata for filtering
-            generated_id = str(uuid.uuid4()) + datetime.now().strftime("%Y%m%d%H%M%S")
+            # Normalize document source paths to relative (strip temp directory) for determinism
+            dir_str = str(self.directory)
+            for doc in split_documents:
+                src = doc.metadata.get("source", "")
+                if src:
+                    doc.metadata["source"] = os.path.relpath(src, dir_str)
+
+            # Generate deterministic context ID from CONTENT hashes (not file paths).
+            # This ensures that the same code produces the same fingerprint regardless
+            # of directory structure, zip layout, or repo location.
+            per_doc_hashes = sorted(set(
+                hashlib.sha256(doc.page_content.encode()).hexdigest()
+                for doc in split_documents
+            ))
+            content_fingerprint = "\n".join(per_doc_hashes)
+            generated_id = hashlib.sha256(content_fingerprint.encode()).hexdigest()[:32]
+
+            # Sort documents by content hash for deterministic batch ordering
+            # (path-independent — same code always lands in the same batch)
+            split_documents.sort(key=lambda d: hashlib.sha256(d.page_content.encode()).hexdigest())
+
+            # Check if embeddings for this content hash already exist in Qdrant (reuse)
+            try:
+                from qdrant_client import models as _qmodels
+                _qdrant_client = vectorstore.client
+                _existing, _ = _qdrant_client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=_qmodels.Filter(
+                        must=[_qmodels.FieldCondition(
+                            key="metadata.context_id",
+                            match=_qmodels.MatchValue(value=generated_id),
+                        )]
+                    ),
+                    limit=1,
+                )
+                if _existing:
+                    console.print(f"♻️ Embeddings already exist for context_id {generated_id}, reusing", style="bold green")
+                    # Retrieve all point IDs for cleanup tracking
+                    all_points, _ = _qdrant_client.scroll(
+                        collection_name=self.collection_name,
+                        scroll_filter=_qmodels.Filter(
+                            must=[_qmodels.FieldCondition(
+                                key="metadata.context_id",
+                                match=_qmodels.MatchValue(value=generated_id),
+                            )]
+                        ),
+                        limit=10000,
+                    )
+                    self.doc_ids = [str(p.id) for p in all_points]
+                    split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
+                    self.context_id = generated_id
+                    self.documents = split_documents_with_context_id
+                    return generated_id
+            except Exception as reuse_err:
+                console.print(f"⚠️ Embedding reuse check failed (will re-embed): {reuse_err}", style="dim yellow")
+
             split_documents_with_context_id = self.add_context_id_to_documents(documents=split_documents, context_id=generated_id)
 
             console.print(f"Adding {len(split_documents_with_context_id)} codebase documents to vector store with context id : {generated_id}",style="bold green")
@@ -417,31 +476,32 @@ class CodebaseContext(BaseContextManager):
         Only supports languages that match app_lang options: python, javascript, java, php, c, ruby, rust, swift, csharp, kotlin
         """
         try:
-            match file_extension:
-                case ".py":
-                    return Language.PYTHON
-                case ".js":
-                    return Language.JS
-                case ".java":
-                    return Language.JAVA
-                case ".php":
-                    return Language.PHP
-                case ".c":
-                    return Language.C
-                case ".cs":
-                    return Language.CSHARP
-                case ".kt":
-                    return Language.KOTLIN
-                case ".rb":
-                    return Language.RUBY
-                case ".rs":
-                    return Language.RUST
-                case ".swift":
-                    return Language.SWIFT
-                # Unsupported extensions that don't match app_lang options
-                # These will be handled without language-specific parsing
-                case _:
-                    return None # when None , the document will be split without language
+            return None 
+            # match file_extension:
+            #     case ".py":
+            #         return Language.PYTHON
+            #     case ".js":
+            #         return Language.JS
+            #     case ".java":
+            #         return Language.JAVA
+            #     case ".php":
+            #         return Language.PHP
+            #     case ".c":
+            #         return Language.C
+            #     case ".cs":
+            #         return Language.CSHARP
+            #     case ".kt":
+            #         return Language.KOTLIN
+            #     case ".rb":
+            #         return Language.RUBY
+            #     case ".rs":
+            #         return Language.RUST
+            #     case ".swift":
+            #         return Language.SWIFT
+            #     # Unsupported extensions that don't match app_lang options
+            #     # These will be handled without language-specific parsing
+            #     case _:
+            #         return None # when None , the document will be split without language
         except Exception as e:
             raise ValueError(f"Error in getting language from file extension: {e}")
     
@@ -474,6 +534,11 @@ class CodebaseContext(BaseContextManager):
             else:
                 summary = None
 
+            
+            # additional tranformation for metadata 
+            self.metadata["included_documents"] = list(self.metadata["included_documents"])
+            self.metadata["excluded_documents"] = list(self.metadata["excluded_documents"])
+
 
             return BaseResult(context_id=context_id, summary=summary)
 
@@ -493,7 +558,10 @@ class CodebaseContext(BaseContextManager):
             tuple[int, int, int] : (size_in_bytes, size_in_mb, size_in_gb)
         """
         try:
-            self.split_documents_and_set_documents()
+            has_docs = self.split_documents_and_set_documents()
+
+            if not has_docs or not hasattr(self, 'documents') or not self.documents:
+                return (0, 0.0, 0.0)
 
             documents = self.documents
             sizes = get_size_of_documents(documents)

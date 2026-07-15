@@ -1,0 +1,43 @@
+id: demo-testfire-headless-automatic-login
+
+info:
+  name: Demo Testfire Headless Automatic Login
+  author: pdteam
+  severity: high
+
+headless:
+  - steps:
+      - args:
+          url: "https://demo.testfire.net/login.jsp"
+        action: navigate
+      - action: waitload
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: jsmith
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: demo1234
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: //*[@id="login"]/table/tbody/tr[3]/td[2]/input
+        action: click
+      - action: waitload
+    matchers:
+      - part: resp
+        type: word
+        words:
+          - "You have been pre-approved for an Altoro Gold Visa with a credit limit of $10000!"

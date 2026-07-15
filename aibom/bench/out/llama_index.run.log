@@ -1,0 +1,8 @@
+[llama_index] cloning https://github.com/run-llama/llama_index (shallow)…
+[llama_index] SHA=520aa4ec48c084c7d0fdf93cb22d567046118ad2
+[llama_index] scan path: llama-index-core/llama_index
+[llama_index] trusera done (trusera_exit=0)
+[llama_index] ours done (ours_exit=0)
+[llama_index] cisco analyze (agentic/bedrock)…
+[llama_index] cisco done (exit=0)
+[llama_index] DONE (clone removed)

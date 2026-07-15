@@ -1,0 +1,6 @@
+services:
+  llm:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+  vectors:
+    image: chromadb/chroma:0.5.0

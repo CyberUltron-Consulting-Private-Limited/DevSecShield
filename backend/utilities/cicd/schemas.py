@@ -16,8 +16,16 @@ class SastScanSettingsData(BaseModel):
     app_lang: Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] 
     exclude_path_arrays: list[list[str]] | None = None
 
+class CbomScanSettingsData(BaseModel):
+    scan_binaries: bool = False
+
+class AiBomScanSettingsData(BaseModel):
+    scan_binaries: bool = False
+
 class CicdScanSettingsData(BaseModel):
     sast: SastScanSettingsData | None = None
+    cbom: CbomScanSettingsData | None = None
+    ai_bom: AiBomScanSettingsData | None = None
 
 
 class UpdateCicdIntegrationData(BaseModel):

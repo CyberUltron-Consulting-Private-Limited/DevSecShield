@@ -1,0 +1,53 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/mcp-servers/src    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Cache hit: d466655c81e7 (cached 2026-06-26T05:40:12Z)
+Cache hit for 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/mcp-servers/src 
+(d466655c81e7…)
+Report written to 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/out/mcp-servers.cisco.json
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analysis Summary (v2) •                                                      │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/mcp-servers/src    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+    Components in     
+/Users/anshsinghal/Des
+ktop/DevSecShield/aibo
+m/bench/repos/mcp-serv
+       ers/src        
+                      
+  Category     Count  
+ ━━━━━━━━━━━━━━━━━━━━ 
+  dependency   2      
+  mcp_server   3      
+  skill        1      
+                      
+╭────────────────────╮
+│ DEPENDENCY details │
+╰────────────────────╯
+  @modelcontextprotocol/sdk 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/memory/pa
+ckage.json:28
+  mcp 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/uv.l
+ock:323
+╭────────────────────╮
+│ MCP_SERVER details │
+╰────────────────────╯
+  mcp-fetch framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/fetch/src
+/mcp_server_fetch/server.py:193
+  mcp-git framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/git/src/m
+cp_server_git/server.py:319
+  mcp-time framework=mcp 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/time/src/
+mcp_server_time/server.py:124
+╭───────────────╮
+│ SKILL details │
+╰───────────────╯
+  MCP "Everything" Server - Development Guidelines 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/06-mcp-servers/src/everythin
+g/AGENTS.md:0

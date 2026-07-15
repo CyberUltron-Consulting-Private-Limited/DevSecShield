@@ -10,7 +10,11 @@ export interface ApiError {
 }
 
 
+let isLoggingOut = false;
+
 export const handleLogout = async () => {
+  if (isLoggingOut) return;
+  isLoggingOut = true;
   try{
     const response = await api.get("/logout")
     if(response.status === 200){
@@ -21,8 +25,11 @@ export const handleLogout = async () => {
       throw new Error(response.data.detail)
     }
   }catch(error:any){
-    const apiError = handleApiError(error);
-    showErrorToast(apiError, "Error while logging out");
+    // On logout failure, just clear and redirect
+    localStorage.clear()
+    window.location.href = "/login";
+  } finally {
+    isLoggingOut = false;
   }
 }
 

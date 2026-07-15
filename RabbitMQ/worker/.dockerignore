@@ -1,3 +1,10 @@
 .venv/
-__pychache__/
-uv.lock
+__pycache__/
+*.pyc
+Notes.md
+DataSpecs.md
+celery_test.py
+testing.py
+garak_results.json
+docker-compose.yml
+archive/

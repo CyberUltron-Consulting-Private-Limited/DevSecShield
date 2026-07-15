@@ -17,7 +17,7 @@ from helpers.tools.sca_sbom_agent.parser import parse_sbom_results_to_strings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from helpers.tools.llm_agent.context import LLMBenchmarkingContext
 from helpers.tools.llm_agent.llm_runner import run_garak_scan
-from helpers.tools.llm_agent.summary_manager import LLMBenchmarkingSummaryManager
+from helpers.tools.llm_agent.summary_manager import LLMBenchmarkingSummaryManager, ModelVulnerabilitiesSummaryManager
 from helpers.tools.llm_agent.summary_manager import FinalLLMBenchmarkingVulnerabilities
 from helpers.context.progress_writer import StateUpdateWriter
 
@@ -39,6 +39,8 @@ class LLMBenchmarkingAgent(BaseAgent):
 
             #initializing
             self.vulnerabilities : list[type[LLMBenchmarkingVulnerability]] | None = None
+            self.metadata : dict | None = None
+            self.model_vulnerabilities : dict | None = None
 
         except Exception as e:
             raise ValueError(f"Error in initializing LLMBenchmarkingAgent: {e}")
@@ -72,6 +74,8 @@ class LLMBenchmarkingAgent(BaseAgent):
                 summary_manager=LLMBenchmarkingSummaryManager()
             )
 
+            self.metadata = opensource_results.results # SET metadata as the row scan results ⭐
+
             output : type[FinalLLMBenchmarkingVulnerabilities] = opensource_results.summary 
             vulnerabilities = output.vulnerabilities # GET vulnerabilities ⭐
     
@@ -79,13 +83,29 @@ class LLMBenchmarkingAgent(BaseAgent):
             for index , vulnerability in enumerate(vulnerabilities):
                 console.print(f" 🔧 Vulnerability # {index + 1} : {vulnerability.title}",style="bold yellow")
 
-
-
             self.vulnerabilities = vulnerabilities # SET vulnerabilities ⭐
+
+
+            model_vulnerabilities_object : type[LLMModelVulnerability] = self.get_model_vulnerabilities(open_source_context)
+            model_vulnerabilities_dict = model_vulnerabilities_object.model_dump()
+            
+            self.model_vulnerabilities = model_vulnerabilities_dict # SET model vulnerabilities ⭐
 
 
         except Exception as e:
             raise ValueError(f"Error in populating open source context: {e}")
+    
+
+    def get_model_vulnerabilities(self, open_source_context: OpenSourceContext)->type[LLMModelVulnerability]:
+        """
+        Gets the model vulnerabilities
+        """
+        try:
+            output : type[LLMModelVulnerability] = open_source_context.generate_map_reduce_summary(
+            summary_manager=ModelVulnerabilitiesSummaryManager() )
+            return output
+        except Exception as e:
+            raise ValueError(f"Error in getting model vulnerabilities: {e}")
     
 
 
@@ -106,7 +126,12 @@ class LLMBenchmarkingAgent(BaseAgent):
 
             
             parsed_output = self.to_dict_list(self.vulnerabilities)
-            return parsed_output
+
+            results = {
+                "vulnerabilities": parsed_output,
+                "model_vulnerabilities": self.model_vulnerabilities,
+            }
+            return results , self.metadata
 
 
         except Exception as e:

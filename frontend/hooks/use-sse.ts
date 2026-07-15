@@ -1,24 +1,32 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { Dispatch, SetStateAction, useEffect } from 'react';
+import { Dispatch, SetStateAction, useEffect, useRef } from 'react';
 import { apiBaseURL, getAccessToken } from '@/utils/interceptors';
 import type { ChatMessage } from '@/components/ai/ChatWindow';
 import { toast } from 'sonner';
 import { showErrorToast } from '@/utils/error-handler';
 import { usePathname } from 'next/navigation';
 
+/**
+ * Stream a chatbot response using Server-Sent Events.
+ * Returns an AbortController to allow cancellation on unmount.
+ */
 const streamChatbotResponse = async ( 
     assistant_message_id: number, 
     user_message: string , 
     messages: ChatMessage[], 
     setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
     conversation_id: number ,
-    type: string
-) => {
+    type: string,
+    abortController?: AbortController
+): Promise<AbortController> => {
 
-    const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast'];
+    const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom', 'ai_bom'];
     if (!valid_types.includes(type)) {
         throw new Error('Invalid conversation type');
     }
+
+    // Create new AbortController if not provided
+    const controller = abortController || new AbortController();
 
     await fetchEventSource(`${apiBaseURL}/${type}/conversation/${conversation_id}/message`, {
             method: "POST",
@@ -31,6 +39,7 @@ const streamChatbotResponse = async (
                 message_id: assistant_message_id,
                 user_message: user_message,
             }),
+            signal: controller.signal,
             onopen: async (res: Response) =>{
                 if (res.ok && res.status === 200) {
                 console.log("Connection made ", res);
@@ -74,10 +83,17 @@ const streamChatbotResponse = async (
                 console.log("Connection closed by the server");
             },
             onerror(err) {
+                // Ignore abort errors (expected on unmount)
+                if (err.name === 'AbortError') {
+                    console.log("SSE connection aborted");
+                    return;
+                }
                 showErrorToast(err, "There was an error from server");
             },
           });
-        };
+    
+    return controller;
+};
 
 
 

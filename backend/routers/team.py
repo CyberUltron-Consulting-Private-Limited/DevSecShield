@@ -11,7 +11,8 @@ from backend.new_models import Team, TeamMembership , User , Scan , CicdIntegrat
 from backend.utilities.team.membership import add_emails_to_team , remove_emails_from_team
 from sqlalchemy import or_
 from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
-from backend.get_db import dev_environment
+from backend.utilities.db.encryption import encrypt_value, decrypt_value, is_encrypted
+import copy
 
 router = APIRouter( tags=["team"] )   
 console = Console()
@@ -30,7 +31,7 @@ async def get_team(
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -55,6 +56,15 @@ async def get_team(
 
 
             # STEP [ 3 ] : =========== return the team details ======================
+            # SECURITY: Mask sensitive credentials in response
+            safe_integration_settings = None
+            if team.integration_settings:
+                safe_integration_settings = copy.deepcopy(team.integration_settings)
+                if "jira" in safe_integration_settings and safe_integration_settings["jira"]:
+                    if "api_token" in safe_integration_settings["jira"] and safe_integration_settings["jira"]["api_token"]:
+                        # Mask the token - show only that it's configured
+                        safe_integration_settings["jira"]["api_token"] = "••••••••" if safe_integration_settings["jira"]["api_token"] else None
+            
             return {
                 "team_id": team.id,
                 "team_name": team.name,
@@ -63,7 +73,7 @@ async def get_team(
                 "team_members": [{"email": member.user.email, "role": member.role} for member in team.team_memberships],
                 "team_created_at": team.created_at,
                 "team_credit_balance":  round(float(team.credit_balance), 2) if team.credit_balance else None,
-                "team_integration_settings": team.integration_settings,
+                "team_integration_settings": safe_integration_settings,
                 "team_settings": team.settings,
             }
         
@@ -85,7 +95,7 @@ async def list_teams(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -133,7 +143,7 @@ async def create_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
 
@@ -180,7 +190,7 @@ async def update_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -198,7 +208,15 @@ async def update_team(
                 if data.integration_settings.jira is not None:
                     specific_settings_dict = data.integration_settings.model_dump()
                     settings_dict = team.integration_settings.copy() or {}
-                    settings_dict["jira"] = specific_settings_dict["jira"]
+                    
+                    # SECURITY: Encrypt sensitive Jira credentials before storage
+                    jira_settings = specific_settings_dict["jira"]
+                    if jira_settings and "api_token" in jira_settings and jira_settings["api_token"]:
+                        # Only encrypt if not already encrypted (for migration compatibility)
+                        if not is_encrypted(jira_settings["api_token"]):
+                            jira_settings["api_token"] = encrypt_value(jira_settings["api_token"])
+                    
+                    settings_dict["jira"] = jira_settings
                     team.integration_settings = settings_dict
             session.add(team)
             session.commit()
@@ -222,7 +240,7 @@ async def remove_or_add_members_to_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         # user = User(id=1) # for testing purposes
         
@@ -258,8 +276,8 @@ async def delete_team(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         if user.default_team_id == team_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete default team")
@@ -369,7 +387,7 @@ async def get_team_dashboard(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
 
         # STEP [ 2 ] : =========== check if user is in team ======================
@@ -397,7 +415,7 @@ async def get_teams_dashboard(
     """
     try:
         # STEP [ 1 ] : =========== Get the engine and user ======================
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
 
         # STEP [ 2 ] : =========== get the dashboard data for all teams that the current user is a member of ======================

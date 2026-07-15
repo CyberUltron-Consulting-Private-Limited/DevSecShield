@@ -1,0 +1,3063 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "65515b66-afe5-4361-a3bb-e75e657238c5",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:58:32Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T06:01:54Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "huggingface/trl": {
+        "source_name": "huggingface/trl",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl",
+        "components": {
+          "model": [
+            {
+              "name": "Qwen/Qwen2.5-0.5B-Instruct",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+              "line_number": 121,
+              "framework": "qwen",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Qwen/Qwen2.5-0.5B-Instruct' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "start_line": 121,
+                    "end_line": 121,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=Qwen%2FQwen2.5-0.5B-Instruct",
+                "provider": "qwen",
+                "family": "qwen",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "builtin",
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 288,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 245,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 831,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 151,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 421,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 6,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py"
+                ],
+                "consolidated_count": 6
+              },
+              "instance_id": "Qwen/Qwen2.5-0.5B-Instruct_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py_121",
+              "confidence": 1.0
+            },
+            {
+              "name": "Qwen/Qwen3.5-4B",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+              "line_number": 27,
+              "framework": "qwen",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "Qwen/Qwen3.5-4B",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Qwen/Qwen3.5-4B' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+                    "start_line": 27,
+                    "end_line": 27,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=Qwen%2FQwen3.5-4B",
+                "provider": "qwen",
+                "family": "qwen",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "builtin",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py"
+                ]
+              },
+              "instance_id": "Qwen/Qwen3.5-4B_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py_27",
+              "confidence": 1.0
+            },
+            {
+              "name": "Qwen/Qwen3-4B",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+              "line_number": 28,
+              "framework": "fireworks_ai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "Qwen/Qwen3-4B",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Qwen/Qwen3-4B' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+                    "start_line": 28,
+                    "end_line": 28,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=Qwen%2FQwen3-4B",
+                "provider": "fireworks_ai",
+                "family": "qwen3",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py"
+                ]
+              },
+              "instance_id": "Qwen/Qwen3-4B_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py_28",
+              "confidence": 1.0
+            },
+            {
+              "name": "Qwen/Qwen2-VL-2B-Instruct",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+              "line_number": 67,
+              "framework": "fireworks_ai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "Qwen/Qwen2-VL-2B-Instruct",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'Qwen/Qwen2-VL-2B-Instruct' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                    "start_line": 67,
+                    "end_line": 67,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=Qwen%2FQwen2-VL-2B-Instruct",
+                "provider": "fireworks_ai",
+                "family": "qwen2-vl-2b",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py"
+                ]
+              },
+              "instance_id": "Qwen/Qwen2-VL-2B-Instruct_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py_67",
+              "confidence": 1.0
+            },
+            {
+              "name": "model.safetensors",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+              "line_number": 302,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "model.safetensors",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'model.safetensors' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "start_line": 302,
+                    "end_line": 302,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=model.safetensors",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py"
+                ]
+              },
+              "instance_id": "model.safetensors_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py_302",
+              "confidence": 0.4
+            },
+            {
+              "name": "pytorch_model.bin",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+              "line_number": 345,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": "pytorch_model.bin",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'pytorch_model.bin' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "start_line": 345,
+                    "end_line": 345,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=pytorch_model.bin",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py"
+                ]
+              },
+              "instance_id": "pytorch_model.bin_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py_345",
+              "confidence": 0.4
+            }
+          ],
+          "embedding": [
+            {
+              "name": "Qwen/Qwen3-0.6B",
+              "component_type": "embedding",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+              "line_number": 62,
+              "framework": "perplexity",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "Qwen/Qwen3-0.6B",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Embedding 'Qwen/Qwen3-0.6B' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "start_line": 62,
+                    "end_line": 62,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=Qwen%2FQwen3-0.6B",
+                "provider": "perplexity",
+                "family": "6b",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py"
+                ]
+              },
+              "instance_id": "Qwen/Qwen3-0.6B_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py_62",
+              "confidence": 1.0
+            }
+          ],
+          "dataset": [
+            {
+              "name": "dataset",
+              "component_type": "dataset",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/dataset_formatting.py",
+              "line_number": 16,
+              "framework": "huggingface/datasets",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Training or analytics data loading",
+              "text": "import datasets",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dataset 'dataset' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/dataset_formatting.py",
+                    "start_line": 16,
+                    "end_line": 16,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                    "line": 25,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                    "line": 437,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                    "line": 487,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                    "line": 559,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                    "line": 837,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/utils.py",
+                    "line": 830,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                    "line": 222,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 27,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 283,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 285,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 553,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_rollout_worker.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 38,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 903,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 961,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 976,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 995,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 1018,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 764,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 28,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gkd/gkd_trainer.py",
+                    "line": 23,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 30,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 1008,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+                    "line": 189,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 1040,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 21,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 56,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 59,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                    "line": 22,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                    "line": 30,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+                    "line": 155,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                    "line": 19,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                    "line": 42,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                    "line": 45,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 542,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 549,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 555,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py",
+                    "line": 27,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                    "line": 23,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                    "line": 27,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                    "line": 585,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 25,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 789,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                    "line": 32,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                    "line": 36,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                    "line": 301,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/tpo/tpo_trainer.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                    "line": 22,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/dataset_formatting.py",
+                    "line": 17,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/dataset_formatting.py",
+                    "line": 22,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                    "line": 72,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                    "line": 104,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                    "line": 70,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                    "line": 132,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/utils.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/utils.py",
+                    "line": 432,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/utils.py",
+                    "line": 438,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                    "line": 68,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                    "line": 96,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                    "line": 70,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                    "line": 132,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                    "line": 57,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                    "line": 66,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                    "line": 94,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 240,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 242,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 826,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 828,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 116,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 118,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 39,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 146,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 148,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 31,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 416,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 418,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 1052,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 88,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_rollout_worker.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gkd/gkd_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/tpo/tpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/dataset_formatting.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py"
+                ],
+                "consolidated_count": 88
+              },
+              "instance_id": "dataset_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/dataset_formatting.py_16",
+              "confidence": 0.85
+            }
+          ],
+          "hyperparameter": [
+            {
+              "name": "hyperparameter:batch_size",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+              "line_number": 133,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter batch_size",
+              "text": "batch_size = queries.shape[0]",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "batch_size": "queries.shape[0]"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:batch_size' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "start_line": 133,
+                    "end_line": 133,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                    "line": 400,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                    "line": 222,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 555,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 725,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 882,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 1274,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 767,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 789,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 973,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 1029,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 1044,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 1086,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gfpo/gfpo_trainer.py",
+                    "line": 167,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gfpo/gfpo_trainer.py",
+                    "line": 254,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gfpo/gfpo_trainer.py",
+                    "line": 265,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 392,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 964,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 1841,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/grpo_with_replay_buffer/grpo_with_replay_buffer_trainer.py",
+                    "line": 173,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/grpo_with_replay_buffer/grpo_with_replay_buffer_trainer.py",
+                    "line": 263,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/grpo_with_replay_buffer/grpo_with_replay_buffer_trainer.py",
+                    "line": 274,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 867,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 1042,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 1472,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                    "line": 445,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                    "line": 1106,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 474,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 544,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 557,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                    "line": 593,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                    "line": 1031,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 301,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 797,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 1393,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                    "line": 309,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                    "line": 433,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/vllm_serve.py",
+                    "line": 799,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 675,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 700,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 715,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 734,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 840,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                    "line": 321,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                    "line": 505,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 692,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 729,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 750,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 765,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 1261,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 1341,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 1357,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 1001,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 1038,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 1158,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 1173,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 2063,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 2258,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 2274,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 2323,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 1054,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 1559,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 62,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/data_utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gfpo/gfpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/grpo_with_replay_buffer/grpo_with_replay_buffer_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/vllm_serve.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py"
+                ],
+                "consolidated_count": 62
+              },
+              "instance_id": "hyperparameter:batch_size_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py_133",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:learning_rate",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+              "line_number": 1303,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter learning_rate",
+              "text": "self, tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time, learning_rate=None",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "learning_rate": null
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:learning_rate' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                    "start_line": 1303,
+                    "end_line": 1303,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py"
+                ]
+              },
+              "instance_id": "hyperparameter:learning_rate_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py_1303",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:dropout",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+              "line_number": 606,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter dropout",
+              "text": "self.dropout = nn.Dropout(summary_dropout_prob) if summary_dropout_prob else nn.Identity()",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "dropout": "nn.Dropout(summary_dropout_prob"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:dropout' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "start_line": 606,
+                    "end_line": 606,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py"
+                ]
+              },
+              "instance_id": "hyperparameter:dropout_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py_606",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:gradient_accumulation_steps",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+              "line_number": 469,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter gradient_accumulation_steps",
+              "text": "accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "gradient_accumulation_steps": "args.gradient_accumulation_steps"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:gradient_accumulation_steps' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "start_line": 469,
+                    "end_line": 469,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py"
+                ]
+              },
+              "instance_id": "hyperparameter:gradient_accumulation_steps_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py_469",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:bf16",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py",
+              "line_number": 105,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter bf16",
+              "text": "self.bf16 = not (self.fp16) if self.bf16 is None else self.bf16",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "bf16": "not (self.fp16"
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:bf16' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py",
+                    "start_line": 105,
+                    "end_line": 105,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py"
+                ]
+              },
+              "instance_id": "hyperparameter:bf16_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py_105",
+              "confidence": 0.85
+            },
+            {
+              "name": "hyperparameter:fp16",
+              "component_type": "hyperparameter",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+              "line_number": 1221,
+              "framework": "python-kwargs",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Hyperparameter fp16",
+              "text": "# using fp16=True, the model's hidden states get cast to float16 by autocast, but the mm_buf is allocated",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {
+                "fp16": true
+              },
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Hyperparameter 'hyperparameter:fp16' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "start_line": 1221,
+                    "end_line": 1221,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py"
+                ]
+              },
+              "instance_id": "hyperparameter:fp16_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py_1221",
+              "confidence": 0.85
+            }
+          ],
+          "training_run": [
+            {
+              "name": "training_run",
+              "component_type": "training_run",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py",
+              "line_number": 33,
+              "framework": "pytorch/tensorflow",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Model training execution",
+              "text": "def __init__(self, callbacks, model, ref_model, processing_class, optimizer, lr_scheduler):",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Training run 'training_run' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py",
+                    "start_line": 33,
+                    "end_line": 33,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                    "line": 81,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                    "line": 362,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 292,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 292,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 341,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                    "line": 390,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 377,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 429,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 801,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py",
+                    "line": 48,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py",
+                    "line": 124,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/dpo_trainer.py",
+                    "line": 29,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                    "line": 102,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                    "line": 145,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 400,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 155,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                    "line": 208,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gkd/gkd_trainer.py",
+                    "line": 81,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gkd/gkd_trainer.py",
+                    "line": 125,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 747,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+                    "line": 33,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 418,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                    "line": 452,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 66,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 66,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 137,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                    "line": 177,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                    "line": 143,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                    "line": 183,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                    "line": 442,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                    "line": 148,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                    "line": 183,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                    "line": 1103,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+                    "line": 34,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                    "line": 113,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                    "line": 154,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                    "line": 73,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                    "line": 73,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 448,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 332,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 370,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 461,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 469,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 505,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 513,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 648,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 914,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 920,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py",
+                    "line": 128,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py",
+                    "line": 167,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                    "line": 237,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                    "line": 354,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                    "line": 106,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/tpo/tpo_trainer.py",
+                    "line": 269,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/tpo/tpo_trainer.py",
+                    "line": 304,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                    "line": 92,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                    "line": 131,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                    "line": 430,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 66,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                    "line": 122,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                    "line": 122,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                    "line": 149,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                    "line": 149,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/utils.py",
+                    "line": 260,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                    "line": 112,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                    "line": 112,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                    "line": 149,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                    "line": 149,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                    "line": 73,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                    "line": 73,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                    "line": 118,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                    "line": 118,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py",
+                    "line": 41,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py",
+                    "line": 81,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 248,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 248,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 297,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                    "line": 332,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 834,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 834,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 889,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                    "line": 925,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                    "line": 633,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 125,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 125,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 196,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 231,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 1090,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 155,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 155,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 226,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 282,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 1510,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 424,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 424,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 478,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py",
+                    "line": 513,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 101,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/a2po/a2po_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/async_grpo/async_grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/dpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/dppo/dppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gkd/gkd_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/harbor/_spec.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/kto/kto_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/minillm/minillm_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/nash_md/nash_md_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/online_dpo/online_dpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/openreward/_spec.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/papo/papo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/prm/prm_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdft/sdft_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/sdpo/sdpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ssd/ssd_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/tpo/tpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/xpo/xpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_config.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/reward_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/sft_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/dpo_trainer.py"
+                ],
+                "consolidated_count": 101
+              },
+              "instance_id": "training_run_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bema_for_ref_model/callback.py_33",
+              "confidence": 0.9
+            }
+          ],
+          "experiment_tracker": [
+            {
+              "name": "experiment_tracker",
+              "component_type": "experiment_tracker",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+              "line_number": 19,
+              "framework": "trackio",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Experiment metrics and run tracking",
+              "text": "#     \"trackio\",",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Experiment tracker 'experiment_tracker' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                    "start_line": 19,
+                    "end_line": 19,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 72,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                    "line": 1501,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                    "line": 70,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                    "line": 1008,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 65,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 68,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 1710,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 1727,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                    "line": 1728,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_config.py",
+                    "line": 147,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_config.py",
+                    "line": 148,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_config.py",
+                    "line": 366,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_config.py",
+                    "line": 367,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 72,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                    "line": 2043,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                    "line": 71,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                    "line": 979,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 1020,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                    "line": 1023,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 24,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 27,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 30,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 44,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 121,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 128,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                    "line": 129,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                    "line": 19,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                    "line": 19,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                    "line": 19,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                    "line": 19,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                    "line": 19,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_config.py",
+                    "line": 214,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_config.py",
+                    "line": 215,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_trainer.py",
+                    "line": 27,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_trainer.py",
+                    "line": 170,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_trainer.py",
+                    "line": 172,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_config.py",
+                    "line": 340,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_config.py",
+                    "line": 341,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 66,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                    "line": 342,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                    "line": 50,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                    "line": 334,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 90,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 93,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 1629,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                    "line": 1630,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 108,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 111,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 2880,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py",
+                    "line": 2881,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 51,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/bco/bco_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/cpo/cpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/distillation/distillation_config.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/gold/gold_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/orpo/orpo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/ppo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/extras/profiling.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/grpo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/sft.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/rloo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/reward.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/dpo.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_config.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/base_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_config.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/utils.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/callbacks.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/rloo_trainer.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/trainer/grpo_trainer.py"
+                ],
+                "consolidated_count": 51
+              },
+              "instance_id": "experiment_tracker_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/scripts/kto.py_19",
+              "confidence": 0.85
+            }
+          ],
+          "model_artifact": [
+            {
+              "name": "model_artifact",
+              "component_type": "model_artifact",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+              "line_number": 280,
+              "framework": "model-weights",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Serialized model weights or export",
+              "text": "filename = os.path.join(pretrained_model_name_or_path, \"pytorch_model.bin\")",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model artifact 'model_artifact' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "start_line": 280,
+                    "end_line": 280,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 282,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 288,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 345,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 346,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 450,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 456,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 544,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                    "line": 545,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 9,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py"
+                ],
+                "consolidated_count": 9
+              },
+              "instance_id": "model_artifact_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py_280",
+              "confidence": 0.9
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 17,
+          "last_generated_at": "2026-06-26T06:01:54Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/huggingface/trl",
+          "source_ref_version": "b3caa40b7807fb866aef16ded227285a9825558f",
+          "elapsed_s": 201.6,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 17,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "model": 6,
+        "embedding": 1,
+        "dataset": 1,
+        "hyperparameter": 6,
+        "training_run": 1,
+        "experiment_tracker": 1,
+        "model_artifact": 1
+      },
+      "total_relationships": 0,
+      "risk_score": 20,
+      "risk_severity": "low"
+    },
+    "risk": {
+      "score": 20,
+      "severity": "low",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+          "line_number": 302,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                "start_line": 302,
+                "end_line": 302,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+          "line_number": 345,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/10-trl-sft/trl/experimental/ppo/modeling_value_head.py",
+                "start_line": 345,
+                "end_line": 345,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

@@ -1,0 +1,105 @@
+[project]
+name = "clinithread-aibom"
+version = "0.1.0"
+description = "Healthcare-grade AI Bill of Materials generator (CycloneDX 1.6 ML-BOM + SPDX 3.0 AI/Dataset profiles) with FDA/EU-AI-Act compliance mapping."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "DevSecShield / clinithread" }]
+
+# Phase-1 runtime deps are intentionally light so `uv sync` is fast and
+# reliable. The heavier scan/imaging/API deps from the project tech stack
+# (libcst, tree-sitter, pydicom, fastapi) live in optional groups below and are
+# pulled in per-phase as the scanners that need them land.
+dependencies = [
+    "pydantic>=2.7",
+    "typer>=0.12",
+    "jsonschema>=4.20",
+    "referencing>=0.30",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Phase-1+ code scanners (LibCST for Python; tree-sitter for JS/TS/Java/Go).
+scan = [
+    "libcst>=1.4",
+    "tree-sitter>=0.22",
+]
+# Clinical-imaging context (Phase 1+/2).
+imaging = ["pydicom>=2.4"]
+# API / MCP surface (Phase 5).
+api = ["fastapi>=0.111"]
+# Optional LLM enrichment via Amazon Bedrock (Converse / Anthropic Haiku 4.5).
+# Always optional + fail-open: scans run deterministic-only without it.
+llm = ["boto3>=1.34"]
+# Phase-3 client deliverables (xlsx traceability matrix, pdf readiness report,
+# docx SaMD/PCCP memo) generated from ScanResult.compliance.
+report = [
+    "openpyxl>=3.1",
+    "reportlab>=4.0",
+    "python-docx>=1.1",
+]
+
+[project.scripts]
+aibom = "aibom.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML>=6.0",
+    "types-jsonschema>=4.20",
+    "pypdf>=4.0",  # PDF text extraction in deliverable tests
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aibom"]
+
+# Bundle the offline JSON schemas into the package (hard rule: validation is
+# offline; the schemas ship with the wheel).
+[tool.hatch.build.targets.wheel.force-include]
+"src/aibom/schemas" = "aibom/schemas"
+"src/aibom/dashboard" = "aibom/dashboard"
+"config" = "aibom/config"
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+target-version = "py311"
+# Detection fixtures are deliberately-crafted target apps (planted secrets, model
+# literals, weak-crypto on one line) that scanners match line-by-line; linting /
+# auto-formatting them would corrupt the ground truth, so they are not linted.
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "A", "C4", "SIM"]
+ignore = ["A003"]  # 'map' is a documented CLI subcommand name
+
+[tool.ruff.lint.per-file-ignores]
+# Typer requires typer.Argument()/Option() as parameter defaults (B008 is a
+# false positive for the Typer/FastAPI dependency-injection idiom).
+"src/aibom/cli.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["aibom"]
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+# Document-generation libraries ship no type stubs (deliverables extra only).
+[[tool.mypy.overrides]]
+module = ["openpyxl.*", "reportlab.*", "docx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]

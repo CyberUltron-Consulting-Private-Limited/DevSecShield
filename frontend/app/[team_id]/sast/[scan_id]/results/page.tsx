@@ -46,12 +46,15 @@ export default function SASTResultsPage() {
     );
   }
 
-  // Extract SAST results and dashboard from the conversation data
-  const sastData = query.data?.data;
   const dashboard = query.data?.dashboard;
+  const findings = query.data?.findings ?? undefined;
+  const scanMetadata = query.data?.scan_metadata ?? undefined;
   const integrationSettings = query.data?.integration_settings ?? undefined;
 
-  if (!sastData) {
+  const hasFindings = Array.isArray(findings) && findings.length > 0;
+  const hasDashboard = dashboard != null;
+  const hasResults = hasFindings || hasDashboard;
+  if (!hasResults) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
@@ -64,12 +67,14 @@ export default function SASTResultsPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
       <SASTResults
-        data={sastData}
         conversationId={scan_id}
         dashboard={dashboard}
+        findings={findings}
         teamId={String(team_id)}
+        scanMetadata={scanMetadata}
         integrationSettings={integrationSettings}
         onIntegrationSettingsUpdated={() => query.refetch()}
+        onFindingsUpdated={() => query.refetch()}
       />
     </div>
   );

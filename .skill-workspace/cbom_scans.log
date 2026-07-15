@@ -1,0 +1,228 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+[11:23:59] Starting 4 real CBOM scans (Bedrock model=None)
+[11:24:00] === SCAN START pyjwt (https://github.com/jpadilla/pyjwt @ master) ===
+📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_mmttp79o Branch:master
+[11:24:02]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 26 files, found 70 crypto usages
+CBOM Source Scanner: 16 unique crypto assets after dedup
+Source scanner found 16 crypto asset detections
+[11:24:02]    progress 30%
+[11:24:02]    progress 50%
+Generated CycloneDX CBOM with 16 components
+[11:24:02]    progress 60%
+Getting Cryptographic Output Model ....
+Getting Output Model ....
+🔍 CVE cache MISS in MongoDB for key '2025,2026'
+Error in fetching CVE for year: Error in fetching CVE: 503
+Error in fetching recent CVEs: Error in fetching CVE: 503
+get_output_model failed , generating fallback output model: Error in fetching 
+CVE: 503
+Creating Fallback Output Model ....
+Final Vulnerability Model created successfully
+Response Model created successfully
+Fallback Output Model generated successfully
+Cryptographic Output Model generated successfully
+🔍 Map-reduce cache MISS for hash 9d723ccea763a6b6...
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Mapping length of documents 2
+🔍 Batch 0 map cache MISS (hash 9d723ccea763...)
+Documents data length before summarizing 3962
+Map Summary for Documents 0 to 10 .  Content length of map summary: 10012
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+Skipping Combine and Refine steps as there is only 1 Map summary result .
+✅ Map-reduce result cached with hash 9d723ccea763a6b6...
+Vulnerabilities from LLM enrichment: 7
+ 🔐 Vulnerability #1: Use of weak symmetric cipher DES
+ 🔐 Vulnerability #2: Use of quantum‑vulnerable DSA signature algorithm
+ 🔐 Vulnerability #3: Use of quantum‑vulnerable RSA asymmetric cipher
+ 🔐 Vulnerability #4: Use of quantum‑vulnerable RSA asymmetric cipher
+ 🔐 Vulnerability #5: Use of quantum‑vulnerable RSA asymmetric cipher
+ 🔐 Vulnerability #6: Use of quantum‑vulnerable ECDSA asymmetric cipher
+ 🔐 Vulnerability #7: Use of deprecated SSL protocol
+[11:25:18]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[11:25:18]    progress 100%
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+[11:25:18] === SCAN DONE  pyjwt: 7 findings in 77s -> /tmp/cbom_runs/pyjwt.json ===
+[11:25:18] === SCAN START php-jwt (https://github.com/firebase/php-jwt @ main) ===
+📦 Cloning https://github.com/firebase/php-jwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_p9mpm6_o Branch:main
+[11:25:20]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 0 files, found 0 crypto usages
+CBOM Source Scanner: 0 unique crypto assets after dedup
+Source scanner found 0 crypto asset detections
+[11:25:20]    progress 30%
+[11:25:20]    progress 50%
+Generated CycloneDX CBOM with 0 components
+No crypto detections found, returning empty results
+[11:25:20]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[11:25:20]    progress 100%
+[11:25:20] === SCAN DONE  php-jwt: 0 findings in 1s -> /tmp/cbom_runs/php-jwt.json ===
+[11:25:20] === SCAN START bcrypt (https://github.com/pyca/bcrypt @ main) ===
+📦 Cloning https://github.com/pyca/bcrypt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_xdmjr7zi Branch:main
+[11:25:22]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 5 files, found 1 crypto usages
+CBOM Source Scanner: 1 unique crypto assets after dedup
+Source scanner found 1 crypto asset detections
+[11:25:22]    progress 30%
+[11:25:22]    progress 50%
+Generated CycloneDX CBOM with 1 components
+[11:25:22]    progress 60%
+Getting Cryptographic Output Model ....
+Getting Output Model ....
+🔍 CVE cache MISS in MongoDB for key '2025,2026'
+Error in fetching CVE for year: Error in fetching CVE: 503
+Error in fetching recent CVEs: Error in fetching CVE: 503
+get_output_model failed , generating fallback output model: Error in fetching 
+CVE: 503
+Creating Fallback Output Model ....
+Final Vulnerability Model created successfully
+Response Model created successfully
+Fallback Output Model generated successfully
+Cryptographic Output Model generated successfully
+🔍 Map-reduce cache MISS for hash 3452e56c9f1d5aac...
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Mapping length of documents 1
+🔍 Batch 0 map cache MISS (hash 3452e56c9f1d...)
+Documents data length before summarizing 415
+Map Summary for Documents 0 to 10 .  Content length of map summary: 82
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+Skipping Combine and Refine steps as there is only 1 Map summary result .
+✅ Map-reduce result cached with hash 3452e56c9f1d5aac...
+Vulnerabilities from LLM enrichment: 0
+[11:26:25]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[11:26:25]    progress 100%
+[11:26:25] === SCAN DONE  bcrypt: 0 findings in 65s -> /tmp/cbom_runs/bcrypt.json ===
+[11:26:26] === SCAN START node-jsonwebtoken (https://github.com/auth0/node-jsonwebtoken @ master) ===
+📦 Cloning https://github.com/auth0/node-jsonwebtoken → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_fcdjhlh9 Branch:master
+[11:26:27]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 46 files, found 0 crypto usages
+CBOM Source Scanner: 0 unique crypto assets after dedup
+Source scanner found 0 crypto asset detections
+[11:26:27]    progress 30%
+[11:26:27]    progress 50%
+Generated CycloneDX CBOM with 0 components
+No crypto detections found, returning empty results
+[11:26:27]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[11:26:27]    progress 100%
+[11:26:27] === SCAN DONE  node-jsonwebtoken: 0 findings in 1s -> /tmp/cbom_runs/node-jsonwebtoken.json ===
+[11:26:27] ALL DONE: 4/5 succeeded

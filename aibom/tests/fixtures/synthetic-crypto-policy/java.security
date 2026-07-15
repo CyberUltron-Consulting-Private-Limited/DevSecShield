@@ -1,0 +1,10 @@
+# Excerpt of a hardened JDK master security file (java.security).
+# The disabledAlgorithms directives are the runtime's denied-crypto policy.
+
+crypto.policy=unlimited
+
+jdk.tls.disabledAlgorithms=SSLv3, TLSv1, TLSv1.1, RC4, DES, MD5withRSA, \
+    3DES_EDE_CBC, DH keySize < 1024, EC keySize < 224, anon, NULL
+
+jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1 jdkCA & usage TLSServer, \
+    RSA keySize < 1024, DSA keySize < 1024

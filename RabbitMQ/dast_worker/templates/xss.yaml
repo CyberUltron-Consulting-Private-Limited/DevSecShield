@@ -1,0 +1,87 @@
+id: testing_xss
+
+info:
+  name: testing_xss
+  author: pdteam
+  severity: high
+
+headless:
+
+  # Step 1: Login
+  - steps:
+      - args:
+          url: "https://demo.testfire.net/login.jsp"
+        action: navigate
+      - action: waitload
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: jsmith
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: demo123
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[3]/td[2]/input
+        action: click
+      - action: waitload
+
+  # Step 2: XSS Test on the target input field
+  - steps:
+      # ✅ FIX 1: Navigate to the page containing the input field after login
+      - action: navigate
+        args:
+          url: "https://demo.testfire.net/REPLACE_WITH_TARGET_PAGE"
+      - action: waitload
+
+      # ✅ FIX 2: Click the input field before typing
+      - args:
+          by: xpath
+          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[1]"
+        action: click
+      - action: waitload
+
+      # Type XSS payload into the input field
+      - args:
+          by: xpath
+          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[1]"
+          value: "<script>alert('XSS-testing')</script>"
+        action: text
+
+      # Click the submit button
+      - args:
+          by: xpath
+          xpath: "/html/body/div[1]/form/table/tbody/tr[1]/td[2]/input[2]"
+        action: click
+
+      - action: waitload
+
+      # ✅ FIX 3: Removed waitload after waitdialog
+      - action: waitdialog
+        name: reflected_text_query
+        args:
+          max-duration: 10s
+
+    matchers:
+      - type: dsl
+        dsl:
+          - reflected_text_query == true
+
+    extractors:
+      - type: dsl
+        dsl:
+          - reflected_text_query_type    # Expected: "alert"
+          - reflected_text_query_message # Expected: "XSS-testing"

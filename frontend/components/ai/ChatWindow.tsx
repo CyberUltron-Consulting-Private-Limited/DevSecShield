@@ -27,21 +27,23 @@ import {
 import { Source, Sources, SourcesContent, SourcesTrigger } from '@/components/ai/source';
 import { DisplaySuggestions } from '@/components/ai/DisplaySuggestions';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { ChevronRightIcon, EyeIcon, MicIcon, PaperclipIcon, RefreshCcwIcon, RotateCcwIcon, ScanIcon } from 'lucide-react';
 import { nanoid } from 'nanoid';
-import { type FormEventHandler, useCallback, useEffect, useState } from 'react';
+import { type FormEventHandler, useCallback, useEffect, useState, useMemo } from 'react';
 import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DASTConversationResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
+import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, AIBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';
 import ScanStatusIndicator from '@/components/ai/ScanStatusIndicator';
 import { SastConversationResponse } from '@/utils/backend_api';
 import { UseQueryResult } from '@tanstack/react-query';
 import { MCPConversationResponse } from '@/utils/backend_api';
 import ReactMarkdown from 'react-markdown';
+import { sanitizeMarkdown } from '@/utils/sanitize';
 
 export type ChatMessage = {
   id: number;
@@ -53,10 +55,15 @@ export type ChatMessage = {
   isStreaming?: boolean;
 };
 
+export type ChatWindowProgress = { current: number };
+
 const ChatWindow = ({
-  query }: {
-    query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<SCASBOMConversationResponse>;
-  }) => {
+  query,
+  progress,
+}: {
+  query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<DASTScanResponse> | UseQueryResult<SCASBOMConversationResponse> | UseQueryResult<CBOMConversationResponse> | UseQueryResult<AIBOMConversationResponse>;
+  progress?: ChatWindowProgress;
+}) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const router = useRouter();
   const [inputValue, setInputValue] = useState('');
@@ -87,16 +94,16 @@ const ChatWindow = ({
   }, [inputValue]);
 
   useEffect(() => {
-    if (query.data) {
-      setMessages(query.data.messages);
+    if (query.data?.messages) {
+      setMessages(query.data.messages as ChatMessage[]);
     }
     if (query.error) {
       showErrorToast(query.error);
     }
-  }, [query.data , query.error]);
+  }, [query.data, query.error]);
 
   // check type of conversation (path format: /team_id/type/scan_id or similar)
-  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | 'cbom' | 'ai_bom' | undefined;
   const typeSegment = pathParts[1];
   if (typeSegment === 'sast') {
       type = 'sast';
@@ -121,6 +128,12 @@ const ChatWindow = ({
   }
   else if (typeSegment === 'dast') {
       type = 'dast';
+  }
+  else if (typeSegment === 'cbom') {
+      type = 'cbom';
+  }
+  else if (typeSegment === 'ai_bom') {
+      type = 'ai_bom';
   }
   else {
       toast.error('Invalid conversation type');
@@ -209,13 +222,19 @@ const ChatWindow = ({
     else if (type === 'dast') {
       queryClient.invalidateQueries({ queryKey: ['dast-conversation-data', scan_id] });
     }
+    else if (type === 'cbom') {
+      queryClient.invalidateQueries({ queryKey: ['cbom-conversation-data', team_id, scan_id] });
+    }
+    else if (type === 'ai_bom') {
+      queryClient.invalidateQueries({ queryKey: ['ai_bom-conversation-data', team_id, scan_id] });
+    }
     else {
       toast.error('Invalid conversation type');
     }
   }, [queryClient, type, team_id, scan_id]);
 
  
-  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast'];
+  const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom', 'ai_bom'];
   let Heading: string = '';
   switch (type) {
     case 'sast':
@@ -242,22 +261,34 @@ const ChatWindow = ({
     case 'dast':
       Heading = 'DAST';
       break;
+    case 'cbom':
+      Heading = 'CBOM';
+      break;
+    case 'ai_bom':
+      Heading = 'AI BOM';
+      break;
     default:
       Heading = 'Unknown';
       break;
   }
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-background shadow-sm ">
+    <div className="flex h-screen w-full flex-col overflow-hidden  bg-background shadow-sm ">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-muted/50 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="font-medium text-sm cursor-pointer" onClick={() => router.push(`/${team_id}/${type}`)}>{Heading}</span>
             <ChevronRightIcon className="size-4 text-zinc-500" />
-            <span className="text-neutral-200 font-medium">{query.data?.title}</span>
+            <span className="text-neutral-200 font-medium truncate">{query.data?.title}</span>
           </div>
-          <div className="h-4 w-px bg-border" />
+          {progress != null && (
+            <div className="flex items-center gap-2 min-w-0 flex-1 max-w-xs">
+              <Progress value={progress.current} className="h-2 flex-1" />
+              <span className="text-sm tabular-nums text-zinc-500 shrink-0">{progress.current}%</span>
+            </div>
+          )}
+          <div className="h-4 w-px bg-border shrink-0" />
           <ScanStatusIndicator scan_status={query.data?.scan_status || "unknown"} />
         </div>
 
@@ -282,7 +313,7 @@ const ChatWindow = ({
                       <span className="text-muted-foreground text-sm">Thinking...</span>
                     </div>
                   ) : (
-                    <ReactMarkdown >{message.content}</ReactMarkdown>
+                    <ReactMarkdown>{sanitizeMarkdown(message.content)}</ReactMarkdown>
                   )}
                 </MessageContent>
                 <MessageAvatar  

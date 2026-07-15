@@ -1,0 +1,64 @@
+name: Backend Lint
+
+on:
+  push:
+    branches: [main, develop, module_1]
+    paths:
+      - "backend/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".pre-commit-config.yaml"
+  pull_request:
+    branches: [main, develop, module_1]
+    paths:
+      - "backend/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".pre-commit-config.yaml"
+
+jobs:
+  lint:
+    name: Pre-commit (Ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install pre-commit
+        run: uv tool install pre-commit
+
+      - name: Run pre-commit
+        run: uv tool run pre-commit run --all-files
+
+  django-check:
+    name: Django System Check
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'backend') || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --package zeroshield --no-dev
+
+      - name: Django check
+        working-directory: backend
+        run: uv run python manage.py check --fail-level WARNING
+        env:
+          DJANGO_SETTINGS_MODULE: main_app.settings

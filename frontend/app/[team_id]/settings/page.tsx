@@ -33,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users } from "lucide-react";
+import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users, Info } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 
@@ -60,6 +60,7 @@ export default function TeamSettingsPage() {
   const [pendingMemberAction, setPendingMemberAction] = useState<"add" | "remove" | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [creditsInfoDialogOpen, setCreditsInfoDialogOpen] = useState(false);
   const saveFromEditDialogRef = useRef(false);
 
   useEffect(() => {
@@ -189,6 +190,32 @@ export default function TeamSettingsPage() {
             <Coins className="h-4 w-4" />
             {team.team_credit_balance ?? 0} credits
           </span>
+          <button
+            type="button"
+            onClick={() => setCreditsInfoDialogOpen(true)}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring"
+            aria-label="How the credit system works"
+          >
+            <Info className="h-4 w-4" />
+          </button>
+          <Dialog open={creditsInfoDialogOpen} onOpenChange={setCreditsInfoDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>How the credit system works</DialogTitle>
+                <DialogDescription>
+                  Credits are used to run scans. Each scan type and configuration uses a different amount of credits.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  <strong className="text-foreground">Two-step process:</strong> First, the platform <strong>estimates</strong> how many credits a scan will use. After you confirm, you <strong>start the scan</strong> and that amount is deducted from your team’s balance.
+                </p>
+                <p>
+                  <strong className="text-foreground">Requesting more credits:</strong> If your team needs more credits, email the <strong>CyberUltron</strong> team to request a top-up.
+                </p>
+              </div>
+            </DialogContent>
+          </Dialog>
           {is_team_admin && (
           <Button
             variant="ghost"

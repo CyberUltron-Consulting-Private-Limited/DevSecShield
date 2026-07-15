@@ -63,10 +63,15 @@ export default function MCPResultsPage() {
     );
   }
 
-  const mcpData = query.data?.data;
+  const mcpData = query.data?.data ?? null;
   const dashboard = query.data?.dashboard ?? null;
+  const findings = query.data?.findings ?? null;
+  const scanMetadata = query.data?.scan_metadata ?? null;
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', team_id, conversation_id] });
 
-  if (!mcpData) {
+  const hasData = mcpData != null && typeof mcpData === "object";
+  const hasFindings = Array.isArray(findings) && findings.length > 0;
+  if (!hasData && !hasFindings) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
@@ -79,13 +84,16 @@ export default function MCPResultsPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-900">
       <MCPResults
-        data={mcpData}
+        data={hasData ? mcpData : {}}
         conversationId={conversation_id}
         teamId={params?.team_id as string}
         dashboard={dashboard}
+        findings={findings}
+        scanMetadata={scanMetadata}
+        onFindingsUpdated={invalidate}
         integrationSettings={query.data?.integration_settings ?? null}
-        onIntegrationSettingsUpdated={() => queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', team_id, conversation_id] })}
-        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['mcp-conversation-data', team_id, conversation_id] })}
+        onIntegrationSettingsUpdated={invalidate}
+        onRefresh={invalidate}
         onDownloadReport={() => exportMutation.mutate()}
         isExporting={exportMutation.isPending}
       />

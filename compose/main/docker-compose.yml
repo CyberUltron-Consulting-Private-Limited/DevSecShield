@@ -2,7 +2,7 @@ services:
 
   devsecshield-backend:
     container_name: devsecshield-backend
-    image: ghcr.io/cyberultron-nikhil/devsecshield-backend:v1
+    image: ${ECR_REGISTRY}/devsecshield-backend:${TAG}
     ports:
       - 9000:8080 
     volumes:
@@ -10,9 +10,7 @@ services:
 
   devsecshield-frontend:
     container_name: devsecshield-frontend
-    image: ghcr.io/cyberultron-nikhil/devsecshield-frontend:v1
-    environment:
-      IS_DOCKER_CONTAINER: "True"
+    image: ${ECR_REGISTRY}/devsecshield-frontend:${TAG}
     ports:
       - 4000:3000 # changed from 3002 to 4000 to avoid conflict with other services
 

@@ -1,0 +1,777 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "a96b4fa0-ac0d-4228-8345-742736d2f042",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-25T06:03:41Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "openai.gpt-oss-120b-1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-25T06:03:43Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "cisco-gittest": {
+        "source_name": "cisco-gittest",
+        "source_path": "aibom/tests/fixtures/synthetic",
+        "components": {
+          "secret": [
+            {
+              "name": "env:ANTHROPIC_API_KEY",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/synthetic/app.py",
+              "line_number": 34,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "env var ANTHROPIC_API_KEY used as api_key_kwarg; not found in any config source \u2014 may require additional repos or runtime configuration",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env:ANTHROPIC_API_KEY' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                    "start_line": 34,
+                    "end_line": 34,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env": "ANTHROPIC_API_KEY",
+                "env_context": "api_key_kwarg",
+                "unresolved_env_var": "ANTHROPIC_API_KEY",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/app.py"
+                ]
+              },
+              "instance_id": "env:ANTHROPIC_API_KEY_aibom/tests/fixtures/synthetic/app.py_34",
+              "confidence": 0.3
+            },
+            {
+              "name": "env:COHERE_API_KEY",
+              "component_type": "secret",
+              "file_path": "aibom/tests/fixtures/synthetic/app.py",
+              "line_number": 35,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "env var COHERE_API_KEY used as api_key_kwarg; not found in any config source \u2014 may require additional repos or runtime configuration",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env:COHERE_API_KEY' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                    "start_line": 35,
+                    "end_line": 35,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env": "COHERE_API_KEY",
+                "env_context": "api_key_kwarg",
+                "unresolved_env_var": "COHERE_API_KEY",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/app.py"
+                ]
+              },
+              "instance_id": "env:COHERE_API_KEY_aibom/tests/fixtures/synthetic/app.py_35",
+              "confidence": 0.3
+            }
+          ],
+          "model": [
+            {
+              "name": "gpt-4o",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/synthetic/app.py",
+              "line_number": 41,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "gpt-4o",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-4o' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                    "start_line": 41,
+                    "end_line": 41,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "gpt",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/app.py"
+                ]
+              },
+              "instance_id": "gpt-4o_aibom/tests/fixtures/synthetic/app.py_41",
+              "confidence": 1.0
+            },
+            {
+              "name": "claude-3-5-sonnet-20241022",
+              "component_type": "model",
+              "file_path": "aibom/tests/fixtures/synthetic/app.py",
+              "line_number": 49,
+              "framework": "anthropic",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "claude-3-5-sonnet-20241022",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'claude-3-5-sonnet-20241022' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                    "start_line": 49,
+                    "end_line": 49,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://docs.anthropic.com/en/docs/about-claude/models",
+                "provider": "anthropic",
+                "family": "claude-3-5-sonnet",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "builtin",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/app.py"
+                ]
+              },
+              "instance_id": "claude-3-5-sonnet-20241022_aibom/tests/fixtures/synthetic/app.py_49",
+              "confidence": 1.0
+            }
+          ],
+          "embedding": [
+            {
+              "name": "embed-english-v3.0",
+              "component_type": "embedding",
+              "file_path": "aibom/tests/fixtures/synthetic/app.py",
+              "line_number": 57,
+              "framework": "cohere",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "embed-english-v3.0",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Embedding 'embed-english-v3.0' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                    "start_line": 57,
+                    "end_line": 57,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://docs.cohere.com/docs/models",
+                "provider": "cohere",
+                "family": "0",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/app.py"
+                ]
+              },
+              "instance_id": "embed-english-v3.0_aibom/tests/fixtures/synthetic/app.py_57",
+              "confidence": 1.0
+            }
+          ],
+          "dependency": [
+            {
+              "name": "torch",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+              "line_number": 3,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'torch' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "start_line": 3,
+                    "end_line": 3,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "2.2.0         # BSD-3-Clause",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "line": 3,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/requirements.txt"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "torch_aibom/tests/fixtures/synthetic/requirements.txt_3",
+              "confidence": 1.0
+            },
+            {
+              "name": "openai",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+              "line_number": 6,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "1.40.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'openai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "start_line": 6,
+                    "end_line": 6,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "1.40.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/requirements.txt"
+                ]
+              },
+              "instance_id": "openai_aibom/tests/fixtures/synthetic/requirements.txt_6",
+              "confidence": 1.0
+            },
+            {
+              "name": "anthropic",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+              "line_number": 7,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "0.34.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'anthropic' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "start_line": 7,
+                    "end_line": 7,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.34.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/requirements.txt"
+                ]
+              },
+              "instance_id": "anthropic_aibom/tests/fixtures/synthetic/requirements.txt_7",
+              "confidence": 1.0
+            },
+            {
+              "name": "langchain",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+              "line_number": 9,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "0.2.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'langchain' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "start_line": 9,
+                    "end_line": 9,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.2.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence": [
+                  {
+                    "file": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "line": 9,
+                    "service": "/private/tmp",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 2,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/requirements.txt"
+                ],
+                "consolidated_count": 2
+              },
+              "instance_id": "langchain_aibom/tests/fixtures/synthetic/requirements.txt_9",
+              "confidence": 1.0
+            },
+            {
+              "name": "crewai",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+              "line_number": 10,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "0.51.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'crewai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "start_line": 10,
+                    "end_line": 10,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.51.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/requirements.txt"
+                ]
+              },
+              "instance_id": "crewai_aibom/tests/fixtures/synthetic/requirements.txt_10",
+              "confidence": 1.0
+            },
+            {
+              "name": "chromadb",
+              "component_type": "dependency",
+              "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+              "line_number": 11,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": true,
+              "agentic_hint": "",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "0.5.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'chromadb' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "aibom/tests/fixtures/synthetic/requirements.txt",
+                    "start_line": 11,
+                    "end_line": 11,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.5.0",
+                "manifest": "requirements.txt",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "aibom/tests/fixtures/synthetic/requirements.txt"
+                ]
+              },
+              "instance_id": "chromadb_aibom/tests/fixtures/synthetic/requirements.txt_11",
+              "confidence": 1.0
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 11,
+          "last_generated_at": "2026-06-25T06:03:43Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "",
+          "source_ref_version": "0183d8fc127f44a2b2e2e75e8d035b991a6d08ea",
+          "elapsed_s": 1.4,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 11,
+      "pending_agent_review": 8,
+      "test_only_components": 0,
+      "component_types": {
+        "secret": 2,
+        "model": 2,
+        "embedding": 1,
+        "dependency": 6
+      },
+      "total_relationships": 0,
+      "risk_score": 80,
+      "risk_severity": "critical"
+    },
+    "risk": {
+      "score": 80,
+      "severity": "critical",
+      "flags": [
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/synthetic/app.py",
+          "line_number": 34,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                "start_line": 34,
+                "end_line": 34,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "aibom/tests/fixtures/synthetic/app.py",
+          "line_number": 35,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                "start_line": 35,
+                "end_line": 35,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "aibom/tests/fixtures/synthetic/app.py",
+          "line_number": 41,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "aibom/tests/fixtures/synthetic/app.py",
+                "start_line": 41,
+                "end_line": 41,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

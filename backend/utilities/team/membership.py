@@ -23,18 +23,18 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
 
         # STEP [ 1 ] : =============================== create users if they dont exist ================================================= 
         for email in email_ids:
-            # ---------------------------> creating a new default team for this new user 
-            default_team_for_new_user = Team(
-                name=f"{email.split('@')[0]}'s Team",
-                description=f"Default team for {email.split('@')[0]}",
-            )
-            session.add(default_team_for_new_user)
-            session.commit()
-            session.refresh(default_team_for_new_user)
-
             # ---------------------------> creating a new user and send them an email with credentials 
             user = session.exec(select(User).where(User.email == email)).first()
             if not user:
+                # ---------------------------> creating a new default team for this new user 
+                default_team_for_new_user = Team(
+                    name=f"{email.split('@')[0]}'s Default Team",
+                    description=f"Default team for {email.split('@')[0]}",
+                )
+                session.add(default_team_for_new_user)
+                session.commit()
+                session.refresh(default_team_for_new_user)
+
                 # ---------------------------> create user model 
                 generated_password = generate_random_password()
                 user = User(

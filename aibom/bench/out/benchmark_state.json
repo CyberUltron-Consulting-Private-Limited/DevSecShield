@@ -1,0 +1,112 @@
+{
+  "per_repo": {
+    "repo0-synthetic": {
+      "cisco": 7,
+      "trusera": 5,
+      "ours": 13,
+      "true_miss": 0,
+      "our_unique": 4,
+      "sha": "local-fixtur"
+    },
+    "chroma": {
+      "cisco": 0,
+      "trusera": 10,
+      "ours": 28,
+      "true_miss": 0,
+      "our_unique": 21,
+      "sha": "207de398a18c"
+    },
+    "langchain": {
+      "cisco": 0,
+      "trusera": 25,
+      "ours": 234,
+      "true_miss": 0,
+      "our_unique": 221,
+      "sha": "57c83d44bc8a"
+    },
+    "llama_index": {
+      "cisco": 4,
+      "trusera": 9,
+      "ours": 20,
+      "true_miss": 0,
+      "our_unique": 13,
+      "sha": "520aa4ec48c0"
+    },
+    "autogen": {
+      "cisco": 0,
+      "trusera": 2,
+      "ours": 31,
+      "true_miss": 0,
+      "our_unique": 31,
+      "sha": "027ecf0a379b"
+    },
+    "openai-cookbook": {
+      "cisco": 116,
+      "trusera": 15,
+      "ours": 116,
+      "true_miss": 0,
+      "our_unique": 68,
+      "sha": "abd1e286b3b9"
+    },
+    "mcp-servers": {
+      "cisco": 6,
+      "trusera": 2,
+      "ours": 14,
+      "true_miss": 0,
+      "our_unique": 10,
+      "sha": "7b1170d1da1e"
+    },
+    "hf-model": {
+      "cisco": 5,
+      "trusera": 11,
+      "ours": 19,
+      "true_miss": 0,
+      "our_unique": 5,
+      "sha": "1110a243fdf4"
+    },
+    "monai": {
+      "cisco": 10,
+      "trusera": 1,
+      "ours": 2,
+      "true_miss": 0,
+      "our_unique": 2,
+      "sha": "4ba89bd818a4"
+    },
+    "tf-bedrock": {
+      "cisco": 1,
+      "trusera": 3,
+      "ours": 8,
+      "true_miss": 0,
+      "our_unique": 7,
+      "sha": "4b74b7dd5110"
+    },
+    "transformers-ft": {
+      "cisco": 6,
+      "trusera": 1,
+      "ours": 10,
+      "true_miss": 0,
+      "our_unique": 7,
+      "sha": "c96378c4136f"
+    }
+  },
+  "totals": {
+    "true_misses": 0,
+    "our_unique": 389,
+    "raw_misses": 187,
+    "fp_excluded": 187
+  },
+  "shas": {
+    "repo0-synthetic": "local-fixture",
+    "hf-model": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "autogen": "027ecf0a379bcc1d09956d46d12d44a3ad9cee14",
+    "llama_index": "520aa4ec48c084c7d0fdf93cb22d567046118ad2",
+    "chroma": "207de398a18c703cd69b43aae54078d9e3064747",
+    "langchain": "57c83d44bc8ae89a189ad521b9756cfac996039c",
+    "mcp-servers": "7b1170d1da1e36bc9f553f51e76e64cbfd652b3e",
+    "openai-cookbook": "abd1e286b3b9dc472c8e050c94321559f2b36420",
+    "tf-bedrock": "4b74b7dd5110292cb34ca911448581153484f13f",
+    "transformers-ft": "c96378c4136f5882fee50d8ff8ee1e9588a17eb6",
+    "monai": "4ba89bd818a44395842f11f3316b5aaad48353a6"
+  },
+  "gate": "PASS"
+}

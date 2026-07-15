@@ -2,13 +2,15 @@ from helpers.tools.mcp_agent.mcp_client import MCPClient
 from helpers.context.base_agent import BaseAgent
 from helpers.tools.mcp_agent.context import MCPContext, MCPReconContext, MCPTool, MCPResource , MCPPrompt
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from helpers.tools.mcp_agent.summary_manager import FinalMCPVulnerabilities, MCPSummaryManager
-from helpers.context.schema import MCPVulnerability
+from helpers.context.schema import MCPResourceResponse, MCPVulnerability
 import asyncio
 from rich.console import Console
 from helpers.context.progress_writer import StateUpdateWriter
+from pydantic import BaseModel, Field
 console = Console()
 
+class FinalMCPVulnerabilities(BaseModel):
+    vulnerabilities: list[MCPVulnerability] = Field(..., description="A list of MCP Vulnerabilities , where each vulnerability is related to a particular tool, you can leave the array empty if no vulnerabilities are found")
 
 
 class MCPAgent(BaseAgent):
@@ -46,7 +48,13 @@ class MCPAgent(BaseAgent):
                 system_prompt="You are a security expert tasked with analyzing the tool and generating vulnerabilities for the tool.",
                 output_model=FinalMCPVulnerabilities,
                 )
-            return response.vulnerabilities
+            
+            resource_response : type[MCPResourceResponse] = self.generate_structured_response(
+                prompt=prompt, 
+                system_prompt="You are a security expert tasked with analyzing the tool and finding out some details about the tool like the category of the tool, the risk level of the tool, etc.",
+                output_model=MCPResourceResponse,
+                )
+            return response.vulnerabilities, resource_response
         except Exception as e:
             console.print(f"Error in analyzing tool: {e}",style="bold red")
             raise e
@@ -67,7 +75,13 @@ class MCPAgent(BaseAgent):
                 system_prompt="You are a security expert tasked with analyzing the resource and generating vulnerabilities for the resource.",
                 output_model=FinalMCPVulnerabilities,
                 )
-            return response.vulnerabilities
+            
+            resource_response : type[MCPResourceResponse] = self.generate_structured_response(
+                prompt=prompt, 
+                system_prompt="You are a security expert tasked with analyzing the resource and finding out some details about the resource like the category of the resource, the risk level of the resource, etc.",
+                output_model=MCPResourceResponse,
+                )
+            return response.vulnerabilities, resource_response
         except Exception as e:
             console.print(f"Error in analyzing tool: {e}",style="bold red")
             raise e
@@ -87,10 +101,17 @@ class MCPAgent(BaseAgent):
                 system_prompt="You are a security expert tasked with analyzing the prompt and generating vulnerabilities for the prompt.",
                 output_model=FinalMCPVulnerabilities,
                 )
-            return response.vulnerabilities
+            
+            resource_response : type[MCPResourceResponse] = self.generate_structured_response(
+                prompt=prompt, 
+                system_prompt="You are a security expert tasked with analyzing the prompt and finding out some details about the prompt like the category of the prompt, the risk level of the prompt, etc.",
+                output_model=MCPResourceResponse,
+                )
+            return response.vulnerabilities, resource_response
         except Exception as e:
             console.print(f"Error in analyzing prompt: {e}",style="bold red")
             raise e
+
     
     def analyze_mcp(
         self, 
@@ -108,38 +129,44 @@ class MCPAgent(BaseAgent):
             # ------------tools analysis ------------
             if tools:
                 for tool in tools:
-                    vulnerabilities = self.analyze_tool(tool)
+                    vulnerabilities, resource_response = self.analyze_tool(tool)
                     parsed_vulnerabilities = self.to_dict_list(vulnerabilities)
                     tools_findings.append({
                         "tool_name": tool.name,
                         "tool_description": tool.description,
                         "tool_input_schema": tool.input_schema,
                         "tool_output_schema": tool.output_schema,
+                        "tool_risk_level": resource_response.resource_risk_level.value,
+                        "tool_category": resource_response.resource_category.value,
                         "vulnerabilities": parsed_vulnerabilities
                     })
             
             # ------------prompts analysis ------------
             if prompts:
                 for prompt in prompts:
-                    vulnerabilities = self.analyze_prompt(prompt)
+                    vulnerabilities, resource_response = self.analyze_prompt(prompt)
                     parsed_vulnerabilities = self.to_dict_list(vulnerabilities)
                     prompts_findings.append({
                         "prompt_name": prompt.name,
                         "prompt_description": prompt.description,
                         "prompt_input_schema": prompt.arguments,
+                        "prompt_risk_level": resource_response.resource_risk_level.value,
+                        "prompt_category": resource_response.resource_category.value,
                         "vulnerabilities": parsed_vulnerabilities
                     })
             
             # ------------resources analysis ------------
             if resources:
                 for resource in resources:
-                    vulnerabilities = self.analyze_resource(resource)
+                    vulnerabilities, resource_response = self.analyze_resource(resource)
                     parsed_vulnerabilities = self.to_dict_list(vulnerabilities)
                     resources_findings.append({
                         "resource_name": resource.name,
                         "resource_description": resource.description,
                         "resource_size": resource.size,
                         "resource_uri": resource.uri,
+                        "resource_risk_level": resource_response.resource_risk_level.value,
+                        "resource_category": resource_response.resource_category.value,
                         "vulnerabilities": parsed_vulnerabilities
                     })
             return (tools_findings, prompts_findings, resources_findings)

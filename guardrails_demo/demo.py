@@ -17,7 +17,7 @@ from guardrails_client import (
 from ai_simulation import llm_api, PROMPT_INJECTION_ATTACKS
 
 # Configuration
-GUARDRAILS_API_KEY = "Bearer gr1-10d5ee8e90b2eef4c96b87c024265bb08a6809399255e4d9ebdeb39a9a5cd0d5ffccf02ed57353d768bf795366327e521d5ae5347203ab7d01e636b9c095eb00"
+GUARDRAILS_API_KEY = "Bearer gr1-964034d76af83aabee09d548e283f053b1deac5f00eea7ff53e89153a70ecc2a9501f15c2b744fa71d2d9f3049342fcc4991cbbf33ed4ca5236d8a732702d71a"
 
 
 # Example 1: Without Guardrails

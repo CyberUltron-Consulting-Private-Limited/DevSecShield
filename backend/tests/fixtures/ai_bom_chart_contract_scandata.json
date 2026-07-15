@@ -1,0 +1,823 @@
+{
+ "ai_bom_compliance": {
+  "disclaimer": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off.",
+  "eu_ai_act_annexIV": {
+   "coverage": 0.455,
+   "fail": 6,
+   "na": 0,
+   "not_bom_evidenceable": 6,
+   "out_of_scope": 0,
+   "pass": 5,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "every model documents an intended purpose",
+     "id": "EUAIACT-1",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a71",
+     "title": "Intended purpose documented",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "every model declares its training data",
+     "id": "EUAIACT-2",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a72 / Art 10",
+     "title": "Training data declared (>=1 trained_on dataset)",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "training datasets document known bias",
+     "id": "EUAIACT-3",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Art 10(2)(f-g)",
+     "title": "Known dataset bias documented",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack documented data preprocessing",
+     "id": "EUAIACT-4",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Art 10(2)(b-c)",
+     "title": "Data preparation / preprocessing documented",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) report no accuracy metrics",
+     "id": "EUAIACT-5",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a73 / Art 15",
+     "title": "Accuracy / robustness metrics",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) assess no groups at risk",
+     "id": "EUAIACT-6",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Art 10(2)(f)",
+     "title": "Fairness / groups-at-risk assessed",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack de-identified training data",
+     "id": "EUAIACT-7",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a72",
+     "title": "Data governance: training data de-identified",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack an integrity hash",
+     "id": "EUAIACT-8",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a72(e)",
+     "title": "Model integrity (hash)",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "every model has a technical model-card description",
+     "id": "EUAIACT-9",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a72(b)",
+     "title": "Model card / technical description present",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack version + pedigree lineage",
+     "id": "EUAIACT-10",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Annex IV \u00a71 / Art 12",
+     "title": "Versioning + lineage (pedigree)",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "every model asserts its high-risk classification",
+     "id": "EUAIACT-11",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "Art 6 / Annex I",
+     "title": "High-risk classification asserted",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "foreseeable-misuse analysis is narrative, not BOM-modelled",
+     "id": "EUAIACT-12",
+     "refs": [],
+     "source": "Annex IV \u00a72(a)",
+     "title": "Foreseeable misuse described",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "data-flow diagrams are documentation, not BOM-modelled",
+     "id": "EUAIACT-13",
+     "refs": [],
+     "source": "Annex IV \u00a72(b)",
+     "title": "Data-flow / architecture diagram",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "human-oversight measures are narrative; the model_card carries a human_oversight signal but Annex IV requires a described measure",
+     "id": "EUAIACT-14",
+     "refs": [],
+     "source": "Art 14",
+     "title": "Human oversight measures (Art 14)",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "automatic event logging is a runtime capability, not BOM-modelled",
+     "id": "EUAIACT-15",
+     "refs": [],
+     "source": "Art 12",
+     "title": "Logging / record-keeping (Art 12)",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "the risk-management system is process evidence, not BOM-modelled",
+     "id": "EUAIACT-16",
+     "refs": [],
+     "source": "Art 9",
+     "title": "Risk-management system (Art 9)",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "the post-market monitoring plan is documentation, not BOM-modelled",
+     "id": "EUAIACT-17",
+     "refs": [],
+     "source": "Art 72",
+     "title": "Post-market monitoring plan (Art 72)",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "fda_524b": {
+   "coverage": 0.5,
+   "fail": 3,
+   "na": 1,
+   "not_bom_evidenceable": 1,
+   "out_of_scope": 0,
+   "pass": 3,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "1 component(s) lack name or version",
+     "id": "524B-1",
+     "refs": [
+      "lib-internal-triage-sdk"
+     ],
+     "source": "NTIA minimum elements (component name, version)",
+     "title": "Component name + version",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack a hash + algorithm",
+     "id": "524B-2",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NTIA minimum elements (hash)",
+     "title": "Component hash + algorithm",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "dependency relationships present",
+     "id": "524B-3",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NTIA minimum elements (dependency relationship)",
+     "title": "Dependency relationships present",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "all 3 libraries carry a pkg: purl",
+     "id": "524B-4",
+     "refs": [],
+     "source": "NTIA minimum elements (unique identifier)",
+     "title": "Unique identifier (purl) per library",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "3 component(s) declare no license",
+     "id": "524B-5",
+     "refs": [
+      "model-triage-risk",
+      "dataset-risky-cohort",
+      "lib-internal-triage-sdk"
+     ],
+     "source": "NTIA minimum elements (license) / \u00a7524B",
+     "title": "Concluded license per component",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "no model asserts a device class (not a cyber device in scope)",
+     "id": "524B-6",
+     "refs": [],
+     "source": "\u00a7524B cyber-device premarket",
+     "title": "Device class / SaMD classification asserted",
+     "verdict": "na"
+    },
+    {
+     "attestable": false,
+     "evidence": "SBOM author, timestamp, and machine-readable format (CycloneDX 1.6 / SPDX 3.0) are stamped by the emitter",
+     "id": "524B-7",
+     "refs": [],
+     "source": "NTIA minimum elements (author, timestamp, format)",
+     "title": "SBOM author + timestamp + machine-readable format",
+     "verdict": "pass"
+    },
+    {
+     "attestable": true,
+     "evidence": "VEX/CVE data is not modelled in the AI-BOM graph (advisory: provide a VEX document alongside the SBOM)",
+     "id": "524B-8",
+     "refs": [],
+     "source": "FDA premarket cyber guidance (VEX)",
+     "title": "Vulnerability referencing (VEX)",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "gmlp": {
+   "coverage": 0.333,
+   "fail": 4,
+   "na": 1,
+   "not_bom_evidenceable": 3,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack integrity hash or license",
+     "id": "GMLP-2",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Good software engineering + security practices",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "training datasets are provenanced",
+     "id": "GMLP-3",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Representative training datasets",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "model design ties architecture to intended use",
+     "id": "GMLP-6",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Model design tailored to data + intended use",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) document no intended users / team",
+     "id": "GMLP-7",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Focus on human-AI team performance",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) report no subgroup-sliced metrics",
+     "id": "GMLP-8",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Clinically relevant testing (subgroup metrics)",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack a versioned user-facing model card",
+     "id": "GMLP-9",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Clear, essential information to users",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "no deployed models (deployed_at) to monitor for drift",
+     "id": "GMLP-10",
+     "refs": [],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Deployed models monitored for performance/drift",
+     "verdict": "na"
+    },
+    {
+     "attestable": true,
+     "evidence": "multidisciplinary expertise is process evidence, not BOM-modelled",
+     "id": "GMLP-1",
+     "refs": [],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Multidisciplinary expertise across the TPLC",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "train/test independence is not modelled (no test-set component)",
+     "id": "GMLP-4",
+     "refs": [],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Training/test set independence",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "reference-dataset methodology is process evidence, not BOM-modelled",
+     "id": "GMLP-5",
+     "refs": [],
+     "source": "IMDRF/AIML WG/N88 Final:2025",
+     "title": "Reference datasets use best available methods",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "hipaa": {
+   "coverage": 0.0,
+   "fail": 3,
+   "na": 0,
+   "not_bom_evidenceable": 10,
+   "out_of_scope": 0,
+   "pass": 0,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "1 PHI model(s) not served by a BAA'd vendor",
+     "id": "HIPAA-1",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "45 CFR 164.502(e) / 164.504(e)",
+     "title": "Business Associate Agreement with serving vendor",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 PHI model(s) trained on non-de-identified or undeclared data",
+     "id": "HIPAA-2",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "45 CFR 164.514(b) Safe Harbor / Expert Determination",
+     "title": "PHI training data de-identified",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 PHI model(s) retain or do not clear PHI in training data",
+     "id": "HIPAA-3",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "45 CFR 164.502(b) / minimum necessary",
+     "title": "No PHI retained in training data (retention proxy)",
+     "verdict": "fail"
+    },
+    {
+     "attestable": true,
+     "evidence": "permitted-use limits live in the BAA, not the AI-BOM graph",
+     "id": "HIPAA-4",
+     "refs": [],
+     "source": "164.504(e)",
+     "title": "Permitted uses + disclosures limited",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "audio/source retention limits are operational, not BOM-modelled",
+     "id": "HIPAA-5",
+     "refs": [],
+     "source": "164.530(j)",
+     "title": "Audio / source data retention limits",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "subcontractor BAA flow-down is contractual, not BOM-modelled",
+     "id": "HIPAA-6",
+     "refs": [],
+     "source": "164.502(e)(2)",
+     "title": "Subcontractor flow-down (BAA chain)",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "breach-notification terms are contractual, not BOM-modelled",
+     "id": "HIPAA-7",
+     "refs": [],
+     "source": "164.410",
+     "title": "Breach notification",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "Security Rule safeguards are operational, not BOM-modelled",
+     "id": "HIPAA-8",
+     "refs": [],
+     "source": "164.308-312",
+     "title": "Administrative/physical/technical safeguards",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "role-based minimum-necessary controls are operational evidence",
+     "id": "HIPAA-9",
+     "refs": [],
+     "source": "164.502(b)",
+     "title": "Minimum-necessary access controls",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "consent/authorization is operational, not BOM-modelled",
+     "id": "HIPAA-10",
+     "refs": [],
+     "source": "164.508",
+     "title": "Patient consent / authorization",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "NPP updates are operational, not BOM-modelled",
+     "id": "HIPAA-11",
+     "refs": [],
+     "source": "164.520",
+     "title": "Notice of Privacy Practices updated",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "no-secondary-use/no-training is a BAA term, not BOM-modelled",
+     "id": "HIPAA-12",
+     "refs": [],
+     "source": "BAA terms",
+     "title": "No secondary use / model training on PHI",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "consent/wiretap + malpractice review is legal, not BOM-modelled",
+     "id": "HIPAA-13",
+     "refs": [],
+     "source": "state law",
+     "title": "Consent/wiretap + malpractice exposure reviewed",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  },
+  "nist_rmf": {
+   "coverage": 0.333,
+   "fail": 4,
+   "na": 0,
+   "not_bom_evidenceable": 10,
+   "out_of_scope": 0,
+   "pass": 2,
+   "pass_with_evidence": 0,
+   "requirements": [
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack a BAA-bound serving vendor",
+     "id": "GV-2",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NIST AI RMF 1.0 GOVERN",
+     "title": "Govern: serving vendor accountability (BAA-bound)",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "system context: components versioned + data lineage mapped",
+     "id": "MP-1",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NIST AI RMF 1.0 MAP",
+     "title": "Map: system context, components + data lineage established",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "training data provenance characterized",
+     "id": "MP-3",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NIST AI RMF 1.0 MAP",
+     "title": "Map: data provenance characterized",
+     "verdict": "pass"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) quantify no performance metrics",
+     "id": "ME-1",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NIST AI RMF 1.0 MEASURE",
+     "title": "Measure: performance metrics quantified",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) include no fairness assessment",
+     "id": "ME-2",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NIST AI RMF 1.0 MEASURE",
+     "title": "Measure: fairness / bias assessed",
+     "verdict": "fail"
+    },
+    {
+     "attestable": false,
+     "evidence": "1 model(s) lack integrity hash or license",
+     "id": "ME-3",
+     "refs": [
+      "model-triage-risk"
+     ],
+     "source": "NIST AI RMF 1.0 MEASURE",
+     "title": "Measure: model integrity verified",
+     "verdict": "fail"
+    },
+    {
+     "attestable": true,
+     "evidence": "AI risk-management policies + accountability are organizational evidence, not BOM-modelled",
+     "id": "GV-1",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 GOVERN",
+     "title": "Govern: AI risk-management policies + accountability",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "workforce diversity/competency is organizational evidence",
+     "id": "GV-3",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 GOVERN",
+     "title": "Govern: workforce diversity + competency",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "risk-aware culture is organizational evidence",
+     "id": "GV-4",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 GOVERN",
+     "title": "Govern: risk-aware organizational culture",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "intended-purpose categorization is documentation evidence",
+     "id": "MP-2",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MAP",
+     "title": "Map: intended purpose + categorization",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "risk/benefit-to-impacted-groups analysis is doc evidence",
+     "id": "MP-4",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MAP",
+     "title": "Map: risks + benefits to impacted groups characterized",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "feedback + ongoing-measurement processes are not BOM-modelled",
+     "id": "ME-4",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MEASURE",
+     "title": "Measure: feedback + ongoing measurement mechanisms",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "risk prioritization + resourcing is organizational evidence",
+     "id": "MG-1",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MANAGE",
+     "title": "Manage: risks prioritized + resourced",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "benefit/harm management strategies are documentation evidence",
+     "id": "MG-2",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MANAGE",
+     "title": "Manage: strategies to maximize benefit / minimize harm",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "third-party risk management is process evidence",
+     "id": "MG-3",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MANAGE",
+     "title": "Manage: third-party risks managed",
+     "verdict": "not_bom_evidenceable"
+    },
+    {
+     "attestable": true,
+     "evidence": "incident response + recovery is process evidence",
+     "id": "MG-4",
+     "refs": [],
+     "source": "NIST AI RMF 1.0 MANAGE",
+     "title": "Manage: incident response + recovery",
+     "verdict": "not_bom_evidenceable"
+    }
+   ]
+  }
+ },
+ "results": [
+  {
+   "compliance_controls": [],
+   "component_name": "triage-risk-demo",
+   "component_type": "local_model_file",
+   "description": "Model 'triage-risk-demo' is EU AI Act high-risk (high-risk (Annex III)); Annex IV technical documentation required.; Model 'triage-risk-demo' declares no license.; Model 'triage-risk-demo' uses sensitive personal information (PHI) at inference; HIPAA BAA + \u00a7524B risk analysis required.",
+   "framework": null,
+   "impact": "Critical",
+   "license": null,
+   "location": "",
+   "model_card": {
+    "approach_type": "supervised",
+    "body_part": "chest",
+    "datasets": [
+     "dataset-risky-cohort"
+    ],
+    "eu_ai_act_risk_tier": "high-risk (Annex III)",
+    "human_oversight": "no",
+    "inputs": [
+     "DICOM DX image"
+    ],
+    "intended_use": "demo worklist triage",
+    "modality": "DX (chest radiograph)",
+    "model_architecture": "DemoNet",
+    "outputs": [
+     "risk score"
+    ],
+    "task": "classification",
+    "uses_sensitive_personal_information": "yes"
+   },
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM02": "LLM02:2025 - Sensitive Information Disclosure",
+    "LLM03": "LLM03:2025 - Supply Chain"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "local",
+   "suggested_fix": "Complete the EU AI Act Annex IV technical documentation for this high-risk model.",
+   "title": "triage-risk-demo",
+   "version": "0.1.0"
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "risky-cohort",
+   "component_type": "dataset",
+   "description": "Dataset 'risky-cohort' has no evidence of de-identification; HIPAA de-identification required.",
+   "framework": null,
+   "impact": "High",
+   "license": null,
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM02": "LLM02:2025 - Sensitive Information Disclosure"
+   },
+   "risk_category": "data_privacy_training_config",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "De-identify training data (Safe Harbor / Expert Determination) and record the anonymization method on the dataset card.",
+   "title": "risky-cohort",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "internal-triage-sdk",
+   "component_type": "ml_framework",
+   "description": "No concluded license for 'internal-triage-sdk'; could not resolve from the SPDX manifest. Add a declared license (SBOM minimum element / governance signal).",
+   "framework": "internal-triage-sdk",
+   "impact": "Medium",
+   "license": null,
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM03": "LLM03:2025 - Supply Chain"
+   },
+   "risk_category": "license_compliance_gap",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "internal-triage-sdk",
+   "version": null
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "chromadb",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "chromadb",
+   "impact": "Low",
+   "license": "Apache-2.0",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {
+    "LLM08": "LLM08:2025 - Vector and Embedding Weaknesses"
+   },
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "chromadb",
+   "version": "0.5.0"
+  },
+  {
+   "compliance_controls": [],
+   "component_name": "torch",
+   "component_type": "ml_framework",
+   "description": "Inventoried AI component (framework).",
+   "framework": "torch",
+   "impact": "Low",
+   "license": "BSD-3-Clause",
+   "location": "",
+   "model_card": null,
+   "owasp_top_10": [],
+   "owasp_top_10_llm": {},
+   "risk_category": "missing_model_card_lineage",
+   "snippet": "",
+   "source": "unknown",
+   "suggested_fix": "Review this AI/ML component and bring it under AI governance.",
+   "title": "torch",
+   "version": "2.2.0"
+  }
+ ]
+}

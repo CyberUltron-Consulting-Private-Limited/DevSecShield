@@ -1,0 +1,19 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/bench/repos/04-autogen/python/packag │
+│ es/autogen-core                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Cache hit: ceb1ad46101a (cached 2026-06-26T05:42:46Z)
+Cache hit for 
+/Users/anshsinghal/Desktop/DevSecShield/bench/repos/04-autogen/python/packages/a
+utogen-core (ceb1ad46101a…)
+Report written to 
+/Users/anshsinghal/Desktop/DevSecShield/bench/out/04-autogen.cisco.json
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analysis Summary (v2) •                                                      │
+│ /Users/anshsinghal/Desktop/DevSecShield/bench/repos/04-autogen/python/packag │
+│ es/autogen-core                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ /Users/anshsinghal/Desktop/DevSecShield/bench/repos/04-autogen/python/packa─╮
+│ No AI components detected.                                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯

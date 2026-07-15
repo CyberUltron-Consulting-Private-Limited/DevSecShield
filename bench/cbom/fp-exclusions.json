@@ -1,0 +1,20 @@
+[
+  {
+    "name": "sha256rsa",
+    "asset_class": "algorithm",
+    "repo": "*",
+    "reason": "cbomkit emits the X.509 cert's COMPOSITE signature algorithm (sha256WithRSAEncryption -> 'SHA256-RSA') as one algorithm. Our source-code lane inventories its two real primitives separately — SHA-256 (hash) and RSA-2048 (pke) — so the composite label is an oracle artifact, not a missed asset."
+  },
+  {
+    "name": "generic-api-key",
+    "asset_class": "related-crypto-material",
+    "repo": "*",
+    "reason": "cbomkit's SECRETS plugin regex-matches a 'generic-api-key' in source/test files. Generic secret detection is the AIBOM HARDCODED_SECRET lane (story A1), not the CBOM crypto-asset inventory — it is not a named cryptographic primitive, certificate, protocol or key our crypto lane inventories."
+  },
+  {
+    "name": "jwt",
+    "asset_class": "related-crypto-material",
+    "repo": "*",
+    "reason": "cbomkit's token detector matches the prose word 'JWT' in docs/CHANGELOG/README (.rst) and test prose. JWT is a token CONTAINER format, not a cryptographic primitive/key/cert/protocol; our crypto lane inventories the underlying algorithms (RS256 -> RSA+SHA-256, ES256 -> ECDSA+SHA-256), which appear as their own assets."
+  }
+]

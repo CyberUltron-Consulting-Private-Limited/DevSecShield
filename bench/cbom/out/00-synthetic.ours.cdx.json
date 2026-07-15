@@ -1,0 +1,713 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:b57a4382-b60e-5caf-b8cb-b27ff1720b46",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "synthetic-crypto-app"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-3des-cbc-crypto-app-py",
+      "name": "3DES-CBC",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher",
+          "parameterSetIdentifier": "168",
+          "mode": "cbc"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "pyca/cryptography"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "cipher"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:keySize",
+          "value": "168"
+        },
+        {
+          "name": "crypto:mode",
+          "value": "CBC"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "moderate"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-aes-ecb-crypto-app-py",
+      "name": "AES-ECB",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher",
+          "mode": "ecb"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "pyca/cryptography"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "cipher"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:mode",
+          "value": "ECB"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-aes-gcm-crypto-app-py",
+      "name": "AES-GCM",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher",
+          "mode": "gcm"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "pyca/cryptography"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "cipher"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:mode",
+          "value": "GCM"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-aes-tls-config-py",
+      "name": "AES",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tls_config.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-md5-crypto-app-py",
+      "name": "MD5",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "hashlib (stdlib)"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "digest"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "weak"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-rc4-crypto-app-py",
+      "name": "RC4",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "stream-cipher"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "pyca/cryptography"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "cipher"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "stream-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "weak"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-rsa-1024-crypto-app-py",
+      "name": "RSA-1024",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "parameterSetIdentifier": "1024",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "pyca/cryptography"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "pke"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:keySize",
+          "value": "1024"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "pke"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "weak"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-rsa-2048-crypto-app-py",
+      "name": "RSA-2048",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "parameterSetIdentifier": "2048",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "pyca/cryptography"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "pke"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:keySize",
+          "value": "2048"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "pke"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-crypto-app-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:confidence",
+          "value": "high"
+        },
+        {
+          "name": "crypto:detectedBy",
+          "value": "hashlib (stdlib)"
+        },
+        {
+          "name": "crypto:detectionContext",
+          "value": "digest"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-cert-cert-pem-synthetic-crypto-app-test",
+      "name": "cert.pem",
+      "cryptoProperties": {
+        "assetType": "certificate",
+        "certificateProperties": {
+          "subjectName": "synthetic-crypto-app.test",
+          "issuerName": "synthetic-crypto-app.test",
+          "notValidBefore": "2026-06-29T09:56:21Z",
+          "notValidAfter": "2027-06-29T09:56:21Z"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "certificate"
+        },
+        {
+          "name": "crypto:issuerName",
+          "value": "synthetic-crypto-app.test"
+        },
+        {
+          "name": "crypto:keySize",
+          "value": "2048"
+        },
+        {
+          "name": "crypto:notValidAfter",
+          "value": "2027-06-29T09:56:21Z"
+        },
+        {
+          "name": "crypto:notValidBefore",
+          "value": "2026-06-29T09:56:21Z"
+        },
+        {
+          "name": "crypto:publicKeyAlgorithm",
+          "value": "rsaEncryption"
+        },
+        {
+          "name": "crypto:selfSigned",
+          "value": "true"
+        },
+        {
+          "name": "crypto:signatureAlgorithm",
+          "value": "sha256WithRSAEncryption"
+        },
+        {
+          "name": "crypto:subjectName",
+          "value": "synthetic-crypto-app.test"
+        },
+        {
+          "name": "discovery:source",
+          "value": "cert.pem"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-initialization-vector-crypto-app-py",
+      "name": "initialization-vector (crypto_app.py)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "initialization-vector"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:detectionMethod",
+          "value": "ast"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "initialization-vector"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-private-key-crypto-app-py",
+      "name": "private-key (crypto_app.py)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "private-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "private-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-protocol-tls-tls-config-py",
+      "name": "TLS 1.0",
+      "cryptoProperties": {
+        "assetType": "protocol",
+        "protocolProperties": {
+          "type": "tls",
+          "version": "1.0",
+          "cipherSuites": [
+            {
+              "name": "ECDHE-RSA-AES128-SHA"
+            }
+          ]
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "protocol"
+        },
+        {
+          "name": "crypto:cipherSuite",
+          "value": "ECDHE-RSA-AES128-SHA"
+        },
+        {
+          "name": "crypto:protocolType",
+          "value": "tls"
+        },
+        {
+          "name": "crypto:protocolVersion",
+          "value": "1.0"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "weak"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tls_config.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-hashlib-stdlib",
+      "name": "hashlib (stdlib)",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "crypto_app.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pyca-cryptography",
+      "name": "pyca/cryptography",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "requirements.txt"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pyopenssl",
+      "name": "pyOpenSSL",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "requirements.txt"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-ssl-stdlib",
+      "name": "ssl (stdlib)",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tls_config.py"
+        }
+      ]
+    }
+  ]
+}

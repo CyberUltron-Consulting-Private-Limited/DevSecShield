@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents.base import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_aws import BedrockEmbeddings
 from rich.console import Console
 
 
@@ -12,20 +12,17 @@ if __name__ == "__main__":
     
     try:
         load_dotenv()
-        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-        if not OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY not found")
-        else:
-            pass
-        openai_embedding = OpenAIEmbeddings(
-            api_key=OPENAI_API_KEY,
+        aws_region = os.getenv("AWS_DEFAULT_REGION", "ap-south-1")
+        bedrock_embedding = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v2:0",
+            region_name=aws_region,
         )
-        console.print(f"OpenAI embedding model fetched successfully",style="dim green")
+        console.print("Bedrock embedding model fetched successfully", style="dim green")
 
         
         vector_store = Chroma(
             collection_name="testing_collection",
-            embedding_function=openai_embedding,
+            embedding_function=bedrock_embedding,
             host="localhost",
             port=9090,
             # headers={"X_CHROMA_TOKEN" : "new-token"}

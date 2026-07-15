@@ -1,0 +1,53 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:5b3c9fec-19d1-5e03-9395-f2defe92cca0",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "08-monai"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "lib-numpy",
+      "name": "numpy",
+      "purl": "pkg:pypi/numpy",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    }
+  ]
+}

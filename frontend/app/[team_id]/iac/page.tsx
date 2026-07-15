@@ -24,13 +24,15 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Server, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown, Zap, Wrench, MinusCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { IACConversation, deleteIACConversation, getIACConversations, renameIACConversation, createIACConversation } from "@/utils/backend_api";
-import type { ScanListDashboardData } from "@/utils/backend_api";
+import type { IACListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
@@ -45,7 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   ChartContainer,
   ChartTooltip,
@@ -60,50 +62,100 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
   PolarAngleAxis,
   PolarGrid,
   Radar,
   RadarChart,
-  RadialBar,
-  RadialBarChart,
   XAxis,
   YAxis,
 } from "recharts";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
+/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
+type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
+type TableSortBy =
+  | "none"
+  | "created_asc"
+  | "created_desc"
+  | "risk_desc"
+  | "risk_asc"
+  | "credits_desc"
+  | "credits_asc";
+type EnvironmentFilter = "all" | "production" | "staging" | "development";
+
+const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
+  all: "Risk score",
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+const SORT_BY_LABELS: Record<TableSortBy, string> = {
+  none: "Sort by",
+  created_asc: "Created (oldest)",
+  created_desc: "Created (newest)",
+  risk_desc: "Risk score (high first)",
+  risk_asc: "Risk score (low first)",
+  credits_desc: "Credits (high first)",
+  credits_asc: "Credits (low first)",
+};
+
+/** IAC context mode keys (backend schema) -> display names for heatmap Y-axis */
+const IAC_CONTEXT_MODE_LABELS: Record<string, string> = {
+  terraform: "Terraform",
+  k8s: "K8s",
+  pulumi: "Pulumi",
+  ansible: "Ansible",
+  helm: "Helm",
+  aws_cloudformation: "AWS CloudFormation",
+  aws_cdk: "AWS CDK",
+};
+
+function getDisplayRiskScore(c: IACConversation): number | null {
+  if (c.average_risk_score == null) return null;
+  return Math.round(Math.min(10, Math.max(0, c.average_risk_score)) * 10) / 10;
+}
+
+function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
+  if (filter === "all") return true;
+  if (score == null) return false;
+  if (filter === "critical") return score >= 9;
+  if (filter === "high") return score >= 7 && score < 9;
+  if (filter === "medium") return score >= 5 && score < 7;
+  if (filter === "low") return score < 5;
+  return true;
+}
+
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
 
-function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboardData }) {
+function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }) {
   const card = dashboardData.card_data;
+  const totalIssues = card.total_issues;
 
-  // ── Radar: risk severity totals across all scans ──
-  const riskTotals = useMemo(() => {
-    let critical = 0, high = 0, medium = 0, low = 0;
-    for (const day of Object.values(dashboardData.risks_per_day)) {
-      critical += day.critical;
-      high += day.high;
-      medium += day.medium;
-      low += day.low;
-    }
+  // Severity distribution for pie chart
+  const severityPieData = useMemo(() => {
+    const d = dashboardData.severity_distribution;
     return [
-      { severity: "Critical", count: critical },
-      { severity: "High", count: high },
-      { severity: "Medium", count: medium },
-      { severity: "Low", count: low },
-    ];
-  }, [dashboardData.risks_per_day]);
+      { name: "Critical", value: d.critical, fill: "#dc2626" },
+      { name: "High", value: d.high, fill: "#ea580c" },
+      { name: "Medium", value: d.medium, fill: "#ca8a04" },
+      { name: "Low", value: d.low, fill: "#2563eb" },
+    ].filter((s) => s.value > 0);
+  }, [dashboardData.severity_distribution]);
 
-  const radarConfig = {
-    count: { label: "Findings", color: "hsl(220 70% 50%)" },
-  } satisfies ChartConfig;
-
-  // ── Area: risks per day (stacked) ──
-  const risksPerDayData = useMemo(() => {
-    return Object.entries(dashboardData.risks_per_day)
+  // Issues over time (stacked area)
+  const issuesOverTimeData = useMemo(() => {
+    return Object.entries(dashboardData.issues_over_time)
       .map(([date, v]) => ({ date, ...v }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dashboardData.risks_per_day]);
+  }, [dashboardData.issues_over_time]);
 
   const areaConfig = {
     critical: { label: "Critical", color: "hsl(0 72% 51%)" },
@@ -112,147 +164,210 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
     low: { label: "Low", color: "hsl(217 91% 60%)" },
   } satisfies ChartConfig;
 
-  // ── Bar: scans per day ──
-  const scansPerDayData = useMemo(() => {
-    return Object.entries(dashboardData.scans_per_day)
-      .map(([date, count]) => ({ date, scans: count }))
+  // Security posture overview (radar: category -> count), numbered S1, S2, ... with legend
+  const securityPostureData = useMemo(() => {
+    return Object.entries(dashboardData.security_posture_overview).map(([category, count], i) => ({
+      xLabel: `S${i + 1}`,
+      category,
+      count,
+    }));
+  }, [dashboardData.security_posture_overview]);
+
+  const securityPostureConfig = { count: { label: "Count", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
+
+  // Compliance: percentage = (count / sum_of_counts) * 100
+  const complianceCounts = dashboardData.compliance_framework_counts ?? {};
+  const sumOfCounts = useMemo(() => Object.values(complianceCounts).reduce((a, b) => a + b, 0), [complianceCounts]);
+
+  // Remediation pipeline: Total (red) + Fixed (green), In progress (blue), Not started (orange), Ignored (grey)
+  const pipeline = dashboardData.remediation_pipeline;
+  const pipelineData = useMemo(() => [
+    { label: "Total Issues", value: pipeline.total_issues, fill: "#dc2626", icon: AlertTriangle },
+    { label: "Fixed", value: pipeline.fixed, fill: "#16a34a", icon: Zap },
+    { label: "In progress", value: pipeline.in_progress, fill: "#2563eb", icon: Wrench },
+    { label: "Not started", value: pipeline.not_started, fill: "#ea580c", icon: Clock },
+    { label: "Ignored", value: pipeline.ignored, fill: "#71717a", icon: MinusCircle },
+  ], [pipeline]);
+
+  // MTTR per day: [d, h, m] -> days (decimal)
+  const mttrPerDayData = useMemo(() => {
+    return Object.entries(dashboardData.mttr_per_day)
+      .map(([date, [d, h, m]]) => ({ date, days: d + h / 24 + m / (24 * 60) }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dashboardData.scans_per_day]);
+  }, [dashboardData.mttr_per_day]);
 
-  const barConfig = {
-    scans: { label: "Scans", color: "hsl(220 70% 50%)" },
-  } satisfies ChartConfig;
+  const mttrConfig = { days: { label: "MTTR (days)", color: "hsl(217 91% 60%)" } } satisfies ChartConfig;
 
-  // ── Radial: scan status distribution ──
-  const statusData = useMemo(() => [
-    { status: "success", count: card.success_scans, fill: "var(--color-success)" },
-    { status: "started", count: card.started_scans, fill: "var(--color-started)" },
-    { status: "pending", count: card.pending_scans, fill: "var(--color-pending)" },
-    { status: "failure", count: card.failure_scans, fill: "var(--color-failure)" },
-    { status: "not_started", count: card.not_started_scans, fill: "var(--color-not_started)" },
-  ], [card]);
+  // Resources by provider (bar)
+  const resourcesByProviderData = useMemo(() => {
+    return Object.entries(dashboardData.resources_by_provider)
+      .map(([provider, count]) => ({ provider, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [dashboardData.resources_by_provider]);
 
-  const radialConfig = {
-    count: { label: "Scans" },
-    success: { label: "Success", color: "hsl(142 71% 45%)" },
-    started: { label: "Started", color: "hsl(217 91% 60%)" },
-    pending: { label: "Pending", color: "hsl(220 9% 46%)" },
-    failure: { label: "Failure", color: "hsl(0 72% 51%)" },
-    not_started: { label: "Not Started", color: "hsl(270 50% 60%)" },
-  } satisfies ChartConfig;
+  const providerAreaConfig = { count: { label: "Resources", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
+  // For area chart, keep same data (provider + count)
+
+  // Environment list
+  const environmentEntries = useMemo(() => Object.entries(dashboardData.environment), [dashboardData.environment]);
+
+  // Heatmap: env -> { mode -> count }
+  const heatmap = dashboardData.environment_cloud_resource_heatmap;
+  const heatmapEnvs = useMemo(() => Object.keys(heatmap).sort(), [heatmap]);
+  const heatmapModes = useMemo(() => {
+    const set = new Set<string>();
+    Object.values(heatmap).forEach((modes) => Object.keys(modes).forEach((m) => set.add(m)));
+    return Array.from(set).sort();
+  }, [heatmap]);
+  const heatmapMax = useMemo(() => {
+    let max = 0;
+    heatmapEnvs.forEach((env) => heatmapModes.forEach((mode) => { const v = heatmap[env]?.[mode] ?? 0; if (v > max) max = v; }));
+    return max || 1;
+  }, [heatmap, heatmapEnvs, heatmapModes]);
+  const complianceAccentColors = ["#2563eb", "#16a34a", "#7c3aed", "#ca8a04", "#dc2626", "#0284c7"];
 
   return (
     <div className="space-y-6">
-      {/* Summary stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Not Started</CardTitle>
-            <Clock className="h-4 w-4 text-zinc-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.not_started_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
+      {/* 1. Card data: 7 cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                <ScanSearch className="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total scans</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_scans}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-zinc-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.pending_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Queued</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total issues</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_issues}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Started</CardTitle>
-            <Play className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.started_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <Target className="h-4 w-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total critical</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_critical_issues}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Success</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.success_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Completed</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-500/15 dark:bg-zinc-400/10">
+                <Clock className="h-4 w-4 text-zinc-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg MTTR (days)</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.avg_mttr_days.toFixed(1)}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Failure</CardTitle>
-            <XCircle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.failure_scans}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Failed</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/15 dark:bg-green-500/10">
+                <Percent className="h-4 w-4 text-green-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Coverage %</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.coverage_percentage.toFixed(1)}%</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Created today</CardTitle>
-            <CalendarPlus className="h-4 w-4 text-zinc-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_created_today}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">New scans</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-500/15 dark:bg-red-500/10">
+                <Shield className="h-4 w-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Policy violations</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_policy_violations}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Updated today</CardTitle>
-            <CalendarCheck className="h-4 w-4 text-zinc-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-zinc-900 dark:text-white">{card.scans_updated_today}</div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Last 24h</p>
+        <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+          <CardContent className="p-0">
+            <div className="flex flex-col items-start gap-2">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.average_risk_score >= 7 ? "bg-red-500/15 dark:bg-red-500/10" : card.average_risk_score >= 5 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-green-500/15 dark:bg-green-500/10"}`}>
+                <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg risk score</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score.toFixed(1)}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts row 1: Radar + Area + Scan Sources */}
+      {/* Row 1: Severity (pie) | Issues over time (area) | Security posture (radar) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Radar: Risk severity totals */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">IAC Risk Severity Distribution</CardTitle>
-            <CardDescription>Total findings across all successful scans</CardDescription>
+            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
-            {riskTotals.every((r) => r.count === 0) ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No vulnerability data yet</p>
+            {severityPieData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
             ) : (
-              <ChartContainer config={radarConfig} className="mx-auto aspect-square max-h-[280px]">
-                <RadarChart data={riskTotals}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                  <PolarAngleAxis dataKey="severity" />
-                  <PolarGrid />
-                  <Radar dataKey="count" fill="var(--color-count)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
-                </RadarChart>
+              <ChartContainer config={{}} className="mx-auto aspect-square max-h-[280px]">
+                <PieChart>
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Pie
+                    data={severityPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={90}
+                    paddingAngle={2}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {severityPieData.map((entry, i) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                </PieChart>
               </ChartContainer>
             )}
           </CardContent>
         </Card>
-
-        {/* Area: Risks per day */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">IAC Risks Over Time</CardTitle>
-            <CardDescription>Vulnerability counts per scan date</CardDescription>
+            <CardTitle className="text-base">Issues Over Time</CardTitle>
+            <CardDescription>Stacked by severity</CardDescription>
           </CardHeader>
           <CardContent>
-            {risksPerDayData.length === 0 ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No vulnerability data yet</p>
+            {issuesOverTimeData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
             ) : (
               <ChartContainer config={areaConfig} className="h-[280px] w-full">
-                <AreaChart data={risksPerDayData}>
+                <AreaChart data={issuesOverTimeData}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
@@ -267,106 +382,206 @@ function ScanListDashboard({ dashboardData }: { dashboardData: ScanListDashboard
             )}
           </CardContent>
         </Card>
-
-        {/* Scan Sources: repos + zip files */}
-        <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scan Sources</CardTitle>
-            <CardDescription>Repositories and zip uploads scanned</CardDescription>
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="items-center pb-2">
+            <CardTitle className="text-base">Security Posture Overview</CardTitle>
+            <CardDescription>By category</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col gap-4 overflow-hidden justify-items-start">
-            {/* Zip files */}
-            <div>
-              <div className="flex items-center gap-2">
-                <FileArchive className="h-4 w-4 text-amber-500" />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Zip Uploads</span>
-              </div>
-              <div className="flex items-center gap-2 pl-6 mt-1">
-                <FileArchive className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                <span className="text-2xl font-bold text-zinc-900 dark:text-white">{dashboardData.zip_files_scanned}</span>
-                <span className="text-xs text-zinc-500">file{dashboardData.zip_files_scanned !== 1 ? "s" : ""} uploaded</span>
-              </div>
-            </div>
-
-            {/* Repos list */}
-            <div className="flex-1 min-h-0">
-              <div className="flex items-center gap-2 mb-2">
-                <GitBranch className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Repositories ({dashboardData.repos_scanned.length})</span>
-              </div>
-              {dashboardData.repos_scanned.length === 0 ? (
-                <p className="text-xs text-zinc-500 pl-6">No repositories scanned yet.</p>
-              ) : (
-                <ScrollArea className="h-[180px] pl-6">
-                  <ul className="space-y-1 pr-3">
-                  {dashboardData.repos_scanned.map((r, i) => {
-                    const url = typeof r === "string" ? r : r.repo_url;
-                    const displayName = url.replace(/^https?:\/\/(www\.)?github\.com\//, "");
-                    return (
-                      <li key={i} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-                        <GitBranch className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                        <span className="truncate" title={url}>{displayName}</span>
-                      </li>
-                    );
-                  })}
-                  </ul>
-                </ScrollArea>
-              )}
-            </div>
+          <CardContent>
+            {securityPostureData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
+            ) : (
+              <>
+                <ChartContainer config={securityPostureConfig} className="mx-auto aspect-square max-h-[280px]">
+                  <RadarChart data={securityPostureData}>
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(_, payload) => (payload?.[0]?.payload as { category?: string })?.category ?? "—"}
+                          formatter={(v) => [v, "Count"]}
+                        />
+                      }
+                    />
+                    <PolarAngleAxis dataKey="xLabel" />
+                    <PolarGrid />
+                    <Radar dataKey="count" fill="var(--color-count)" fillOpacity={0.6} dot={{ r: 4, fillOpacity: 1 }} />
+                  </RadarChart>
+                </ChartContainer>
+                <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-2 justify-center text-xs text-zinc-600 dark:text-zinc-400">
+                  {securityPostureData.map((d) => (
+                    <span key={d.xLabel}>
+                      <span className="font-medium text-zinc-800 dark:text-zinc-200">{d.xLabel}</span>
+                      <span className="mx-1.5">=</span>
+                      <span>{d.category}</span>
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar: Scans per day */}
+      {/* Remediation pipeline (full width) - styled like reference */}
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Remediation Pipeline</CardTitle>
+          <CardDescription>Total issues and resolution status</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {pipelineData.map(({ label, value, fill, icon: Icon }) => {
+              const pct = label === "Total Issues" ? 100 : (pipeline.total_issues > 0 ? (value / pipeline.total_issues) * 100 : 0);
+              return (
+                <div key={label} className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${fill}20` }}>
+                    <Icon className="h-4 w-4" style={{ color: fill }} />
+                  </div>
+                  <span className="text-sm font-medium text-zinc-900 dark:text-white w-32 shrink-0">{label}</span>
+                  <span className="text-sm font-bold text-zinc-900 dark:text-white tabular-nums w-10">{value}</span>
+                  <div className="flex-1 flex items-center gap-2 min-w-0">
+                    <div className="flex-1 h-3 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: fill }} />
+                    </div>
+                    {label !== "Total Issues" && (
+                      <span className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400 w-10 shrink-0">{pct.toFixed(0)}%</span>
+                    )}
+                    {label === "Total Issues" && (
+                      <span className="text-sm tabular-nums font-medium shrink-0 px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: fill }}>100%</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Compliance framework violations (full width) - color accents on cards */}
+      <Card className="border-zinc-200 dark:border-zinc-800">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+            <CardTitle className="text-base">Compliance Framework Violations</CardTitle>
+          </div>
+          <CardDescription>Violations by framework</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {Object.keys(complianceCounts).length === 0 ? (
+            <p className="text-center text-sm text-zinc-500 py-8">No compliance data yet</p>
+          ) : (
+            <ScrollArea className="w-full">
+              <div className="flex gap-4 pb-4 min-w-max pr-4">
+                {Object.entries(complianceCounts).map(([framework, count], idx) => {
+                  const pct = sumOfCounts > 0 ? (count / sumOfCounts) * 100 : 0;
+                  const accent = complianceAccentColors[idx % complianceAccentColors.length];
+                  return (
+                    <Card key={framework} className="border-zinc-200 dark:border-zinc-800 shrink-0 w-[200px] border-l-4" style={{ borderLeftColor: accent }}>
+                      <CardContent className="pt-4 pb-4">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-white mb-1">{framework}</p>
+                        <p className="text-2xl font-bold" style={{ color: accent }}>{pct.toFixed(1)}%</p>
+                        <Progress value={pct} className="h-2 mt-2" />
+                        <div className="flex items-center gap-3 mt-3 text-sm flex-wrap">
+                          <span className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400">
+                            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                            Violations: {count}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Row: IAC context modes (Y) × Environments (X) heatmap | MTTR per day | Resources by provider (area chart) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Scans Per Day</CardTitle>
-            <CardDescription>Number of scans created each day</CardDescription>
+            <CardTitle className="text-base">Environment × Cloud Resource Heatmap</CardTitle>
+            <CardDescription>Count by IAC context mode (rows) and environment (columns)</CardDescription>
           </CardHeader>
           <CardContent>
-            {scansPerDayData.length === 0 ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No scan activity yet</p>
+            {heatmapEnvs.length === 0 || heatmapModes.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
             ) : (
-              <ChartContainer config={barConfig} className="h-[280px] w-full">
-                <BarChart data={scansPerDayData}>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[100px]">IAC context</TableHead>
+                      {heatmapEnvs.map((env) => (
+                        <TableHead key={env} className="text-center min-w-[70px] text-xs capitalize">{env}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {heatmapModes.map((mode) => (
+                      <TableRow key={mode}>
+                        <TableCell className="font-medium text-sm">{IAC_CONTEXT_MODE_LABELS[mode] ?? mode}</TableCell>
+                        {heatmapEnvs.map((env) => {
+                          const v = heatmap[env]?.[mode] ?? 0;
+                          const intensity = heatmapMax > 0 ? v / heatmapMax : 0;
+                          const bg = intensity === 0 ? "bg-zinc-100 dark:bg-zinc-800" : intensity < 0.25 ? "bg-blue-200 dark:bg-blue-900/50" : intensity < 0.5 ? "bg-blue-300 dark:bg-blue-800/60" : intensity < 0.75 ? "bg-blue-400 dark:bg-blue-700/70" : "bg-blue-500 dark:bg-blue-600";
+                          return (
+                            <TableCell key={env} className={`text-center font-medium tabular-nums ${bg} text-zinc-900 dark:text-zinc-100 min-w-[70px]`}>
+                              {v}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border-zinc-200 dark:border-zinc-800">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">MTTR Per Day</CardTitle>
+            <CardDescription>Mean time to remediate (days)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {mttrPerDayData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
+            ) : (
+              <ChartContainer config={mttrConfig} className="h-[280px] w-full">
+                <LineChart data={mttrPerDayData}>
                   <CartesianGrid vertical={false} />
                   <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
-                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Bar dataKey="scans" fill="var(--color-scans)" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={true} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Line type="monotone" dataKey="days" stroke="var(--color-days)" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
               </ChartContainer>
             )}
           </CardContent>
         </Card>
-
-        {/* Radial: Scan status breakdown */}
         <Card className="border-zinc-200 dark:border-zinc-800">
-          <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Scan Status Breakdown</CardTitle>
-            <CardDescription>Distribution of scan outcomes</CardDescription>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Resources by Provider</CardTitle>
+            <CardDescription>Terraform, K8s, etc.</CardDescription>
           </CardHeader>
           <CardContent>
-            {statusData.every((s) => s.count === 0) ? (
-              <p className="text-center text-sm text-zinc-500 py-8">No scans yet</p>
+            {resourcesByProviderData.length === 0 ? (
+              <p className="text-center text-sm text-zinc-500 py-8">No data yet</p>
             ) : (
-              <ChartContainer config={radialConfig} className="mx-auto aspect-square max-h-[280px]">
-                <RadialBarChart data={statusData} innerRadius={30} outerRadius={110}>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent nameKey="status" hideLabel />} />
-                  <RadialBar dataKey="count" background />
-                </RadialBarChart>
+              <ChartContainer config={providerAreaConfig} className="h-[280px] w-full">
+                <AreaChart data={resourcesByProviderData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="provider" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="count" fill="hsl(220 70% 50% / 0.4)" stroke="hsl(220 70% 50%)" strokeWidth={2} />
+                </AreaChart>
               </ChartContainer>
             )}
-            {/* Legend */}
-            <div className="flex flex-wrap items-center justify-center gap-4 mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(142 71% 45%)" }} />Success</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(217 91% 60%)" }} />Started</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(220 9% 46%)" }} />Pending</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(0 72% 51%)" }} />Failure</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "hsl(270 50% 60%)" }} />Not Started</span>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -391,7 +606,9 @@ export default function IACPage() {
   const [newScanTitle, setNewScanTitle] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
+  const [riskScoreFilter, setRiskScoreFilter] = useState<RiskScoreFilter>("all");
+  const [environmentFilter, setEnvironmentFilter] = useState<EnvironmentFilter>("all");
+  const [sortBy, setSortBy] = useState<TableSortBy>("none");
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -480,21 +697,46 @@ export default function IACPage() {
     }
   };
 
-  const hasActiveFilters = searchQuery !== "" || statusFilter !== "all" || createdAtSort !== "none";
+  const hasActiveFilters =
+    searchQuery !== "" ||
+    statusFilter !== "all" ||
+    riskScoreFilter !== "all" ||
+    environmentFilter !== "all" ||
+    sortBy !== "none";
 
   const filteredConversations = conversations
     .filter((c) => {
       if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (statusFilter !== "all" && c.scan_status !== statusFilter) return false;
+      const score = getDisplayRiskScore(c);
+      if (!matchesRiskScoreFilter(score, riskScoreFilter)) return false;
+      if (environmentFilter !== "all") {
+        const env = (c.environment ?? "").toLowerCase();
+        if (env !== environmentFilter) return false;
+      }
       return true;
     })
     .sort((a, b) => {
-      if (createdAtSort === "asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (createdAtSort === "desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const scoreA = getDisplayRiskScore(a) ?? -1;
+      const scoreB = getDisplayRiskScore(b) ?? -1;
+      if (sortBy === "risk_desc") return scoreB - scoreA;
+      if (sortBy === "risk_asc") return scoreA - scoreB;
+      const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
+      const credB = b.estimated_credits != null ? Number(b.estimated_credits) : -1;
+      if (sortBy === "credits_desc") return credB - credA;
+      if (sortBy === "credits_asc") return credA - credB;
       return 0;
     });
 
-  const clearFilters = () => { setSearchQuery(""); setStatusFilter("all"); setCreatedAtSort("none"); };
+  const clearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setRiskScoreFilter("all");
+    setEnvironmentFilter("all");
+    setSortBy("none");
+  };
 
   const dashboardData = query.data?.dashboard_data;
 
@@ -538,7 +780,7 @@ export default function IACPage() {
               {/* ── Dashboard Tab ── */}
               <TabsContent value="dashboard">
                 {dashboardData ? (
-                  <ScanListDashboard dashboardData={dashboardData} />
+                  <IACDashboard dashboardData={dashboardData} />
                 ) : (
                   <p className="text-center text-sm text-zinc-500 py-12">No dashboard data available.</p>
                 )}
@@ -565,15 +807,115 @@ export default function IACPage() {
                         <SelectItem value="failure">Failure</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="text-zinc-600 dark:text-zinc-400 text-sm">Sort by</div>
-                    <Select value={createdAtSort} onValueChange={(v) => setCreatedAtSort(v as "none" | "asc" | "desc")}>
-                      <SelectTrigger className="h-9 min-w-[170px] cursor-pointer"><SelectValue placeholder="Created at" /></SelectTrigger>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            riskScoreFilter === "critical"
+                              ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                              : riskScoreFilter === "high"
+                                ? "border-orange-500 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
+                                : riskScoreFilter === "medium"
+                                  ? "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                                  : riskScoreFilter === "low"
+                                    ? "border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                                    : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <Filter className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{RISK_SCORE_LABELS[riskScoreFilter]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[180px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("all")}>
+                          {riskScoreFilter === "all" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          All
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("critical")}>
+                          {riskScoreFilter === "critical" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}
+                          Critical (≥9)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("high")}>
+                          {riskScoreFilter === "high" ? <Check className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4 text-orange-500" />}
+                          High (7–9)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("medium")}>
+                          {riskScoreFilter === "medium" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-amber-500" />}
+                          Medium (5–7)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setRiskScoreFilter("low")}>
+                          {riskScoreFilter === "low" ? <Check className="h-4 w-4" /> : <Shield className="h-4 w-4 text-blue-500" />}
+                          Low (&lt;5)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <Select value={environmentFilter} onValueChange={(v) => setEnvironmentFilter(v as EnvironmentFilter)}>
+                      <SelectTrigger className="h-9 min-w-[140px] cursor-pointer"><SelectValue placeholder="Environment" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">Default</SelectItem>
-                        <SelectItem value="desc">Newest</SelectItem>
-                        <SelectItem value="asc">Oldest</SelectItem>
+                        <SelectItem value="all">All environments</SelectItem>
+                        <SelectItem value="production">Production</SelectItem>
+                        <SelectItem value="staging">Staging</SelectItem>
+                        <SelectItem value="development">Development</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 gap-1.5 cursor-pointer border-2 ${
+                            sortBy !== "none"
+                              ? "border-violet-500 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:text-violet-300 dark:hover:bg-violet-950/50"
+                              : "border-zinc-200 dark:border-zinc-700"
+                          }`}
+                        >
+                          <ArrowUpDown className="h-2 w-2 shrink-0 text-zinc-400" />
+                          <span className="capitalize font-normal">{SORT_BY_LABELS[sortBy]}</span>
+                          <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[200px]">
+                        <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("none")}>
+                          {sortBy === "none" ? <Check className="h-4 w-4" /> : <span className="w-4" />}
+                          Default
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("created_desc")}>
+                          {sortBy === "created_desc" ? <Check className="h-4 w-4" /> : <CalendarPlus className="h-4 w-4" />}
+                          Created (newest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("created_asc")}>
+                          {sortBy === "created_asc" ? <Check className="h-4 w-4" /> : <CalendarCheck className="h-4 w-4" />}
+                          Created (oldest)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("risk_desc")}>
+                          {sortBy === "risk_desc" ? <Check className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                          Risk score (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("risk_asc")}>
+                          {sortBy === "risk_asc" ? <Check className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+                          Risk score (low first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("credits_desc")}>
+                          {sortBy === "credits_desc" ? <Check className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                          Credits (high first)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setSortBy("credits_asc")}>
+                          {sortBy === "credits_asc" ? <Check className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                          Credits (low first)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
                     {hasActiveFilters && (
                       <Button variant="ghost" size="sm" className="h-9 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-pointer" onClick={clearFilters}>
                         <X className="h-4 w-4 mr-1" />Clear filters
@@ -596,49 +938,136 @@ export default function IACPage() {
                     <Button variant="outline" className="cursor-pointer" onClick={clearFilters}><X className="h-4 w-4 mr-2" />Clear filters</Button>
                   </div>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[220px]">Title</TableHead>
-                          <TableHead>Owner</TableHead>
-                          <TableHead>Created at</TableHead>
-                          <TableHead>Last updated</TableHead>
-                          <TableHead>Scan status</TableHead>
-                          <TableHead className="w-[180px]">View scan metadata</TableHead>
-                          <TableHead className="text-right w-[80px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredConversations.map((conversation) => (
-                          <TableRow
-                            key={conversation.id}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
-                            onClick={(e) => {
-                              const target = e.target as HTMLElement;
-                              if (target.closest("button") || target.closest("[role='menuitem']")) return;
-                              const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
-                                ? `/${team_id}/iac/${conversation.id}/results`
-                                : `/${team_id}/iac/${conversation.id}`;
-                              router.push(dest);
-                            }}
-                          >
-                            <TableCell className="font-medium">
-                              <Link
-                                href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/iac/${conversation.id}/results` : `/${team_id}/iac/${conversation.id}`}
-                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer"
-                              >
-                                {conversation.title}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400">
-                              {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" || conversation.owner_user_email ? (
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-8 w-8 shrink-0">
-                                    <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
-                                      {conversation.owner_user_full_name
-                                        ? conversation.owner_user_full_name.trim().split(/\s+/).map((p) => p.charAt(0)).slice(0, 2).join("").toUpperCase() || (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
-                                        : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
+                  <ScrollArea className="w-full border rounded-lg">
+                    <div className="min-w-max">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
+                            <TableHead>Created at</TableHead>
+                            <TableHead>Last updated</TableHead>
+                            <TableHead>Scan status</TableHead>
+                            <TableHead className="w-[180px]">Vulnerabilities</TableHead>
+                            <TableHead className="w-[90px]">Risk score</TableHead>
+                            <TableHead className="w-[100px]">Cloud provider</TableHead>
+                            <TableHead className="w-[160px]">Repo / Source</TableHead>
+                            <TableHead className="w-[100px]">Branch</TableHead>
+                            <TableHead className="w-[90px]">Environment</TableHead>
+                            <TableHead className="w-[80px]">Credits</TableHead>
+                            <TableHead>Owner</TableHead>
+                            <TableHead className="text-right w-[80px]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredConversations.map((conversation) => (
+                            <TableRow
+                              key={conversation.id}
+                              className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                              onClick={(e) => {
+                                const target = e.target as HTMLElement;
+                                if (target.closest("button") || target.closest("[role='menuitem']")) return;
+                                const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
+                                  ? `/${team_id}/iac/${conversation.id}/results`
+                                  : `/${team_id}/iac/${conversation.id}`;
+                                router.push(dest);
+                              }}
+                            >
+                              <TableCell className="font-medium max-w-[160px] min-w-[120px]">
+                                <Link
+                                  href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/iac/${conversation.id}/results` : `/${team_id}/iac/${conversation.id}`}
+                                  className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer truncate block"
+                                  title={conversation.title}
+                                >
+                                  {conversation.title}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
+                              <TableCell className="text-sm">
+                                <div className="flex flex-col gap-1.5">
+                                  {getStatusBadge(conversation.scan_status as ScanStatus)}
+                                  {conversation.info?.current != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
+                                    <div className="flex items-center gap-2">
+                                      <Progress value={conversation.info.current} className="h-1.5 flex-1" />
+                                      <span className="text-xs text-zinc-500 tabular-nums">{conversation.info.current}%</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                                {conversation.risk_data ? (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {[
+                                      { label: "Critical", n: conversation.risk_data.total_critical, dot: "bg-red-500" },
+                                      { label: "High", n: conversation.risk_data.total_high, dot: "bg-orange-500" },
+                                      { label: "Medium", n: conversation.risk_data.total_medium, dot: "bg-amber-500" },
+                                      { label: "Low", n: conversation.risk_data.total_low, dot: "bg-blue-500" },
+                                    ].map(({ label, n, dot }) => (
+                                      <span key={label} className="flex items-center gap-1.5 shrink-0" title={label}>
+                                        <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} aria-hidden />
+                                        <span className="tabular-nums">{typeof n === "number" ? n : 0}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                                {getDisplayRiskScore(conversation) != null ? getDisplayRiskScore(conversation) : "—"}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {conversation.cloud_provider && conversation.cloud_provider.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {conversation.cloud_provider.slice(0, 3).map((p) => (
+                                      <span
+                                        key={p}
+                                        className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-zinc-100 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-200"
+                                      >
+                                        {p}
+                                      </span>
+                                    ))}
+                                    {conversation.cloud_provider.length > 3 && (
+                                      <span className="text-xs text-zinc-500">+{conversation.cloud_provider.length - 3}</span>
+                                    )}
+                                  </div>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
+                                {conversation.zip_file_used ? (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <FileArchive className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                                    <span className="truncate">Zip file</span>
+                                  </span>
+                                ) : conversation.repo_url ? (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                                    <span className="truncate">{conversation.repo_url.split("/").pop() ?? conversation.repo_url}</span>
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                                {conversation.branch != null && conversation.branch !== "" ? (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
+                                    <span className="truncate">{conversation.branch}</span>
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
+                                {conversation.environment != null && conversation.environment !== "" ? (
+                                  <span className="capitalize">{conversation.environment}</span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
+                                {conversation.estimated_credits != null ? conversation.estimated_credits : "—"}
+                              </TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400">
+                                {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" || conversation.owner_user_email ? (
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-8 w-8 shrink-0">
+                                      <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
+                                        {conversation.owner_user_full_name
+                                          ? conversation.owner_user_full_name.trim().split(/\s+/).map((p) => p.charAt(0)).slice(0, 2).join("").toUpperCase() || (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
+                                          : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div className="min-w-0">
@@ -650,51 +1079,38 @@ export default function IACPage() {
                                     )}
                                   </div>
                                 </div>
-                              ) : ("—")}
-                            </TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
-                            <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
-                            <TableCell className="text-sm">
-                              <div className="flex flex-col gap-1.5">
-                                {getStatusBadge(conversation.scan_status as ScanStatus)}
-                                {conversation.info?.current != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
-                                  <div className="flex items-center gap-2">
-                                    <Progress value={conversation.info.current} className="h-1.5 flex-1" />
-                                    <span className="text-xs text-zinc-500 tabular-nums">{conversation.info.current}%</span>
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => { setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
-                                <Eye className="h-4 w-4 mr-1.5" />View
-                              </Button>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreVertical className="h-4 w-4" /></Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/iac/${conversation.id}/results?origin=list`)}>
-                                      <Eye className="h-4 w-4 mr-2" />View Results
+                                ) : ("—")}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreVertical className="h-4 w-4" /></Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/iac/${conversation.id}/results?origin=list`)}>
+                                        <Eye className="h-4 w-4 mr-2" />View Results
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => { setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
+                                      <Eye className="h-4 w-4 mr-2" />View metadata
                                     </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                    <Pencil className="h-4 w-4 mr-2" />Rename
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                    <Trash2 className="h-4 w-4 mr-2" />Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
+                                      <Pencil className="h-4 w-4 mr-2" />Rename
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
                 )}
               </TabsContent>
             </Tabs>

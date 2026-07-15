@@ -1,0 +1,8 @@
+[mcp-servers] cloning https://github.com/modelcontextprotocol/servers (shallow)…
+[mcp-servers] SHA=7b1170d1da1e36bc9f553f51e76e64cbfd652b3e
+[mcp-servers] scan path: src
+[mcp-servers] trusera done (trusera_exit=0)
+[mcp-servers] ours done (ours_exit=0)
+[mcp-servers] cisco analyze (agentic/bedrock)…
+[mcp-servers] cisco done (exit=0)
+[mcp-servers] DONE (clone removed)

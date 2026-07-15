@@ -1,0 +1,354 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:89c4ebba-2966-5f6f-962e-0a2af4f44f7f",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "ChestXR-Triage-SaMD",
+      "version": "2.1.0"
+    },
+    "properties": [
+      {
+        "name": "clinical:modality",
+        "value": "DX (chest radiograph)"
+      },
+      {
+        "name": "regulatory:device_class",
+        "value": "II (SaMD)"
+      },
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      },
+      {
+        "name": "regulatory:eu_ai_act_risk",
+        "value": "high-risk (Annex I / MDR)"
+      },
+      {
+        "name": "regulatory:fda_product_code",
+        "value": "QFM"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "model-chestxr-cnn",
+      "name": "chestxr-nodule-detector",
+      "version": "2.1.0",
+      "publisher": "Acme Medical AI",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d349927fae5ba5286759616c29c33e2e76876a5d0283cfb69780b9fb143fc330"
+        }
+      ],
+      "externalReferences": [
+        {
+          "url": "https://acme.example/chestxr.modelcard.json",
+          "type": "model-card"
+        },
+        {
+          "url": "https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfpmn/pmn.cfm?id=K2xxxx",
+          "type": "documentation",
+          "comment": "FDA 510(k) K2xxxx; PCCP authorized"
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "supervised"
+          },
+          "task": "classification/detection",
+          "architectureFamily": "convolutional neural network",
+          "modelArchitecture": "ResNet-50",
+          "datasets": [
+            {
+              "ref": "dataset-chestxr-train"
+            }
+          ],
+          "inputs": [
+            {
+              "format": "DICOM DX image"
+            }
+          ],
+          "outputs": [
+            {
+              "format": "nodule probability + bounding box"
+            }
+          ]
+        },
+        "quantitativeAnalysis": {
+          "performanceMetrics": [
+            {
+              "type": "AUROC",
+              "value": "0.94",
+              "slice": "overall"
+            },
+            {
+              "type": "sensitivity",
+              "value": "0.91",
+              "slice": "age>=65"
+            }
+          ]
+        },
+        "considerations": {
+          "users": [
+            "board-certified radiologist (human-in-the-loop)"
+          ],
+          "useCases": [
+            "triage/prioritization of chest radiographs"
+          ],
+          "technicalLimitations": [
+            "not validated on pediatric or portable AP supine films"
+          ],
+          "ethicalConsiderations": [
+            {
+              "name": "demographic performance gap",
+              "mitigationStrategy": "subgroup monitoring"
+            }
+          ],
+          "fairnessAssessments": [
+            {
+              "groupAtRisk": "underrepresented scanners/sites"
+            }
+          ]
+        }
+      },
+      "pedigree": {
+        "ancestors": [
+          {
+            "type": "machine-learning-model",
+            "name": "imagenet-resnet50",
+            "version": "1.0"
+          }
+        ]
+      },
+      "properties": [
+        {
+          "name": "clinical:body_part",
+          "value": "chest"
+        },
+        {
+          "name": "clinical:intended_use",
+          "value": "triage and prioritization of chest radiographs (SaMD)"
+        },
+        {
+          "name": "clinical:modality",
+          "value": "DX (chest radiograph)"
+        },
+        {
+          "name": "clinical:pacs_ae_title",
+          "value": "CHESTXR_AI"
+        },
+        {
+          "name": "clinical:processes_phi",
+          "value": "true"
+        },
+        {
+          "name": "clinical:uses_sensitive_personal_information",
+          "value": "yes"
+        },
+        {
+          "name": "regulatory:device_class",
+          "value": "II (SaMD)"
+        },
+        {
+          "name": "regulatory:eu_ai_act_risk",
+          "value": "high-risk (Annex I / MDR)"
+        },
+        {
+          "name": "regulatory:fda_product_code",
+          "value": "QFM"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "dataset-chestxr-train",
+      "name": "chestxr-training-cohort",
+      "licenses": [
+        {
+          "license": {
+            "name": "internal-restricted"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "dataset:anonymization_method",
+          "value": "HIPAA Safe Harbor"
+        },
+        {
+          "name": "dataset:confidentiality_level",
+          "value": "amber"
+        },
+        {
+          "name": "dataset:data_collection_process",
+          "value": "Retrospective extraction from PACS across 3 US health systems (2019-2024) under IRB approval."
+        },
+        {
+          "name": "dataset:data_preprocessing",
+          "value": "DICOM windowing to soft-tissue/lung presets; resize to 1024x1024, single channel; HIPAA Safe Harbor de-identification of DICOM headers and pixels"
+        },
+        {
+          "name": "dataset:has_sensitive_personal_information",
+          "value": "no"
+        },
+        {
+          "name": "dataset:intended_use",
+          "value": "training and validation of the chest radiograph triage model"
+        },
+        {
+          "name": "dataset:known_bias",
+          "value": "skews adult, 2 scanner vendors"
+        },
+        {
+          "name": "dataset:provenance",
+          "value": "3 US health systems, 2019-2024, IRB-approved, de-identified"
+        },
+        {
+          "name": "dataset:sensitivity",
+          "value": "PHI removed; Safe Harbor de-identification"
+        },
+        {
+          "name": "dataset:size",
+          "value": "412,000 studies"
+        },
+        {
+          "name": "dataset:type",
+          "value": "image (DICOM)"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-numpy",
+      "name": "numpy",
+      "version": "1.26.4",
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydicom",
+      "name": "pydicom",
+      "version": "2.4.4",
+      "purl": "pkg:pypi/pydicom@2.4.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-safetensors",
+      "name": "safetensors",
+      "version": "0.4.3",
+      "purl": "pkg:pypi/safetensors@0.4.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "version": "2.3.1",
+      "purl": "pkg:pypi/torch@2.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torchvision",
+      "name": "torchvision",
+      "version": "0.18.1",
+      "purl": "pkg:pypi/torchvision@0.18.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "service-acme-cloud",
+      "name": "Acme Imaging AI Cloud",
+      "properties": [
+        {
+          "name": "service:baa",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelfile-model.safetensors",
+      "name": "model.safetensors",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d349927fae5ba5286759616c29c33e2e76876a5d0283cfb69780b9fb143fc330"
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:weight_file",
+          "value": "true"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "model-chestxr-cnn",
+      "dependsOn": [
+        "dataset-chestxr-train",
+        "lib-numpy",
+        "lib-pydicom",
+        "lib-safetensors",
+        "lib-torch",
+        "lib-torchvision",
+        "modelfile-model.safetensors",
+        "service-acme-cloud"
+      ]
+    }
+  ]
+}

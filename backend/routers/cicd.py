@@ -22,16 +22,15 @@ from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
     UpdateCicdIntegrationData,
 )
-from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_vuln_chart_data
+from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_sast_dashboard_data, get_cicd_vuln_chart_data
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
 from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
+from backend.utilities.db.encryption import decrypt_value, is_encrypted
 from backend.utilities.cicd.sast_output import create_output_string_for_results
-from backend.utilities.dashboard.scan import generate_scan_dashboard
 from backend.utilities.team.credits import deduct_credits_from_team
-from backend.get_db import dev_environment
 
 console = Console()
 
@@ -62,8 +61,18 @@ async def run_cicd_scan(
     6. this route will poll the cicd_worker for the results and return them as a JSON response
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        # SECURITY: Early file size check before expensive operations
+        MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
+        
+        # Check content-length header first (before reading)
+        if zip_file.size and zip_file.size > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE_BYTES // (1024*1024)}MB."
+            )
+        
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         cicd_log_collection = mongo_db["cicd_logs"]
 
         
@@ -104,14 +113,28 @@ async def run_cicd_scan(
             console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient credits")
 
+
+        # STEP [ 2.5 ] : ================= Deduct credits BEFORE dispatching scan (prevent free scans on failure) =================================
+        # SECURITY FIX: Deduct credits before starting scan to prevent race condition
+        deduct_credits_from_team(team_id=team_id, credits=credits_required)
         
         
         # STEP [ 3 ] : ================= Start the scan and update the main db =================================
         await zip_file.seek(0) # to resent the file pointer to the beginning of the file ( because the esitmation function reads the file and then the file pointer is at the end of the file )
-        task_id, task_status = await start_cicd_scan_and_update_db(
-            scan_type=type,
-            scan_settings=scan_settings,
-            uploaded_file=zip_file)
+        try:
+            task_id, task_status = await start_cicd_scan_and_update_db(
+                scan_type=type,
+                scan_settings=scan_settings,
+                uploaded_file=zip_file)
+        except Exception as scan_dispatch_error:
+            # Refund credits if scan dispatch fails
+            console.print(f"CICD scan dispatch failed, refunding {credits_required} credits to team {team_id}", style="bold yellow")
+            try:
+                from backend.utilities.team.credits import refund_credits_to_team
+                refund_credits_to_team(team_id=team_id, credits=credits_required)
+            except Exception as refund_err:
+                console.print(f"CRITICAL: Failed to refund credits after CICD scan dispatch failure: {refund_err}", style="bold red")
+            raise scan_dispatch_error
 
         
 
@@ -126,7 +149,6 @@ async def run_cicd_scan(
             scan_settings_metadata=scan_settings,
             results=None,
         ))
-        deduct_credits_from_team(team_id=team_id, credits=credits_required) # deduct credits from team 
         CICD_LOG_ID = str(cicd_log_insert_response.inserted_id) if cicd_log_insert_response and cicd_log_insert_response.inserted_id else None
         console.print(f"Cicd log inserted successfully with id: {CICD_LOG_ID}", style="bold green")
 
@@ -143,7 +165,9 @@ async def run_cicd_scan(
             if integration.integration_settings  and "jira" in integration.integration_settings and results is not None :
                 jira_project_id = integration.integration_settings["jira"].get("jira_project_id")
                 jira_email = team.integration_settings["jira"].get("email")
-                jira_api_token = team.integration_settings["jira"].get("api_token")
+                jira_api_token_raw = team.integration_settings["jira"].get("api_token")
+                # SECURITY: Decrypt api_token if encrypted (supports both encrypted and legacy plaintext)
+                jira_api_token = decrypt_value(jira_api_token_raw) if is_encrypted(jira_api_token_raw) else jira_api_token_raw
                 jira_api_url = team.integration_settings["jira"].get("url")
                 if not jira_project_id or not jira_email or not jira_api_token or not jira_api_url:
                     raise Exception("Jira project id, email, api token or url is missing, cannot create ticket")
@@ -191,8 +215,8 @@ async def list_cicd_integrations(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
@@ -216,7 +240,7 @@ async def list_cicd_integrations(
                     "owner_user_full_name": f"{integration.owner_user.first_name} {integration.owner_user.last_name}",
                     "last_updated": integration.last_updated,
                     "scan_type": integration.scan_type.upper() if integration.scan_type not in ["leakage" , "sbom_sca" , "agent_discovery"] else integration.scan_type,
-                    "api_key": integration.api_key,
+                    "api_key": integration.api_key[:8] + "..." + integration.api_key[-4:] if len(integration.api_key) > 12 else "****",
                 })
 
             dashboard_data = get_cicd_list_dashboard_data(integration_ids=integration_ids)
@@ -244,8 +268,8 @@ async def create_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         if data.title is None or data.scan_type is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title and scan type are required")
@@ -256,19 +280,21 @@ async def create_cicd_integration(
 
 
         # STEP [ 3 ] : ======================================== Create the integration ====================================
-        api_key = create_api_key(team_id)
+        plaintext_api_key, hashed_api_key = create_api_key(team_id)
         with Session(engine) as session:
             integration = CicdIntegration(
                 team_id=team_id, 
                 owner_user_id=user.id, 
                 title=data.title, 
                 scan_type=data.scan_type, 
-                api_key=api_key)
+                api_key=hashed_api_key)  # Store only the hash
             session.add(integration)
             session.commit()
             session.refresh(integration)
             return {
-                "integration_id": integration.id
+                "integration_id": integration.id,
+                "api_key": plaintext_api_key,  # Return plaintext ONCE, user must save it
+                "warning": "Save this API key now. It will not be shown again."
             }
     except Exception as e:
         console.print(f"Error creating cicd integration: {str(e)}", style="bold red")
@@ -290,8 +316,8 @@ async def delete_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 
@@ -338,8 +364,8 @@ async def update_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 
@@ -387,7 +413,25 @@ async def update_cicd_integration(
                     scan_settings_dict["sast"] = specific_scan_settings_dict["sast"]
                     console.print(scan_settings_dict, style="bold yellow")
                     integration.scan_settings= scan_settings_dict
-            
+                if data.scan_settings.cbom is not None:
+                    specific_scan_settings_dict = data.scan_settings.model_dump()
+                    if integration.scan_settings is not None:
+                        scan_settings_dict = integration.scan_settings.copy() or {}
+                    else:
+                        scan_settings_dict = {}
+                    scan_settings_dict["cbom"] = specific_scan_settings_dict["cbom"]
+                    console.print(scan_settings_dict, style="bold yellow")
+                    integration.scan_settings = scan_settings_dict
+                if data.scan_settings.ai_bom is not None:
+                    specific_scan_settings_dict = data.scan_settings.model_dump()
+                    if integration.scan_settings is not None:
+                        scan_settings_dict = integration.scan_settings.copy() or {}
+                    else:
+                        scan_settings_dict = {}
+                    scan_settings_dict["ai_bom"] = specific_scan_settings_dict["ai_bom"]
+                    console.print(scan_settings_dict, style="bold yellow")
+                    integration.scan_settings = scan_settings_dict
+
 
             session.add(integration)
             session.commit()
@@ -418,8 +462,8 @@ async def get_cicd_integration(
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
 
 
@@ -481,9 +525,10 @@ async def get_cicd_integration(
         results_list = []
         for log in logs:
             dashboard_data = None
-            if log.get("results") and isinstance(log["results"], list) :
+            # SAST results may be list or dict with "results" key (DataSpecs.md); get_cicd_sast_dashboard_data accepts both
+            if log.get("results") and scan_type == "sast":
                 try:
-                    dashboard_data = generate_scan_dashboard(scan_type=scan_type, scan_results=log["results"])
+                    dashboard_data = get_cicd_sast_dashboard_data(log["results"])
                 except Exception:
                     dashboard_data = None
             logs_data.append({
@@ -505,11 +550,11 @@ async def get_cicd_integration(
             integration_active = True
         
 
-        vulns_over_time_chart_data = get_cicd_vuln_chart_data(results_list=results_list)
+        dashboard_data = get_cicd_vuln_chart_data(results_list=results_list)
         
         return {
             "cicd_integration_id": integration.id,
-            "api_key": integration.api_key,
+            "api_key": integration.api_key[:8] + "..." + integration.api_key[-4:] if len(integration.api_key) > 12 else "****",
             "integration_active": integration_active,
             "title": integration.title,
             "created_at": integration.created_at,
@@ -518,7 +563,7 @@ async def get_cicd_integration(
             "integration_settings": integration.integration_settings or {},
             "scan_settings": integration.scan_settings or {},
             "logs": logs_data,
-            "vulns_over_time_chart_data": vulns_over_time_chart_data,
+            "dashboard_data": dashboard_data,
         }
     except Exception as e:
         console.print(f"Error getting cicd integration: {str(e)}", style="bold red")

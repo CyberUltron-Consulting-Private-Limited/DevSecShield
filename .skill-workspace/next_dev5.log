@@ -1,0 +1,316 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.8:3000
+✓ Ready in 475ms
+
+ GET / 200 in 1335ms (next.js: 783ms, application-code: 552ms)
+api base url :  http://127.0.0.1:8081
+ GET /1/ai_bom/4 200 in 4.0s (next.js: 1828ms, application-code: 2.2s)
+ GET / 200 in 343ms (next.js: 35ms, application-code: 308ms)
+ GET /1/cbom/6/results 200 in 2.4s (next.js: 1334ms, application-code: 1080ms)
+ GET /1/ai_bom/4 200 in 381ms (next.js: 153ms, application-code: 228ms)
+ GET /1/cbom/6/results 200 in 449ms (next.js: 136ms, application-code: 313ms)
+ GET /1/cbom/5/results 200 in 582ms (next.js: 84ms, application-code: 497ms)
+ GET /1/cbom 200 in 1008ms (next.js: 650ms, application-code: 358ms)
+ GET /login 200 in 415ms (next.js: 280ms, application-code: 135ms)
+ GET /1/ai_bom/4 200 in 123ms (next.js: 30ms, application-code: 93ms)
+ GET /1/cbom/5/results 200 in 45ms (next.js: 12ms, application-code: 34ms)
+ GET /1/cbom/5/results 200 in 37ms (next.js: 6ms, application-code: 31ms)
+ GET /login 200 in 63ms (next.js: 10ms, application-code: 54ms)
+ GET /1/ai_bom/4 200 in 58ms (next.js: 9ms, application-code: 49ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /login 200 in 59ms (next.js: 10ms, application-code: 49ms)
+ GET /1/ai_bom/4 200 in 201ms (next.js: 11ms, application-code: 190ms)
+ GET /1/cbom 200 in 84ms (next.js: 11ms, application-code: 73ms)
+ GET /login 200 in 111ms (next.js: 15ms, application-code: 96ms)
+ GET /1/ai_bom 200 in 1333ms (next.js: 1190ms, application-code: 143ms)
+ GET /1/ai_bom/13 200 in 182ms (next.js: 32ms, application-code: 150ms)
+ GET /1/ai_bom 200 in 128ms (next.js: 18ms, application-code: 110ms)
+ GET /1/ai_bom/14 200 in 175ms (next.js: 15ms, application-code: 160ms)
+ GET /1/ai_bom 200 in 164ms (next.js: 27ms, application-code: 137ms)
+ GET /1/ai_bom/15 200 in 24ms (next.js: 5ms, application-code: 19ms)
+ GET /1/cbom 200 in 93ms (next.js: 29ms, application-code: 65ms)
+ GET /1/ai_bom 200 in 99ms (next.js: 15ms, application-code: 84ms)
+ GET /1/ai_bom/16 200 in 69ms (next.js: 5ms, application-code: 64ms)
+ GET /1/ai_bom 200 in 169ms (next.js: 16ms, application-code: 153ms)
+ GET /1/ai_bom/17 200 in 21ms (next.js: 4ms, application-code: 17ms)
+ GET /login 200 in 133ms (next.js: 30ms, application-code: 103ms)
+ GET /1/ai_bom/13 200 in 95ms (next.js: 5ms, application-code: 90ms)
+ GET /1/cbom/5/results 200 in 134ms (next.js: 56ms, application-code: 78ms)
+○ Compiling /[team_id]/sast ...
+ GET /1/sast 200 in 5.0s (next.js: 5.0s, application-code: 36ms)
+ GET /1/sast 200 in 58ms (next.js: 6ms, application-code: 52ms)
+ GET /1/sast 200 in 56ms (next.js: 3ms, application-code: 52ms)
+ GET /1/sast 200 in 62ms (next.js: 6ms, application-code: 56ms)
+ GET /1/sast 200 in 58ms (next.js: 4ms, application-code: 53ms)
+ GET /1/sast 200 in 55ms (next.js: 6ms, application-code: 50ms)
+ GET /1/sbom_sca 200 in 1247ms (next.js: 1220ms, application-code: 27ms)
+ GET /1/sbom_sca 200 in 28ms (next.js: 2ms, application-code: 26ms)
+ GET /1/sbom_sca 200 in 32ms (next.js: 1241µs, application-code: 31ms)
+ GET /1/sbom_sca 200 in 26ms (next.js: 3ms, application-code: 23ms)
+ GET /1/sast 200 in 50ms (next.js: 11ms, application-code: 39ms)
+ GET /1/cbom/19/results 200 in 71ms (next.js: 21ms, application-code: 50ms)
+ GET /login 200 in 72ms (next.js: 18ms, application-code: 54ms)
+ GET /1/ai_bom/13/results 200 in 2.6s (next.js: 2.4s, application-code: 121ms)
+ GET /1/ai_bom/14/results 200 in 133ms (next.js: 22ms, application-code: 112ms)
+ GET /1/ai_bom/15/results 200 in 126ms (next.js: 19ms, application-code: 107ms)
+ GET /1/ai_bom/16/results 200 in 72ms (next.js: 7ms, application-code: 65ms)
+ GET /1/ai_bom/17/results 200 in 185ms (next.js: 24ms, application-code: 162ms)
+ GET /1/ai_bom 200 in 68ms (next.js: 6ms, application-code: 61ms)
+✓ Compiled in 1236ms
+✓ Compiled in 178ms
+✓ Compiled in 63ms
+✓ Compiled in 134ms
+✓ Compiled in 92ms
+✓ Compiled in 123ms
+✓ Compiled in 113ms
+✓ Compiled in 55ms
+ GET / 200 in 117ms (next.js: 23ms, application-code: 94ms)
+ GET / 200 in 132ms (next.js: 13ms, application-code: 118ms)
+ GET /1/cbom/6/results 200 in 280ms (next.js: 90ms, application-code: 190ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /login 200 in 263ms (next.js: 106ms, application-code: 157ms)
+ GET /login 200 in 105ms (next.js: 28ms, application-code: 77ms)
+ GET /1/ai_bom/13/results 200 in 268ms (next.js: 107ms, application-code: 161ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /1/ai_bom/13/results 200 in 115ms (next.js: 9ms, application-code: 106ms)
+ GET /1/ai_bom/13 200 in 299ms (next.js: 58ms, application-code: 241ms)
+ GET /1/ai_bom 200 in 147ms (next.js: 45ms, application-code: 101ms)
+ GET /1/ai_bom/13/results 200 in 105ms (next.js: 22ms, application-code: 83ms)
+ GET /1/ai_bom/13/results 200 in 123ms (next.js: 21ms, application-code: 102ms)
+ GET /1/ai_bom/13/results 200 in 120ms (next.js: 8ms, application-code: 112ms)
+ GET /1/ai_bom 200 in 41ms (next.js: 4ms, application-code: 36ms)
+✓ Compiled in 236ms
+ GET /1/cbom/6/results 200 in 104ms (next.js: 33ms, application-code: 71ms)
+ GET /1/cbom/6/results 200 in 105ms (next.js: 26ms, application-code: 78ms)
+ GET / 200 in 409ms (next.js: 138ms, application-code: 271ms)
+ GET / 200 in 106ms (next.js: 10ms, application-code: 96ms)
+ GET /1/ai_bom/13/results 200 in 1467ms (next.js: 446ms, application-code: 1021ms)
+ GET / 200 in 516ms (next.js: 128ms, application-code: 389ms)
+ GET /1/cbom 200 in 327ms (next.js: 181ms, application-code: 146ms)
+ GET /1/cbom/120/results 200 in 1237ms (next.js: 327ms, application-code: 911ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /1/cbom/120/results 200 in 131ms (next.js: 15ms, application-code: 116ms)
+ GET /1/cbom 200 in 201ms (next.js: 26ms, application-code: 175ms)
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+ GET /1/cbom/120/results 200 in 569ms (next.js: 46ms, application-code: 524ms)
+ GET /1/cbom 200 in 177ms (next.js: 11ms, application-code: 166ms)
+ GET /1/cbom/120/results 200 in 131ms (next.js: 6ms, application-code: 125ms)
+ GET /1/cbom/120/results 200 in 87ms (next.js: 7ms, application-code: 79ms)
+ GET /1/cbom 200 in 139ms (next.js: 27ms, application-code: 112ms)
+ GET /1/cbom/120/results 200 in 216ms (next.js: 21ms, application-code: 195ms)
+ GET /1/cbom 200 in 220ms (next.js: 25ms, application-code: 195ms)
+ GET /1/cbom/120/results 200 in 196ms (next.js: 6ms, application-code: 190ms)
+ GET /1/cbom/120/results 200 in 122ms (next.js: 12ms, application-code: 110ms)
+ GET /1/cbom 200 in 127ms (next.js: 24ms, application-code: 103ms)
+ GET /1/cbom/120/results 200 in 158ms (next.js: 26ms, application-code: 132ms)
+ GET /1/cbom/120/results 200 in 104ms (next.js: 8ms, application-code: 95ms)
+ GET /1/cbom/120/results 200 in 159ms (next.js: 32ms, application-code: 127ms)
+ GET /1/cbom 200 in 238ms (next.js: 31ms, application-code: 206ms)
+ GET /1/cbom/120/results?origin=list 200 in 598ms (next.js: 34ms, application-code: 564ms)
+ GET /1/cbom/120/results 200 in 187ms (next.js: 32ms, application-code: 155ms)
+ GET /1/cbom 200 in 172ms (next.js: 30ms, application-code: 141ms)
+ GET /1/cbom/120/results?origin=list 200 in 344ms (next.js: 18ms, application-code: 326ms)
+ GET /1/cbom 200 in 248ms (next.js: 46ms, application-code: 201ms)
+ GET /1/cbom/120/results?origin=chat 200 in 668ms (next.js: 56ms, application-code: 612ms)
+ GET /1/cbom/120 200 in 2.3s (next.js: 2.2s, application-code: 74ms)
+ GET /1/cbom/120/results?origin=chat 200 in 227ms (next.js: 28ms, application-code: 200ms)
+ GET /1/cbom/120 200 in 281ms (next.js: 26ms, application-code: 256ms)
+ GET /1/cbom 200 in 210ms (next.js: 11ms, application-code: 198ms)
+ GET /1/cbom/120/results 200 in 221ms (next.js: 17ms, application-code: 204ms)
+ GET / 200 in 103ms (next.js: 21ms, application-code: 82ms)
+○ Compiling /[team_id] ...
+ GET /1 200 in 12.1s (next.js: 11.8s, application-code: 342ms)
+ GET /1/sbom_sca 200 in 511ms (next.js: 57ms, application-code: 454ms)
+ GET /1/cbom 200 in 195ms (next.js: 21ms, application-code: 174ms)
+ GET /1/cbom/120/results 200 in 79ms (next.js: 10ms, application-code: 69ms)
+ GET /1/cbom 200 in 65ms (next.js: 13ms, application-code: 53ms)
+ GET /1/cbom/109/results 200 in 122ms (next.js: 14ms, application-code: 107ms)
+ GET /1/cbom 200 in 126ms (next.js: 18ms, application-code: 107ms)
+ GET /1/cbom/115/results 200 in 104ms (next.js: 24ms, application-code: 80ms)
+ GET /1/cbom/115 200 in 244ms (next.js: 26ms, application-code: 218ms)
+ GET / 200 in 651ms (next.js: 196ms, application-code: 454ms)
+ GET / 200 in 117ms (next.js: 14ms, application-code: 103ms)
+ GET / 200 in 233ms (next.js: 14ms, application-code: 219ms)
+○ Compiling /home ...
+ GET /home 200 in 6.8s (next.js: 6.4s, application-code: 403ms)
+ GET /1/ai_bom/75/results 200 in 258ms (next.js: 41ms, application-code: 217ms)
+ GET /1/cbom/127/results 200 in 155ms (next.js: 12ms, application-code: 143ms)
+ GET /4 200 in 225ms (next.js: 49ms, application-code: 176ms)
+ GET /4/ai_bom 200 in 263ms (next.js: 167ms, application-code: 96ms)
+ GET /4/ai_bom 200 in 101ms (next.js: 21ms, application-code: 80ms)
+ GET /4/ai_bom 200 in 144ms (next.js: 23ms, application-code: 121ms)
+ GET /4/ai_bom/128 200 in 167ms (next.js: 56ms, application-code: 111ms)
+ GET /4/ai_bom/128 200 in 55ms (next.js: 24ms, application-code: 31ms)
+ GET /4/ai_bom/128/results?origin=chat 200 in 38ms (next.js: 13ms, application-code: 25ms)
+ GET /home 200 in 430ms (next.js: 164ms, application-code: 266ms)
+ GET /4/ai_bom/130/results 200 in 653ms (next.js: 28ms, application-code: 625ms)
+○ Compiling /[team_id]/sbom_sca/[scan_id]/results ...
+ GET /4/sbom_sca/132/results 200 in 7.2s (next.js: 7.1s, application-code: 79ms)
+ GET /4/ai_bom 200 in 149ms (next.js: 36ms, application-code: 112ms)
+ GET /4/ai_bom 200 in 53ms (next.js: 4ms, application-code: 49ms)
+ GET /4/ai_bom/130/results 200 in 53ms (next.js: 9ms, application-code: 44ms)
+ GET /4/ai_bom/130/results 200 in 52ms (next.js: 17ms, application-code: 35ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /4/ai_bom 200 in 1025ms (next.js: 380ms, application-code: 644ms)
+✓ Compiled in 4.1s
+api base url :  http://127.0.0.1:8081
+ GET /login 200 in 954ms (next.js: 152ms, application-code: 802ms)
+ GET /login 200 in 149ms (next.js: 10ms, application-code: 139ms)
+ GET / 200 in 1288ms (next.js: 512ms, application-code: 776ms)
+ GET /home 200 in 261ms (next.js: 177ms, application-code: 84ms)
+ GET /4 200 in 216ms (next.js: 122ms, application-code: 94ms)
+ GET /4/ai_bom 200 in 111ms (next.js: 62ms, application-code: 49ms)
+ GET /4/ai_bom/130/results 200 in 157ms (next.js: 104ms, application-code: 53ms)
+ GET /1/ai_bom/75/results 200 in 151ms (next.js: 18ms, application-code: 133ms)
+ GET /1/ai_bom/69/results 200 in 150ms (next.js: 17ms, application-code: 133ms)
+ GET /4/ai_bom 200 in 139ms (next.js: 23ms, application-code: 116ms)
+ GET /4/ai_bom/138 200 in 427ms (next.js: 300ms, application-code: 127ms)
+ GET /4/ai_bom 200 in 87ms (next.js: 16ms, application-code: 71ms)
+ GET /4/ai_bom/130/results 200 in 108ms (next.js: 28ms, application-code: 80ms)
+ GET /4/ai_bom/130/results 200 in 42ms (next.js: 2ms, application-code: 40ms)
+ GET /4/ai_bom/130 200 in 24ms (next.js: 5ms, application-code: 19ms)
+ GET /4/ai_bom 200 in 94ms (next.js: 15ms, application-code: 79ms)
+ GET /4/ai_bom/139 200 in 111ms (next.js: 50ms, application-code: 61ms)
+✓ Compiled in 1371ms
+✓ Compiled in 562ms
+✓ Compiled in 1590ms
+ GET /4/ai_bom/139 200 in 414ms (next.js: 189ms, application-code: 225ms)
+ GET /4/ai_bom/139 200 in 87ms (next.js: 10ms, application-code: 77ms)
+ GET /4/ai_bom/139 200 in 26ms (next.js: 3ms, application-code: 23ms)
+api base url :  http://127.0.0.1:8081
+ GET /home 200 in 389ms (next.js: 49ms, application-code: 339ms)
+ GET /4/ai_bom/140/results 200 in 423ms (next.js: 69ms, application-code: 354ms)
+✓ Compiled in 650ms
+ GET /4/cbom 200 in 411ms (next.js: 197ms, application-code: 214ms)
+ GET /4/cbom/134/results 200 in 448ms (next.js: 61ms, application-code: 387ms)
+ GET /4/cbom/134/results 200 in 367ms (next.js: 47ms, application-code: 319ms)
+ GET /4/cbom 200 in 85ms (next.js: 17ms, application-code: 68ms)
+✓ Compiled in 497ms
+ GET /4/ai_bom 200 in 104ms (next.js: 29ms, application-code: 75ms)
+ GET /4/ai_bom/140/results 200 in 59ms (next.js: 28ms, application-code: 31ms)
+ GET /4/ai_bom/140/results 200 in 20ms (next.js: 3ms, application-code: 16ms)
+ GET /4/ai_bom 200 in 70ms (next.js: 12ms, application-code: 58ms)
+ GET /4/ai_bom/130/results 200 in 144ms (next.js: 19ms, application-code: 125ms)
+ GET /4/ai_bom/130/results 200 in 47ms (next.js: 3ms, application-code: 44ms)
+ GET /4/ai_bom/140/results 200 in 219ms (next.js: 31ms, application-code: 189ms)
+✓ Compiled in 178ms
+✓ Compiled in 174ms
+ GET / 200 in 338ms (next.js: 104ms, application-code: 233ms)
+ GET /1/ai_bom/141/results 200 in 93ms (next.js: 35ms, application-code: 58ms)
+ GET /1/ai_bom/141/results 200 in 147ms (next.js: 14ms, application-code: 133ms)
+ GET /1/ai_bom/141/results 200 in 236ms (next.js: 41ms, application-code: 194ms)
+ GET /4/ai_bom/140/results 200 in 162ms (next.js: 18ms, application-code: 144ms)
+ GET /1/ai_bom/141/results 200 in 82ms (next.js: 13ms, application-code: 69ms)
+ GET /1/ai_bom/141/results 200 in 226ms (next.js: 23ms, application-code: 203ms)
+ GET /1/ai_bom/141/results 200 in 110ms (next.js: 12ms, application-code: 98ms)
+✓ Compiled in 206ms
+ GET /1/ai_bom/141/results 200 in 121ms (next.js: 49ms, application-code: 72ms)
+ GET /1/ai_bom/141/results 200 in 907ms (next.js: 314ms, application-code: 594ms)
+ GET /4/ai_bom/140/results 200 in 885ms (next.js: 227ms, application-code: 657ms)
+ GET /1/ai_bom/141/results 200 in 420ms (next.js: 131ms, application-code: 289ms)
+ GET /1/ai_bom/141/results 200 in 230ms (next.js: 67ms, application-code: 163ms)
+ GET /4/ai_bom/140/results 200 in 331ms (next.js: 212ms, application-code: 119ms)
+ GET /4/ai_bom/140/results 200 in 570ms (next.js: 43ms, application-code: 528ms)
+ GET /4/cbom 200 in 146ms (next.js: 79ms, application-code: 67ms)
+ GET /4/sbom_sca 200 in 176ms (next.js: 130ms, application-code: 46ms)
+ GET /4/ai_bom 200 in 776ms (next.js: 524ms, application-code: 252ms)
+ GET /4/ai_bom/143/results 200 in 773ms (next.js: 161ms, application-code: 612ms)
+ GET /4/ai_bom/143/results 200 in 180ms (next.js: 7ms, application-code: 173ms)
+ GET /4/ai_bom/143/results 200 in 534ms (next.js: 163ms, application-code: 371ms)
+ GET /4/ai_bom/143/results 200 in 80ms (next.js: 15ms, application-code: 65ms)
+ GET / 200 in 131ms (next.js: 16ms, application-code: 116ms)
+ GET /4/ai_bom/143/results 200 in 391ms (next.js: 142ms, application-code: 249ms)
+ GET /4/ai_bom 200 in 112ms (next.js: 28ms, application-code: 84ms)
+ GET /4/ai_bom/148/results 200 in 165ms (next.js: 13ms, application-code: 152ms)
+ GET /4/ai_bom/148/results 200 in 52ms (next.js: 2ms, application-code: 50ms)
+○ Compiling /[team_id]/ci_cd ...
+ GET /4/ci_cd 200 in 7.5s (next.js: 7.5s, application-code: 30ms)
+ GET /4/ai_bom 200 in 137ms (next.js: 21ms, application-code: 116ms)
+ GET /4/ai_bom/148/results 200 in 78ms (next.js: 17ms, application-code: 60ms)
+ GET /4/ai_bom/148/results 200 in 28ms (next.js: 4ms, application-code: 24ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /4/ai_bom/148/results 200 in 1341ms (next.js: 374ms, application-code: 968ms)
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+[browser] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+ GET /1/ai_bom/141/results 200 in 936ms (next.js: 186ms, application-code: 750ms)
+ GET /1/ai_bom/141/results 200 in 86ms (next.js: 25ms, application-code: 61ms)
+ GET /1/ai_bom/141/results 200 in 431ms (next.js: 42ms, application-code: 389ms)
+✓ Compiled in 1803ms
+ GET /1/ai_bom/141/results 200 in 1462ms (next.js: 587ms, application-code: 875ms)
+✓ Compiled in 563ms
+✓ Compiled in 248ms
+✓ Compiled in 707ms
+✓ Compiled in 143ms
+✓ Compiled in 155ms
+✓ Compiled in 103ms
+✓ Compiled in 210ms
+✓ Compiled in 127ms
+✓ Compiled in 130ms
+ GET /1/ai_bom/141/results 200 in 259ms (next.js: 61ms, application-code: 198ms)
+ GET /1/ai_bom/141/results 200 in 101ms (next.js: 17ms, application-code: 85ms)
+ GET /1/ai_bom/141/results 200 in 68ms (next.js: 15ms, application-code: 53ms)
+ GET /1/ai_bom/141/results 200 in 84ms (next.js: 15ms, application-code: 69ms)
+ GET /1/ai_bom/141/results 200 in 109ms (next.js: 13ms, application-code: 96ms)
+ GET /1/ai_bom/141/results 200 in 123ms (next.js: 21ms, application-code: 102ms)
+ GET /4/ai_bom 200 in 110ms (next.js: 45ms, application-code: 66ms)
+ GET /4/ai_bom/148/results 200 in 78ms (next.js: 8ms, application-code: 70ms)
+ GET /4/ai_bom/148/results 200 in 51ms (next.js: 6ms, application-code: 45ms)
+ GET /login 200 in 907ms (next.js: 421ms, application-code: 486ms)
+ GET /login 200 in 144ms (next.js: 6ms, application-code: 137ms)
+ GET /1/ai_bom/141/results 200 in 507ms (next.js: 228ms, application-code: 279ms)
+ GET /login 200 in 83ms (next.js: 11ms, application-code: 72ms)
+ GET /1/ai_bom/149/results 200 in 74ms (next.js: 7ms, application-code: 67ms)
+ GET /login 200 in 27ms (next.js: 6ms, application-code: 21ms)
+ GET /login 200 in 53ms (next.js: 4ms, application-code: 48ms)
+ GET /1/ai_bom/141/results 200 in 110ms (next.js: 21ms, application-code: 88ms)
+ GET /1/ai_bom/149/results 200 in 104ms (next.js: 13ms, application-code: 91ms)
+[browser] [React Flow]: The React Flow parent container needs a width and a height to render the graph. Help: https://reactflow.dev/error#004
+[browser] [React Flow]: The React Flow parent container needs a width and a height to render the graph. Help: https://reactflow.dev/error#004
+[browser] [React Flow]: The React Flow parent container needs a width and a height to render the graph. Help: https://reactflow.dev/error#004
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[browser] The width(0) and height(0) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+ GET /1/ai_bom/141/results 200 in 75ms (next.js: 14ms, application-code: 62ms)
+ GET /1/ai_bom/149/results 200 in 74ms (next.js: 13ms, application-code: 61ms)
+ GET /1/ai_bom/141/results 200 in 120ms (next.js: 14ms, application-code: 106ms)

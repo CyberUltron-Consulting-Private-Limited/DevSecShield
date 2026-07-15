@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, SetStateAction, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -12,8 +12,6 @@ import {
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -26,14 +24,21 @@ import {
   Download,
   Loader2,
   Eye,
-  Shield,
-  Key,
   Info,
 } from "lucide-react";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { DASTConversationResponse, startDASTScan, getDASTExportResults, reinitializeDASTScan, FormBasedDASTScanData, HeaderCookieDASTScanData } from "@/utils/backend_api";
+import {
+  DASTScanResponse,
+  estimateCreditsForScan,
+  startDASTScan,
+  getDASTExportResults,
+  reinitializeDASTScan,
+  StartDASTScanData,
+  AuthRequirements,
+} from "@/utils/backend_api";
 import { toast } from "sonner";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { handleApiError } from "@/utils/error-handler";
 import {
   Dialog,
   DialogContent,
@@ -43,339 +48,310 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
+type UrlPatternMode = "none" | "include" | "exclude";
+
+function buildAuthRequirements(
+  loginUrl: string,
+  xpathUsername: string,
+  xpathPassword: string,
+  username: string,
+  password: string,
+  xpathSubmit: string
+): AuthRequirements {
+  return {
+    login_url: loginUrl.trim(),
+    xpath_of_username_field: xpathUsername.trim(),
+    xpath_of_password_field: xpathPassword.trim(),
+    username: username.trim(),
+    password: password.trim(),
+    xpath_of_submit_button: xpathSubmit.trim(),
+  };
+}
+
+function isAuthComplete(
+  loginUrl: string,
+  xpathUsername: string,
+  xpathPassword: string,
+  username: string,
+  password: string,
+  xpathSubmit: string
+): boolean {
+  return (
+    Boolean(loginUrl?.trim()) &&
+    Boolean(xpathUsername?.trim()) &&
+    Boolean(xpathPassword?.trim()) &&
+    Boolean(username?.trim()) &&
+    Boolean(password?.trim()) &&
+    Boolean(xpathSubmit?.trim())
+  );
+}
+
+function buildStartDASTPayload(
+  targetUrl: string,
+  scanSpeed: "fast" | "medium" | "slow",
+  maxUrls: number,
+  auth: AuthRequirements,
+  additionalUrls: string[],
+  patternMode: UrlPatternMode,
+  patternList: string[]
+): StartDASTScanData {
+  const payload: StartDASTScanData = {
+    target_url: targetUrl.trim(),
+    auth,
+    scan_speed: scanSpeed,
+    max_urls: typeof maxUrls === "number" && maxUrls >= 1 ? maxUrls : 100,
+  };
+  if (additionalUrls.length > 0) {
+    payload.additional_urls_to_scan = additionalUrls.map((u) => u.trim()).filter(Boolean);
+  }
+  if (patternMode === "include" && patternList.length > 0) {
+    payload.include_url_patterns = patternList.map((p) => p.trim()).filter(Boolean);
+  }
+  if (patternMode === "exclude" && patternList.length > 0) {
+    payload.exclude_url_patterns = patternList.map((p) => p.trim()).filter(Boolean);
+  }
+  return payload;
+}
+
 export function DASTOptionsSidebar({
+  team_id,
+  scan_id,
   query,
-}:{
-  query: UseQueryResult<DASTConversationResponse>;
+}: {
+  team_id: number;
+  scan_id: number;
+  query: UseQueryResult<DASTScanResponse>;
 }) {
-  const [authMode, setAuthMode] = useState<"form_based" | "header_cookie_based">("form_based");
-  
-  // Form-based authentication state
-  const [formTargetUrl, setFormTargetUrl] = useState("");
-  const [formLoginUrl, setFormLoginUrl] = useState("");
-  const [formIncludeUrls, setFormIncludeUrls] = useState<string[]>([]);
-  const [formExcludeUrls, setFormExcludeUrls] = useState<string[]>([]);
-  const [formIncludeUrlInput, setFormIncludeUrlInput] = useState("");
-  const [formExcludeUrlInput, setFormExcludeUrlInput] = useState("");
-  const [formTimeoutMins, setFormTimeoutMins] = useState(20);
-  const [formPollSeconds, setFormPollSeconds] = useState(5);
-  const [formUsernameValue, setFormUsernameValue] = useState("");
-  const [formPasswordValue, setFormPasswordValue] = useState("");
-  const [formUsernameKey, setFormUsernameKey] = useState("username");
-  const [formPasswordKey, setFormPasswordKey] = useState("password");
-  const [formLoggedInRegex, setFormLoggedInRegex] = useState("");
-  const [formLoggedOutRegex, setFormLoggedOutRegex] = useState("");
+  const [targetUrl, setTargetUrl] = useState("");
+  const [scanSpeed, setScanSpeed] = useState<"fast" | "medium" | "slow">("medium");
+  const [maxUrls, setMaxUrls] = useState(100);
+  const [loginUrl, setLoginUrl] = useState("");
+  const [xpathUsername, setXpathUsername] = useState("");
+  const [xpathPassword, setXpathPassword] = useState("");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [xpathSubmit, setXpathSubmit] = useState("");
+  const [additionalUrls, setAdditionalUrls] = useState<string[]>([]);
+  const [additionalUrlInput, setAdditionalUrlInput] = useState("");
+  const [urlPatternMode, setUrlPatternMode] = useState<UrlPatternMode>("none");
+  const [urlPatterns, setUrlPatterns] = useState<string[]>([]);
+  const [urlPatternInput, setUrlPatternInput] = useState("");
 
-  // Header/Cookie-based authentication state
-  const [headerTargetUrl, setHeaderTargetUrl] = useState("");
-  const [headerAttackModules, setHeaderAttackModules] = useState<string[]>(["common"]);
-  const [headerMaxScanTime, setHeaderMaxScanTime] = useState(60);
-  const [headerUserAgent, setHeaderUserAgent] = useState("");
-  const [headerHeaders, setHeaderHeaders] = useState<{ name: string; value: string }[]>([]);
-  const [headerCookies, setHeaderCookies] = useState<{ name: string; value: string }[]>([]);
-  const [headerScanForce, setHeaderScanForce] = useState<"paranoid" | "sneaky" | "polite" | "normal" | "aggressive" | "insane">("normal");
-  const [headerExcludePatterns, setHeaderExcludePatterns] = useState<string[]>([]);
-  const [headerAdditionalUrls, setHeaderAdditionalUrls] = useState<string[]>([]);
-  const [headerAdditionalUrlInput, setHeaderAdditionalUrlInput] = useState("");
-
-  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
+  const [optionsSidebarState, setOptionsSidebarState] = useState<
+    "ready" | "scanning" | "error" | "done"
+  >("ready");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
+  const [estimationProcessDone, setEstimationProcessDone] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
 
+  /** Validate required inputs before estimate/start. Target URL and all auth fields are required. */
+  const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
+    if (!targetUrl?.trim()) {
+      return { valid: false, message: "Target URL is required." };
+    }
+    if (!isAuthComplete(loginUrl, xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit)) {
+      return {
+        valid: false,
+        message: "Authentication is required: fill login URL and all auth fields (XPaths, username, password, submit button).",
+      };
+    }
+    return { valid: true };
+  };
+
+  const scanInputsValid = validateScanInputs().valid;
+
+  const buildDastPayloadString = (): string =>
+    JSON.stringify({ dast: getPayload() });
+
+  const estimateCreditsMutation = useMutation({
+    mutationFn: () =>
+      estimateCreditsForScan(team_id, "dast", scan_id, buildDastPayloadString(), null),
+    onSuccess: (data) => {
+      setEstimatedCredits(data.credits_required);
+      setEstimationProcessDone(true);
+      if (data.credits_required !== -1) {
+        toast.success(`This scan will use ${data.credits_required} credits`);
+      } else {
+        toast.error("Invalid input from user");
+      }
+    },
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
+      setOptionsSidebarState("error");
+    },
+  });
+
   const handleStartScan = ({
-    conversation_id,
-    auth_mode,
-    form_based,
-    header_cookie_based
+    team_id: tid,
+    scan_id: sid,
+    dast,
   }: {
-    conversation_id: number;
-    auth_mode: "form_based" | "header_cookie_based";
-    form_based?: FormBasedDASTScanData;
-    header_cookie_based?: HeaderCookieDASTScanData;
+    team_id: number;
+    scan_id: number;
+    dast: StartDASTScanData;
   }) => {
     setOptionsSidebarState("scanning");
-    return startDASTScan({
-      conversation_id,
-      auth_mode,
-      form_based,
-      header_cookie_based
-    });
+    return startDASTScan({ team_id: tid, scan_id: sid, dast });
   };
 
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { conversation_id } = useParams();
+
   const startScanMutation = useMutation({
     mutationFn: handleStartScan,
     onSuccess: () => {
+      setEstimatedCredits(null);
+      setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['dast-conversation-data', parseInt(conversation_id as string)] });
+      queryClient.invalidateQueries({
+        queryKey: ["dast-scan", team_id, scan_id],
+      });
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-    }
+    },
   });
+
+  /** Reset estimation when key scan inputs change so user must re-run estimate for new config. */
+  useEffect(() => {
+    setEstimationProcessDone(false);
+    setEstimatedCredits(null);
+  }, [
+    targetUrl,
+    scanSpeed,
+    maxUrls,
+    loginUrl,
+    xpathUsername,
+    xpathPassword,
+    authUsername,
+    authPassword,
+    xpathSubmit,
+    additionalUrls,
+    urlPatternMode,
+    urlPatterns,
+  ]);
+
+  const displayCredits = estimatedCredits;
+  const creditsInvalid = estimatedCredits === -1;
+  const canRunScan = estimationProcessDone && !creditsInvalid;
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
       setOptionsSidebarState("error");
     }
     if (query.data?.scan_status === "not_started" || !query.data?.scan_status) {
       setOptionsSidebarState("ready");
+      setErrorMessage(null);
     }
   }, [query.data?.scan_status]);
 
-  // Update include URLs when target URL changes - add target URL by default
-  useEffect(() => {
-    if (formTargetUrl && authMode === "form_based") {
-      // Check if target URL is already in include URLs
-      if (!formIncludeUrls.includes(formTargetUrl)) {
-        setFormIncludeUrls([formTargetUrl, ...formIncludeUrls.filter(url => url !== formTargetUrl)]);
-      }
-    }
-  }, [formTargetUrl, authMode]);
-
   const exportMutation = useMutation({
-    mutationFn: getDASTExportResults,
-    onSuccess: (data, variables, context) => {
+    mutationFn: ([tid, sid]: [number, number]) => getDASTExportResults(tid, sid),
+    onSuccess: (data) => {
       const blob = new Blob([data], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
-
-      // download the pdf file
       const a = document.createElement("a");
       a.href = url;
       a.download = `${query.data?.title}_scan_report.pdf`;
       a.click();
-
       setOptionsSidebarState("done");
     },
     onError: () => {
       setOptionsSidebarState("error");
-    }
+    },
   });
 
   const handleReinitializeScan = ({
-    conversation_id,
-    auth_mode,
-    form_based,
-    header_cookie_based
+    team_id: tid,
+    scan_id: sid,
+    dast,
   }: {
-    conversation_id: number;
-    auth_mode: "form_based" | "header_cookie_based";
-    form_based?: FormBasedDASTScanData;
-    header_cookie_based?: HeaderCookieDASTScanData;
+    team_id: number;
+    scan_id: number;
+    dast: StartDASTScanData;
   }) => {
     setOptionsSidebarState("ready");
-    return reinitializeDASTScan({
-      conversation_id,
-      auth_mode,
-      form_based,
-      header_cookie_based
-    });
+    return reinitializeDASTScan({ team_id: tid, scan_id: sid, dast });
   };
 
   const reinitializeScanMutation = useMutation({
     mutationFn: handleReinitializeScan,
     onSuccess: () => {
       setOptionsSidebarState("scanning");
-      queryClient.invalidateQueries({ queryKey: ['dast-conversation-data', parseInt(conversation_id as string)] });
+      queryClient.invalidateQueries({
+        queryKey: ["dast-scan", team_id, scan_id],
+      });
     },
     onError: () => {
       setOptionsSidebarState("error");
-    }
+    },
   });
 
-  const addHeader = () => {
-    setHeaderHeaders([...headerHeaders, { name: "", value: "" }]);
-  };
-
-  const removeHeader = (index: number) => {
-    setHeaderHeaders(headerHeaders.filter((_, i) => i !== index));
-  };
-
-  const updateHeader = (index: number, field: "name" | "value", value: string) => {
-    const updated = [...headerHeaders];
-    updated[index][field] = value;
-    setHeaderHeaders(updated);
-  };
-
-  const addCookie = () => {
-    setHeaderCookies([...headerCookies, { name: "", value: "" }]);
-  };
-
-  const removeCookie = (index: number) => {
-    setHeaderCookies(headerCookies.filter((_, i) => i !== index));
-  };
-
-  const updateCookie = (index: number, field: "name" | "value", value: string) => {
-    const updated = [...headerCookies];
-    updated[index][field] = value;
-    setHeaderCookies(updated);
-  };
-
-  // Include/Exclude URLs handlers for form-based
-  const addFormIncludeUrl = () => {
-    if (formIncludeUrlInput.trim()) {
-      setFormIncludeUrls([...formIncludeUrls, formIncludeUrlInput.trim()]);
-      setFormIncludeUrlInput("");
+  const addAdditionalUrl = () => {
+    if (additionalUrlInput.trim()) {
+      setAdditionalUrls([...additionalUrls, additionalUrlInput.trim()]);
+      setAdditionalUrlInput("");
     }
   };
 
-  const removeFormIncludeUrl = (index: number) => {
-    setFormIncludeUrls(formIncludeUrls.filter((_, i) => i !== index));
+  const removeAdditionalUrl = (index: number) => {
+    setAdditionalUrls(additionalUrls.filter((_, i) => i !== index));
   };
 
-  const addFormExcludeUrl = () => {
-    if (formExcludeUrlInput.trim()) {
-      setFormExcludeUrls([...formExcludeUrls, formExcludeUrlInput.trim()]);
-      setFormExcludeUrlInput("");
+  const addUrlPattern = () => {
+    if (urlPatternInput.trim()) {
+      setUrlPatterns([...urlPatterns, urlPatternInput.trim()]);
+      setUrlPatternInput("");
     }
   };
 
-  const removeFormExcludeUrl = (index: number) => {
-    setFormExcludeUrls(formExcludeUrls.filter((_, i) => i !== index));
+  const removeUrlPattern = (index: number) => {
+    setUrlPatterns(urlPatterns.filter((_, i) => i !== index));
   };
 
-  // Additional URLs handlers for header/cookie-based
-  const addHeaderAdditionalUrl = () => {
-    if (headerAdditionalUrlInput.trim()) {
-      setHeaderAdditionalUrls([...headerAdditionalUrls, headerAdditionalUrlInput.trim()]);
-      setHeaderAdditionalUrlInput("");
+  const getPayload = (): StartDASTScanData =>
+    buildStartDASTPayload(
+      targetUrl,
+      scanSpeed,
+      maxUrls,
+      buildAuthRequirements(loginUrl, xpathUsername, xpathPassword, authUsername, authPassword, xpathSubmit),
+      additionalUrls,
+      urlPatternMode,
+      urlPatterns
+    );
+
+  const handleEstimateCredits = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
     }
+    estimateCreditsMutation.mutate();
   };
 
-  const removeHeaderAdditionalUrl = (index: number) => {
-    setHeaderAdditionalUrls(headerAdditionalUrls.filter((_, i) => i !== index));
-  };
-
-  // Attack modules handlers
-  const attackModulesList = [
-    "all",
-    "common",
-    "backup",
-    "buster",
-    "cms",
-    "crlf",
-    "csrf",
-    "exec",
-    "file",
-    "htaccess",
-    "htp",
-    "ldap",
-    "log4shell",
-    "methods",
-    "network_device",
-    "nikto",
-    "permanentxss",
-    "redirect",
-    "shellshock",
-    "spring4shell",
-    "sql",
-    "ssl",
-    "ssrf",
-    "takeover",
-    "timesql",
-    "upload",
-    "wapp",
-    "wp_enum",
-    "xss",
-    "xxe"
-  ] as const;
-
-  const toggleAttackModule = (module: string) => {
-    if (module === "all") {
-      // If "all" is being checked, set only ["all"]
-      if (headerAttackModules.includes("all")) {
-        // Unchecking "all", default to ["common"]
-        setHeaderAttackModules(["common"]);
-      } else {
-        // Checking "all", remove all other modules
-        setHeaderAttackModules(["all"]);
-      }
-    } else {
-      // If "all" is currently selected, remove it and start fresh
-      let newModules = headerAttackModules.includes("all") 
-        ? [module]
-        : headerAttackModules.includes(module)
-        ? headerAttackModules.filter(m => m !== module)
-        : [...headerAttackModules, module];
-      
-      // If no modules selected, default to ["common"]
-      if (newModules.length === 0) {
-        newModules = ["common"];
-      }
-      
-      setHeaderAttackModules(newModules);
+  const handleStartScanAfterEstimate = () => {
+    const validation = validateScanInputs();
+    if (!validation.valid) {
+      toast.error(validation.message);
+      return;
     }
+    startScanMutation.mutate({
+      team_id,
+      scan_id,
+      dast: getPayload(),
+    });
   };
 
-  // Update include URLs when target URL changes
-  useEffect(() => {
-    if (formTargetUrl && authMode === "form_based") {
-      // Check if target URL is already in include URLs
-      if (!formIncludeUrls.includes(formTargetUrl)) {
-        setFormIncludeUrls([formTargetUrl, ...formIncludeUrls]);
-      }
-    }
-  }, [formTargetUrl, authMode]);
-
-  const handleRunScan = () => {
-    if (authMode === "form_based") {
-      if (!formTargetUrl || !formLoginUrl || !formUsernameValue || !formPasswordValue || !formUsernameKey || !formPasswordKey || !formLoggedInRegex || !formLoggedOutRegex) {
-        toast.error("Please fill in all required fields for form-based authentication");
-        return;
-      }
-      // Ensure target URL is always in include URLs
-      const finalIncludeUrls = formIncludeUrls.includes(formTargetUrl) 
-        ? formIncludeUrls 
-        : [formTargetUrl, ...formIncludeUrls];
-      
-      startScanMutation.mutate({
-        conversation_id: parseInt(conversation_id as string),
-        auth_mode: "form_based",
-        form_based: {
-          target_url: formTargetUrl,
-          login_url: formLoginUrl,
-          include_urls: finalIncludeUrls.length > 0 ? finalIncludeUrls : [formTargetUrl],
-          exclude_urls: formExcludeUrls.length > 0 ? formExcludeUrls : undefined,
-          timeout_durations_mins: formTimeoutMins,
-          poll_durations_seconds: formPollSeconds,
-          username_value: formUsernameValue,
-          password_value: formPasswordValue,
-          username_key: formUsernameKey,
-          password_key: formPasswordKey,
-          logged_in_regex: formLoggedInRegex,
-          logged_out_regex: formLoggedOutRegex,
-        }
-      });
-    } else {
-      if (!headerTargetUrl) {
-        toast.error("Please fill in the target URL for header/cookie-based authentication");
-        return;
-      }
-      startScanMutation.mutate({
-        conversation_id: parseInt(conversation_id as string),
-        auth_mode: "header_cookie_based",
-        header_cookie_based: {
-          target_url: headerTargetUrl,
-          attack_modules: headerAttackModules.length > 0 ? headerAttackModules : undefined,
-          max_scan_time: headerMaxScanTime,
-          user_agent: headerUserAgent || undefined,
-          headers: headerHeaders.length > 0 ? headerHeaders.filter(h => h.name && h.value) : undefined,
-          cookies: headerCookies.length > 0 ? headerCookies.filter(c => c.name && c.value) : undefined,
-          scan_force: headerScanForce,
-          exclude_url_patterns: headerExcludePatterns.length > 0 ? headerExcludePatterns : undefined,
-          additional_urls: headerAdditionalUrls.length > 0 ? headerAdditionalUrls : undefined,
-        }
-      });
-    }
-  };
-  
   return (
     <ScrollArea className="w-80 h-screen bg-zinc-900 dark:bg-zinc-950 border-l border-zinc-800 overflow-hidden">
       <div className="p-6">
@@ -389,587 +365,422 @@ export function DASTOptionsSidebar({
 
       {optionsSidebarState === "ready" && (
         <>
-          <div className="p-6 w-full max-w-full overflow-hidden box-border" style={{ width: '100%', maxWidth: '320px', boxSizing: 'border-box', overflowX: 'hidden' }}>
-            {/* Authentication Mode Selection */}
-            <div className="mb-8 w-full">
-              <div className="flex flex-row items-center gap-2 mb-4">
-                <h3 className="text-sm font-semibold text-zinc-300 flex flex-row items-center gap-2">
-                  Authentication Mode <p className="text-red-500">*</p>
-                </h3>
-                <Dialog open={infoDialogOpen} onOpenChange={setInfoDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 w-5 p-0 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 cursor-pointer"
-                    >
-                      <Info className="h-4 w-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-2xl max-h-[80vh]">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl font-bold text-white">
-                        Authentication Mode Selection Guide
-                      </DialogTitle>
-                      <DialogDescription className="text-zinc-400 pt-4">
-                        Choose the authentication method that best matches your application type.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <ScrollArea className="max-h-[60vh] pr-4">
-                      <div className="space-y-6 pt-4">
-                        <div className="space-y-3">
-                          <h4 className="text-lg font-semibold text-blue-400 flex items-center gap-2">
-                            <Key className="h-5 w-5" />
-                            Form Based Authentication
-                          </h4>
-                          <p className="text-zinc-300 text-sm">
-                            Best suited for:
-                          </p>
-                          <div className="space-y-3 ml-4">
-                            <div>
-                              <p className="text-zinc-300 font-medium text-sm mb-1">
-                                1. Traditional web applications
-                              </p>
-                              <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
-                                <li>Server-rendered apps</li>
-                                <li>Classic login forms</li>
-                              </ul>
-                              <p className="text-zinc-400 text-sm mt-2 ml-4">
-                                <span className="font-medium">Examples:</span>
-                              </p>
-                              <ul className="text-zinc-400 text-sm ml-8 space-y-1 list-disc">
-                                <li>PHP (Laravel, CodeIgniter)</li>
-                                <li>Java (Spring MVC, JSP)</li>
-                                <li>Python (Django, Flask)</li>
-                                <li>Ruby on Rails</li>
-                                <li>.NET MVC</li>
-                              </ul>
-                            </div>
-                            <div>
-                              <p className="text-zinc-300 font-medium text-sm mb-1">
-                                2. Admin panels / dashboards
-                              </p>
-                              <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
-                                <li>Internal tools</li>
-                                <li>Enterprise portals</li>
-                                <li>CMS systems (WordPress, Drupal, custom admin UIs)</li>
-                              </ul>
-                            </div>
-                            <div>
-                              <p className="text-zinc-300 font-medium text-sm mb-1">
-                                3. Apps using cookie-based sessions
-                              </p>
-                              <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
-                                <li>Session ID stored in cookies</li>
-                                <li>Auth handled server-side</li>
-                              </ul>
-                            </div>
-                          </div>
-                          <div className="mt-4 pt-4 border-t border-zinc-700">
-                            <p className="text-zinc-300 text-sm mb-2">
-                             Not useful for:
-                            </p>
-                            <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
-                              <li>Modern SPAs (React / Angular / Vue)</li>
-                              <li>Login handled via XHR / fetch</li>
-                              <li>JWT in localStorage</li>
-                              <li>OAuth redirects</li>
-                              <li>Mobile-first APIs</li>
-                              <li>Pure REST APIs</li>
-                              <li>Bearer token authentication</li>
-                            </ul>
-                          </div>
-                        </div>
-                        <div className="space-y-3 pt-4 border-t border-zinc-700">
-                          <h4 className="text-lg font-semibold text-blue-400 flex items-center gap-2">
-                            <Shield className="h-5 w-5" />
-                            Header/Cookie Based Authentication
-                          </h4>
-                          <p className="text-zinc-300 text-sm">
-                            Best suited for:
-                          </p>
-                          <ul className="text-zinc-400 text-sm ml-4 space-y-1 list-disc">
-                            <li>APIs and other services that use JWTs</li>
-                            <li>Cookie-based authenticated states</li>
-                            <li>RESTful APIs with token-based authentication</li>
-                            <li>GraphQL APIs</li>
-                            <li>Microservices with bearer tokens</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </ScrollArea>
-                  </DialogContent>
-                </Dialog>
+          <div
+            className="p-6 w-full max-w-full overflow-hidden box-border"
+            style={{
+              width: "100%",
+              maxWidth: "320px",
+              boxSizing: "border-box",
+              overflowX: "hidden",
+            }}
+          >
+            <div className="mb-6 w-full space-y-4">
+              <div className="space-y-2 w-full">
+                <Label htmlFor="target-url" className="text-zinc-300">
+                  Target URL <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="target-url"
+                  placeholder="https://example.com"
+                  className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                  value={targetUrl}
+                  onChange={(e) => setTargetUrl(e.target.value)}
+                />
               </div>
-              <Select value={authMode} onValueChange={(value: "form_based" | "header_cookie_based") => setAuthMode(value)}>
-                <SelectTrigger className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
-                  <SelectValue>
-                    {authMode === "form_based" ? (
-                      <div className="flex items-center gap-2 truncate">
-                        <Key className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">Form Based Authentication</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 truncate">
-                        <Shield className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">Header/Cookie Based</span>
-                      </div>
-                    )}
-                  </SelectValue>
+
+              <div className="space-y-2 w-full">
+                <Label htmlFor="scan-speed" className="text-zinc-300">
+                  Scan speed
+                </Label>
+                <Select
+                  value={scanSpeed}
+                  onValueChange={(v: "fast" | "medium" | "slow") => setScanSpeed(v)}
+                >
+                  <SelectTrigger
+                    id="scan-speed"
+                    className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer"
+                  >
+                    <SelectValue />
                   </SelectTrigger>
-                <SelectContent className="bg-zinc-800 border-zinc-700 w-[280px]">
-                  <SelectItem value="form_based" className="text-white hover:bg-zinc-700 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <Key className="h-4 w-4 flex-shrink-0" />
-                      <span className="break-words">Form Based Authentication</span>
-                    </div>
+                  <SelectContent className="bg-zinc-800 border-zinc-700 w-[280px]">
+                    <SelectItem
+                      value="fast"
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      Fast
                     </SelectItem>
-                  <SelectItem value="header_cookie_based" className="text-white hover:bg-zinc-700 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-4 w-4 flex-shrink-0" />
-                      <span className="break-words">Header/Cookie Based Authentication</span>
-                    </div>
+                    <SelectItem
+                      value="medium"
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      Medium
+                    </SelectItem>
+                    <SelectItem
+                      value="slow"
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      Slow
                     </SelectItem>
                   </SelectContent>
                 </Select>
-          </div>
+              </div>
 
-            {authMode === "form_based" ? (
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="form-based" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
-                    Form Based Authentication
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4 w-full">
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-target-url" className="text-zinc-300">
-                        Target URL <span className="text-red-500">*</span>
+              <div className="space-y-2 w-full">
+                <Label htmlFor="max-urls" className="text-zinc-300">
+                  Max URLs
                 </Label>
-                      <Input
-                        id="form-target-url"
-                        placeholder="https://example.com"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={formTargetUrl}
-                        onChange={(e) => setFormTargetUrl(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-login-url" className="text-zinc-300">
+                <Input
+                  id="max-urls"
+                  type="number"
+                  min={1}
+                  placeholder="100"
+                  className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                  value={maxUrls ? maxUrls : ""}
+                  onChange={(e) => setMaxUrls(Math.max(1, parseInt(e.target.value, 10)))}
+                />
+              </div>
+
+              <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="auth" className="border-zinc-800">
+                  <div className="flex items-center gap-1">
+                    <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm flex-1 [&[data-state=open]>svg]:rotate-180">
+                      Authentication <span className="text-red-500">*</span>
+                    </AccordionTrigger>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-500"
+                          aria-label="How to get XPath for authentication fields"
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="bg-zinc-900 border-zinc-700 text-zinc-200 max-w-md">
+                        <DialogHeader>
+                          <DialogTitle className="text-white">How to copy the full XPath</DialogTitle>
+                          <DialogDescription className="text-zinc-400">
+                            Use these steps to get the XPath for the username field, password field, and submit button on your login page.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <ol className="list-decimal list-inside space-y-2 text-sm text-zinc-300">
+                          <li>Open your application’s <strong>login page</strong> in the browser.</li>
+                          <li><strong>Right-click</strong> on the element (e.g. username input, password input, or submit button).</li>
+                          <li>Choose <strong>Inspect</strong> (or Inspect Element) to open DevTools.</li>
+                          <li>In the Elements panel, the corresponding HTML node will be highlighted. <strong>Right-click</strong> that node.</li>
+                          <li>Select <strong>Copy</strong> → <strong>Copy full XPath</strong> (or “Copy XPath” depending on the browser).</li>
+                          <li>Paste the copied XPath into the matching field above (username field, password field, or submit button).</li>
+                        </ol>
+                        <p className="text-xs text-zinc-500 mt-2">
+                          You need the full XPath for: username input, password input, and the login/submit button.
+                        </p>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  <AccordionContent className="pt-4 space-y-4 w-full">
+                    <div className="space-y-2">
+                      <Label htmlFor="login-url" className="text-zinc-300">
                         Login URL <span className="text-red-500">*</span>
                       </Label>
                       <Input
-                        id="form-login-url"
+                        id="login-url"
+                        type="url"
                         placeholder="https://example.com/login"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={formLoginUrl}
-                        onChange={(e) => setFormLoginUrl(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-username-key" className="text-zinc-300">
-                        Username Field Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="form-username-key"
-                        placeholder="username"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={formUsernameKey}
-                        onChange={(e) => setFormUsernameKey(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-username-value" className="text-zinc-300">
-                        Username Value <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="form-username-value"
-                        placeholder="user@example.com"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={formUsernameValue}
-                        onChange={(e) => setFormUsernameValue(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-password-key" className="text-zinc-300">
-                        Password Field Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="form-password-key"
-                        placeholder="password"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={formPasswordKey}
-                        onChange={(e) => setFormPasswordKey(e.target.value)}
-                      />
-              </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-password-value" className="text-zinc-300">
-                        Password Value <span className="text-red-500">*</span>
-                </Label>
-                      <Input
-                        id="form-password-value"
-                        type="password"
-                        placeholder="password123"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={formPasswordValue}
-                        onChange={(e) => setFormPasswordValue(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-logged-in-regex" className="text-zinc-300">
-                        Logged In Regex <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        id="form-logged-in-regex"
-                        placeholder="\\QWelcome\\E|\\QLogout\\E"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 resize-none"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        rows={3}
-                        value={formLoggedInRegex}
-                        onChange={(e) => setFormLoggedInRegex(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-logged-out-regex" className="text-zinc-300">
-                        Logged Out Regex <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        id="form-logged-out-regex"
-                        placeholder="\\Qlogin.jsp\\E|\\Q<form.*login\\E"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 resize-none"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        rows={3}
-                        value={formLoggedOutRegex}
-                        onChange={(e) => setFormLoggedOutRegex(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="form-timeout" className="text-zinc-300">
-                        Timeout (minutes)
-                      </Label>
-                      <Input
-                        id="form-timeout"
-                        type="number"
-                        placeholder="20"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full max-w-full"
-                        style={{ maxWidth: '100%' }}
-                        value={formTimeoutMins}
-                        onChange={(e) => setFormTimeoutMins(parseInt(e.target.value) || 20)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label className="text-zinc-300">Include URLs</Label>
-                      <div className="flex gap-2 w-full" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                        <Input
-                          placeholder="https://example.com/path"
-                          className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                          style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                          value={formIncludeUrlInput}
-                          onChange={(e) => setFormIncludeUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              addFormIncludeUrl();
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={addFormIncludeUrl}
-                          className="bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer flex-shrink-0"
-                        >
-                          Add
-                        </Button>
-                      </div>
-                      {formIncludeUrls.length > 0 && (
-                        <div className="space-y-1 mt-2">
-                          {formIncludeUrls.map((url, index) => (
-                            <div key={index} className="flex items-center gap-2 bg-zinc-800 rounded p-2">
-                              <span className="text-xs text-zinc-300 flex-1 truncate">{url}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeFormIncludeUrl(index)}
-                                className="text-red-400 hover:text-red-300 cursor-pointer flex-shrink-0 w-6 h-6 p-0"
-                              >
-                                ×
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label className="text-zinc-300">Exclude URLs</Label>
-                      <div className="flex gap-2 w-full" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                        <Input
-                          placeholder="https://example.com/exclude"
-                          className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                          style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                          value={formExcludeUrlInput}
-                          onChange={(e) => setFormExcludeUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              addFormExcludeUrl();
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={addFormExcludeUrl}
-                          className="bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer flex-shrink-0"
-                        >
-                          Add
-                        </Button>
-                      </div>
-                      {formExcludeUrls.length > 0 && (
-                        <div className="space-y-1 mt-2">
-                          {formExcludeUrls.map((url, index) => (
-                            <div key={index} className="flex items-center gap-2 bg-zinc-800 rounded p-2">
-                              <span className="text-xs text-zinc-300 flex-1 truncate">{url}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeFormExcludeUrl(index)}
-                                className="text-red-400 hover:text-red-300 cursor-pointer flex-shrink-0 w-6 h-6 p-0"
-                              >
-                                ×
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            ) : (
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="header-cookie-based" className="border-zinc-800">
-                  <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer text-sm">
-                    Header/Cookie Based Auth
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-4 space-y-4 w-full">
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="header-target-url" className="text-zinc-300">
-                        Target URL <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="header-target-url"
-                        placeholder="https://example.com"
                         className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
-                        value={headerTargetUrl}
-                        onChange={(e) => setHeaderTargetUrl(e.target.value)}
+                        value={loginUrl}
+                        onChange={(e) => setLoginUrl(e.target.value)}
                       />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label className="text-zinc-300">Attack Modules</Label>
-                      <ScrollArea className="h-48 w-full rounded-md border border-zinc-700 bg-zinc-800 p-4">
-                        <div className="space-y-2">
-                          {attackModulesList.map((module) => (
-                            <div key={module} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={`attack-module-${module}`}
-                                checked={headerAttackModules.includes(module)}
-                                onCheckedChange={() => toggleAttackModule(module)}
-                                className="border-zinc-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                              />
-                              <Label
-                                htmlFor={`attack-module-${module}`}
-                                className="text-sm text-zinc-300 cursor-pointer font-normal"
-                              >
-                                {module === "all" ? "All" : module.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
-                              </Label>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="header-scan-force" className="text-zinc-300">
-                        Scan Force
-                      </Label>
-                      <Select value={headerScanForce} onValueChange={(value: any) => setHeaderScanForce(value)}>
-                        <SelectTrigger className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-zinc-800 border-zinc-700 w-[280px]">
-                          <SelectItem value="paranoid" className="text-white hover:bg-zinc-700 cursor-pointer">Paranoid</SelectItem>
-                          <SelectItem value="sneaky" className="text-white hover:bg-zinc-700 cursor-pointer">Sneaky</SelectItem>
-                          <SelectItem value="polite" className="text-white hover:bg-zinc-700 cursor-pointer">Polite</SelectItem>
-                          <SelectItem value="normal" className="text-white hover:bg-zinc-700 cursor-pointer">Normal</SelectItem>
-                          <SelectItem value="aggressive" className="text-white hover:bg-zinc-700 cursor-pointer">Aggressive</SelectItem>
-                          <SelectItem value="insane" className="text-white hover:bg-zinc-700 cursor-pointer">Insane</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="header-max-scan-time" className="text-zinc-300">
-                        Max Scan Time (seconds)
-                      </Label>
-                      <Input
-                        id="header-max-scan-time"
-                        type="number"
-                        placeholder="60"
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={headerMaxScanTime}
-                        onChange={(e) => setHeaderMaxScanTime(parseInt(e.target.value) || 60)}
-                      />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <Label htmlFor="header-user-agent" className="text-zinc-300">
-                        User Agent (Optional)
-                      </Label>
-                      <Input
-                        id="header-user-agent"
-                        placeholder="Mozilla/5.0..."
-                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
-                        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                        value={headerUserAgent}
-                        onChange={(e) => setHeaderUserAgent(e.target.value)}
-                      />
-              </div>
-                    <div className="space-y-2">
-                      <Label className="text-zinc-300">Headers (Optional)</Label>
-                      {headerHeaders.map((header, index) => (
-                        <div key={index} className="flex gap-2 w-full" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                          <Input
-                            placeholder="Name"
-                            className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                            style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                            value={header.name}
-                            onChange={(e) => updateHeader(index, "name", e.target.value)}
-                          />
-                          <Input
-                            placeholder="Value"
-                            className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                            style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                            value={header.value}
-                            onChange={(e) => updateHeader(index, "value", e.target.value)}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeHeader(index)}
-                            className="text-red-400 hover:text-red-300 flex-shrink-0 w-8 h-8 p-0 cursor-pointer"
-                          >
-                            ×
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={addHeader}
-                        className="w-full bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer"
-                      >
-                        + Add Header
-                      </Button>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-zinc-300">Cookies (Optional)</Label>
-                      {headerCookies.map((cookie, index) => (
-                        <div key={index} className="flex gap-2 w-full" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                          <Input
-                            placeholder="Name"
-                            className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                            style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                            value={cookie.name}
-                            onChange={(e) => updateCookie(index, "name", e.target.value)}
-                          />
-                          <Input
-                            placeholder="Value"
-                            className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                            style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                            value={cookie.value}
-                            onChange={(e) => updateCookie(index, "value", e.target.value)}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeCookie(index)}
-                            className="text-red-400 hover:text-red-300 flex-shrink-0 w-8 h-8 p-0 cursor-pointer"
-                          >
-                            ×
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={addCookie}
-                        className="w-full bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer"
-                      >
-                        + Add Cookie
-                      </Button>
+                      <Label htmlFor="xpath-username" className="text-zinc-300">
+                        XPath of username field <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="xpath-username"
+                        placeholder="//input[@name='username']"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                        value={xpathUsername}
+                        onChange={(e) => setXpathUsername(e.target.value)}
+                      />
                     </div>
-                    <div className="space-y-2 w-full">
-                      <Label className="text-zinc-300">Additional URLs (Optional)</Label>
-                      <div className="flex gap-2 w-full" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                        <Input
-                          placeholder="https://example.com/path"
-                          className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
-                          style={{ width: '0', flex: '1 1 0%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', textOverflow: 'ellipsis', wordBreak: 'break-all' }}
-                          value={headerAdditionalUrlInput}
-                          onChange={(e) => setHeaderAdditionalUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              addHeaderAdditionalUrl();
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={addHeaderAdditionalUrl}
-                          className="bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer flex-shrink-0"
-                        >
-                          Add
-                        </Button>
-                      </div>
-                      {headerAdditionalUrls.length > 0 && (
-                        <div className="space-y-1 mt-2">
-                          {headerAdditionalUrls.map((url, index) => (
-                            <div key={index} className="flex items-center gap-2 bg-zinc-800 rounded p-2">
-                              <span className="text-xs text-zinc-300 flex-1 truncate">{url}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeHeaderAdditionalUrl(index)}
-                                className="text-red-400 hover:text-red-300 cursor-pointer flex-shrink-0 w-6 h-6 p-0"
-                              >
-                                ×
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                    <div className="space-y-2">
+                      <Label htmlFor="xpath-password" className="text-zinc-300">
+                        XPath of password field <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="xpath-password"
+                        placeholder="//input[@name='password']"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                        value={xpathPassword}
+                        onChange={(e) => setXpathPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-username" className="text-zinc-300">
+                        Username <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="auth-username"
+                        placeholder="user@example.com"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                        value={authUsername}
+                        onChange={(e) => setAuthUsername(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-password" className="text-zinc-300">
+                        Password <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="auth-password"
+                        type="password"
+                        placeholder="••••••••"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="xpath-submit" className="text-zinc-300">
+                        XPath of submit button <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="xpath-submit"
+                        placeholder="//button[@type='submit']"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 w-full"
+                        value={xpathSubmit}
+                        onChange={(e) => setXpathSubmit(e.target.value)}
+                      />
                     </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
+
+              <div className="space-y-2 w-full">
+                <Label className="text-zinc-300">Additional URLs to scan</Label>
+                <div className="flex gap-2 w-full">
+                  <Input
+                    placeholder="https://example.com/path"
+                    className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
+                    value={additionalUrlInput}
+                    onChange={(e) => setAdditionalUrlInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addAdditionalUrl();
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={addAdditionalUrl}
+                    className="bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer shrink-0"
+                  >
+                    Add
+                  </Button>
+                </div>
+                {additionalUrls.length > 0 && (
+                  <div className="space-y-1 mt-2">
+                    {additionalUrls.map((url, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-2 bg-zinc-800 rounded p-2"
+                      >
+                        <span className="text-xs text-zinc-300 flex-1 truncate">{url}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeAdditionalUrl(index)}
+                          className="text-red-400 hover:text-red-300 cursor-pointer shrink-0 w-6 h-6 p-0"
+                        >
+                          ×
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 w-full">
+                <div className="flex flex-row items-center gap-2">
+                  <Label className="text-zinc-300">URL patterns</Label>
+                  <Dialog open={infoDialogOpen} onOpenChange={setInfoDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+                      >
+                        <Info className="h-4 w-4" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="text-white">URL patterns</DialogTitle>
+                        <DialogDescription className="text-zinc-400">
+                          Use either include or exclude patterns, not both. Include: only URLs
+                          matching these patterns are scanned. Exclude: URLs matching these
+                          patterns are skipped.
+                        </DialogDescription>
+                      </DialogHeader>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                <Select
+                  value={urlPatternMode}
+                  onValueChange={(v: UrlPatternMode) => setUrlPatternMode(v)}
+                >
+                  <SelectTrigger className="w-full bg-zinc-800 border-zinc-700 text-white cursor-pointer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-700 w-[280px]">
+                    <SelectItem
+                      value="none"
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      None
+                    </SelectItem>
+                    <SelectItem
+                      value="include"
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      Include URLs matching patterns
+                    </SelectItem>
+                    <SelectItem
+                      value="exclude"
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      Exclude URLs matching patterns
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {(urlPatternMode === "include" || urlPatternMode === "exclude") && (
+                  <>
+                    <div className="flex gap-2 w-full mt-2">
+                      <Input
+                        placeholder="/api/.* or path pattern"
+                        className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 flex-1 min-w-0"
+                        value={urlPatternInput}
+                        onChange={(e) => setUrlPatternInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addUrlPattern();
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={addUrlPattern}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer shrink-0"
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {urlPatterns.length > 0 && (
+                      <div className="space-y-1 mt-2">
+                        {urlPatterns.map((pattern, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center gap-2 bg-zinc-800 rounded p-2"
+                          >
+                            <span className="text-xs text-zinc-300 flex-1 truncate">
+                              {pattern}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeUrlPattern(index)}
+                              className="text-red-400 hover:text-red-300 cursor-pointer shrink-0 w-6 h-6 p-0"
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <Separator className="bg-zinc-800" />
+
+          {/* Estimate scan credits */}
+          <div className="p-6">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleEstimateCredits}
+              disabled={!scanInputsValid || estimateCreditsMutation.isPending}
+              className="w-full h-9 px-4 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer disabled:opacity-50"
+            >
+              {estimateCreditsMutation.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                  Estimating...
+                </>
+              ) : (
+                <>Estimate credits required</>
+              )}
+            </Button>
+            {displayCredits != null && (
+              <p className="text-sm text-zinc-300 mt-3">
+                {creditsInvalid ? (
+                  <span className="font-semibold text-amber-400">Invalid input from user</span>
+                ) : (
+                  <>
+                    Credits required:{" "}
+                    <span className="font-semibold text-blue-400">{displayCredits}</span>
+                  </>
+                )}
+              </p>
             )}
           </div>
+
+          <Separator className="bg-zinc-800" />
+
+          {/* Run scan — allowed only after estimation process has been run this session */}
           <div className="p-6">
-            <Button 
-              variant="ghost" 
-              size="icon-lg"
-              onClick={handleRunScan}
-              className="w-fit h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
-            >
-              <ScanIcon className="size-4" />
-              <span className="ml-1">Run Scan</span>
-            </Button>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            {canRunScan ? (
+              <div className="space-y-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleStartScanAfterEstimate}
+                  disabled={!scanInputsValid || startScanMutation.isPending}
+                  className="w-full h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer disabled:opacity-50"
+                >
+                  {startScanMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin mr-2" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <ScanIcon className="size-4 mr-2" />
+                      Start scan
+                    </>
+                  )}
+                </Button>
+                {displayCredits != null && !creditsInvalid && (
+                  <p className="text-xs text-zinc-500">Uses {displayCredits} credits.</p>
+                )}
+              </div>
+            ) : creditsInvalid ? (
+              <p className="text-sm text-amber-400">
+                Credit estimation failed due to invalid inputs. Check your target URL and options.
+              </p>
+            ) : (
+              <p className="text-sm text-zinc-500">
+                Run estimate above to enable starting the scan.
+              </p>
+            )}
           </div>
         </>
       )}
@@ -977,35 +788,36 @@ export function DASTOptionsSidebar({
       {optionsSidebarState === "scanning" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
-          <p className="text-zinc-300 text-center">
-            Scan has started, this might take a while
-          </p>
-            </div>
+          <p className="text-zinc-300 text-center">Scan has started, this might take a while</p>
+        </div>
       )}
 
       {optionsSidebarState === "done" && (
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully on the target <span className="text-blue-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">{query.data?.target_url || "N/A"}</span>
+              Scan has run successfully on the target{" "}
+              <span className="text-blue-500 mx-3 text-xs p-1 bg-zinc-800 rounded-md">
+                {(query.data?.scan_metadata as { target_url?: string } | null)?.target_url ?? "N/A"}
+              </span>
               You can now chat with your scan results
             </p>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
               onClick={() => {
-                router.push(`/home/dast/${conversation_id}/results?origin=chat`);
+                router.push(`/${team_id}/dast/${scan_id}/results?origin=chat`);
               }}
               className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white"
             >
               <Eye className="size-4" />
               <span className="ml-1">View Results</span>
             </Button>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
-              onClick={async () => {
-                exportMutation.mutate(parseInt(conversation_id as string));
+              onClick={() => {
+                exportMutation.mutate([team_id, scan_id]);
               }}
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
@@ -1019,14 +831,12 @@ export function DASTOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            An error occurred during the scan. Please try again.
+            {errorMessage ?? "An error occurred during the scan. Please try again."}
           </p>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="sm"
-            onClick={() => {
-              window.location.reload();
-            }}
+            onClick={() => window.location.reload()}
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
             <span>Try Again</span>
@@ -1040,54 +850,16 @@ export function DASTOptionsSidebar({
             variant="ghost"
             size="sm"
             onClick={() => {
-              if (authMode === "form_based") {
-                if (!formTargetUrl || !formLoginUrl || !formUsernameValue || !formPasswordValue || !formUsernameKey || !formPasswordKey || !formLoggedInRegex || !formLoggedOutRegex) {
-                  toast.error("Please fill in all required fields for form-based authentication");
-                  return;
-                }
-                const finalIncludeUrls = formIncludeUrls.includes(formTargetUrl) 
-                  ? formIncludeUrls 
-                  : [formTargetUrl, ...formIncludeUrls];
-                
-                reinitializeScanMutation.mutate({
-                  conversation_id: parseInt(conversation_id as string),
-                  auth_mode: "form_based",
-                  form_based: {
-                    target_url: formTargetUrl,
-                    login_url: formLoginUrl,
-                    include_urls: finalIncludeUrls.length > 0 ? finalIncludeUrls : [formTargetUrl],
-                    exclude_urls: formExcludeUrls.length > 0 ? formExcludeUrls : undefined,
-                    timeout_durations_mins: formTimeoutMins,
-                    poll_durations_seconds: formPollSeconds,
-                    username_value: formUsernameValue,
-                    password_value: formPasswordValue,
-                    username_key: formUsernameKey,
-                    password_key: formPasswordKey,
-                    logged_in_regex: formLoggedInRegex,
-                    logged_out_regex: formLoggedOutRegex,
-                  }
-                });
-              } else {
-                if (!headerTargetUrl) {
-                  toast.error("Please fill in the target URL for header/cookie-based authentication");
-                  return;
-                }
-                reinitializeScanMutation.mutate({
-                  conversation_id: parseInt(conversation_id as string),
-                  auth_mode: "header_cookie_based",
-                  header_cookie_based: {
-                    target_url: headerTargetUrl,
-                    attack_modules: headerAttackModules.length > 0 ? headerAttackModules : undefined,
-                    max_scan_time: headerMaxScanTime,
-                    user_agent: headerUserAgent || undefined,
-                    headers: headerHeaders.length > 0 ? headerHeaders.filter(h => h.name && h.value) : undefined,
-                    cookies: headerCookies.length > 0 ? headerCookies.filter(c => c.name && c.value) : undefined,
-                    scan_force: headerScanForce,
-                    exclude_url_patterns: headerExcludePatterns.length > 0 ? headerExcludePatterns : undefined,
-                    additional_urls: headerAdditionalUrls.length > 0 ? headerAdditionalUrls : undefined,
-                  }
-                });
+              const validation = validateScanInputs();
+              if (!validation.valid) {
+                toast.error(validation.message);
+                return;
               }
+              reinitializeScanMutation.mutate({
+                team_id,
+                scan_id,
+                dast: getPayload(),
+              });
             }}
             disabled={reinitializeScanMutation.isPending}
             className="w-full h-8 px-2 bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer hover:text-white disabled:opacity-50"

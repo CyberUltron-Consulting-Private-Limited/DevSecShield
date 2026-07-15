@@ -9,7 +9,6 @@ from backend.utilities.auth.plans import plans
 from backend.utilities.auth.html_email import create_user_password_email_html
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
-from backend.get_db import dev_environment
 from backend.utilities.db.admin import delete_team_associated_data
 from rich.console import Console
 console = Console()
@@ -54,8 +53,8 @@ async def check_superuser(Authorization: Annotated[str | None, Header()] = None)
     Returns 200 if user is superuser, 403 if not.
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         
@@ -89,8 +88,8 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
     """
     try:
         
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         
@@ -120,6 +119,8 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
                     "sast_scans_count": len([scan for scan in team.scans if scan.scan_type == "sast"]),
                     "iac_scans_count": len([scan for scan in team.scans if scan.scan_type == "iac"]),
                     "sbom_sca_scans_count": len([scan for scan in team.scans if scan.scan_type == "sbom_sca"]),
+                    "cbom_scans_count": len([scan for scan in team.scans if scan.scan_type == "cbom"]),
+                    "ai_bom_scans_count": len([scan for scan in team.scans if scan.scan_type == "ai_bom"]),
                 })
             
             return teams_data
@@ -142,8 +143,8 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
     Only accessible by superusers.
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         
@@ -186,8 +187,8 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
 async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[str | None, Header()] = None):
 
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -274,8 +275,8 @@ async def update_team_credit_balance(
     Only accessible by superusers.
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -293,7 +294,13 @@ async def update_team_credit_balance(
             if not team:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
+                    detail="Team not found"
+                )
+            
+            if data.credit_balance < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Credit balance cannot be negative"
                 )
             
             team.credit_balance = data.credit_balance
@@ -335,8 +342,8 @@ async def toggle_admin_access(
     - user_id: int
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)
@@ -402,8 +409,8 @@ async def delete_user(
     Only accessible by superusers.
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         # Check if user is superuser
         admin_user = await get_user_from_header_or_raise_exception(engine, Authorization)

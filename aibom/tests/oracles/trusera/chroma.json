@@ -1,0 +1,2374 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:970d61d0-bb49-4527-8b4e-f12643531ecb",
+  "metadata": {
+    "timestamp": "2026-06-25T06:01:51.176848+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "73"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "73"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "59.52"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "311fc5eb-4e9b-4159-bb74-0882c02a9f8a",
+      "type": "machine-learning-model",
+      "name": "@xenova/transformers",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@xenova/transformers"
+    },
+    {
+      "bom-ref": "b3c6c574-8cf2-43fb-956d-c969f200a83c",
+      "type": "machine-learning-model",
+      "name": "sentence-transformers",
+      "description": "HuggingFace embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/sentence-transformers"
+    },
+    {
+      "bom-ref": "7282bd26-85f9-4aaf-924e-99b0a3d4cc05",
+      "type": "machine-learning-model",
+      "name": "ollama",
+      "description": "Ollama completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/ollama"
+    },
+    {
+      "bom-ref": "03bda76a-8480-4ab3-9372-0afb3ce73d86",
+      "type": "machine-learning-model",
+      "name": "@ai-sdk/openai",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@ai-sdk/openai"
+    },
+    {
+      "bom-ref": "243f135b-39c9-4887-9db3-d7f03a49e35e",
+      "type": "machine-learning-model",
+      "name": "sentence_transformers",
+      "description": "HuggingFace embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/sentence-transformers"
+    },
+    {
+      "bom-ref": "55ae0aa1-1cac-411e-a9dc-ffc7425a064a",
+      "type": "machine-learning-model",
+      "name": "google.generativeai",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/google.generativeai"
+    },
+    {
+      "bom-ref": "910a5b5a-6daf-4eb7-a05f-59587c3bf5c0",
+      "type": "machine-learning-model",
+      "name": "openai",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "fe40089e-8727-4089-b7ce-7a4c2c06bc65",
+      "type": "machine-learning-model",
+      "name": "anthropic",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic"
+    },
+    {
+      "bom-ref": "792640ed-2f40-4ea1-8ab7-1d841c4546cd",
+      "type": "machine-learning-model",
+      "name": "@huggingface/transformers",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@huggingface/transformers"
+    },
+    {
+      "bom-ref": "7ac0eecf-672f-4513-8693-5421272fb586",
+      "type": "machine-learning-model",
+      "name": "@chroma-core/openai",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@chroma-core/openai"
+    },
+    {
+      "bom-ref": "5ec0616d-f244-42f8-aca6-40f63a6966ca",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "118042eb-a968-4284-bd7b-f9e28d3c5839",
+      "type": "machine-learning-model",
+      "name": "@chroma-core/cohere",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@chroma-core/cohere"
+    },
+    {
+      "bom-ref": "ae446b09-de51-4a8f-9a3d-f0ad1ada345a",
+      "type": "machine-learning-model",
+      "name": "@chroma-core/ollama",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@chroma-core/ollama"
+    },
+    {
+      "bom-ref": "16bb5f14-cc0c-4778-b28f-9d270fb2af03",
+      "type": "machine-learning-model",
+      "name": "@mistralai/mistralai",
+      "description": "Unknown unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Unknown"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:npm/@mistralai/mistralai"
+    },
+    {
+      "bom-ref": "4a5e4669-9efb-4404-8c6d-889e7f59eca3",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/embeddings/DefaultEmbeddingFunction.ts:62"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "17b8b17f-e4f7-41c3-a0f6-690096b97515",
+      "type": "machine-learning-model",
+      "name": "Google AI",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/embeddings/GoogleGeminiEmbeddingFunction.ts:70"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/google ai"
+    },
+    {
+      "bom-ref": "faee39e5-19ac-4f26-a584-4ba9e1889a4a",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/embeddings/TransformersEmbeddingFunction.ts:60"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "7c9035b5-9cc8-4a0c-9e06-b8e58076c0b4",
+      "type": "machine-learning-model",
+      "name": "Cohere",
+      "description": "Cohere completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/schemas/schemaUtils.ts:5"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Cohere"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/cohere"
+    },
+    {
+      "bom-ref": "7df31b53-761b-43bb-bd6f-f63e35c8f520",
+      "type": "machine-learning-model",
+      "name": "Ollama",
+      "description": "Ollama completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/schemas/schemaUtils.ts:16"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/ollama"
+    },
+    {
+      "bom-ref": "81954eb4-1b87-4a7d-a347-1680bc0fa49d",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/schemas/schemaUtils.ts:19"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "b2cd3e0e-d056-4c02-b724-9af3fe261710",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/schemas/schemaUtils.ts:23"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "5473d09a-583f-42b7-9ae5-0afbd5764a42",
+      "type": "machine-learning-model",
+      "name": "Together AI",
+      "description": "Together completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/js/packages/chromadb-core/src/schemas/schemaUtils.ts:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Together"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/together ai"
+    },
+    {
+      "bom-ref": "3896e7d9-dfcc-4d4a-84a4-5acce889458c",
+      "type": "machine-learning-model",
+      "name": "Together AI",
+      "description": "Together completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/together-ai/src/index.ts:45"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Together"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/together ai"
+    },
+    {
+      "bom-ref": "7f709663-b4d6-406b-baba-a254af8ffc74",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/default-embed/src/index.ts:86"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "3342949a-3106-47af-b8bd-10d2d8030e28",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/morph/src/index.ts:8"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "4f61aacd-b2e0-4c07-bc54-94227ed62ac1",
+      "type": "machine-learning-model",
+      "name": "Cohere",
+      "description": "Cohere completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/common/src/schema-utils.ts:4"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Cohere"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/cohere"
+    },
+    {
+      "bom-ref": "107892ae-86fe-487f-ac29-1c48594f801c",
+      "type": "machine-learning-model",
+      "name": "Ollama",
+      "description": "Ollama completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/common/src/schema-utils.ts:15"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/ollama"
+    },
+    {
+      "bom-ref": "6b0a9668-c280-4dd6-8883-0bc89f9f944c",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/common/src/schema-utils.ts:18"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "59fde9c3-d1e5-4185-9331-8e544f6df8b9",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/common/src/schema-utils.ts:22"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "256618c5-7147-4e11-88a8-22e458443fed",
+      "type": "machine-learning-model",
+      "name": "Together AI",
+      "description": "Together completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/common/src/schema-utils.ts:25"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Together"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/together ai"
+    },
+    {
+      "bom-ref": "26db8177-8fd9-46d4-ba06-7aae2c4f9e8f",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/sentence-transformer/src/index.ts:76"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "f4416f57-8885-40c4-9b6c-1c61caba876c",
+      "type": "machine-learning-model",
+      "name": "Mistral",
+      "description": "Mistral completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/mistral/src/index.ts:42"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Mistral"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/mistral"
+    },
+    {
+      "bom-ref": "d877f165-6959-4137-ac6c-f859b3770d2b",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/clients/new-js/packages/ai-embeddings/openai/src/index.ts:7"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "2e4bf5ab-3285-4b92-a2fe-0c937aecb003",
+      "type": "machine-learning-model",
+      "name": "AWS Bedrock",
+      "description": "AWS Bedrock completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/bin/generate_cloudformation.py:1"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/aws bedrock"
+    },
+    {
+      "bom-ref": "63b77c1a-5057-4dc0-827d-fff7ec88f46d",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/morph_embedding_function.py:34"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "295efc47-55ab-454e-a698-5504f205cfed",
+      "type": "framework",
+      "name": "LangChain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/chroma_langchain_embedding_function.py:39"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "9518fc6c-3ef4-4c6f-9d4d-7729da13a097",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/baseten_embedding_function.py:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "30f8018f-32dd-4a94-b476-c7bec5cc5699",
+      "type": "machine-learning-model",
+      "name": "Mistral",
+      "description": "Mistral completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/mistral_embedding_function.py:22"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Mistral"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/mistral"
+    },
+    {
+      "bom-ref": "b42805f0-93ed-4b24-98a0-4ae1f3487823",
+      "type": "machine-learning-model",
+      "name": "Google AI",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/google_embedding_function.py:239"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/google ai"
+    },
+    {
+      "bom-ref": "1d14d13c-3480-4c34-bd3f-220d980ab604",
+      "type": "machine-learning-model",
+      "name": "HuggingFace Transformers",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/google_embedding_function.py:549"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface transformers"
+    },
+    {
+      "bom-ref": "7b55fc5b-6ab4-49f2-b451-847837040f9b",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/openai_embedding_function.py:47"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "240c21e9-eb70-4a03-a28e-1a3670b6f694",
+      "type": "machine-learning-model",
+      "name": "Azure OpenAI",
+      "description": "Azure OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/openai_embedding_function.py:101"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Azure OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/azure openai"
+    },
+    {
+      "bom-ref": "1d170d1b-85e4-4313-845d-e8eb2eee9b65",
+      "type": "machine-learning-model",
+      "name": "Ollama",
+      "description": "Ollama completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/ollama_embedding_function.py:32"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/ollama"
+    },
+    {
+      "bom-ref": "6dee8920-b545-4b6f-9faa-ccc971ef3b90",
+      "type": "machine-learning-model",
+      "name": "Cohere",
+      "description": "Cohere completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/cohere_embedding_function.py:27"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Cohere"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/cohere"
+    },
+    {
+      "bom-ref": "9463a6c0-f517-41f2-9131-2b585d08a7a8",
+      "type": "machine-learning-model",
+      "name": "AWS Bedrock",
+      "description": "AWS Bedrock completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/utils/embedding_functions/amazon_bedrock_embedding_function.py:28"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/aws bedrock"
+    },
+    {
+      "bom-ref": "fc383578-7065-4767-8e4d-ef785655fea8",
+      "type": "framework",
+      "name": "CrewAI",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/rust/system/src/types.rs:101"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "6887a52b-7cd5-4c7b-af42-df24d1e4c356",
+      "type": "machine-learning-model",
+      "name": "Google AI",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/gemini/main.py:5"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/google ai"
+    },
+    {
+      "bom-ref": "d5f4a856-990d-4dbb-850b-851e95818f09",
+      "type": "machine-learning-model",
+      "name": "Google AI Model",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/gemini/main.py:9"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "gemini-pro"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/google ai model"
+    },
+    {
+      "bom-ref": "92d038d0-d7b7-4b9c-95e4-2cf6ab243033",
+      "type": "machine-learning-model",
+      "name": "Google AI",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/gemini/load_data.py:8"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/google ai"
+    },
+    {
+      "bom-ref": "0d4993f5-76d1-493f-90f0-229bdd3b2835",
+      "type": "framework",
+      "name": "LangChain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/xai/rag_chat_with_your_docs.py:9"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "AI dependency not declared in project files (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "shadow_ai"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "87374814-2fb4-4a51-b492-64398d44578c",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/chat_with_your_documents/main.py:6"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "795d933c-09d8-4f2c-974f-f7192f76fd14",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/functions/embed.py:6"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "bb2a62ad-58c9-40d6-8599-82e43874356e",
+      "type": "machine-learning-model",
+      "name": "Anthropic",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/functions/llm.py:1"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic"
+    },
+    {
+      "bom-ref": "d0d578f3-ca05-402f-9190-5ae2cd76d306",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/functions/llm.py:2"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "be27775b-7ea4-44ca-a76e-f617ff404e64",
+      "type": "container",
+      "name": "embedding_server (${EMBEDDING_IMAGE:-ghcr.io/huggingface/text-embeddings-inference)",
+      "description": "HuggingFace unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/server_side_embeddings/huggingface/docker-compose.yml"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:source",
+          "value": "docker"
+        }
+      ],
+      "purl": "pkg:docker/embedding-server (${embedding-image@cpu-0.3.0}",
+      "version": "cpu-0.3.0}"
+    },
+    {
+      "bom-ref": "44ce00f4-3936-479a-a1c1-73a922cedea1",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/chromadb/experimental/density_relevance.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "cf84cde4-6f73-4d0f-8a3a-be1a130d79ca",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/server_side_embeddings/huggingface/test.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "2c2b553f-976b-4a10-91e5-5ca2b50e3972",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/advanced/forking.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "5f8795f9-f2ab-441e-96d3-78d87c27260d",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/in_not_in_filtering.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "2edf82ef-b285-4a26-aa98-1f7b3542d5e2",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/test_get_collection_by_id.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "91724cf5-606e-4ca5-a876-3b07782e688d",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/local_persistence.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "19e9604c-7c19-496f-8b2f-f8210af58df4",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/auth.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "ef586861-7dc8-4d2f-8f51-69ce795cdb17",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/alternative_embeddings.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "6357fc63-8f8d-4933-a9da-579d74d6c2ef",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/start_here.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "4a6eb481-4f18-441a-8583-b5ecf6fa5664",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/basic_functionality/where_filtering.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "4a4acf0b-6559-4ef3-9265-96a4acee9cdf",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/multimodal/multimodal_retrieval.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "c2e0b4f8-2b43-427d-aaef-62d24d7b3b85",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/cohere/cohere_python.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "201548c8-3dc7-47b6-a3b8-91f95031678d",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/roboflow/embeddings.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "7fb555a1-ecdc-4c2b-86ba-be54e2600417",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/examples/use_with/jina/late_chunking.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "539834f2-3cec-4159-a2ea-e3cd7cd284df",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/generate_benchmark.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "e66bef80-20ff-49df-a739-8e61806740b4",
+      "type": "machine-learning-model",
+      "name": "openai",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/generate_benchmark.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "e665f1fb-f523-45c0-bd78-74142bdbf81b",
+      "type": "machine-learning-model",
+      "name": "anthropic",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/generate_benchmark.ipynb"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:source",
+          "value": "jupyter"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic"
+    },
+    {
+      "bom-ref": "f3aa1837-7dcf-4a1c-8bf8-010662d4d823",
+      "type": "service",
+      "name": "Ollama Endpoint",
+      "description": "Ollama completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/chroma/sample_apps/generative_benchmarking/data/chroma_docs.json:85"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/ollama endpoint"
+    }
+  ]
+}

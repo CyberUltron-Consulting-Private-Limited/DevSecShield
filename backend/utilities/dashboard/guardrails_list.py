@@ -6,20 +6,20 @@ import pymongo
 from rich.console import Console
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
-from backend.get_db import dev_environment
+from typing import Optional
 console = Console()
 
 def create_dashboard_data_for_guardrails_list(team_id: int):
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         guardrails_logs_collection = mongo_db["guardrails_logs"]
 
         integration_ids = []
         with Session(engine) as session:
             integrations = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.team_id == team_id)).all()
             if not integrations:
-                raise HTTPException(status_code=404, detail="No integrations found for this team")
+                return None
             for integration in integrations:
                 # console.print(f"Integration : {integration.title} {integration.id} , team id : {integration.team_id}", style="bold yellow")
                 integration_ids.append(integration.id)
@@ -39,7 +39,7 @@ def create_dashboard_data_for_guardrails_list(team_id: int):
                         "results": log["results"],
                     })
         
-        total_logs , pending_logs , started_logs , not_started_logs , success_logs , failure_logs = len(log_data), 0, 0, 0, 0, 0
+        total_logs, pending_logs, started_logs, not_started_logs, success_logs, failure_logs = len(log_data), 0, 0, 0, 0, 0
         past_30_days_risk_score_data = {
             "critical": 0,
             "high": 0,
@@ -47,12 +47,17 @@ def create_dashboard_data_for_guardrails_list(team_id: int):
             "low": 0,
         }
         high_or_critical_risks_daily_usage = defaultdict(int)
+
+        now_utc = datetime.now(timezone.utc)
+        cutoff_30_days = now_utc - timedelta(days=30)
+        cutoff_14_days = now_utc - timedelta(days=14)
+
         for log in log_data:
-            
-            created_at : datetime = log["created_at"]
-            created_at = created_at.replace(tzinfo=timezone.utc)
-
-
+            created_at: datetime = log["created_at"]
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            else:
+                created_at = created_at.astimezone(timezone.utc)
 
             if log["status"].lower() == "pending":
                 pending_logs += 1
@@ -65,49 +70,41 @@ def create_dashboard_data_for_guardrails_list(team_id: int):
             elif log["status"].lower() == "failure":
                 failure_logs += 1
 
-            if log["results"] is None:
+            results = log.get("results")
+            if not results or not isinstance(results, dict):
                 continue
-            
-            # ------------------> categorizing risk scores in the past 30 days 
-            if created_at > datetime.now(timezone.utc) - timedelta(days=30):
-                for key , value in log["results"].items():
-                    if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ]:
-                        if value["score"] > 0.9: 
-                            past_30_days_risk_score_data["critical"] += 1
-                        elif value["score"] > 0.7 and value["score"] <= 0.9:
-                            past_30_days_risk_score_data["high"] += 1
-                        elif value["score"] > 0.5 and value["score"] <= 0.7:
-                            past_30_days_risk_score_data["medium"] += 1
-                        elif value["score"] > 0.3 and value["score"] <= 0.5:
-                            past_30_days_risk_score_data["low"] += 1
-                        elif value["score"] > 0.1 and value["score"] <= 0.3:
-                            past_30_days_risk_score_data["low"] += 1
-            """
-            past 30 days risk score data will look like this : 
-            {
-                "critical": 10,
-                "high": 20,
-                "medium": 30,
-                "low": 40,
-            }
-            """
-            
-            # -------------------> categorizing high or critical risks in the past 30 days 
-            if created_at > datetime.now(timezone.utc) - timedelta(days=30):
-                for key , value in log["results"].items():
-                    if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
-                        if value["score"] > 0.9: 
-                            high_or_critical_risks_daily_usage[created_at.date()] += 1
-                        elif value["score"] > 0.7 and value["score"] <= 0.9:
-                            high_or_critical_risks_daily_usage[created_at.date()] += 1
-            """
-            high or critical risks daily usage will look like this : 
-            {
-                "2026-01-01": 10,
-                "2026-01-02": 20,
-                "2026-01-03": 30,
-            }
-            """
+
+            def _valid_score(val: object) -> Optional[float]:
+                """Return numeric score in [0, 1] or None if invalid. Score -1 is invalid (treat as 0 / skip)."""
+                if not isinstance(val, dict):
+                    return None
+                s = val.get("score")
+                if s is None or not isinstance(s, (int, float)) or s < 0 or s > 1:
+                    return None
+                return float(s)
+
+            # Past 30 days: count each guardrail result by severity (skip invalid scores like -1)
+            if created_at > cutoff_30_days:
+                for key, value in results.items():
+                    score = _valid_score(value)
+                    if score is None:
+                        continue
+                    if score > 0.9:
+                        past_30_days_risk_score_data["critical"] += 1
+                    elif score > 0.7:
+                        past_30_days_risk_score_data["high"] += 1
+                    elif score > 0.5:
+                        past_30_days_risk_score_data["medium"] += 1
+                    elif score > 0.1:
+                        past_30_days_risk_score_data["low"] += 1
+
+            # Past 14 days: count high or critical risks per day (score > 0.7, valid only)
+            if created_at > cutoff_14_days:
+                for key, value in results.items():
+                    score = _valid_score(value)
+                    if score is None or score <= 0.7:
+                        continue
+                    high_or_critical_risks_daily_usage[created_at.date()] += 1
 
 
         card_data = {

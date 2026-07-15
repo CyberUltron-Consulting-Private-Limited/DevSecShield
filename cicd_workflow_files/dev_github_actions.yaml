@@ -17,7 +17,7 @@ jobs:
       - name: Perform SAST Scan
         id: sast
         run: |
-          RESPONSE=$(curl -X POST     -H "ngrok-skip-browser-warning: hihelll"        -H "cicd-api-key: ${{ secrets.CICD_API_KEY }}"                         -F "zip_file=@project.zip"             -F "app_lang=python"             https://328a8db42b45.ngrok-free.app/cicd/sast/scan)          
+          RESPONSE=$(curl -X POST     -H "cicd-api-key: ${{ secrets.CICD_API_KEY }}"                         -F "zip_file=@project.zip"             -F "app_lang=python"             ${{ secrets.DEVSECSHIELD_ENDPOINT }}/cicd/sast/scan)          
           
           
           # Check for error in response

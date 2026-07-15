@@ -1,6 +1,7 @@
 from helpers.context import  BaseSummaryManager , LogicalComponents
 from rich.console import Console
 from langchain.schema import Document
+import os
 console = Console()
 
 RefinePrompt = """
@@ -99,7 +100,7 @@ class SASTSummaryManager(BaseSummaryManager):
             for document in documents:
                 documents_data += f"""
                 =======================================================
-                Document Path : {document.metadata['source']}\n\nDocument Content : {document.page_content}\n
+                Document Path : {os.path.basename(document.metadata.get('source', 'unknown'))}\n\nDocument Content : {document.page_content}\n
                 =======================================================
                 \n\n\n\n 
                 """

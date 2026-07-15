@@ -1,0 +1,9 @@
+plugins {
+    id 'java'
+}
+
+dependencies {
+    implementation 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
+    implementation("org.mindrot:jbcrypt:0.4")
+    testImplementation 'junit:junit:4.13.2'
+}

@@ -1,0 +1,46 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/.           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Cache hit: 93c6c113ef50 (cached 2026-06-26T05:38:30Z)
+Cache hit for /Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/.
+(93c6c113ef50…)
+Report written to 
+/Users/anshsinghal/Desktop/DevSecShield/bench/out/07-hf-minilm.cisco.json
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analysis Summary (v2) •                                                      │
+│ /Users/anshsinghal/Desktop/DevSecShield/bench/repos/07-hf-minilm/.           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+      Components in       
+/Users/anshsinghal/Desktop
+/DevSecShield/bench/repos/
+      07-hf-minilm/.      
+                          
+  Category         Count  
+ ━━━━━━━━━━━━━━━━━━━━━━━━ 
+  model_artifact   6      
+  training_run     1      
+                          
+╭────────────────────────╮
+│ MODEL_ARTIFACT details │
+╰────────────────────────╯
+  pytorch_model.bin framework=pytorch 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/pytorch_model
+.bin:0
+  tf_model.h5 framework=tensorflow 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/tf_model.h5:0
+  model.safetensors framework=safetensors 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/model.safeten
+sors:0
+  model_artifact framework=model-weights 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.
+py:66
+  openvino_model_qint8_quantized.bin framework=pytorch 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/openvino/open
+vino_model_qint8_quantized.bin:0
+╭──────────────────────╮
+│ TRAINING_RUN details │
+╰──────────────────────╯
+  training_run framework=pytorch/tensorflow 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/hf-model/train_script.
+py:81

@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 from backend.new_models import GuardrailsIntegration
 from sqlmodel import select , Session
-from backend.get_db import dev_environment
 
 console = Console()
 
@@ -53,8 +52,8 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
     """
     try:
         # STEP [ 1 ] : ======================================== Get database ====================================
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
         guardrails_logs_collection = mongo_db["guardrails_logs"]
 
         # STEP [ 2 ] : ============================= Fetch all guardrail logs for integration ====================================
@@ -190,7 +189,7 @@ def get_guardrails_integration_dashboard_data(team_id: int, integration_id: int)
                     # -------------------> categorizing high or critical risks in the past 30 days 
                     if created_at > datetime.now(timezone.utc) - timedelta(days=30):
                         for key , value in log["results"].items():
-                            if key in [ "Anonymize" , "Toxicity" , "Tokenlimit" , "Promptinjection" , "Regex" , "Code" , "Secrets" ]:
+                            if key in [ "Anonymize" , "Toxicity" , "TokenLimit" , "PromptInjection" , "Regex" , "Code" , "Secrets" ]:
                                 if value["score"] > 0.9: 
                                     high_or_critical_risks_daily_usage[created_at.date()] += 1
                                 elif value["score"] > 0.7 and value["score"] <= 0.9:

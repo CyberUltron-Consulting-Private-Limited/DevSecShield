@@ -1,0 +1,10 @@
+[langchain] cloning https://github.com/langchain-ai/langchain (shallow)…
+[langchain] SHA=57c83d44bc8ae89a189ad521b9756cfac996039c
+[langchain] WARN subdir 'libs/langchain/langchain' missing -> scanning whole repo
+[langchain] scan path: /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/langchain
+[langchain] trusera done (trusera_exit=0)
+[langchain] ours done (ours_exit=0)
+[langchain] cisco analyze (agentic/bedrock)…
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/run_repo.sh: line 46: 73537 Terminated: 15          cisco-aibom analyze "$SCAN" -o json -O "$OUT/$KEY.cisco.json" --llm-provider bedrock --llm-model "$HAIKU" > "$OUT/$KEY.cisco.log" 2>&1
+[langchain] cisco done (exit=143)
+[langchain] DONE (clone removed)

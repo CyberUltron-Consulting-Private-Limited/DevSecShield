@@ -1,0 +1,6 @@
+# Runtime dependencies for the ChestXR-Triage-SaMD inference service.
+torch==2.3.1
+torchvision==0.18.1
+numpy==1.26.4
+pydicom==2.4.4
+safetensors==0.4.3

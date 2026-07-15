@@ -1,0 +1,51 @@
+# Maps FREE-AI / supply-chain requirement IDs → RBI CSF pillars for rollup.
+# Source: RBI FREE-AI Committee Report (2025) + RBI CSF five functions.
+
+pillars:
+  governance:
+    - FREEAI-14
+    - FREEAI-16-1
+    - FREEAI-16-2
+    - FREEAI-16-3
+    - FREEAI-16-4
+    - FREEAI-16-5
+    - FREEAI-17
+    - FREEAI-6-1
+    - FREEAI-SUPPLY-6
+  identification:
+    - FREEAI-23-1
+    - FREEAI-SUPPLY-1
+    - FREEAI-SUPPLY-5
+    - FREEAI-PROT-1
+  protection:
+    - FREEAI-15-1
+    - FREEAI-18
+    - FREEAI-19-1
+    - FREEAI-PROT-2
+    - FREEAI-PROT-3
+    - FREEAI-PROT-4
+    - FREEAI-PROT-5
+    - FREEAI-PROT-6
+    - FREEAI-SUPPLY-2
+    - FREEAI-SUPPLY-3
+    - FREEAI-SUPPLY-4
+  detection:
+    - FREEAI-21-1
+    - FREEAI-PROT-7
+    - FREEAI-PROT-8
+    - FREEAI-20
+  response:
+    - FREEAI-22
+    - FREEAI-21-1
+
+# Innovation / capacity requirements roll into governance for supervisory rollup.
+innovation_as_governance:
+  - FREEAI-1
+  - FREEAI-2
+  - FREEAI-3
+  - FREEAI-5
+  - FREEAI-7-1
+  - FREEAI-8
+  - FREEAI-10
+  - FREEAI-24-1
+  - FREEAI-25-1

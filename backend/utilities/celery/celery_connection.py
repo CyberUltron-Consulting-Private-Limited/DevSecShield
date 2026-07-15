@@ -11,6 +11,9 @@ import datetime
 from datetime import timezone
 
 from backend.new_models import Scan
+from backend.utilities.celery.create_findings import create_findings_in_mongo_db
+from backend.get_db import get_mongo_client_db
+from backend.utilities.team.credits import refund_credits_to_team
 console = Console()
 
 def get_celery_app():
@@ -18,38 +21,30 @@ def get_celery_app():
 
         load_dotenv()
 
-        is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
-
-        if is_docker_container and is_docker_container == "True":
-            console.print("Getting celery app in docker container",style="bold green")
-            # broker url
-            username = os.getenv("RABBIT_ADMIN_USERNAME")
-            password = os.getenv("RABBIT_ADMIN_PASSWORD")
-            if not username or not password:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
-            broker_url = f"amqp://{username}:{password}@13.203.233.15:4672"
-
-            # mongo 
-            mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
-            mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
-            if not mongo_username or not mongo_password:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Mongo username or password not set")
-            mongo_host = "13.203.233.15"
-            mongo_port = "27017"
-            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
         
-        
+        RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "devsecshield-rabbitmq" if is_docker_container else "localhost")
+        RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672" if is_docker_container else "4672")
+        MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker_container else "localhost")
+        MONGO_PORT = os.getenv("MONGO_PORT", "27017")
+
+        env_label = "Docker" if is_docker_container else "Local"
+        console.print(f"Getting celery app in {env_label} environment", style="bold green")
+
+        # broker url
+        username = os.getenv("RABBIT_ADMIN_USERNAME")
+        password = os.getenv("RABBIT_ADMIN_PASSWORD")
+        if not username or not password:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="RABBIT_ADMIN_USERNAME or RABBIT_ADMIN_PASSWORD not set")
+        broker_url = f"amqp://{username}:{password}@{RABBITMQ_HOST}:{RABBITMQ_PORT}"
+
+        # mongo
+        mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+        mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+        if mongo_username and mongo_password:
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
         else:
-            console.print("Getting celery app in local environment",style="bold green")
-            # broker url
-            username = os.getenv("RABBIT_ADMIN_USERNAME")
-            password = os.getenv("RABBIT_ADMIN_PASSWORD")
-            if not username or not password:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Username or password not set")
-            broker_url = f"amqp://{username}:{password}@localhost:4672"
-
-            # mongo 
-            mongo_url = f"mongodb://localhost:27017/"
+            mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
         simple_app = Celery('task_sender',
                         broker=broker_url,
@@ -120,21 +115,70 @@ def get_status_and_update_db(
             scan.last_updated = datetime.datetime.now(timezone.utc)
 
 
+            previous_status = scan.scan_status  # capture BEFORE mutation, to detect the transition
             if scan.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
                 scan.scan_status = SCAN_STATUS
                 console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
             if SCAN_STATUS == "started":
                 info = async_result.info
-                if "current" in info: 
+                # info is None until the task emits its first progress meta (race at scan start) — guard the type.
+                if isinstance(info, dict) and "current" in info:
                     scan.info = {"current": info["current"]}  # for progress bar updates
+                    console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
             elif SCAN_STATUS == "success":
-                results = simple_app.AsyncResult(task_id).result 
-                if not results:
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
-                SCAN_DATA = results
-                scan.scan_data = SCAN_DATA
-                scan.info = None # reset the info field
-                console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
+                # Only ingest results on the TRANSITION into success — prevents duplicate findings
+                # when multiple concurrent polls observe a freshly-succeeded task.
+                if previous_status != "success":
+                    results = simple_app.AsyncResult(task_id).result
+                    if not results:
+                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
+                    SCAN_DATA = results
+                    scan.scan_data = SCAN_DATA
+
+                    mongo_db = get_mongo_client_db()
+                    # Idempotency: clear any pre-existing findings for this scan before (re)inserting.
+                    mongo_db["scan_findings"].delete_many({"scan_id": scan_id})
+                    create_findings_in_mongo_db(scan_id=scan_id, scan_results=SCAN_DATA, scan_type=scan.scan_type, mongo_db=mongo_db)
+                    scan.info = None # reset the info field
+                    console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
+                else:
+                    SCAN_DATA = scan.scan_data  # already ingested on a prior poll
+                    scan.info = None
+            elif SCAN_STATUS == "failure":
+                # Capture a SANITIZED, concise error summary so the cause is not lost.
+                # Prefer the task's exception (async_result.result); fall back to the traceback.
+                # We deliberately avoid persisting the full traceback (file paths / internals).
+                raw_error = None
+                try:
+                    raw_error = async_result.result
+                except Exception:
+                    raw_error = None
+                if raw_error is None:
+                    try:
+                        raw_error = async_result.traceback
+                    except Exception:
+                        raw_error = None
+
+                error_message = str(raw_error) if raw_error is not None else "Scan failed"
+                # Collapse to the first non-empty line to drop multi-line traceback noise,
+                # then truncate to keep the field small.
+                first_line = next(
+                    (line.strip() for line in error_message.splitlines() if line.strip()),
+                    error_message.strip(),
+                )
+                if not first_line:
+                    first_line = "Scan failed"
+                sanitized_error = first_line[:500]
+                scan.info = {"error": sanitized_error}
+                console.print(f"Scan with id: {task_id} failed. Captured sanitized error summary in scan.info." ,style="bold red")
+                # Refund the credits charged at dispatch — ONCE, only on the transition into failure
+                # (prevents the customer being billed for a scan that crashed in the worker).
+                if previous_status not in ("failure", "success") and scan.credit_consumed and scan.credit_consumed > 0:
+                    try:
+                        refund_credits_to_team(scan.team_id, scan.credit_consumed)
+                        console.print(f"Refunded {scan.credit_consumed} credits to team {scan.team_id} for failed scan {scan_id}", style="bold yellow")
+                    except Exception as refund_err:
+                        console.print(f"Refund failed for scan {scan_id}: {refund_err}", style="bold red")
             else:
                 scan.info = None # reset the info field
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")

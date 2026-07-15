@@ -1,0 +1,10 @@
+{
+  "architectures": ["ResNetForImageClassification"],
+  "model_architecture": "ResNet-50",
+  "model_type": "resnet",
+  "approach": "supervised",
+  "task": "classification/detection",
+  "inputs": ["DICOM DX image"],
+  "outputs": ["nodule probability + bounding box"],
+  "framework": "pytorch"
+}

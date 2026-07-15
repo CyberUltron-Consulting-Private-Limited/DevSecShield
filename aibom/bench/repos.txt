@@ -1,0 +1,14 @@
+# Benchmark repos. Format: key | git_url | subdir_scope | flags
+# subdir_scope: scan only this path (bounds Cisco's Bedrock cost on big repos);
+#   "." = whole repo. If the subdir is missing at HEAD, the runner falls back to "."
+# flags: comma-separated. nolfs = GIT_LFS_SKIP_SMUDGE (HF weight pointers only).
+# repo0-synthetic + chroma are handled outside this file (local fixture / existing clone).
+langchain        | https://github.com/langchain-ai/langchain        | libs/langchain/langchain        |
+llama_index      | https://github.com/run-llama/llama_index          | llama-index-core/llama_index    |
+autogen          | https://github.com/microsoft/autogen              | python/packages/autogen-core    |
+openai-cookbook  | https://github.com/openai/openai-cookbook         | examples                        |
+mcp-servers      | https://github.com/modelcontextprotocol/servers   | src                             |
+hf-model         | https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 | .                   | nolfs
+monai            | https://github.com/Project-MONAI/MONAI            | monai                           |
+tf-bedrock       | https://github.com/aws-ia/terraform-aws-bedrock   | .                               |
+transformers-ft  | https://github.com/huggingface/transformers       | examples/pytorch/text-classification |

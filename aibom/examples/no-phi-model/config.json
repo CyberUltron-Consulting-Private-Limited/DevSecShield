@@ -1,0 +1,10 @@
+{
+  "architectures": ["ResNetForImageClassification"],
+  "model_architecture": "ResNet-18",
+  "model_type": "resnet",
+  "approach": "supervised",
+  "task": "regression",
+  "inputs": ["DICOM DX image"],
+  "outputs": ["estimated bone age (months)"],
+  "framework": "pytorch"
+}

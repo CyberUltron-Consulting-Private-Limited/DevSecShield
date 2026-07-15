@@ -72,24 +72,12 @@ export default function MCPPage() {
   return (
     <div className="flex h-screen">
       {/* Main Content Area */}
-      <div className="flex-1 bg-white dark:bg-zinc-900 overflow-auto flex flex-col">
-        {/* Progress bar */}
-        {isInProgress && scanInfo?.current != null && (
-          <div className="px-6 pt-4 pb-2">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600 shrink-0" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Scan in progress</span>
-                  <span className="text-sm tabular-nums text-zinc-500">{scanInfo.current}%</span>
-                </div>
-                <Progress value={scanInfo.current} className="h-2" />
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="mx-auto flex-1 w-full">
-          <ChatWindow query={query} />
+      <div className="flex-1 bg-white dark:bg-zinc-900 overflow-auto">
+        <div className="mx-auto">
+          <ChatWindow
+            query={query}
+            progress={isInProgress && scanInfo?.current != null ? { current: scanInfo.current } : undefined}
+          />
         </div>
       </div>
 

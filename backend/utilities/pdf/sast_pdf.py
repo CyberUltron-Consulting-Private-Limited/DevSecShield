@@ -20,6 +20,21 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.pdfgen import canvas
 
 
+def _escape_para(text: str) -> str:
+    """
+    Escape text for use inside ReportLab Paragraph (and Preformatted).
+    ReportLab uses XML-like markup; unescaped < and > (e.g. from PHP/HTML code
+    or comparisons) cause 'paraparser: unclosed tags' errors.
+    """
+    if not text:
+        return text
+    s = str(text)
+    s = s.replace("&", "&amp;")
+    s = s.replace("<", "&lt;")
+    s = s.replace(">", "&gt;")
+    return s
+
+
 def get_relative_path(file_path: str) -> str:
     """Extract path from repo_xxxxxxx onwards."""
     try:
@@ -312,37 +327,37 @@ def _build_agent_pdf_story(
         cves = vuln.get("cves")
 
         finding_title = f"Finding #{idx}: {title}"
-        story.append(Paragraph(finding_title, heading_style))
+        story.append(Paragraph(_escape_para(finding_title), heading_style))
         story.append(Spacer(1, 0.2 * inch))
 
         finding_data = [["Property", "Value"]]
-        finding_data.append(["Logical component", comp_title])
-        finding_data.append(["Impact", impact])
+        finding_data.append(["Logical component", _escape_para(comp_title)])
+        finding_data.append(["Impact", _escape_para(impact)])
         if location:
-            loc_para = Paragraph(location[:120] + ("..." if len(location) > 120 else ""), normal_style)
+            loc_para = Paragraph(_escape_para(location[:120] + ("..." if len(location) > 120 else "")), normal_style)
             finding_data.append(["Location", loc_para])
         if description:
-            desc_para = Paragraph(description[:500] + ("..." if len(description) > 500 else ""), normal_style)
+            desc_para = Paragraph(_escape_para(description[:500] + ("..." if len(description) > 500 else "")), normal_style)
             finding_data.append(["Description", desc_para])
         if suggested_fix:
-            fix_para = Paragraph(suggested_fix[:500] + ("..." if len(suggested_fix) > 500 else ""), normal_style)
+            fix_para = Paragraph(_escape_para(suggested_fix[:500] + ("..." if len(suggested_fix) > 500 else "")), normal_style)
             finding_data.append(["Suggested fix", fix_para])
         if owasp_entries:
             owasp_str = "; ".join(f"{k}: {v}" for k, v in owasp_entries[:5])
             if len(owasp_entries) > 5:
                 owasp_str += f" (+{len(owasp_entries) - 5} more)"
-            finding_data.append(["OWASP Top 10", Paragraph(owasp_str, normal_style)])
+            finding_data.append(["OWASP Top 10", Paragraph(_escape_para(owasp_str), normal_style)])
         if compliance_entries:
             comp_str = "; ".join(f"{k}: {v}" for k, v in compliance_entries[:5])
             if len(compliance_entries) > 5:
                 comp_str += f" (+{len(compliance_entries) - 5} more)"
-            finding_data.append(["Compliance controls", Paragraph(comp_str, normal_style)])
+            finding_data.append(["Compliance controls", Paragraph(_escape_para(comp_str), normal_style)])
         if cves and isinstance(cves, dict) and cves:
             cve_str = ", ".join(str(k) for k in list(cves.keys())[:5])
-            finding_data.append(["Related CVEs", cve_str])
+            finding_data.append(["Related CVEs", _escape_para(cve_str)])
         elif isinstance(cves, list) and cves:
             cve_str = ", ".join(str(c) for c in cves[:5])
-            finding_data.append(["Related CVEs", cve_str])
+            finding_data.append(["Related CVEs", _escape_para(cve_str)])
 
         finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
         finding_table.setStyle(TableStyle([
@@ -377,7 +392,7 @@ def _build_agent_pdf_story(
             )
             story.append(Paragraph("Description", desc_heading))
             story.append(Spacer(1, 0.12 * inch))
-            story.append(Paragraph(description, normal_style))
+            story.append(Paragraph(_escape_para(description), normal_style))
             story.append(Spacer(1, 0.25 * inch))
 
         if snippet:
@@ -397,7 +412,7 @@ def _build_agent_pdf_story(
                 code_text = code_text[:500] + "..."
             code_lines = code_text.split("\n")[:10]
             code_text = "\n".join(code_lines)
-            code_para = Preformatted(code_text, code_style, maxLineLength=70)
+            code_para = Preformatted(_escape_para(code_text), code_style, maxLineLength=70)
             story.append(code_para)
             story.append(Spacer(1, 0.2 * inch))
 
@@ -623,7 +638,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             
             # Finding header
             finding_title = f"Finding #{idx}: {display_name}"
-            story.append(Paragraph(finding_title, heading_style))
+            story.append(Paragraph(_escape_para(finding_title), heading_style))
             story.append(Spacer(1, 0.2 * inch))
                 
             # Finding details table - wrap long text
@@ -631,24 +646,24 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             finding_data.append(["Property", "Value"])
             
             # Check ID - wrap if too long
-            check_id_para = Paragraph(check_id[:100] + ("..." if len(check_id) > 100 else ""), normal_style)
+            check_id_para = Paragraph(_escape_para(check_id[:100] + ("..." if len(check_id) > 100 else "")), normal_style)
             finding_data.append(["Check ID", check_id_para])
             
-            finding_data.append(["Severity", severity_level])
+            finding_data.append(["Severity", _escape_para(severity_level)])
             
             # File path - wrap if too long
-            file_path_para = Paragraph(file_path[:80] + ("..." if len(file_path) > 80 else ""), normal_style)
+            file_path_para = Paragraph(_escape_para(file_path[:80] + ("..." if len(file_path) > 80 else "")), normal_style)
             finding_data.append(["File", file_path_para])
             
-            finding_data.append(["Location", f"Line {line_num}, Column {col_num}"])
+            finding_data.append(["Location", _escape_para(f"Line {line_num}, Column {col_num}")])
             
             # Add metadata if available
             if metadata.get("likelihood"):
-                finding_data.append(["Likelihood", metadata["likelihood"]])
+                finding_data.append(["Likelihood", _escape_para(metadata["likelihood"])])
             if metadata.get("impact"):
-                finding_data.append(["Impact", metadata["impact"]])
+                finding_data.append(["Impact", _escape_para(metadata["impact"])])
             if metadata.get("confidence"):
-                finding_data.append(["Confidence", metadata["confidence"]])
+                finding_data.append(["Confidence", _escape_para(metadata["confidence"])])
             
             # Add CWE if available - wrap text
             cwe_list = metadata.get("cwe", [])
@@ -656,14 +671,14 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 cwe_str = ", ".join(cwe_list[:2])  # Limit to first 2 for better display
                 if len(cwe_list) > 2:
                     cwe_str += f" (+{len(cwe_list) - 2} more)"
-                cwe_para = Paragraph(cwe_str, normal_style)
+                cwe_para = Paragraph(_escape_para(cwe_str), normal_style)
                 finding_data.append(["CWE", cwe_para])
             
             # Add OWASP if available - wrap text
             owasp_list = metadata.get("owasp", [])
             if owasp_list:
                 owasp_str = ", ".join(owasp_list)
-                owasp_para = Paragraph(owasp_str, normal_style)
+                owasp_para = Paragraph(_escape_para(owasp_str), normal_style)
                 finding_data.append(["OWASP", owasp_para])
             
             finding_table = Table(finding_data, colWidths=[1.8 * inch, 4.2 * inch], repeatRows=1)
@@ -702,7 +717,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             story.append(Paragraph("Description", desc_heading_style))
             story.append(Spacer(1, 0.12 * inch))
             # Split long messages into paragraphs if needed
-            message_para = Paragraph(message, normal_style)
+            message_para = Paragraph(_escape_para(message), normal_style)
             story.append(message_para)
             story.append(Spacer(1, 0.25 * inch))
             
@@ -727,7 +742,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 code_lines = code_text.split('\n')[:10]  # Limit to 10 lines
                 code_text = '\n'.join(code_lines)
                 code_para = Preformatted(
-                    code_text,
+                    _escape_para(code_text),
                     code_style,
                     maxLineLength=70
                 )
@@ -751,7 +766,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 for ref in references[:5]:  # Limit to 5 references
                     # Wrap long URLs
                     ref_text = ref[:100] + ("..." if len(ref) > 100 else "")
-                    ref_para = Paragraph(f"• {ref_text}", normal_style)
+                    ref_para = Paragraph(_escape_para(f"• {ref_text}"), normal_style)
                     story.append(ref_para)
                     story.append(Spacer(1, 0.05 * inch))
             
@@ -773,8 +788,8 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             error_message = error.get("message", "No message")
             error_path = get_relative_path(error.get("path", "Unknown"))
             # Wrap long messages
-            error_msg_para = Paragraph(error_message[:150] + ("..." if len(error_message) > 150 else ""), normal_style)
-            error_path_para = Paragraph(error_path[:60] + ("..." if len(error_path) > 60 else ""), normal_style)
+            error_msg_para = Paragraph(_escape_para(error_message[:150] + ("..." if len(error_message) > 150 else "")), normal_style)
+            error_path_para = Paragraph(_escape_para(error_path[:60] + ("..." if len(error_path) > 60 else "")), normal_style)
             error_data.append([str(error_type), error_msg_para, error_path_para])
         
         error_table = Table(error_data, colWidths=[1.5 * inch, 3.5 * inch, 1.0 * inch], repeatRows=1)

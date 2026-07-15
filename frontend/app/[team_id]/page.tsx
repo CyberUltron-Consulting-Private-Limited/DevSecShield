@@ -21,7 +21,9 @@ import {
   RadialBarChart,
   RadialBar,
 } from "recharts";
-import { LayoutDashboard, LineChart, Link2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { LayoutDashboard, LineChart, Link2, Shield, Bug, PlayCircle, CheckCircle, Circle, Wrench, Percent } from "lucide-react";
+import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 
 const SCAN_TYPE_LABELS: Record<string, string> = {
   sast: "SAST",
@@ -32,6 +34,8 @@ const SCAN_TYPE_LABELS: Record<string, string> = {
   sbom_sca: "SBOM/SCA",
   agent_discovery: "Agent Discovery",
   dast: "DAST",
+  cbom: "CBOM",
+  ai_bom: "AI BOM",
 };
 
 /** Blue shades for chart fills (light to dark) */
@@ -151,11 +155,97 @@ export default function TeamPage() {
     cicd: { label: "CI/CD", color: BLUE_SHADES.blue6 },
   } satisfies ChartConfig;
 
+  /** Scan status distribution (radial) */
+  const scanStatusDist = dashboard.scan_status_distribution ?? {
+    not_started: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+  };
+  const scanStatusOrder = ["not_started", "running", "completed", "failed"] as const;
+  const scanStatusLabels: Record<string, string> = {
+    not_started: "Not started",
+    running: "Running",
+    completed: "Completed",
+    failed: "Failed",
+  };
+  const scanStatusColors: Record<string, string> = {
+    not_started: "hsl(215 20% 55%)",
+    running: "hsl(217 91% 60%)",
+    completed: "hsl(142 71% 45%)",
+    failed: "hsl(0 84% 60%)",
+  };
+  const scanStatusRadialData = scanStatusOrder
+    .filter((k) => (scanStatusDist[k] ?? 0) > 0)
+    .map((k) => {
+      const count = scanStatusDist[k] ?? 0;
+      return {
+        name: scanStatusLabels[k],
+        statusKey: k,
+        actualCount: count,
+        fill: scanStatusColors[k],
+      };
+    });
+  const scanStatusMax = Math.max(1, ...scanStatusRadialData.map((d) => d.actualCount));
+  const scanStatusRadialChartData = scanStatusRadialData.map((d) => ({
+    ...d,
+    count: (d.actualCount / scanStatusMax) * 100,
+  }));
+  const scanStatusChartConfig = {
+    count: { label: "Scans" },
+    ...Object.fromEntries(
+      scanStatusOrder.map((k) => [k, { label: scanStatusLabels[k], color: scanStatusColors[k] }])
+    ),
+  } satisfies ChartConfig;
+
+  /** Per-day dict -> sorted array for area charts */
+  function perDayDictToArray(d: Record<string, number>): { date: string; count: number }[] {
+    return Object.entries(d)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+  const findingsPerDayData = perDayDictToArray(dashboard.findings_per_day ?? {});
+  const fixesPerDayData = perDayDictToArray(dashboard.fixes_per_day ?? {});
+  const falsePositiveData = perDayDictToArray(dashboard.false_positive_trends ?? {});
+
+  /** Remediations status distribution: date -> { not_started, in_progress, fixed, ignored } */
+  const remediationsDist = dashboard.remediations_status_distribution ?? {};
+  const remediationsAreaData = Object.entries(remediationsDist)
+    .map(([date, v]) => ({
+      date,
+      label: formatDateLabel(date),
+      not_started: v.not_started ?? 0,
+      in_progress: v.in_progress ?? 0,
+      fixed: v.fixed ?? 0,
+      ignored: v.ignored ?? 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const remediationsChartConfig = {
+    not_started: { label: "Not started", color: "hsl(215 20% 55%)" },
+    in_progress: { label: "In progress", color: "hsl(217 91% 60%)" },
+    fixed: { label: "Fixed", color: "hsl(142 71% 45%)" },
+    ignored: { label: "Ignored", color: "hsl(38 92% 50%)" },
+  } satisfies ChartConfig;
+
+  const findingsPerDayChartConfig = { count: { label: "Findings", color: BLUE_SHADES.blue5 } } satisfies ChartConfig;
+  const fixesPerDayChartConfig = { count: { label: "Fixes", color: "hsl(142 71% 45%)" } } satisfies ChartConfig;
+  const falsePositiveChartConfig = { count: { label: "Ignored", color: "hsl(38 92% 50%)" } } satisfies ChartConfig;
+
+  const card = dashboard.card_data ?? {
+    total_findings: 0,
+    total_started_scans: 0,
+    total_completed_scans: 0,
+    total_not_started_scans: 0,
+    total_fixed_findings: 0,
+    remediation_percentage: 0,
+  };
+
   return (
     <div className="flex flex-col h-full min-h-[calc(100vh-2rem)] bg-neutral-900">
 
       <main className="flex-1 p-6 overflow-auto mt-5">
-        {/* Your Team's Recent Activity — bar, radial, area charts */}
+        {/* Your Team's Recent Activity — summary cards + bar, radial, area charts */}
         <section className="pb-6">
           <h2 className="text-base font-medium flex items-center gap-2 mb-1">
             <div className="bg-blue-600 rounded-md p-1.5">
@@ -163,7 +253,101 @@ export default function TeamPage() {
             </div>
             Your Team's Recent Activity
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-9">
+          {/* Summary stat cards — same style as SAST page: icon top-left, value + label below */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+              <CardContent className="p-0">
+                <div className="flex flex-col items-start gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-500/15 dark:bg-zinc-400/10">
+                    <Bug className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Total findings</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_findings}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">All scans</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+              <CardContent className="p-0">
+                <div className="flex flex-col items-start gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 dark:bg-blue-500/10">
+                    <PlayCircle className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Started scans</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_started_scans}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">In progress</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+              <CardContent className="p-0">
+                <div className="flex flex-col items-start gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-500/15 dark:bg-green-500/10">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Completed scans</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_completed_scans}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Success</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+              <CardContent className="p-0">
+                <div className="flex flex-col items-start gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-500/15 dark:bg-zinc-400/10">
+                    <Circle className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Not started</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_not_started_scans}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Idle</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+              <CardContent className="p-0">
+                <div className="flex flex-col items-start gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 dark:bg-amber-500/10">
+                    <Wrench className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Fixed findings</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.total_fixed_findings}</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Remediated</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
+              <CardContent className="p-0">
+                <div className="flex flex-col items-start gap-2">
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.remediation_percentage >= 70 ? "bg-green-500/15 dark:bg-green-500/10" : card.remediation_percentage >= 40 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-red-500/15 dark:bg-red-500/10"}`}>
+                    <Percent className={`h-4 w-4 ${card.remediation_percentage >= 70 ? "text-green-500" : card.remediation_percentage >= 40 ? "text-amber-500" : "text-red-500"}`} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Remediation</p>
+                    <p className="text-xl font-bold text-zinc-900 dark:text-white tabular-nums">{card.remediation_percentage}%</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Fixed / total</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {dashboard.rbi_csf_rollup && (
+            <div className="mt-9">
+              <RbiCsfRollup rollup={dashboard.rbi_csf_rollup as RbiCsfRollupData} />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-9">
           {/* Scan activity by type — custom bar chart (same pattern as GuardrailsDashboardData) */}
           <div className="min-h-[380px] flex flex-col pr-2">
             <h2 className="text-base font-medium">Scan activity by type</h2>
@@ -341,6 +525,286 @@ export default function TeamPage() {
               )}
             </div>
           </div>
+
+          {/* Scan status distribution — radial */}
+          <div className="min-h-[380px] flex flex-col">
+            <h2 className="text-base font-medium">Scan status distribution</h2>
+            <p className="text-sm text-muted-foreground mb-4 mt-1">All scans in this team by status (not started, running, completed, failed)</p>
+            <div className="flex-1 min-h-[280px]">
+              {scanStatusRadialChartData.length === 0 ? (
+                <p className="text-sm text-muted-foreground flex items-center justify-center h-[280px]">
+                  No scan status data
+                </p>
+              ) : (
+                <>
+                  <ChartContainer
+                    config={scanStatusChartConfig}
+                    className="mx-auto aspect-square max-h-[280px] w-full cursor-pointer"
+                  >
+                    <RadialBarChart
+                      data={scanStatusRadialChartData}
+                      innerRadius={40}
+                      outerRadius={100}
+                      startAngle={90}
+                      endAngle={-270}
+                    >
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            nameKey="name"
+                            formatter={(_, name, __, ___, payload) => {
+                              const count = (payload as { actualCount?: number } | undefined)?.actualCount ?? 0;
+                              return (
+                                <span className="font-medium">
+                                  <span className="text-muted-foreground">{name}: </span>
+                                  <span className="font-mono font-semibold tabular-nums text-foreground">
+                                    {count}
+                                  </span>
+                                </span>
+                              );
+                            }}
+                          />
+                        }
+                      />
+                      <RadialBar dataKey="count" background className="cursor-pointer" />
+                    </RadialBarChart>
+                  </ChartContainer>
+                  <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-700 flex flex-wrap gap-x-4 gap-y-1.5 justify-center">
+                    {scanStatusOrder.map((k) => (
+                      <div key={k} className="flex items-center gap-1.5 text-xs">
+                        <span
+                          className="shrink-0 w-3 h-3 rounded-full"
+                          style={{ backgroundColor: scanStatusColors[k] }}
+                          aria-hidden
+                        />
+                        <span className="text-zinc-600 dark:text-zinc-400">{scanStatusLabels[k]}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          </div>
+        </section>
+
+        {/* Findings & Remediation — area/line charts */}
+        <section className="pb-6 mt-10">
+          <h2 className="text-base font-medium flex items-center gap-2 mb-1">
+            <div className="bg-blue-600 rounded-md p-1.5">
+              <Shield className="size-5" />
+            </div>
+            Findings & Remediation
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">Finding counts and remediation status over time (from scan findings)</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-9">
+            {/* Remediations status distribution — area */}
+            <div className="min-h-[320px] flex flex-col">
+              <h2 className="text-base font-medium">Remediations status per day</h2>
+              <p className="text-sm text-muted-foreground mb-4 mt-1">Daily counts: new (not started / in progress), fixed, and ignored findings</p>
+              <div className="flex-1 min-h-[260px]">
+                {remediationsAreaData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground flex items-center justify-center h-[260px]">
+                    No remediation data
+                  </p>
+                ) : (
+                  <ChartContainer
+                    config={remediationsChartConfig}
+                    className="aspect-auto h-[260px] w-full pb-8 cursor-pointer"
+                  >
+                    <AreaChart data={remediationsAreaData} margin={{ bottom: 28 }}>
+                      <defs>
+                        <linearGradient id="fillRemNotStarted" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-not_started)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-not_started)" stopOpacity={0.1} />
+                        </linearGradient>
+                        <linearGradient id="fillRemInProgress" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-in_progress)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-in_progress)" stopOpacity={0.1} />
+                        </linearGradient>
+                        <linearGradient id="fillRemFixed" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-fixed)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-fixed)" stopOpacity={0.1} />
+                        </linearGradient>
+                        <linearGradient id="fillRemIgnored" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-ignored)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-ignored)" stopOpacity={0.1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis
+                        dataKey="date"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        minTickGap={20}
+                        tickFormatter={(value) => formatDateLabel(String(value))}
+                      />
+                      <YAxis hide domain={[0, "auto"]} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            indicator="dot"
+                          />
+                        }
+                      />
+                      <Area dataKey="not_started" type="monotone" stackId="1" fill="url(#fillRemNotStarted)" stroke="var(--color-not_started)" strokeWidth={2} />
+                      <Area dataKey="in_progress" type="monotone" stackId="1" fill="url(#fillRemInProgress)" stroke="var(--color-in_progress)" strokeWidth={2} />
+                      <Area dataKey="fixed" type="monotone" stackId="1" fill="url(#fillRemFixed)" stroke="var(--color-fixed)" strokeWidth={2} />
+                      <Area dataKey="ignored" type="monotone" stackId="1" fill="url(#fillRemIgnored)" stroke="var(--color-ignored)" strokeWidth={2} />
+                    </AreaChart>
+                  </ChartContainer>
+                )}
+              </div>
+            </div>
+
+            {/* Findings per day */}
+            <div className="min-h-[320px] flex flex-col">
+              <h2 className="text-base font-medium">Findings per day</h2>
+              <p className="text-sm text-muted-foreground mb-4 mt-1">Number of findings created each day (created_at)</p>
+              <div className="flex-1 min-h-[260px]">
+                {findingsPerDayData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground flex items-center justify-center h-[260px]">
+                    No findings data
+                  </p>
+                ) : (
+                  <ChartContainer
+                    config={findingsPerDayChartConfig}
+                    className="aspect-auto h-[260px] w-full pb-8 cursor-pointer"
+                  >
+                    <AreaChart data={findingsPerDayData} margin={{ bottom: 28 }}>
+                      <defs>
+                        <linearGradient id="fillFindingsPerDay" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-count)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-count)" stopOpacity={0.1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis
+                        dataKey="date"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        minTickGap={20}
+                        tickFormatter={(value) => formatDateLabel(String(value))}
+                      />
+                      <YAxis hide domain={[0, "auto"]} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            formatter={(value) => [value, "Findings"]}
+                            indicator="dot"
+                          />
+                        }
+                      />
+                      <Area dataKey="count" type="monotone" fill="url(#fillFindingsPerDay)" stroke="var(--color-count)" strokeWidth={2} />
+                    </AreaChart>
+                  </ChartContainer>
+                )}
+              </div>
+            </div>
+
+            {/* Fixes per day */}
+            <div className="min-h-[320px] flex flex-col">
+              <h2 className="text-base font-medium">Fixes per day</h2>
+              <p className="text-sm text-muted-foreground mb-4 mt-1">Number of findings marked fixed each day</p>
+              <div className="flex-1 min-h-[260px]">
+                {fixesPerDayData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground flex items-center justify-center h-[260px]">
+                    No fixes data
+                  </p>
+                ) : (
+                  <ChartContainer
+                    config={fixesPerDayChartConfig}
+                    className="aspect-auto h-[260px] w-full pb-8 cursor-pointer"
+                  >
+                    <AreaChart data={fixesPerDayData} margin={{ bottom: 28 }}>
+                      <defs>
+                        <linearGradient id="fillFixesPerDay" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-count)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-count)" stopOpacity={0.1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis
+                        dataKey="date"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        minTickGap={20}
+                        tickFormatter={(value) => formatDateLabel(String(value))}
+                      />
+                      <YAxis hide domain={[0, "auto"]} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            formatter={(value) => [value, "Fixes"]}
+                            indicator="dot"
+                          />
+                        }
+                      />
+                      <Area dataKey="count" type="monotone" fill="url(#fillFixesPerDay)" stroke="var(--color-count)" strokeWidth={2} />
+                    </AreaChart>
+                  </ChartContainer>
+                )}
+              </div>
+            </div>
+
+            {/* False positive trends (ignored per day) */}
+            <div className="min-h-[320px] flex flex-col">
+              <h2 className="text-base font-medium">False positive trends</h2>
+              <p className="text-sm text-muted-foreground mb-4 mt-1">Number of findings marked ignored per day</p>
+              <div className="flex-1 min-h-[260px]">
+                {falsePositiveData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground flex items-center justify-center h-[260px]">
+                    No ignored findings data
+                  </p>
+                ) : (
+                  <ChartContainer
+                    config={falsePositiveChartConfig}
+                    className="aspect-auto h-[260px] w-full pb-8 cursor-pointer"
+                  >
+                    <AreaChart data={falsePositiveData} margin={{ bottom: 28 }}>
+                      <defs>
+                        <linearGradient id="fillFalsePositive" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="var(--color-count)" stopOpacity={0.8} />
+                          <stop offset="95%" stopColor="var(--color-count)" stopOpacity={0.1} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid vertical={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
+                      <XAxis
+                        dataKey="date"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        minTickGap={20}
+                        tickFormatter={(value) => formatDateLabel(String(value))}
+                      />
+                      <YAxis hide domain={[0, "auto"]} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            formatter={(value) => [value, "Ignored"]}
+                            indicator="dot"
+                          />
+                        }
+                      />
+                      <Area dataKey="count" type="monotone" fill="url(#fillFalsePositive)" stroke="var(--color-count)" strokeWidth={2} />
+                    </AreaChart>
+                  </ChartContainer>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 

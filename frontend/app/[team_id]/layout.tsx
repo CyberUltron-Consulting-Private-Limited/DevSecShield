@@ -149,11 +149,12 @@ const homeItem = { name: "Home", path: "", icon: Home };
 const toolsItems = [
   { name: "SAST", path: "sast", icon: Code },
   { name: "SCA + SBOM", path: "sbom_sca", icon: Package },
+  { name: "CBOM", path: "cbom", icon: ShieldCheck },
+  { name: "AI BOM", path: "ai_bom", icon: Bot },
   { name: "MCP", path: "mcp", icon: Server },
   { name: "LLM", path: "llm", icon: Box },
   { name: "IAC", path: "iac", icon: FileText },
-  // { name: "AI Agent Discovery", path: "agent_discovery", icon: ScanLine },
-  // { name: "DAST ", path: "dast", icon: Globe },
+  { name: "DAST ", path: "dast", icon: Globe },
 ];
 
 const workflowItems = [
@@ -255,7 +256,7 @@ export default function HomeLayout({
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  const queryClient = new QueryClient()
+  const [queryClient] = useState(() => new QueryClient())
 
   const homeHref = team_id ? `/${team_id}` : "#";
   const getItemHref = (path: string) => (team_id && path ? `/${team_id}/${path}` : "#");
@@ -416,7 +417,7 @@ export default function HomeLayout({
 
         <SidebarInset className="overflow-auto">{children}</SidebarInset>
     </SidebarProvider>
-    <ReactQueryDevtools initialIsOpen={false} />
+    {/* <ReactQueryDevtools initialIsOpen={false} /> */}
     </QueryClientProvider>
   );
 } 

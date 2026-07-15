@@ -1,0 +1,125 @@
+{
+  "name": "Multi-Agent Pipeline",
+  "id": "wf-003",
+  "nodes": [
+    {
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "hours", "hoursInterval": 1}]
+        }
+      },
+      "position": [200, 300]
+    },
+    {
+      "name": "Research Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "parameters": {
+        "agentType": "toolsAgent",
+        "systemMessage": "You are a research agent."
+      },
+      "position": [400, 300]
+    },
+    {
+      "name": "Anthropic Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "maxTokens": 4096
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "2",
+          "name": "Anthropic"
+        }
+      },
+      "position": [400, 500]
+    },
+    {
+      "name": "Execute Sub-Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "parameters": {
+        "workflowId": "wf-001"
+      },
+      "position": [600, 300]
+    },
+    {
+      "name": "Summarization Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainSummarization",
+      "parameters": {},
+      "position": [800, 300]
+    },
+    {
+      "name": "Google Gemini",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "parameters": {
+        "model": "gemini-1.5-pro"
+      },
+      "credentials": {
+        "googleGeminiApi": {
+          "id": "3",
+          "name": "Google Gemini"
+        }
+      },
+      "position": [800, 500]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Research Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Agent": {
+      "main": [
+        [
+          {
+            "node": "Execute Sub-Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Research Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Sub-Workflow": {
+      "main": [
+        [
+          {
+            "node": "Summarization Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarization Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

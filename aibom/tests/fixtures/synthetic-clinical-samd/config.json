@@ -1,0 +1,14 @@
+{
+  "architectures": ["DenseNetForImageClassification"],
+  "model_architecture": "DenseNet-121",
+  "model_type": "densenet",
+  "approach": "supervised",
+  "task": "classification/detection",
+  "num_labels": 2,
+  "inputs": ["DICOM DX image"],
+  "outputs": ["pneumonia probability"],
+  "image_size": 1024,
+  "num_channels": 1,
+  "framework": "pytorch",
+  "torch_dtype": "float32"
+}

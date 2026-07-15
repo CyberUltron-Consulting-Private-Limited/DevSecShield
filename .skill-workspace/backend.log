@@ -1,0 +1,351 @@
+
+   FastAPI   Starting development server 🚀
+ 
+             Searching for package file structure from directories with         
+             __init__.py files                                                  
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+             Importing from /Users/anshsinghal/Desktop/DevSecShield
+ 
+    module   📁 backend        
+             ├── 🐍 __init__.py
+             └── 🐍 main.py    
+ 
+      code   Importing the FastAPI app object from the module with the following
+             code:                                                              
+ 
+             from backend.main import app
+ 
+       app   Using import string: backend.main:app
+ 
+    server   Server started at http://127.0.0.1:8081
+    server   Documentation at http://127.0.0.1:8081/docs
+ 
+       tip   Running in development mode, for production use: fastapi run
+ 
+             Logs:
+ 
+      INFO   Will watch for changes in these directories:                       
+             ['/Users/anshsinghal/Desktop/DevSecShield/backend']
+      INFO   Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+      INFO   Started reloader process [65910] using WatchFiles
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [66009]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+      INFO   127.0.0.1:61091 - "GET /docs HTTP/1.1" 200
+      INFO   127.0.0.1:61095 - "GET /docs HTTP/1.1" 200
+      INFO   127.0.0.1:61097 - "GET / HTTP/1.1" 404
+   WARNING   WatchFiles detected changes in 'utilities/dashboard/scan.py'.      
+             Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [66009]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [66120]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+   WARNING   WatchFiles detected changes in 'utilities/pdf/combined.py'.        
+             Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [66120]
+   WARNING   WatchFiles detected changes in 'utilities/pdf/combined.py'.        
+             Reloading...
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [66187]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+   WARNING   WatchFiles detected changes in 'routers/admin.py'. Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [66187]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [66225]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+      INFO   127.0.0.1:61114 - "POST /send_code HTTP/1.1" 200
+(trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+AttributeError: module 'bcrypt' has no attribute '__about__'
+code verified and performing cleanup 🟩
+      INFO   127.0.0.1:61125 - "POST /signup HTTP/1.1" 200
+Verfication code sent successfully!
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:08:34.487368 🟩
+3 cbom scans found for team: 1
+      INFO   127.0.0.1:61133 - "GET /1/cbom/scans HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:08:34.894287 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:61136 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+      INFO   127.0.0.1:61226 - "OPTIONS /teams HTTP/1.1" 200
+      INFO   127.0.0.1:61227 - "OPTIONS /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:09:54.972982 🟩
+      INFO   127.0.0.1:61226 - "GET /teams HTTP/1.1" 200
+      INFO   127.0.0.1:61228 - "OPTIONS /1/cbom/scans HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:09:55.253622 🟩
+      INFO   127.0.0.1:61229 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:09:55.422265 🟩
+3 cbom scans found for team: 1
+      INFO   127.0.0.1:61226 - "GET /1/cbom/scans HTTP/1.1" 200
+      INFO   127.0.0.1:61248 - "OPTIONS /1/cbom/scan/1 HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:10:48.016963 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:61248 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+   WARNING   WatchFiles detected changes in                                     
+             'utilities/celery/create_findings.py'. Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [66225]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [69238]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+   WARNING   WatchFiles detected changes in 'utilities/ai/remediation.py'.      
+             Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [69238]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [69449]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+   WARNING   WatchFiles detected changes in 'utilities/ai/remediation.py'.      
+             Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [69449]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [69495]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+   WARNING   WatchFiles detected changes in 'utilities/ai/chatbot.py'.          
+             Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [69495]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [69544]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:13:25.025736 🟩
+      INFO   127.0.0.1:61309 - "GET /teams HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:13:25.237461 🟩
+      INFO   127.0.0.1:61310 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:13:25.266824 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:61311 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+      INFO   127.0.0.1:61380 - "GET /docs HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:16:59.578640 🟩
+      INFO   127.0.0.1:61391 - "GET /teams HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:16:59.600384 🟩
+      INFO   127.0.0.1:61392 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:16:59.611594 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:61393 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:17:09.995981 🟩
+      INFO   127.0.0.1:61416 - "GET /teams HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:17:10.059749 🟩
+      INFO   127.0.0.1:61417 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:17:10.619886 🟩
+      INFO   127.0.0.1:61417 - "GET /teams HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:17:10.654836 🟩
+      INFO   127.0.0.1:61416 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:17:10.682819 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:61425 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+      INFO   127.0.0.1:61896 - "OPTIONS /teams HTTP/1.1" 200
+      INFO   127.0.0.1:61897 - "OPTIONS /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:26:25.999404 🟩
+      INFO   127.0.0.1:61896 - "GET /teams HTTP/1.1" 200
+      INFO   127.0.0.1:61898 - "OPTIONS /1/cbom/scan/1 HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:26:26.043816 🟩
+      INFO   127.0.0.1:61899 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:26:26.060407 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:61896 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+      INFO   127.0.0.1:62499 - "OPTIONS /teams HTTP/1.1" 200
+      INFO   127.0.0.1:62500 - "OPTIONS /get_user HTTP/1.1" 200
+      INFO   127.0.0.1:62501 - "OPTIONS /1/cbom/scan/1 HTTP/1.1" 200
+Error: Signature has expired. 🔴
+      INFO   127.0.0.1:62499 - "GET /teams HTTP/1.1" 401
+Error: Signature has expired. 🔴
+error in get_user: 401: Could not validate credentials 🔴
+      INFO   127.0.0.1:62502 - "GET /get_user HTTP/1.1" 401
+Error: Signature has expired. 🔴
+      INFO   127.0.0.1:62500 - "GET /1/cbom/scan/1 HTTP/1.1" 401
+      INFO   127.0.0.1:62502 - "OPTIONS /refresh HTTP/1.1" 200
+      INFO   127.0.0.1:62499 - "OPTIONS /refresh HTTP/1.1" 200
+      INFO   127.0.0.1:62500 - "OPTIONS /refresh HTTP/1.1" 200
+      INFO   127.0.0.1:62501 - "POST /refresh HTTP/1.1" 200
+      INFO   127.0.0.1:62502 - "POST /refresh HTTP/1.1" 200
+      INFO   127.0.0.1:62499 - "POST /refresh HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:39:37.803766 🟩
+      INFO   127.0.0.1:62502 - "GET /teams HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:39:37.878554 🟩
+      INFO   127.0.0.1:62501 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:39:37.909419 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:62499 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+      INFO   127.0.0.1:62777 - "GET /docs HTTP/1.1" 200
+Error: Signature has expired. 🔴
+      INFO   127.0.0.1:62779 - "GET /1/cbom/scans HTTP/1.1" 401
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:45:26.956722 🟩
+3 cbom scans found for team: 1
+      INFO   127.0.0.1:62810 - "GET /1/cbom/scans HTTP/1.1" 200
+      INFO   127.0.0.1:62827 - "OPTIONS /teams HTTP/1.1" 200
+      INFO   127.0.0.1:62828 - "OPTIONS /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:45:49.858728 🟩
+      INFO   127.0.0.1:62827 - "GET /teams HTTP/1.1" 200
+      INFO   127.0.0.1:62829 - "OPTIONS /1/cbom/scan/1 HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:45:49.929318 🟩
+      INFO   127.0.0.1:62830 - "GET /get_user HTTP/1.1" 200
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:45:49.971502 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:62827 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+No Authorization header provided 🔴
+      INFO   127.0.0.1:62884 - "GET /1/ai_bom/scans HTTP/1.1" 401
+No Authorization header provided 🔴
+      INFO   127.0.0.1:62885 - "GET /1/cbom/scans HTTP/1.1" 401
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:55:11.168892 🟩
+SCAN_STATUS: success TASK_ID: None
+Scan id: 1 found in main database
+0 messages found for scan: 1
+Mean time to remediate : [0, 0, 0]
+      INFO   127.0.0.1:63133 - "GET /1/cbom/scan/1 HTTP/1.1" 200
+   WARNING   WatchFiles detected changes in 'persist_cbom_runs.py'. Reloading...
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [69544]
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000']
+      INFO   Started server process [94813]
+      INFO   Waiting for application startup.
+✓ Threadpool tokens increased to 100
+      INFO   Application startup complete.
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-06-21 05:55:40.402446 🟩
+0 ai_bom scans found for team: 1
+      INFO   127.0.0.1:63170 - "GET /1/ai_bom/scans HTTP/1.1" 200
+      INFO   Shutting down
+      INFO   Waiting for application shutdown.
+Shutting down...
+      INFO   Application shutdown complete.
+      INFO   Finished server process [94813]
+      INFO   Stopping reloader process [65910]
+

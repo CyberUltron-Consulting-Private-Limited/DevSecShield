@@ -10,7 +10,9 @@ ConversationType = Literal[
     "discovery",
     "llm",
     "mcp",
-    "dast"
+    "dast",
+    "cbom",
+    "ai_bom"
 ]
 
 # Message/Active context types
@@ -18,15 +20,16 @@ MessageType = Literal["message", "tool"]
 SenderType = Literal["user", "assistant"]
 
 
-# class Conversation(TypedDict, total=False): # removed from use ⚠️
+class ScanFindings(TypedDict, total=False):
 
-#     _id: str  # MongoDB ObjectId  (auto-generated, always present when reading)
-#     # user_id: int 
-#     messages: List[str]  # Array of ObjectIds ( as string ) of message collection documents in order (earliest to latest)
-#     created_at: datetime
-#     conv_type: ConversationType
-#     title: str
+    scan_id: int # int of scan collection document 
+    created_at: datetime
 
+    finding_data : dict | None = None
+    finding_status : Literal["fixed" , "ignored" , "in_progress" , "not_started"] = "not_started"
+    fixed_at : datetime | None = None
+    ignored_at : datetime | None = None
+    info : dict | None = None
 
 class MessageLog(TypedDict, total=False):
 

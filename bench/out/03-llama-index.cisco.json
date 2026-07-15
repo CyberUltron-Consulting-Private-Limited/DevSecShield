@@ -1,0 +1,942 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "d4ebec7f-757b-42a0-899d-94d51468f961",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T06:03:50Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T06:10:19Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "run-llama/llama_index": {
+        "source_name": "run-llama/llama_index",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+        "components": {
+          "dependency": [
+            {
+              "name": "llama-index-core",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock",
+              "line_number": 1234,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "0.14.22",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'llama-index-core' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock",
+                    "start_line": 1234,
+                    "end_line": 1234,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "0.14.22",
+                "manifest": "uv.lock",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock"
+                ]
+              },
+              "instance_id": "llama-index-core_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock_1234",
+              "confidence": 1.0
+            },
+            {
+              "name": "openai",
+              "component_type": "dependency",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock",
+              "line_number": 1926,
+              "framework": "",
+              "detection_source": "dependency_manifest",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": "2.36.0",
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dependency 'openai' detected by dependency_manifest; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock",
+                    "start_line": 1926,
+                    "end_line": 1926,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "ecosystem": "pypi",
+                "version_spec": "2.36.0",
+                "manifest": "uv.lock",
+                "known_ai_package": true,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock"
+                ]
+              },
+              "instance_id": "openai_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/uv.lock_1926",
+              "confidence": 1.0
+            }
+          ],
+          "model": [
+            {
+              "name": "model",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/base/llms/types.py",
+              "line_number": 63,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "model",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'model' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/base/llms/types.py",
+                    "start_line": 63,
+                    "end_line": 63,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=model",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/base/llms/types.py"
+                ]
+              },
+              "instance_id": "model_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/base/llms/types.py_63",
+              "confidence": 0.4
+            },
+            {
+              "name": "model_name",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/callbacks/schema.py",
+              "line_number": 66,
+              "framework": "unknown",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.4,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "model_name",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'model_name' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/callbacks/schema.py",
+                    "start_line": 66,
+                    "end_line": 66,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/models?search=model_name",
+                "provider": "unknown",
+                "family": "unknown",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "none",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/callbacks/schema.py"
+                ]
+              },
+              "instance_id": "model_name_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/callbacks/schema.py_66",
+              "confidence": 0.4
+            },
+            {
+              "name": "tomaarsen/span-marker-mbert-base-multinerd",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/extractors/metadata_extractors.py",
+              "line_number": 469,
+              "framework": "tomaarsen",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "tomaarsen/span-marker-mbert-base-multinerd",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'tomaarsen/span-marker-mbert-base-multinerd' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/extractors/metadata_extractors.py",
+                    "start_line": 469,
+                    "end_line": 469,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://huggingface.co/tomaarsen/span-marker-mbert-base-multinerd",
+                "provider": "tomaarsen",
+                "family": "span-marker-mbert-base",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "huggingface",
+                "hf_id": "tomaarsen/span-marker-mbert-base-multinerd",
+                "pipeline_tag": "token-classification",
+                "license": "cc-by-nc-sa-4.0",
+                "downloads": 111020,
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/extractors/metadata_extractors.py"
+                ]
+              },
+              "instance_id": "tomaarsen/span-marker-mbert-base-multinerd_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/extractors/metadata_extractors.py_469",
+              "confidence": 1.0
+            },
+            {
+              "name": "gpt-3.5-turbo-16k",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/postprocessor/rankGPT_rerank.py",
+              "line_number": 20,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": "gpt-3.5-turbo-16k",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-3.5-turbo-16k' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/postprocessor/rankGPT_rerank.py",
+                    "start_line": 20,
+                    "end_line": 20,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "5-turbo",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/postprocessor/rankGPT_rerank.py"
+                ]
+              },
+              "instance_id": "gpt-3.5-turbo-16k_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/postprocessor/rankGPT_rerank.py_20",
+              "confidence": 1.0
+            },
+            {
+              "name": "gpt-4.1",
+              "component_type": "model",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/program/multi_modal_llm_program.py",
+              "line_number": 64,
+              "framework": "openai",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 1.0,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "",
+              "model_name": "gpt-4.1",
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Model 'gpt-4.1' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/program/multi_modal_llm_program.py",
+                    "start_line": 64,
+                    "end_line": 64,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "model_card_url": "https://platform.openai.com/docs/models",
+                "provider": "openai",
+                "family": "1",
+                "deprecated": false,
+                "detection_method": "string_literal",
+                "registry_source": "model_catalog",
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/multi_modal/faithfulness.py",
+                    "line": 100,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/multi_modal/relevancy.py",
+                    "line": 79,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/query_engine/multi_modal.py",
+                    "line": 88,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/tests/agent/workflow/test_agent_with_structured_output.py",
+                    "line": 298,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": true
+                  }
+                ],
+                "evidence_count": 5,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/program/multi_modal_llm_program.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/multi_modal/faithfulness.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/multi_modal/relevancy.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/query_engine/multi_modal.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/tests/agent/workflow/test_agent_with_structured_output.py"
+                ],
+                "consolidated_count": 5
+              },
+              "instance_id": "gpt-4.1_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/program/multi_modal_llm_program.py_64",
+              "confidence": 1.0
+            }
+          ],
+          "ml_pipeline": [
+            {
+              "name": "ml_pipeline",
+              "component_type": "ml_pipeline",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+              "line_number": 381,
+              "framework": "zenml/metaflow",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.85,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "batch_recursion_limit",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "ML workflow orchestration",
+              "text": "@step",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Ml pipeline 'ml_pipeline' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                    "start_line": 381,
+                    "end_line": 381,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence": [
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                    "line": 436,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                    "line": 466,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                    "line": 523,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                    "line": 632,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                    "line": 670,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py",
+                    "line": 383,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py",
+                    "line": 437,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py",
+                    "line": 465,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py",
+                    "line": 520,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py",
+                    "line": 624,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  },
+                  {
+                    "file": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py",
+                    "line": 661,
+                    "service": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core",
+                    "test_only": false
+                  }
+                ],
+                "evidence_count": 12,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py",
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/base_agent.py"
+                ],
+                "consolidated_count": 12
+              },
+              "instance_id": "ml_pipeline_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/agent/workflow/multi_agent_workflow.py_381",
+              "confidence": 0.85
+            }
+          ],
+          "secret": [
+            {
+              "name": "env:COHERE_API_KEY",
+              "component_type": "secret",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/retrieval/metrics.py",
+              "line_number": 444,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env:COHERE_API_KEY' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/retrieval/metrics.py",
+                    "start_line": 444,
+                    "end_line": 444,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env": "COHERE_API_KEY",
+                "env_context": "api_key_kwarg",
+                "unresolved_env_var": "COHERE_API_KEY",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/retrieval/metrics.py"
+                ]
+              },
+              "instance_id": "env:COHERE_API_KEY_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/retrieval/metrics.py_444",
+              "confidence": 0.3
+            },
+            {
+              "name": "env:LLAMA_CLOUD_API_KEY",
+              "component_type": "secret",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/ingestion/api_utils.py",
+              "line_number": 26,
+              "framework": "",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": null,
+              "text": null,
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Secret 'env:LLAMA_CLOUD_API_KEY' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/ingestion/api_utils.py",
+                    "start_line": 26,
+                    "end_line": 26,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "env": "LLAMA_CLOUD_API_KEY",
+                "env_context": "api_key_kwarg",
+                "unresolved_env_var": "LLAMA_CLOUD_API_KEY",
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/ingestion/api_utils.py"
+                ]
+              },
+              "instance_id": "env:LLAMA_CLOUD_API_KEY_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/ingestion/api_utils.py_26",
+              "confidence": 0.3
+            }
+          ],
+          "training_run": [
+            {
+              "name": "training_run",
+              "component_type": "training_run",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/indices/query/embedding_utils.py",
+              "line_number": 88,
+              "framework": "keras/pytorch",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.9,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Model training execution",
+              "text": "clf.fit(dataset, y)  # train",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Training run 'training_run' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/indices/query/embedding_utils.py",
+                    "start_line": 88,
+                    "end_line": 88,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/indices/query/embedding_utils.py"
+                ]
+              },
+              "instance_id": "training_run_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/indices/query/embedding_utils.py_88",
+              "confidence": 0.9
+            }
+          ],
+          "dataset": [
+            {
+              "name": "dataset",
+              "component_type": "dataset",
+              "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/node_parser/relational/utils.py",
+              "line_number": 35,
+              "framework": "pandas",
+              "detection_source": "code_analysis",
+              "heuristic_confidence": 0.3,
+              "agentic_confidence": null,
+              "needs_agentic": false,
+              "agentic_hint": "retry_failed",
+              "model_name": null,
+              "embedding_model": null,
+              "description": "Training or analytics data loading",
+              "text": "return pd.read_csv(StringIO(md_str))",
+              "transport": null,
+              "config_source": null,
+              "storage_uri": null,
+              "dataset_source": null,
+              "skill_format": null,
+              "hyperparameters": {},
+              "training_info": null,
+              "metrics": {},
+              "kb_concept": null,
+              "kb_label": null,
+              "sdk_version": null,
+              "decision_annotation": {
+                "decision": "confirmed",
+                "justification": "Dataset 'dataset' detected by code_analysis; no explicit agentic verdict was attached to this finding.",
+                "evidence_kinds": [
+                  "code_context"
+                ],
+                "evidence_locations": [
+                  {
+                    "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/node_parser/relational/utils.py",
+                    "start_line": 35,
+                    "end_line": 35,
+                    "role": "primary"
+                  }
+                ],
+                "code_snippet": null
+              },
+              "metadata": {
+                "evidence_count": 1,
+                "evidence_files": [
+                  "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/node_parser/relational/utils.py"
+                ]
+              },
+              "instance_id": "dataset_/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/node_parser/relational/utils.py_35",
+              "confidence": 0.3
+            }
+          ]
+        },
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 12,
+          "last_generated_at": "2026-06-26T06:10:19Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/run-llama/llama_index",
+          "source_ref_version": "520aa4ec48c084c7d0fdf93cb22d567046118ad2",
+          "elapsed_s": 387.21,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 12,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {
+        "dependency": 2,
+        "model": 5,
+        "ml_pipeline": 1,
+        "secret": 2,
+        "training_run": 1,
+        "dataset": 1
+      },
+      "total_relationships": 0,
+      "risk_score": 90,
+      "risk_severity": "critical"
+    },
+    "risk": {
+      "score": 90,
+      "severity": "critical",
+      "flags": [
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/base/llms/types.py",
+          "line_number": 63,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/base/llms/types.py",
+                "start_line": 63,
+                "end_line": 63,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "unpinned_model",
+          "severity": "low",
+          "weight": 10,
+          "description": "Model version not pinned to a specific release",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/callbacks/schema.py",
+          "line_number": 66,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Model version not pinned to a specific release",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/callbacks/schema.py",
+                "start_line": 66,
+                "end_line": 66,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/retrieval/metrics.py",
+          "line_number": 444,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/evaluation/retrieval/metrics.py",
+                "start_line": 444,
+                "end_line": 444,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        },
+        {
+          "flag": "hardcoded_api_key",
+          "severity": "high",
+          "weight": 35,
+          "description": "Hardcoded AI API key detected in source code",
+          "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/ingestion/api_utils.py",
+          "line_number": 26,
+          "decision_annotation": {
+            "decision": "flagged",
+            "justification": "Hardcoded AI API key detected in source code",
+            "evidence_kinds": [
+              "code_context"
+            ],
+            "evidence_locations": [
+              {
+                "file_path": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/03-llama-index/llama-index-core/llama_index/core/ingestion/api_utils.py",
+                "start_line": 26,
+                "end_line": 26,
+                "role": "primary"
+              }
+            ],
+            "code_snippet": null
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "errors": []
+  }
+}

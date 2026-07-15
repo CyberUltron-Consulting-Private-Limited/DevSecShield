@@ -1,25 +1,58 @@
 import secrets
+import hashlib
 from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader
 from backend.new_models import GuardrailsIntegration
 from sqlmodel import Session, select
 from backend.get_db import get_db
+from backend.utilities.db.encryption import encrypt_value, decrypt_value, is_encrypted
 from rich.console import Console
-from backend.get_db import dev_environment
 console = Console()
 
+
+def hash_api_key(api_key: str) -> str:
+    """Create a SHA-256 hash of the API key for secure storage/lookup."""
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
+
 def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
+    """
+    Validate API key and return user_id, integration_id.
+    Supports both legacy plaintext keys and new hashed keys.
+    """
     try:
-        engine = get_db(dev_environment=dev_environment)
+        engine = get_db()
+        api_key_hash = hash_api_key(api_key)
+        
         with Session(engine) as session:
-            integration = session.exec(select(GuardrailsIntegration).where(GuardrailsIntegration.api_key == api_key)).first()
+            # First try: lookup by hash (new secure method)
+            integration = session.exec(
+                select(GuardrailsIntegration).where(
+                    GuardrailsIntegration.api_key == api_key_hash
+                )
+            ).first()
+            
+            # Fallback: legacy plaintext lookup (for migration period)
             if not integration:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
+                integration = session.exec(
+                    select(GuardrailsIntegration).where(
+                        GuardrailsIntegration.api_key == api_key
+                    )
+                ).first()
+            
+            if not integration:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, 
+                    detail="Missing or invalid Guardrails API key"
+                )
             return (integration.owner_user.id, integration.id)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Missing or invalid Guardrails API key"
+        )
 
 api_key_header = APIKeyHeader(name="gr-api-key")
 
@@ -38,7 +71,11 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
         >>> nikhil@cyberultron.com
     """
     try:
-        api_key = api_key_header.split(" ")[1]
+        # Accept both "Bearer <key>" and raw "<key>" formats
+        if " " in api_key_header:
+            api_key = api_key_header.split(" ", 1)[1]
+        else:
+            api_key = api_key_header
         user_id, integration_id = get_user_and_integration_from_api_key(api_key)
         if not user_id or not integration_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
@@ -55,23 +92,27 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
 
 
 
-def create_api_key(team_id: int) -> str:
+def create_api_key(team_id: int) -> tuple[str, str]:
     """
-    Create a new API key for a user
-    Args:
-        team_id: int
+    Create a new API key for a team.
+    
     Returns:
-        str: The new API key
-    Raises:
-        HTTPException: 401 if the user is missing or invalid
+        tuple: (plaintext_api_key, hashed_api_key)
+        - plaintext_api_key: Show to user ONCE, never stored
+        - hashed_api_key: Store in database for secure lookup
+    
     Example:
-        >>> api_key = create_api_key(team_id=1)
-        >>> print(api_key)
-        >>> gr1-weasjdfbwejf12313ksdnc
+        >>> plaintext_key, hashed_key = create_api_key(team_id=1)
+        >>> # Store hashed_key in DB, show plaintext_key to user once
     """
     try:
-        return "gr" + str(team_id) + "-" + secrets.token_hex(64) # example : gr1-weasjdfbwejf12313ksdnc
+        plaintext_key = "gr" + str(team_id) + "-" + secrets.token_hex(64)
+        hashed_key = hash_api_key(plaintext_key)
+        return (plaintext_key, hashed_key)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Error creating Guardrails API key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Error creating Guardrails API key"
+        )

@@ -99,7 +99,10 @@ class SBOMSCASummaryManager(BaseSummaryManager,OutputModelManager):
                 OWASP Top 10: {vulnerability.owasp_top_10} \n
                 Compliance Controls: {vulnerability.compliance_controls} \n
                 Suggested Fix: {vulnerability.suggested_fix} \n
-                Dependencies: {vulnerability.dependencies} \n
+                Dependencies: {vulnerability.dependency} \n
+                Dependecy type : {vulnerability.dependency_type} \n
+                License : {vulnerability.license_type} \n
+                Reachability : {vulnerability.reachability} \n
                 =======================================================================================
                 \n\n
                 """
@@ -170,7 +173,10 @@ class SBOMSCASummaryManagerForSBOMFile(BaseSummaryManager,OutputModelManager):
                 OWASP Top 10: {vulnerability.owasp_top_10} \n
                 Compliance Controls: {vulnerability.compliance_controls} \n
                 Suggested Fix: {vulnerability.suggested_fix} \n
-                Dependencies: {vulnerability.dependencies} \n
+                Dependencies: {vulnerability.dependency} \n
+                Dependecy type : {vulnerability.dependency_type} \n
+                License : {vulnerability.license_type} \n
+                Reachability : {vulnerability.reachability} \n
                 =======================================================================================
                 \n\n
                 """

@@ -1,40 +1,41 @@
-## Notes : 
-
-This command will run the Wapiti DAST scan :
+command 
 ```
-uv run wapiti \
--u http://localhost:8090/bodgeit \
--f json \
--o output.json \
---form-data "username=shivanathnikhil@gmail.com&password=Testing@123" \
---form-url "http://localhost:8090/bodgeit/register.jsp" \
--m common \
---flush-session \
---user-agent "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.153 Safari/537.36 SE 2.X MetaSr 1.0" \
---max-scan-time 60 
+nuclei -u https://demo.testfire.net/login.jsp -headless -t templates,yaml -me markdown_dir
 ```
 
-remember : for example the username must be url encoded ( use a library for this )
-This link is your holy grail : 
 ```
-https://github.com/wapiti-scanner/wapiti/blob/master/doc/wapiti.ronn
+uv run playwright install
 ```
 
-- This command runs the ZAP API daemon 
-```
-docker run -u zap -p 8080:8080 -i zaproxy/zap-stable zap-x.sh -daemon -host 0.0.0.0 -port 8080 -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true -config api.key=hahahaha1234 
-```
+DAST Agent Workflow :
 
-- Scan Modes : ( not being used , all scans run in pen test mode )
-```
-sample website with 44 URLS 
+Step 1 : Security Header Check : 
+- use playwright to check the security headers of the website
+- code already available 
+- no need for auth state 
 
-St-Low-Th-High : ~ 9 Mins ( comprehensive and sometimes the CPU Usage shoots up to ~900 % utilization )
-Pen Test : ~ 3.5 Mins
-API : ~ 2 Mins
-API-Minimal : ~ 1.5 Mins
-QA Standard : ~ 9.5 Mins ( comprehensive and sometimes the CPU Usage shoots up to ~900 % utilization )
+Step 2 : Crawling The URL : 
+- build a crawler to crawl the website and get the URLs of the pages
 
 
+The following steps are to be done for each page of the website :
 
-```
+    Step 1 : XSS Scan : 
+    - run nuclei xss template ( login + navigate to desired page + testing xss payloads )
+    - use AI to find x-path of input field to test 
+
+    Step 2 : SQL Injection Scan : 
+    - run nuclei sql injection template ( login + navigate to desired page + testing sql injection payloads )
+    - use AI to find x-path of input field to test 
+
+    Step 3 : Page Analysis : 
+    - analyze the page and find the vulnerabilities 
+
+    Step 4 : Nuclei template generation using AI and scan : 
+    - run nuclei template generation using AI and scan the page ( login + navigate to desired page + testing vulnerabilities )
+
+
+Use all the information gathered to write to a report file at checkpoints in the workflow . 
+Load the report , and use map-reduce to generate a final report 
+
+

@@ -1,14 +1,19 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 from fastapi import HTTPException, status
 from pydantic import model_validator
+from urllib.parse import urlparse
 
 class CreateScanData(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=256)
 
 class SendMessageToScanData(BaseModel):
     user_message: str
 
+
+class ToggleFindingStateData(BaseModel):
+    finding_id: str
+    state: Literal["fixed" , "ignored" , "in_progress" , "not_started"]
 
 
 class CreateTeamData(BaseModel):
@@ -37,7 +42,7 @@ class ScanTicketingIntegrationSettingsData(BaseModel):
     jira: JiraScanSettingsData | None = None
 
 class UpdateScanData(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=256)
     integration_settings: ScanTicketingIntegrationSettingsData | None = None
 
 class RemoveOrAddMembersToTeamData(BaseModel):
@@ -50,20 +55,66 @@ class CreateTicketData(BaseModel):
     description: str
 # ----------------------------------------------------- Start scan related schemas --------------------------------------------
 
+def _validate_repo_url(repo_url: str, provider_host: str, provider_label: str) -> None:
+    """
+    Validate that `repo_url` is an http(s) URL whose host is exactly the
+    expected provider host (e.g. 'github.com') or a subdomain of it
+    (e.g. 'gist.github.com'). Uses exact host / suffix matching so that
+    look-alike hosts such as 'github.com.evil.tld' are rejected.
+
+    Raises ValueError on failure. Pydantic converts the ValueError raised
+    inside a `mode="after"` validator into a ValidationError, which the
+    scan handlers map to a 422 response.
+    """
+    if not repo_url or not repo_url.strip():
+        raise ValueError(f"{provider_label} repo_url is required")
+
+    parsed = urlparse(repo_url.strip())
+    if parsed.scheme not in ("https", "http"):
+        raise ValueError(
+            f"{provider_label} repo_url must start with https:// or http://"
+        )
+
+    host = (parsed.hostname or "").lower()
+    if host != provider_host and not host.endswith("." + provider_host):
+        raise ValueError(
+            f"{provider_label} repo_url host must be '{provider_host}' "
+            f"(or a subdomain of it), got '{host or parsed.netloc}'"
+        )
+
+
 class GithubContextSchema(BaseModel):
     mode: Literal["github"] = "github"
     repo_url: str
     PAT: str
+    branch: str = "main"
+
+    @model_validator(mode="after")
+    def validate_repo_url(self):
+        _validate_repo_url(self.repo_url, "github.com", "GitHub")
+        return self
 
 class GitlabContextSchema(BaseModel):
     mode: Literal["gitlab"] = "gitlab"
     repo_url: str
     PAT: str
+    branch: str = "main"
+
+    @model_validator(mode="after")
+    def validate_repo_url(self):
+        _validate_repo_url(self.repo_url, "gitlab.com", "GitLab")
+        return self
 
 class BitbucketContextSchema(BaseModel):
     mode: Literal["bitbucket"] = "bitbucket"
     repo_url: str
     PAT: str
+    branch: str = "main"
+
+    @model_validator(mode="after")
+    def validate_repo_url(self):
+        _validate_repo_url(self.repo_url, "bitbucket.org", "Bitbucket")
+        return self
 
 class BaseStartRepositoryScanData(BaseModel):
     repo_context: GithubContextSchema | GitlabContextSchema | BitbucketContextSchema | None = None
@@ -93,6 +144,7 @@ class IACContextSchema(BaseModel):
 
 class StartIACScanData(BaseStartRepositoryScanData):
     iac_contexts: list[IACContextSchema]
+    environment: Literal["production", "staging", "development"] = "development"
 
 
     @model_validator(mode="after")
@@ -119,6 +171,7 @@ class StartMCPScanData(BaseModel):
     server_url: str
     server_mode: Literal["httpstreamable", "sse"]
     headers: dict | None = None
+    environment: Literal["production", "staging", "development"] = "development"
 
     @model_validator(mode="after")
     def validate_data(self):
@@ -144,72 +197,57 @@ class StartLLMBenchmarkingData(BaseModel):
     method: Literal["get", "post"] = "post"
 
 
+class AuthRequirements(BaseModel):
+    login_url: str 
+    xpath_of_username_field: str 
+    xpath_of_password_field: str    
+    username: str 
+    password: str 
+    xpath_of_submit_button: str 
+
+class StartDASTScanData(BaseModel):
+    """
+    Both include and exclude url patterns are not going to be used together 
+    """
+    target_url: str
+    auth : AuthRequirements 
+    scan_speed : Literal["fast" , "medium" , "slow"] = "medium"
+    max_urls: int = 100
+    additional_urls_to_scan: list[str] | None = None # these urls will be scanned definitely 
+    exclude_url_patterns: list[str] | None = None # either exclude urls that match these patterns or include urls that match these patterns
+    include_url_patterns: list[str] | None = None # either exclude urls that match these patterns or include urls that match these patterns
+
+
+class StartCBOMScanData(BaseStartRepositoryScanData):
+    zip_file_used : bool = False
+    cbom_file_used : bool = False  # if true, a pre-existing CBOM JSON file was uploaded
+    scan_binaries : bool = False   # if true, enable cbomkit-theia binary/config scanning
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.cbom_file_used and not self.zip_file_used and not self.repo_context:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CBOM file or zip file or repository context is required")
+        return self
+
+
+class StartAIBOMScanData(BaseStartRepositoryScanData):
+    zip_file_used : bool = False
+    ai_bom_file_used : bool = False  # if true, a pre-existing AI-BOM JSON file was uploaded
+    scan_binaries : bool = False   # if true, enable binary/config scanning
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.ai_bom_file_used and not self.zip_file_used and not self.repo_context:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AI-BOM file or zip file or repository context is required")
+        return self
+
+
 class StartScanPayload(BaseModel):
     sast : StartSastScanData | None = None
     iac : StartIACScanData | None = None
     sbom_sca : StartSBOMScanData | None = None
     mcp : StartMCPScanData | None = None
     llm : StartLLMBenchmarkingData | None = None
-
-
-
-
-# class HeaderCookieSchema(BaseModel):
-#     name: str
-#     value: str
-
-# class HeaderCookieDASTSchema(BaseModel):
-#     target_url: str
-#     attack_modules: list[Literal["common", "all", "backup", "brute_login_form", "buster", "cms", "crlf", "csrf", "exec", "file", "htaccess", "htp", "ldap", "log4shell", "methods", "network_device", "nikto", "permanentxss", "redirect", "shellshock", "spring4shell", "sql", "ssl", "ssrf", "takeover", "timesql", "upload", "wapp", "wp_enum", "xss", "xxe"]] = ["common"]
-#     max_scan_time: int = 60
-#     user_agent: str | None = None
-#     headers: list[HeaderCookieSchema] | None = None
-#     cookies: list[HeaderCookieSchema] | None = None
-#     scan_force: Literal["paranoid", "sneaky", "polite", "normal", "aggressive", "insane"] = "normal"
-#     exclude_url_patterns: list[str] | None = None
-#     additional_urls: list[str] | None = None
-
-# class FormBasedDASTSchema(BaseModel):
-#     target_url: str
-#     login_url: str
-#     include_urls: list[str] | None = None
-#     exclude_urls: list[str] | None = None
-#     timeout_durations_mins: int = 20
-#     poll_durations_seconds: int = 5
-#     username_value: str | None = None
-#     password_value: str | None = None
-#     username_key: str | None = None
-#     password_key: str | None = None
-#     logged_in_regex: str | None = None
-#     logged_out_regex: str | None = None
-    
-#     @model_validator(mode="after")
-#     def validate_data(self):
-#         if not self.target_url or not self.login_url:
-#             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target URL and Login URL are required")
-#         if not self.include_urls:
-#             self.include_urls = []
-#         if not self.exclude_urls:
-#             self.exclude_urls = []
-#         if not self.username_value or not self.password_value:
-#             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and Password are required")
-#         if not self.username_key or not self.password_key:
-#             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and Password key are required")
-#         if not self.logged_in_regex or not self.logged_out_regex:
-#             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logged in and Logged out regex are required")
-#         return self
-
-# class StartDASTScanData(BaseModel):
-#     auth_mode: Literal["header_cookie_based" , "form_based"]
-#     header_cookie_based: HeaderCookieDASTSchema | None = None
-#     form_based: FormBasedDASTSchema | None = None
-
-#     @model_validator(mode="after")
-#     def validate_data(self):
-#         if self.auth_mode == "header_cookie_based":
-#             if not self.header_cookie_based:
-#                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Header cookie based data is required")
-#         elif self.auth_mode == "form_based":
-#             if not self.form_based:
-#                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Form based data is required")
-#         return self
+    dast : StartDASTScanData | None = None
+    cbom : StartCBOMScanData | None = None
+    ai_bom : StartAIBOMScanData | None = None

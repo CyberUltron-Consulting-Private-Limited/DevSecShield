@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from rich.console import Console
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
-from backend.get_db import dev_environment
+from backend.utilities.db.encryption import decrypt_value, is_encrypted
 
 class StartScanData(BaseModel):
     input_prompt: str
@@ -26,8 +26,8 @@ router = APIRouter(tags=["Guardrails Public API"])
 limiter = RateLimiter(times=2, seconds=10) # 2 requests per 60 seconds
 
 
-@router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan")
-async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)]):
+@router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan", dependencies=[Depends(limiter)])
+async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id)):
     """
     developer notes : 
     1. start guardrails scan and get task id 
@@ -38,8 +38,8 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
     
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         # STEP [ 1 ] : ======================================== Get the integration from the main database ====================================
         user_id = user_and_integration["user_id"]
@@ -59,9 +59,12 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
             try:
                 if "jira" in team.integration_settings and "jira" in integration.integration_settings and integration.integration_settings["jira"]["jira_project_id"] and team.integration_settings["jira"]["api_token"] and team.integration_settings["jira"]["url"] and team.integration_settings["jira"]["email"]:
+                    # SECURITY: Decrypt api_token if encrypted (supports both encrypted and legacy plaintext)
+                    jira_api_token_raw = team.integration_settings["jira"]["api_token"]
+                    jira_api_token = decrypt_value(jira_api_token_raw) if is_encrypted(jira_api_token_raw) else jira_api_token_raw
                     integration_kwargs = { "jira" : {
                         "jira_project_id": integration.integration_settings["jira"]["jira_project_id"],
-                        "jira_api_token": team.integration_settings["jira"]["api_token"],
+                        "jira_api_token": jira_api_token,
                         "jira_url": team.integration_settings["jira"]["url"],
                         "jira_email": team.integration_settings["jira"]["email"],
                     }}
@@ -125,8 +128,8 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
 
 
 
-@router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan")
-async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id) , dependencies=[Depends(limiter)] ):
+@router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan", dependencies=[Depends(limiter)])
+async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id)):
     """
     developer notes : 
     1. validate the scan_id , check if it is a valid mongo db object id 
@@ -136,8 +139,8 @@ async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get
     5. return scan status and results . ( results will be None if scan status is anything but "success")
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_db = get_mongo_client_db()
 
         user_id = user_and_integration["user_id"]
         integration_id = user_and_integration["integration_id"]
@@ -150,7 +153,11 @@ async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get
         if not ObjectId.is_valid(scan_id):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan ID")
         guardrails_logs_collection = mongo_db["guardrails_logs"]
-        log = guardrails_logs_collection.find_one({"_id": ObjectId(scan_id)})
+        # SECURITY FIX: Add integration_id to query to prevent IDOR (accessing other users' scans)
+        log = guardrails_logs_collection.find_one({
+            "_id": ObjectId(scan_id),
+            "integration_id": integration_id  # Ownership check - only return if caller owns this scan
+        })
 
         if not log:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guardrails log not found")

@@ -29,6 +29,8 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import ModelChoicePicker from "./ModelChoicePicker";
 import probeDescription from "@/garak_probes.json";
+import { AVAILABLE_PROBES } from "@/lib/llm-probes";
+import { getProbeDisplayName } from "@/utils/probe-display-names";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
 // LLM Scan creation data interface
@@ -44,69 +46,16 @@ type LLMScanCreateData = {
     model_uri: string;
 }
 
-// Available security benchmarks
-const availableProbes = [
-    "malwaregen.TopLevel",
-    "malwaregen.Evasion", 
-    "promptinject.HijackHateHumans",
-    "promptinject.HijackKillHumans",
-    "promptinject.HijackLongPrompt",
-    "realtoxicityprompts.RTPBlank",
-    "sata.MLM",
-    "snowball.GraphConnectivity",
-    "snowball.Primes",
-    "snowball.Senators",
-    "suffix.BEAST",
-    "suffix.GCG",
-    "suffix.GCGCached",
-    "tap.PAIR",
-    "tap.TAP",
-    "tap.TAPCached",
-    "test.Blank",
-    "test.Test",
-    "topic.WordnetAllowedWords",
-    "topic.WordnetBlockedWords",
-    "topic.WordnetControversial",
-    "visual_jailbreak.FigStep",
-    "xss.ColabAIDataLeakage",
-    "xss.MarkdownImageExfil",
-    "xss.MarkdownURIImageExfilExtended",
-    "xss.MarkdownURINonImageExfilExtended",
-    "xss.MdExfil20230929",
-    "xss.StringAssemblyDataExfil"
-];
-
-// Display names for security benchmarks
-const probeDisplayNames: Record<string, string> = {
-    "malwaregen.TopLevel": "Malware generation capability",
-    "malwaregen.Evasion": "Malware generation with evasion techniques",
-    "promptinject.HijackHateHumans": "Prompt injection: harmful bias",
-    "promptinject.HijackKillHumans": "Prompt injection: extreme harmful intent",
-    "promptinject.HijackLongPrompt": "Prompt injection: long-prompt override",
-    "realtoxicityprompts.RTPBlank": "Toxic content generation",
-    "sata.MLM": "Sensitive data extraction (MLM)",
-    "snowball.GraphConnectivity": "Indirect prompt leakage (graph)",
-    "snowball.Primes": "Indirect prompt leakage (primes)",
-    "snowball.Senators": "Indirect prompt leakage (senators)",
-    "suffix.BEAST": "Adversarial suffix (BEAST)",
-    "suffix.GCG": "Adversarial suffix (GCG)",
-    "suffix.GCGCached": "Adversarial suffix (GCG cached)",
-    "tap.PAIR": "Automated jailbreak (PAIR)",
-    "tap.TAP": "Tree of attacks (TAP)",
-    "tap.TAPCached": "Tree of attacks (TAP cached)",
-    "test.Blank": "Baseline: blank response",
-    "test.Test": "Baseline: basic test",
-    "topic.WordnetAllowedWords": "Topic compliance: allowed vocabulary",
-    "topic.WordnetBlockedWords": "Topic compliance: blocked vocabulary",
-    "topic.WordnetControversial": "Topic compliance: controversial terms",
-    "visual_jailbreak.FigStep": "Visual jailbreak (FigStep)",
-    "xss.ColabAIDataLeakage": "Data leakage via markdown",
-    "xss.MarkdownImageExfil": "Exfiltration via markdown image",
-    "xss.MarkdownURIImageExfilExtended": "Exfiltration via markdown URI (image)",
-    "xss.MarkdownURINonImageExfilExtended": "Exfiltration via markdown URI",
-    "xss.MdExfil20230929": "Markdown-based exfiltration",
-    "xss.StringAssemblyDataExfil": "String assembly data exfiltration"
-};
+/** Get probe description for tooltip; tries web_injection then xss alias for backward compat. */
+function getProbeDescription(probe: string): string {
+  const desc = (probeDescription as Record<string, string>)[probe];
+  if (desc) return desc;
+  if (probe.startsWith("web_injection.")) {
+    const xssKey = "xss." + probe.slice("web_injection.".length);
+    return (probeDescription as Record<string, string>)[xssKey] ?? "";
+  }
+  return "";
+}
 
 export function LLMOptionsSidebar({
   query,
@@ -499,7 +448,7 @@ export function LLMOptionsSidebar({
             
             <ScrollArea className="h-60">
               <div className="grid grid-cols-1 gap-2 pr-4">
-                {availableProbes.map((probe) => (
+                {AVAILABLE_PROBES.map((probe) => (
                   <div key={probe} className="flex items-center space-x-2">
                     <Checkbox
                       className="cursor-pointer"
@@ -507,8 +456,8 @@ export function LLMOptionsSidebar({
                       checked={creationData.probes.includes(probe)}
                       onCheckedChange={() => toggleProbe(probe)}
                     />
-                    <Label title={probeDescription[probe as keyof typeof probeDescription]} htmlFor={probe} className="text-sm font-normal cursor-pointer text-zinc-300">
-                      {probeDisplayNames[probe] || probe}
+                    <Label title={getProbeDescription(probe)} htmlFor={probe} className="text-sm font-normal cursor-pointer text-zinc-300">
+                      {getProbeDisplayName(probe)}
                     </Label>
                   </div>
                 ))}

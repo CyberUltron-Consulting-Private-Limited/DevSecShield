@@ -1,0 +1,115 @@
+{
+  "results": [
+    {
+      "title": "Content-Security-Policy header is missing",
+      "description": "The HTTP response headers do not include a Content-Security-Policy (CSP). Without a CSP, the browser may execute inline scripts and load resources from any origin, increasing the risk of cross-site scripting (XSS), data injection, and content tampering.",
+      "impact": "High",
+      "owasp_top_10": {
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+        "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+        "NIST80053_CM": "NIST 800-53 - Configuration Management",
+        "NIST_CSF_PROTECT": "NIST CSF - Protect"
+      },
+      "suggested_fix": "Implement a Content-Security-Policy header. Example: Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://trusted-cdn.example.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests; block-all-mixed-content;",
+      "category": "security_headers_and_hardening",
+      "confidence": "High",
+      "url": "https://demo.testfire.net/index.jsp"
+    },
+    {
+      "title": "Strict-Transport-Security header is missing!",
+      "description": "The Strict-Transport-Security (HSTS) header is not present. Without HSTS, clients may be vulnerable to protocol downgrades and man-in-the-middle attacks when users access the site over HTTP.",
+      "impact": "High",
+      "owasp_top_10": {
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+        "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+        "NIST80053_CM": "NIST 800-53 - Configuration Management",
+        "NIST_CSF_PROTECT": "NIST CSF - Protect"
+      },
+      "suggested_fix": "Enable HSTS by returning the header Strict-Transport-Security with a suitable max-age and directives. Example: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload",
+      "category": "security_headers_and_hardening",
+      "confidence": "High",
+      "url": "https://demo.testfire.net/index.jsp"
+    },
+    {
+      "title": "X-Frame-Options header is missing!",
+      "description": "The X-Frame-Options header is not present. This may allow the site to be embedded in frames on other origins, making it susceptible to clickjacking attacks.",
+      "impact": "Medium",
+      "owasp_top_10": {
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+        "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+        "NIST80053_CM": "NIST 800-53 - Configuration Management",
+        "NIST_CSF_PROTECT": "NIST CSF - Protect"
+      },
+      "suggested_fix": "Add the header X-Frame-Options: SAMEORIGIN to restrict framing, or implement an equivalent policy using the Content-Security-Policy frame-ancestors directive.",
+      "category": "security_headers_and_hardening",
+      "confidence": "Medium",
+      "url": "https://demo.testfire.net/index.jsp"
+    },
+    {
+      "title": "X-Content-Type-Options header is missing!",
+      "description": "The X-Content-Type-Options header is not present. Without this header, browsers may sniff and override the declared content type, which can lead to MIME-type confusion attacks.",
+      "impact": "Medium",
+      "owasp_top_10": {
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "ISO27001_A12_OPERATIONS_SECURITY": "ISO 27001 - A.12 Operations Security",
+        "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+        "NIST80053_CM": "NIST 800-53 - Configuration Management",
+        "NIST_CSF_PROTECT": "NIST CSF - Protect"
+      },
+      "suggested_fix": "Add X-Content-Type-Options: nosniff to HTTP responses to prevent content-type sniffing.",
+      "category": "security_headers_and_hardening",
+      "confidence": "Medium",
+      "url": "https://demo.testfire.net/index.jsp"
+    },
+    {
+      "title": "Information Disclosure: Internal Template Metadata Exposure",
+      "description": "The HTML/scan output reveals detailed internal template metadata that should normally be hidden in production. A section labeled Details shows the matched template (template_template_name) and where it was found (demo.testfire.net), plus protocol, full URL, timestamp, and a Template Information block listing Name, Authors, Tags, and Severity. This includes: Full URL (https://demo.testfire.net/index.jsp), Timestamp (when the scan occurred), and Template Information (Name: template_template_name, Authors: pdteam, Tags: , Severity: high). Such data exposure effectively fingerprints the server\u2019s template usage and version. An attacker who can access this page can leverage this information to tailor further attacks (e.g., targeting known vulnerabilities in the specific template engine) or map the application\u2019s technology stack, bypassing generic reconnaissance. The root cause is likely a misconfiguration or debug/test output that leaks internal template details to end users or unauthenticated viewers.\n\nAttack workflow (repro / exploitation path):\n- An attacker requests or stumbles upon the page that includes the Details block.\n- The attacker reads the template name, authors, and the full URL and timestamp used by the test harness.\n- Using this fingerprint, the attacker researches targeted exploits for template_template_name or the underlying platform (Altoro Mutual test environment) and crafts tailored payloads or botnets.\n- The attacker may attempt to exploit template-specific vulnerabilities or use the metadata to identify additional weaknesses (e.g., unpatched components, known CVEs).\n\nImpact: Information disclosure and fingerprinting risk. While this specific leak does not directly execute code, it lowers the barrier for attackers to perform targeted reconnaissance and plan subsequent exploits. Depending on how the template and environment are deployed, it can also enable social engineering or credential-targeting campaigns that rely on accurate environment information.\n\nSuggested Fix: Remove or obfuscate all internal template metadata from all production responses. If template details must be exposed for debugging, gate access behind authentication and ensure proper logging is kept server-side only. Implement generic error pages and suppress Full URL, Timestamp, and internal Template Information in user-facing responses. Configure the web server or application to avoid echoing internal identifiers in HTML output and review the testing harness configuration to ensure such details are not present in live deployments.\n\nCompliance controls: [\"ISO 27001 - A.6 Organization of Information Security\",\"NIST 800-53 - Configuration Management\"]",
+      "impact": "High",
+      "owasp_top_10": {
+        "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+      },
+      "compliance_controls": {
+        "ISO27001_A6_ORGANIZATION_OF_INFORMATION_SECURITY": "ISO 27001 - A.6 Organization of Information Security",
+        "NIST80053_CM": "NIST 800-53 - Configuration Management"
+      },
+      "suggested_fix": "Remove detailed template metadata from production pages. Disable or gate the Details block behind authentication. Use generic status/debug messages for end users. Ensure that any test harness or template information is not exposed in publicly accessible responses. Review and harden the template rendering pipeline to prevent leakage of internal identifiers (template name, authors, version) in any HTTP response.",
+      "category": "information_disclosure",
+      "confidence": "High",
+      "url": "https://demo.testfire.net/index.jsp"
+    },
+    {
+      "title": "Reflected Cross-Site Scripting (XSS) via Search Query Parameter",
+      "description": "The page includes a header search form that submits to /search.jsp using a GET request with the parameter name query. If the server-side search.jsp echoes the user-supplied query parameter directly into the response without proper encoding or escaping, it creates a classic reflected XSS vulnerability. An attacker can craft a malicious URL such as https://demo.testfire.net/search.jsp?query=<script>alert(1)</script> and lure a user to click it. When the page renders the search results, the injected script executes in the user\u2019s browser, potentially stealing cookies, performing actions on behalf of the user, or delivering further malicious payloads. This risk is exacerbated if the site uses a permissive Content-Type or inadequate output encoding, allowing script tags, event handlers, or malformed HTML to be executed in the DOM.\n\nAttack workflow (repro / exploitation path):\n- Attacker creates a URL containing a crafted query parameter payload (e.g., <script>alert(1)</script>).\n- Victim clicks or is induced to visit the malicious URL.\n- The server reflects the query value into the HTML without proper escaping, causing the payload to execute in the browser.\n- Attacker exploits the XSS to steal session cookies, perform actions in the victim\u2019s context, or deliver further malicious scripts.\n\nImpact: High potential for credential theft, session hijacking, defacement, or malicious actions executed in the victim\u2019s browser. XSS can also be chained with other vulnerabilities for more severe impacts.\n\nSuggested Fix: Implement robust server-side encoding of all user-supplied input before rendering in HTML (HTML entity encoding, JavaScript string encoding where applicable). Validate and sanitize inputs on the server. Apply a strong Content Security Policy (CSP) to restrict inline scripts and untrusted sources. Use framework-provided escaping utilities and adopt strict input length checks. Consider switching to POST for search or implementing CSRF protections if state-changing requests are discovered. Ensure proper output encoding across all templates and output paths.\n\nOWASP Top 10 mapping: [\"A03:2021 - Injection\"]\n\nCompliance controls: [\"NIST 800-53 - System and Information Integrity\",\"NIST 800-53 - Configuration Management\"]",
+      "impact": "High",
+      "owasp_top_10": {
+        "INJECTION": "A03:2021 - Injection"
+      },
+      "compliance_controls": {
+        "NIST80053_SI": "NIST 800-53 - System and Information Integrity",
+        "NIST80053_CM": "NIST 800-53 - Configuration Management"
+      },
+      "suggested_fix": "Sanitize and encode all user-supplied input before rendering in HTML. Use framework escaping utilities for templates. Enforce a robust CSP and avoid inline scripts. Validate input length and characters on server side. Consider using POST for search if appropriate and add CSRF protections where applicable.",
+      "category": "xss_and_client_side",
+      "confidence": "Medium",
+      "url": "https://demo.testfire.net/index.jsp"
+    }
+  ],
+  "metadata": {
+    "urls_included": [
+      "https://demo.testfire.net/index.jsp"
+    ],
+    "urls_excluded": []
+  },
+  "duration_of_scan": 694.0584971904755
+}

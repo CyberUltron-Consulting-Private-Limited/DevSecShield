@@ -1,0 +1,8 @@
+[transformers-ft] cloning https://github.com/huggingface/transformers (shallow)…
+[transformers-ft] SHA=c96378c4136f5882fee50d8ff8ee1e9588a17eb6
+[transformers-ft] scan path: examples/pytorch/text-classification
+[transformers-ft] trusera done (trusera_exit=0)
+[transformers-ft] ours done (ours_exit=0)
+[transformers-ft] cisco analyze (agentic/bedrock)…
+[transformers-ft] cisco done (exit=0)
+[transformers-ft] DONE (clone removed)

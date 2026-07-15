@@ -1,12 +1,35 @@
 from rich.console import Console
-from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability
+from helpers.context.schema import BaseVulnerability, CodebaseVulnerability, DependencyVulnerability, LLMBenchmarkingVulnerability, IACVulnerability, CryptographicAssetVulnerability, AIComponentVulnerability
 from pydantic import BaseModel, Field , create_model
 from typing import Annotated, Literal
 import urllib.parse
 import requests
 import time
+import os
 from enum import Enum
+from pymongo import MongoClient
 from helpers.context.schema import FallbackCVEEnum
+
+# ---- Persistent CVE cache (MongoDB-backed, module-level) ----
+# In-memory layer for hot-path speed; MongoDB for persistence across restarts.
+_cve_mem_cache: dict[str, dict[str, str]] = {}
+
+_CVE_CACHE_DB = "new_devsecshield_backend_server_db"
+_CVE_CACHE_COLLECTION = "cve_cache"
+
+
+def _get_cve_mongo_client():
+    """Get a MongoDB client for CVE cache persistence."""
+    is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
+    host = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker else "localhost")
+    port = os.getenv("MONGO_PORT", "27017")
+    username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
+    password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
+    if username and password:
+        url = f"mongodb://{username}:{password}@{host}:{port}/"
+    else:
+        url = f"mongodb://{host}:{port}/"
+    return MongoClient(url)
 
 console = Console()
 
@@ -23,6 +46,16 @@ class OutputModelManager:
             return codebase_output_model
         except Exception as e:
             console.print(f"Error in getting codebase output model: {e}",style="dim red")
+            raise e
+    
+    def get_iac_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting IAC Output Model ....",style="dim yellow")
+            iac_output_model = self.get_output_model(IACVulnerability)
+            console.print(f"IAC Output Model generated successfully",style="bold green")
+            return iac_output_model
+        except Exception as e:
+            console.print(f"Error in getting iac output model: {e}",style="dim red")
             raise e
     
     def get_dependency_output_model(self) -> type[BaseModel]:
@@ -45,6 +78,26 @@ class OutputModelManager:
             console.print(f"Error in getting llm benchmarking output model: {e}",style="dim red")
             raise e
     
+    def get_cryptographic_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting Cryptographic Output Model ....",style="dim yellow")
+            cryptographic_output_model = self.get_output_model(CryptographicAssetVulnerability)
+            console.print(f"Cryptographic Output Model generated successfully",style="bold green")
+            return cryptographic_output_model
+        except Exception as e:
+            console.print(f"Error in getting cryptographic output model: {e}",style="dim red")
+            raise e
+
+    def get_ai_component_output_model(self) -> type[BaseModel]:
+        try:
+            console.print(f"Getting AI Component Output Model ....",style="dim yellow")
+            ai_component_output_model = self.get_output_model(AIComponentVulnerability)
+            console.print(f"AI Component Output Model generated successfully",style="bold green")
+            return ai_component_output_model
+        except Exception as e:
+            console.print(f"Error in getting ai component output model: {e}",style="dim red")
+            raise e
+
     def get_base_output_model(self) -> type[BaseModel]:
         try:
             console.print(f"Getting Base Output Model ....",style="dim yellow")
@@ -71,7 +124,10 @@ class OutputModelManager:
 
     def create_CVE_enum(self,cves: dict[str, str]) -> Enum:
         try:
-            DynamicEnum = Enum('DynamicEnum', cves)
+            # Use CVE IDs as enum values so structured outputs can emit stable IDs
+            # (descriptions are too long/noisy and lead to empty selections).
+            enum_members = {cve_id: cve_id for cve_id in cves.keys()}
+            DynamicEnum = Enum('DynamicEnum', enum_members)
             enum_members = list(DynamicEnum.__members__.keys())
             console.print(f"CVE Enum Members: {enum_members}",style="dim bright_cyan")
             return DynamicEnum
@@ -149,14 +205,64 @@ class OutputModelManager:
         self,
         years : list[int] = [2025 , 2026],
         ) -> dict[str, str]:
+        """Fetch CVEs with persistent MongoDB-backed caching (no TTL expiry).
+        
+        Priority: in-memory cache → MongoDB → NVD API → FallbackCVEEnum.
+        Once CVEs are fetched and stored, the same set is returned forever
+        (deterministic: same code always gets the same CVE context).
+        """
         try:
+            cache_key = ",".join(str(y) for y in sorted(years))
+
+            # --- Layer 1: hot in-memory cache (survives within worker process) ---
+            if cache_key in _cve_mem_cache:
+                console.print(f"Using in-memory CVE cache, count: {len(_cve_mem_cache[cache_key])}", style="dim green")
+                return _cve_mem_cache[cache_key]
+
+            # --- Layer 2: persistent MongoDB cache (survives worker restarts) ---
+            try:
+                _mongo = _get_cve_mongo_client()
+                try:
+                    _col = _mongo[_CVE_CACHE_DB][_CVE_CACHE_COLLECTION]
+                    cached = _col.find_one({"_id": cache_key})
+                    if cached and cached.get("cves"):
+                        cves_dict = cached["cves"]
+                        _cve_mem_cache[cache_key] = cves_dict  # warm up in-memory
+                        console.print(f"✅ CVE cache HIT from MongoDB, count: {len(cves_dict)}", style="bold green")
+                        return cves_dict
+                    else:
+                        console.print(f"🔍 CVE cache MISS in MongoDB for key '{cache_key}'", style="dim yellow")
+                finally:
+                    _mongo.close()
+            except Exception as mongo_err:
+                console.print(f"⚠️ CVE MongoDB lookup failed (non-fatal): {mongo_err}", style="dim yellow")
+
+            # --- Layer 3: fetch from NVD API ---
             cves_dict = {}
             for year in years:
                 cves_dict.update(self.fetch_cves_for_year(year=str(year)))
-            console.print(f"Recent CVEs fetched successfully, number of CVEs: {len(cves_dict)}",style="dim yellow")
+
+            # Persist to MongoDB for future determinism
+            try:
+                _mongo = _get_cve_mongo_client()
+                try:
+                    _col = _mongo[_CVE_CACHE_DB][_CVE_CACHE_COLLECTION]
+                    _col.replace_one(
+                        {"_id": cache_key},
+                        {"_id": cache_key, "cves": cves_dict, "fetched_at": time.time()},
+                        upsert=True,
+                    )
+                    console.print(f"✅ CVEs persisted to MongoDB, count: {len(cves_dict)}", style="bold green")
+                finally:
+                    _mongo.close()
+            except Exception as store_err:
+                console.print(f"⚠️ CVE MongoDB store failed (non-fatal): {store_err}", style="dim yellow")
+
+            _cve_mem_cache[cache_key] = cves_dict  # warm up in-memory
+            console.print(f"Recent CVEs fetched and cached, number of CVEs: {len(cves_dict)}", style="dim yellow")
             return cves_dict
         except Exception as e:
-            console.print(f"Error in fetching recent CVEs: {e}",style="dim red")
+            console.print(f"Error in fetching recent CVEs: {e}", style="dim red")
             raise e
     
     def create_output_model(self,cves_enum: Enum, VulnerabilityModel : type[BaseVulnerability] | type[CodebaseVulnerability] | type[LLMBenchmarkingVulnerability]) -> type[BaseModel]:
@@ -170,7 +276,7 @@ class OutputModelManager:
             #     final_vulnerability_model_fields[f_name] = (
             #         Annotated[f_dct['annotation'] , *f_dct['metadata'], Field(**f_dct['attributes'])],
             #     )
-            final_vulnerability_model_fields["cves"] = ( list[cves_enum],  Field(description="A list of CVE vulnerabilities that this vulnerability is related to") )
+            final_vulnerability_model_fields["cves"] = ( list[cves_enum],  Field(default_factory=list, description="A list of CVE vulnerabilities that this vulnerability is related to") )
             
             FinalVulnerabilityModel = create_model(
                 "FinalVulnerabilityModel",
@@ -200,7 +306,7 @@ class OutputModelManager:
         try:
             console.print(f"Creating Fallback Output Model ....",style="dim yellow")
             class FinalVulnerabilityModel(VulnerabilityModel):
-                cves : list[FallbackCVEEnum] = Field(description="A list of CVE vulnerabilities that this vulnerability is related to")
+                cves : list[FallbackCVEEnum] = Field(default_factory=list, description="A list of CVE vulnerabilities that this vulnerability is related to")
             
             attributes = [attribute for attribute in FinalVulnerabilityModel.__pydantic_fields__.keys()]
             expected_attributes = ["title", "description", "impact", "owasp_top_10", "suggested_fix"]

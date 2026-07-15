@@ -1,14 +1,13 @@
 from backend.new_models import Scan, CicdIntegration, GuardrailsIntegration
 from sqlmodel import Session, select
 from backend.get_db import get_db, get_mongo_client_db
-from backend.get_db import dev_environment
 from rich.console import Console
 console = Console()
 
 def delete_team_associated_data(team_id: int ):
     # get the database and mongo db
-    engine = get_db(dev_environment=dev_environment)
-    mongo_db = get_mongo_client_db(dev_environment=dev_environment)
+    engine = get_db()
+    mongo_db = get_mongo_client_db()
     
     # STEP [ 1 ] : ======================= Delete all the scans associated with the team ==============================
     scan_ids_list = []

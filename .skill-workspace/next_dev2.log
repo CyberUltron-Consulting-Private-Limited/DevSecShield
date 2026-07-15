@@ -1,0 +1,15 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.8:3000
+✓ Ready in 377ms
+
+ GET / 200 in 1937ms (next.js: 1767ms, application-code: 170ms)
+ GET / 200 in 205ms (next.js: 45ms, application-code: 159ms)
+api base url :  https://devsecshieldapi.zeroshield.ai
+ GET /1/cbom 200 in 3.6s (next.js: 3.4s, application-code: 194ms)
+ GET /login 200 in 746ms (next.js: 642ms, application-code: 104ms)
+✓ Compiled in 840ms

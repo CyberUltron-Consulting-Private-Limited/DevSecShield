@@ -1,0 +1,159 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:e1276c0b-d868-5c17-8060-d513fedd46e9",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "text-classification"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "lib-accelerate",
+      "name": "accelerate",
+      "purl": "pkg:pypi/accelerate",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-datasets",
+      "name": "datasets",
+      "purl": "pkg:pypi/datasets",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-evaluate",
+      "name": "evaluate",
+      "purl": "pkg:pypi/evaluate"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-huggingface-hub",
+      "name": "huggingface-hub",
+      "purl": "pkg:pypi/huggingface-hub",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-protobuf",
+      "name": "protobuf",
+      "purl": "pkg:pypi/protobuf",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-scikit-learn",
+      "name": "scikit-learn",
+      "purl": "pkg:pypi/scikit-learn",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-scipy",
+      "name": "scipy",
+      "purl": "pkg:pypi/scipy",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-sentencepiece",
+      "name": "sentencepiece",
+      "purl": "pkg:pypi/sentencepiece"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "purl": "pkg:pypi/torch",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-transformers",
+      "name": "transformers",
+      "purl": "pkg:pypi/transformers",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "endpoint-huggingface-co",
+      "name": "Hugging Face Hub",
+      "publisher": "Hugging Face",
+      "properties": [
+        {
+          "name": "discovery:host",
+          "value": "huggingface.co"
+        },
+        {
+          "name": "discovery:source",
+          "value": "run_classification.py"
+        }
+      ]
+    }
+  ]
+}

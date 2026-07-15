@@ -81,11 +81,10 @@ if __name__ == "__main__":
             console.print(f"QDRANT_API_KEY is set to {QDRANT_API_KEY[:10]}...",style="dim green")
 
         # getting url based on IS_DOCKER_CONTAINER environment variable
-        IS_DOCKER_CONTAINER = os.getenv("IS_DOCKER_CONTAINER")
-        if IS_DOCKER_CONTAINER == "True":
-            url = "http://13.203.233.15:7333"
-        else:
-            url = "http://localhost:7333"
+        is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
+        qdrant_host = os.getenv("QDRANT_HOST", "qdrant" if is_docker_container else "localhost")
+        qdrant_port = os.getenv("QDRANT_PORT", "6333" if is_docker_container else "7333")
+        url = f"http://{qdrant_host}:{qdrant_port}"
         console.print(f"Using url: {url}",style="dim yellow")
 
         # running initialization checks

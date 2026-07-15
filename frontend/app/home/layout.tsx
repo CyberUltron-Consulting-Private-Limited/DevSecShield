@@ -299,7 +299,7 @@ export default function HomeLayout({
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const queryClient = new QueryClient();
+  const [queryClient] = useState(() => new QueryClient());
 
   useEffect(() => {
     if (

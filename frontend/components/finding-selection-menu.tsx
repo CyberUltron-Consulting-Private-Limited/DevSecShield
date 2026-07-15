@@ -7,10 +7,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, Ticket } from "lucide-react";
+import { ChevronDown, Ticket, CheckCircle, EyeOff, Loader2, Circle } from "lucide-react";
 import { JiraIcon } from "./icons/arcticons-jira";
+import { DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 
 export type TicketType = "jira" | null;
+export type FindingStatus = "not_started" | "in_progress" | "fixed" | "ignored";
 
 export interface FindingSelectionMenuProps {
   /** Number of currently selected rows */
@@ -23,6 +25,10 @@ export interface FindingSelectionMenuProps {
   ticketType: TicketType;
   /** Whether the Jira action is in progress (e.g. mutation pending) */
   isJiraCreating?: boolean;
+  /** Called when the user wants to bulk-change status on selected findings */
+  onBulkStatusChange?: (status: FindingStatus) => void;
+  /** Whether a bulk status change is in progress */
+  isBulkStatusChanging?: boolean;
 }
 
 export default function FindingSelectionMenu({
@@ -31,6 +37,8 @@ export default function FindingSelectionMenu({
   jiraOnClickHandler,
   ticketType,
   isJiraCreating = false,
+  onBulkStatusChange,
+  isBulkStatusChanging = false,
 }: FindingSelectionMenuProps) {
   if (selectedCount <= 0) return null;
 
@@ -46,16 +54,57 @@ export default function FindingSelectionMenu({
             <ChevronDown className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent align="start" className="bg-zinc-800 border-zinc-700 min-w-[220px]">
+          {onBulkStatusChange && (
+            <>
+              <DropdownMenuLabel className="text-zinc-400 text-xs">Set status</DropdownMenuLabel>
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-zinc-700 cursor-pointer"
+                onClick={() => onBulkStatusChange("fixed")}
+                disabled={isBulkStatusChanging}
+              >
+                <CheckCircle className="size-3 mr-2 text-green-400" />
+                Mark as fixed
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-zinc-700 cursor-pointer"
+                onClick={() => onBulkStatusChange("in_progress")}
+                disabled={isBulkStatusChanging}
+              >
+                <Loader2 className="size-3 mr-2 text-blue-400" />
+                Mark as in progress
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-zinc-700 cursor-pointer"
+                onClick={() => onBulkStatusChange("ignored")}
+                disabled={isBulkStatusChanging}
+              >
+                <EyeOff className="size-3 mr-2 text-zinc-500" />
+                Mark as ignored
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-zinc-300 focus:bg-zinc-700 cursor-pointer"
+                onClick={() => onBulkStatusChange("not_started")}
+                disabled={isBulkStatusChanging}
+              >
+                <Circle className="size-3 mr-2 text-zinc-400" />
+                Reset to not started
+              </DropdownMenuItem>
+            </>
+          )}
           {ticketType === "jira" && jiraOnClickHandler && (
-            <DropdownMenuItem
-              className="bg-blue-600 text-white cursor-pointer focus:bg-blue-700"
-              onClick={jiraOnClickHandler}
-              disabled={isJiraCreating}
-            >
-              <JiraIcon className="text-white stroke-2" />
-              {isJiraCreating ? "Creating..." : "Create Jira ticket for findings"}
-            </DropdownMenuItem>
+            <>
+              {onBulkStatusChange && <DropdownMenuSeparator className="bg-zinc-700" />}
+              <DropdownMenuLabel className="text-zinc-400 text-xs">Integrations</DropdownMenuLabel>
+              <DropdownMenuItem
+                className="bg-blue-600 text-white cursor-pointer focus:bg-blue-700"
+                onClick={jiraOnClickHandler}
+                disabled={isJiraCreating}
+              >
+                <JiraIcon className="text-white stroke-2" />
+                {isJiraCreating ? "Creating..." : "Create Jira ticket"}
+              </DropdownMenuItem>
+            </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

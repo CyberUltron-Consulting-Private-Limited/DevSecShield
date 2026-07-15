@@ -13,16 +13,19 @@ export interface GithubContextSchema {
   mode: "github";
   repo_url: string;
   PAT: string;
+  branch?: string;
 }
 export interface GitlabContextSchema {
   mode: "gitlab";
   repo_url: string;
   PAT: string;
+  branch?: string;
 }
 export interface BitbucketContextSchema {
   mode: "bitbucket";
   repo_url: string;
   PAT: string;
+  branch?: string;
 }
 
 export type RepoContextSchema = GithubContextSchema | GitlabContextSchema | BitbucketContextSchema;
@@ -42,10 +45,13 @@ export interface IACContextSchema {
   include_path_arrays: string[][];
 }
 
+export type IACEnvironment = "production" | "staging" | "development";
+
 export interface StartIACScanData {
   repo_context: RepoContextSchema | null;
   zip_file_used: boolean;
   iac_contexts: IACContextSchema[];
+  environment?: IACEnvironment;
 }
 
 /** SBOM/SCA scan input: exactly one of repo_context, zip_file_used, or sbom_file_used (matches backend StartSBOMScanData) */
@@ -55,10 +61,27 @@ export interface StartSBOMScanData {
   sbom_file_used: boolean;
 }
 
+/** CBOM scan input: exactly one of repo_context, zip_file_used, or cbom_file_used (matches backend StartCBOMScanData) */
+export interface StartCBOMScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  cbom_file_used: boolean;
+  scan_binaries: boolean;
+}
+
+/** AI BOM scan input: exactly one of repo_context, zip_file_used, or ai_bom_file_used (matches backend StartAiBomScanData) */
+export interface StartAiBomScanData {
+  repo_context: RepoContextSchema | null;
+  zip_file_used: boolean;
+  ai_bom_file_used: boolean;
+}
+
 export interface StartScanPayload {
   sast?: StartSastScanData | null;
   iac?: StartIACScanData | null;
   sbom_sca?: StartSBOMScanData | null;
+  cbom?: StartCBOMScanData | null;
+  ai_bom?: StartAiBomScanData | null;
 }
 
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
@@ -86,6 +109,19 @@ export interface SastConversation {
     owner_user_full_name?: string
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    raw_scan_data?: unknown
+    /** From backend return_sast_list_item */
+    repo_url?: string | null
+    zip_file_used?: boolean | null
+    branch?: string | null
+    app_lang?: string | null
+    /** Weighted sum (critical*4 + high*3 + medium*2 + low*1); use with risk_data for 0–10 score */
+    risk_score?: number | null
+    code_coverage?: number | null
+    /** github, gitlab, bitbucket, zip_file */
+    scan_type?: string | null
+    duration?: number | string | null
+    top_vulnerabilities?: Array<{ title?: string; impact?: string; description?: string; policy_violation?: number }> | null
 }
 
 /** Card counts returned by list SAST scans (card_data) */
@@ -99,12 +135,40 @@ export interface SastListCardData {
     scans_updated_today: number
 }
 
+/** Top repo item from backend (snake_case) */
+export interface TopRepoByRiskItem {
+    name: string
+    repo_url: string | null
+    zip_file_used: boolean
+    issues: number
+    risk_score: number
+    trend: string
+    language: string
+}
+
 export interface ScanListDashboardData {
     card_data: SastListCardData
     repos_scanned: { repo_url: string }[]
     zip_files_scanned: number
     scans_per_day: Record<string, number>
     risks_per_day: Record<string, { critical: number; high: number; medium: number; low: number }>
+    /** Pre-computed by backend when available */
+    risk_totals?: { severity: string; count: number }[]
+    average_risk_score?: number
+    total_issues?: number
+    critical_count?: number
+    owasp_by_category?: { category: string; count: number }[]
+    policy_compliance?: { name: string; violations: number; compliance: number }[]
+    overall_compliance_score?: number
+    by_language?: { language: string; count: number }[]
+    top_repos_by_risk?: TopRepoByRiskItem[]
+    /** From get_remediation_metrics: mean time [d,h,m], counts, velocity (past 7 days) */
+    remediation_metrics?: {
+        mean_time_to_remediate: [number, number, number]
+        critical_issues_fixed: number
+        remediation_velocity: number
+        high_priority_backlog: number
+    }
 }
 
 export interface SastListResponse {
@@ -160,24 +224,174 @@ export interface SastConversationMessage {
     timestamp: string
     is_streaming: boolean
 }   
+/** Remediation metrics from backend get_remediation_metrics */
+export interface SastRemediationMetrics {
+  mean_time_to_remediate: [number, number, number]; // [days, hours, minutes]
+  critical_issues_fixed: number;
+  remediation_velocity: number;
+  high_priority_backlog: number;
+}
+
 /** SAST scan dashboard from backend generate_sast_dashboard */
 export interface SastDashboardData {
   risk_metrics?: Record<string, number>;
   owasp_top_10_metrics?: Record<string, number>;
   compliance_controls_metrics?: Record<string, number>;
   cves_per_vulnerability?: Record<string, number>;
-  /** IAC: counts by compliance standard (e.g. "NIST 800-53", "ISO 27001") */
-  compliance_standards_metrics?: Record<string, number>;
+  remediation_metrics?: SastRemediationMetrics;
+  policy_violations?: Record<string, number>;
+  risk_scores_per_finding?: Record<string, number>;
+}
+
+/** SAST scan metadata from backend get_scan_metadata (SAST branch) */
+export interface SastScanMetadata {
+  repo_url?: string;
+  branch?: string;
+  zip_file_used?: boolean;
+  files_scanned?: number;
+  total_files?: number;
+  code_coverage?: number;
+}
+
+/** IAC scan metadata from backend get_scan_metadata (IAC branch) */
+export interface IACScanMetadata {
+  repo_url?: string | null;
+  branch?: string | null;
+  zip_file_used?: boolean;
+  dependency_diagram?: string | null;
+}
+
+/** SAST finding from backend get_findings_for_scan_type (for table + toggle status) */
+export interface SastFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  cves: unknown
+  suggested_fix?: string | null
+  location?: string | null
+  snippet?: string | null
+  remediation?: RemediationData | null
+}
+
+/** IAC finding from backend get_findings_for_scan_type (IAC branch: includes category, resource) */
+export interface IACFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  cves: unknown
+  suggested_fix?: string | null
+  location?: string | null
+  snippet?: string | null
+  category?: string | null
+  resource?: string | null
+  remediation?: RemediationData | null
+}
+
+/** SBOM/SCA finding from backend get_findings_for_scan_type (sbom_sca branch) */
+export interface SbomFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  suggested_fix?: string | null
+  cves: unknown
+  dependency?: string | null
+  reachability?: string | null
+  dependency_type?: string | null
+  license_type?: string | null
+  remediation?: RemediationData | null
+}
+
+/** SBOM/SCA scan metadata from backend get_scan_metadata (sbom_sca branch) */
+export interface SbomScanMetadata {
+  repo_url?: string | null
+  branch?: string | null
+  zip_file_used?: boolean
+  sbom_compliance?: Record<string, unknown> | null
+  rbi_csf_rollup?: Record<string, unknown> | null
+}
+
+/** SBOM/SCA single-scan dashboard from backend generate_scan_dashboard (scan.py sbom_sca branch) */
+export interface SbomScanDashboardData {
+  card_data: {
+    total_vulnerabilities: number
+    total_critical_vulnerabilities: number
+    total_policy_violations: number
+    total_license_risks: number
+    total_high_risk_licenses: number
+    average_risk_score: number
+    total_reachable_issues: number
+  }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  reachability_distribution: {
+    not_reachable: number
+    potentially_reachable: number
+    reachable: number
+    unknown: number
+  }
+  vulnerability_trends_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+  licenses_distribution: Record<string, number>
+  top_vulnerabilities_by_risk_score: Array<{
+    dependency: string
+    reachability: string
+    dependency_type: string
+    license_type: string
+    impact: string
+  }>
+  average_risk_score_per_reachability: Record<string, number>
+}
+
+/** IAC single-scan dashboard from backend generate_scan_dashboard (scan.py IAC branch) */
+export interface IACScanDashboardData {
+  risk_metrics?: Record<string, number>
+  owasp_top_10_metrics?: Record<string, number>
+  compliance_controls_metrics?: Record<string, number>
+  cves_per_vulnerability?: Record<string, number>
+  policy_violations?: Record<string, number>
+  compliance_framework_coverage?: Record<string, number>
+  issue_status_metrics?: Record<string, number>
+  /** finding_title -> [days, hours, minutes] */
+  issue_address_metrics?: Record<string, number[]>
+  issues_by_category?: Record<string, number>
+  issues_by_severity?: Record<string, number>
+  average_risk_score_per_category?: Record<string, number>
+  risk_scores_per_finding?: Record<string, number>
+  /** finding_title -> total number of compliance controls violated */
+  compliance_failure_trends?: Record<string, number>
+  /** finding_title -> average resolution time in seconds */
+  average_resolution_time?: Record<string, number>
 }
 
 export interface SastConversationResponse {
     title: string
     scan_status: string
     estimated_credits: number | null
-    scan_metadata?: Record<string, unknown> | null
+    scan_metadata?: SastScanMetadata | Record<string, unknown> | null
     data: any
     messages: SastConversationMessage[]
     dashboard?: SastDashboardData | null
+    findings?: SastFinding[] | null
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null
 }
@@ -201,10 +415,11 @@ const startSastScan = async (params: {
     PAT: string
     app_lang: SastAppLang
     mode: RepoMode
+    branch?: string
 }) => {
     const payload: StartScanPayload = {
         sast: {
-            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT },
+            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT, branch: params.branch ?? "main" },
             zip_file_used: false,
             exclude_path_arrays: null,
             app_lang: params.app_lang,
@@ -233,10 +448,11 @@ const reinitializeSastScan = async (params: {
     PAT: string
     app_lang: "python" | "javascript" | "java" | "php" | "c" | "ruby" | "rust" | "swift" | "csharp" | "kotlin"
     mode: "github" | "gitlab" | "bitbucket"
+    branch?: string
 }) => {
     const payload: StartScanPayload = {
         sast: {
-            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT },
+            repo_context: { mode: params.mode, repo_url: params.repo_url, PAT: params.PAT, branch: params.branch ?? "main" },
             zip_file_used: false,
             exclude_path_arrays: null,
             app_lang: params.app_lang,
@@ -253,7 +469,7 @@ const reinitializeSastScan = async (params: {
 /** Send a message to a scan. POST /{team_id}/{type}/scan/{scan_id}/message */
 const sendMessageToScan = async (
     team_id: number,
-    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast",
+    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast" | "cbom" | "ai_bom",
     scan_id: number,
     user_message: string
 ): Promise<{ content: string }> => {
@@ -272,7 +488,7 @@ const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: Fi
 /** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
 const estimateCreditsForScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -289,7 +505,7 @@ const estimateCreditsForScan = async (
 /** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
 const startScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -314,7 +530,7 @@ export interface CreateTicketData {
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
 const createTicket = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
   scan_id: number,
   data: CreateTicketData
 ): Promise<{ message: string }> => {
@@ -341,6 +557,34 @@ export {
 
 // -------------------------------------------------------------- LLM API Routes --------------------------------------------------------------
 
+/** LLM-specific card data from generate_llm_dashboard_data */
+export interface LLMCardData {
+    total_scans: number
+    average_risk_score: number
+    total_critical_vulnerabilities: number
+    total_vulnerabilities: number
+    owasp_compliance_score: number
+    passed_rate: number
+    pending_scans?: number
+    started_scans?: number
+    success_scans?: number
+    failure_scans?: number
+    not_started_scans?: number
+    scans_created_today?: number
+    scans_updated_today?: number
+}
+
+/** LLM scan list dashboard data from generate_llm_dashboard_data (list page) */
+export interface LLMListDashboardData {
+    card_data: LLMCardData
+    risk_level_distribution: Record<"critical" | "high" | "medium" | "low", number>
+    attack_vector_test_results: Record<string, { passed: number; failed: number }>
+    model_risk_comparison: Record<string, number>
+    ai_security_posture_overview: Record<string, number>
+    owasp_top_10_llm_metrics: Record<string, number>
+    scans_per_day?: Record<string, number>
+}
+
 export interface LLMConversation {
     id: number
     model_type: string | null
@@ -352,7 +596,7 @@ export interface LLMConversation {
 }
 
 /** Response from GET /{team_id}/llm/scans (backend scans router) */
-/** List item shape from GET /{team_id}/llm/scans (same backend return_scan_list_for_type as SAST) */
+/** List item shape from GET /{team_id}/llm/scans (return_llm_list_item) */
 export interface LLMScanListItem {
     id: number
     title: string
@@ -365,11 +609,18 @@ export interface LLMScanListItem {
     owner_user_full_name?: string | null
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    average_risk_score?: number | null
+    model_type?: string | null
+    model_name?: string | null
+    attack_iterations?: number | null
+    total_attacks_performed?: number | null
+    model_vulnerabilities?: Record<string, number> | null
+    total_mitre_atlas_tactics?: number | null
 }
 
 export interface LLMScansListResponse {
     scans_list_data: LLMScanListItem[]
-    dashboard_data: ScanListDashboardData
+    dashboard_data: LLMListDashboardData
 }
 
 const getLLMConversations = async (team_id: number): Promise<LLMScansListResponse> => {
@@ -427,8 +678,9 @@ export interface LLMConversationResponse {
     scan_status: string
     data: any
     messages: LLMConversationMessage[]
-    scan_metadata?: Record<string, unknown> | null
-    dashboard?: unknown
+    scan_metadata?: LLMScanMetadata | Record<string, unknown> | null
+    dashboard?: LLMDashboardData | null
+    findings?: LLMFinding[] | null
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null
 }
@@ -439,11 +691,12 @@ const getLLMConversationMessages = async ({ queryKey }: { queryKey: ['llm-conver
         const response = await api.get(`/${team_id}/llm/scan/${scan_id}`)
         const raw = response.data as {
             title: string
-            scan_metadata?: Record<string, unknown> | null
+            scan_metadata?: LLMScanMetadata | Record<string, unknown> | null
             scan_status: string
             data: any
-            dashboard?: unknown
+            dashboard?: LLMDashboardData | null
             messages: LLMConversationMessage[]
+            findings?: LLMFinding[] | null
             integration_settings?: Record<string, unknown> | null
             info?: ScanInfoField | null
         }
@@ -456,7 +709,8 @@ const getLLMConversationMessages = async ({ queryKey }: { queryKey: ['llm-conver
             data: raw.data,
             messages: raw.messages ?? [],
             scan_metadata: raw.scan_metadata,
-            dashboard: raw.dashboard,
+            dashboard: raw.dashboard ?? null,
+            findings: raw.findings ?? null,
             integration_settings: raw.integration_settings,
             info: raw.info,
         }
@@ -551,6 +805,30 @@ interface MCPConversationMessage {
     is_streaming: boolean
 }
 
+/** MCP finding from backend get_findings_for_scan_type (MCP branch) */
+export interface MCPFinding {
+    id: string
+    title: string
+    description: string
+    impact: string
+    risk_score: number
+    status: string
+    owasp_top_10?: unknown
+    owasp_top_10_llm?: unknown
+    compliance_controls?: unknown
+    suggested_fix?: string | null
+    type?: "tool" | "prompt" | "resource"
+    remediation?: RemediationData | null
+}
+
+/** MCP scan metadata from backend get_scan_metadata (MCP branch) */
+export interface MCPScanMetadata {
+    server_url?: string
+    server_mode?: string
+    headers?: Record<string, string>
+    environment?: string
+}
+
 /** MCP scan dashboard (from generate_scan_dashboard for type "mcp") */
 export interface MCPDashboardData {
     owasp_top_10_metrics?: Record<string, number>
@@ -560,13 +838,74 @@ export interface MCPDashboardData {
     tools_vulnerability_metrics?: Record<string, number>
     tools_impact_metrics?: Record<string, { critical: number; high: number; medium: number; low: number }>
     tools_compliance_controls_metrics?: Record<string, number>
+    /** Summary cards */
+    card_data?: {
+        overall_risk_score?: number
+        total_findings?: number
+        exploitability_index?: number
+        attack_surface?: number
+        mttr?: number | [number, number, number]
+        active_vulnerabilities?: number
+        compliance_score?: number
+        category_coverage?: number
+    }
+    severity_distribution?: { critical: number; high: number; medium: number; low: number }
+    category_coverage?: Record<string, number>
+    category_threat_landscape?: Record<string, { avg_risk_score: number; total_issues: number }>
+    compliance_framework_scores?: Record<string, number>
+    compliance_failure_trends?: Record<string, number>
+    asset_attack_surface?: Record<string, string>
+    tool_impact_analysis?: Record<string, { critical: number; high: number; medium: number; low: number }>
+    asset_compliance_violations?: Record<string, number>
+    owasp_top_10_llm_metrics?: Record<string, number>
+}
+
+/** LLM finding from backend get_findings_for_scan_type (llm branch) */
+export interface LLMFinding {
+    id: string
+    title: string
+    description: string
+    impact: string
+    status?: string | null
+    vulnerability_predictions?: unknown
+    owasp_top_10_llm: unknown
+    compliance_controls: unknown
+    suggested_fix?: string | null
+    remediation?: RemediationData | null
+}
+
+/** LLM scan metadata from backend get_scan_metadata (llm branch) */
+export interface LLMScanMetadata {
+    model_type?: string | null
+    model_name?: string | null
+    probes?: unknown
 }
 
 /** LLM scan dashboard (from generate_scan_dashboard for type "llm") */
 export interface LLMDashboardData {
+    card_data?: {
+        attacks_run: number
+        total_vulnerabilities_found: number
+        pass_rate: number
+        risk_score: number
+        scan_duration: number
+        policy_violations: number
+    }
+    security_posture?: {
+        jailbreak_resistance_score: number
+        injection_resistance_score: number
+        hallucination_resistance_score: number
+        bias_resistance_score: number
+        content_safety_score: number
+        data_privacy_score: number
+    }
     owasp_top_10_llm_metrics?: Record<string, number>
     compliance_controls_metrics?: Record<string, number>
     risk_metrics?: { Low?: number; Medium?: number; High?: number; Critical?: number }
+    mitre_atlas_metrics?: Record<string, number>
+    vulnerability_breakdown?: { critical: number; high: number; medium: number; low: number }
+    adversarial_attack_outcomes?: Record<string, { passed: number; total: number }>
+    attack_details?: Record<string, { passed: number; total: number; hit_rate: number; description: string }>
 }
 
 export interface MCPConversationResponse {
@@ -578,6 +917,8 @@ export interface MCPConversationResponse {
     data: any
     messages: MCPConversationMessage[]
     dashboard?: MCPDashboardData | null
+    findings?: MCPFinding[] | null
+    scan_metadata?: MCPScanMetadata | Record<string, unknown> | null
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null
 }
@@ -588,11 +929,12 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
         const response = await api.get(`/${team_id}/mcp/scan/${scan_id}`)
         const raw = response.data as {
             title: string
-            scan_metadata?: Record<string, unknown> | null
+            scan_metadata?: MCPScanMetadata | Record<string, unknown> | null
             scan_status: string
             data: any
             dashboard?: unknown
             messages: MCPConversationMessage[]
+            findings?: MCPFinding[] | null
             integration_settings?: Record<string, unknown> | null
             info?: ScanInfoField | null
         }
@@ -606,8 +948,10 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
             data: raw.data,
             messages: raw.messages ?? [],
             dashboard: raw.dashboard ?? null,
+            findings: raw.findings ?? null,
+            scan_metadata: raw.scan_metadata ?? null,
             integration_settings: raw.integration_settings ?? null,
-            info: raw.info,
+            info: raw.info ?? null,
         }
     } catch (error) {
         showErrorToast(error, "Error fetching MCP conversation messages")
@@ -621,12 +965,50 @@ export interface MCPConversation {
     created_at: string
     last_updated: string
     scan_status: string
+    owner_user_email?: string | null
+    owner_user_full_name?: string | null
+    scan_metadata?: Record<string, unknown> | null
+    info?: ScanInfoField | null
+    risk_data?: ScanRiskData | null
+    server?: string | null
+    average_risk_score?: number | null
+    discovery_metrics?: { total_tools: number; total_prompts: number; total_resources: number } | null
+    risky_assets?: number | null
+    estimated_credits?: number | null
+}
+
+/** MCP list dashboard card_data from backend generate_mcp_dashboard_data */
+export interface MCPListCardData {
+    total_scans: number
+    total_critical_issues: number
+    average_risk_score: number
+    total_active_scans: number
+    total_resolved_issues: number
+}
+
+/** MCP list dashboard from backend generate_mcp_dashboard_data (GET /{team_id}/mcp/scans) */
+export interface MCPListDashboardData {
+    card_data: MCPListCardData
+    scan_status_distribution: { not_started: number; started: number; success: number; failure: number }
+    risk_score_trend: Record<string, number>
+    risks_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    environment_risk_analysis: { development: number; production: number; staging: number }
+    compliance_framework_distribution: Record<string, number>
+    remediation_status_tracking: { not_started: number; in_progress: number; fixed: number; ignored: number }
+    asset_category_vulnerabilities: Record<string, number>
+    scan_duration_trends: Record<string, number>
+    security_posture_overview: Record<string, number>
+    mttr_per_day: Record<string, [number, number, number]>
+    scan_effectiveness_trend: Record<string, { false_positive: number; total_findings: number }>
+    compliance_framework_score_trend: Record<string, Record<string, number>>
+    vulnerability_age_distribution: Record<string, number>
 }
 
 /** Response from GET /{team_id}/mcp/scans (backend scans router) */
 export interface MCPScansListResponse {
     scans_list_data: MCPConversation[]
-    dashboard_data: Record<string, unknown>
+    dashboard_data: MCPListDashboardData
 }
 
 const getMCPConversations = async (team_id: number): Promise<MCPScansListResponse> => {
@@ -816,12 +1198,59 @@ export interface CreateTeamData {
     description?: string | null
 }
 
+/** Per-date remediation counts (daily deltas: new/fixed/ignored that day) */
+export interface RemediationsStatusDistribution {
+    not_started: number
+    in_progress: number
+    fixed: number
+    ignored: number
+}
+
+/** Summary card data for team dashboard (top of page) */
+export interface TeamDashboardCardData {
+    total_findings: number
+    total_started_scans: number
+    total_completed_scans: number
+    total_not_started_scans: number
+    total_fixed_findings: number
+    remediation_percentage: number
+}
+
+/** RBI CSF pillar rollup (team or per-scan metadata) */
+export interface RbiCsfRollupPayload {
+    rbi_csf_rollup?: Record<string, {
+        pass?: number
+        pass_with_evidence?: number
+        fail?: number
+        out_of_scope?: number
+        not_bom_evidenceable?: number
+        na?: number
+        coverage?: number | null
+        requirements?: Array<{ id: string; framework: string; verdict: string; title: string }>
+    }>
+    disclaimer?: string
+}
+
 export interface TeamDashboardData {
     scans_created_at_data: { date: string; count: number }[]
     guardrails_integrations_created_at_data: { date: string; count: number }[]
     cicd_integrations_created_at_data: { date: string; count: number }[]
     scan_type_count: Record<string, number>
     high_and_critical_vuln_in_past_month: Record<string, number>
+    /** Scan status distribution for radial chart */
+    scan_status_distribution?: { not_started: number; running: number; completed: number; failed: number }
+    /** Remediations per day for area/line chart: date -> { not_started, in_progress, fixed, ignored } */
+    remediations_status_distribution?: Record<string, RemediationsStatusDistribution>
+    /** Findings created per day (date -> count) */
+    findings_per_day?: Record<string, number>
+    /** Fixed findings per day (date -> count) */
+    fixes_per_day?: Record<string, number>
+    /** Ignored findings per day (date -> count) */
+    false_positive_trends?: Record<string, number>
+    /** Summary card data (totals) */
+    card_data?: TeamDashboardCardData
+    /** Aggregated RBI CSF posture from latest BOM scans */
+    rbi_csf_rollup?: RbiCsfRollupPayload | null
 }
 
 /** Utilization item per team (key is string representation of team) */
@@ -1044,11 +1473,51 @@ export interface IACConversation {
     owner_user_full_name?: string | null
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    /** From return_iac_list_item */
+    repo_url?: string | null
+    zip_file_used?: boolean | null
+    branch?: string | null
+    cloud_provider?: string[]
+    average_risk_score?: number | null
+    coverage_percentage?: number | null
+    environment?: string | null
+}
+
+/** IAC list dashboard card_data from backend generate_iac_dashboard_data */
+export interface IACListCardData {
+    total_scans: number
+    total_issues: number
+    total_critical_issues: number
+    avg_mttr_days: number
+    coverage_percentage: number
+    total_policy_violations: number
+    average_risk_score: number
+}
+
+/** IAC list dashboard from backend generate_iac_dashboard_data (GET /{team_id}/iac/scans) */
+export interface IACListDashboardData {
+    card_data: IACListCardData
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    issues_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    security_posture_overview: Record<string, number>
+    compliance_framework_coverage?: Record<string, number>
+    compliance_framework_counts?: Record<string, number>
+    remediation_pipeline: { total_issues: number; fixed: number; in_progress: number; not_started: number; ignored: number }
+    mttr_per_day: Record<string, [number, number, number]>
+    resources_by_provider: Record<string, number>
+    environment: Record<string, number>
+    environment_cloud_resource_heatmap: Record<string, Record<string, number>>
+    remediation_metrics?: {
+        mean_time_to_remediate: [number, number, number]
+        critical_issues_fixed: number
+        remediation_velocity: number
+        high_priority_backlog: number
+    }
 }
 
 export interface IACListResponse {
     scans_list_data: IACConversation[]
-    dashboard_data: ScanListDashboardData
+    dashboard_data: IACListDashboardData
 }
 
 const getIACConversations = async (team_id: number): Promise<IACListResponse> => {
@@ -1104,10 +1573,11 @@ export interface IACConversationResponse {
   title: string
   repo_url?: string | null
   scan_status: string
-  scan_metadata?: Record<string, unknown> | null
+  scan_metadata?: IACScanMetadata | Record<string, unknown> | null
   data: any
   messages: IACConversationMessage[]
-  dashboard?: SastDashboardData | null
+  dashboard?: IACScanDashboardData | SastDashboardData | null
+  findings?: IACFinding[] | null
   integration_settings?: Record<string, unknown> | null
   info?: ScanInfoField | null
 }
@@ -1222,6 +1692,10 @@ export interface SCASBOMConversation {
     owner_user_full_name?: string
     info?: ScanInfoField | null
     risk_data?: ScanRiskData | null
+    repo_url?: string | null
+    zip_file_used?: boolean | null
+    branch?: string | null
+    average_risk_score?: number | null
 }
 
 /** Card counts returned by list SBOM/SCA scans (same shape as SastListCardData) */
@@ -1235,9 +1709,47 @@ export interface SBOMSCAListCardData {
     scans_updated_today: number
 }
 
+/** SBOM/SCA list dashboard from backend generate_sbom_sca_dashboard_data (GET /{team_id}/sbom_sca/scans) */
+export interface SBOMSCADashboardData {
+    remediation_actions_required: {
+        total_findings: number
+        total_fixed: number
+        total_in_progress: number
+        total_not_started: number
+        total_ignored: number
+    }
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    reachability_distribution: {
+        not_reachable: number
+        potentially_reachable: number
+        reachable: number
+        unknown: number
+    }
+    vulnerability_trends_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    licenses_distribution: Record<string, number>
+    top_vulnerabilities_by_risk_score: Array<{
+        dependency: string
+        reachability: string
+        dependency_type: string
+        license_type: string
+        impact: string
+    }>
+    card_data: {
+        total_vulnerabilities: number
+        total_critical_vulnerabilities: number
+        total_policy_violations: number
+        total_license_risks: number
+        total_high_risk_licenses: number
+        average_risk_score: number
+        total_reachable_issues: number
+    }
+    average_risk_score_per_reachability_level: Record<string, number>
+    policy_compliance_data: Record<string, number>
+}
+
 export interface SBOMSCAListResponse {
     scans_list_data: SCASBOMConversation[]
-    dashboard_data: ScanListDashboardData
+    dashboard_data: SBOMSCADashboardData
 }
 
 /** Team-scoped: GET /{team_id}/sbom_sca/scans */
@@ -1288,11 +1800,32 @@ const updateScan = async ({
     data,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom";
     scan_id: number;
     data: UpdateScanPayload;
 }) => {
     const response = await api.put(`/${team_id}/${type}/scan/${scan_id}`, data);
+    return response.data;
+};
+
+/** Toggle finding state: fixed | ignored | in_progress | not_started. POST /{team_id}/{type}/scan/{scan_id}/finding */
+const toggleFindingState = async ({
+    team_id,
+    type,
+    scan_id,
+    finding_id,
+    state,
+}: {
+    team_id: number;
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom";
+    scan_id: number;
+    finding_id: string;
+    state: "fixed" | "ignored" | "in_progress" | "not_started";
+}): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(
+        `/${team_id}/${type}/scan/${scan_id}/finding`,
+        { finding_id, state }
+    );
     return response.data;
 };
 
@@ -1383,9 +1916,10 @@ export interface SCASBOMConversationResponse {
     title: string
     repo_url?: string | null
     scan_status: string
-    scan_metadata?: Record<string, unknown> | null
+    scan_metadata?: SbomScanMetadata | Record<string, unknown> | null
     data: any
-    dashboard?: SastDashboardData | null
+    dashboard?: SbomScanDashboardData | null
+    findings?: SbomFinding[] | null
     messages: SCASBOMConversationMessage[]
     integration_settings?: Record<string, unknown> | null
     info?: ScanInfoField | null
@@ -1520,6 +2054,593 @@ export {
     reinitializeSCASBOMScan,
     reinitializeSBOMScanWithPayload,
     updateScan,
+    toggleFindingState,
+    generateFindingRemediation,
+}
+
+// -------------------------------------------------------------- CBOM API Routes --------------------------------------------------------------
+
+/** CBOM finding from backend get_findings_for_scan_type (cbom branch) */
+export interface CbomFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: unknown
+  owasp_top_10: unknown
+  suggested_fix?: string | null
+  algorithm_name?: string | null
+  algorithm_type?: string | null
+  crypto_strength?: string | null
+  key_size?: number | null
+  quantum_safe?: boolean | null
+  location?: string | null
+  snippet?: string | null
+  remediation?: RemediationData | null
+}
+
+/** CBOM scan metadata from backend get_scan_metadata (cbom branch) */
+export interface CbomScanMetadata {
+  repo_url?: string | null
+  branch?: string | null
+  zip_file_used?: boolean
+  cbom_file_used?: boolean
+  scan_binaries?: boolean
+  cbom_json?: Record<string, unknown> | null
+  // Additive chart/compliance payload from the reconciled aibom CBOM lane (I1).
+  // Present on reconciled scans; null/absent on legacy worker CBOM scans (the
+  // C9 CbomCryptoCharts then don't render). cbom_distributions feeds the 5 C9
+  // crypto charts (algorithms/weakness/pqc/certificates/protocols).
+  cbom_distributions?: Record<string, unknown> | null
+  cbom_compliance?: Record<string, unknown> | null
+  cbom_scores?: Record<string, unknown> | null
+  // Normalized crypto dependency graph (nodes + edges), the peer of the AIBOM
+  // lane's ai_bom_graph (I1). Pre-joined so the results-page dependency-graph
+  // (F1) never re-walks the CycloneDX dependsOn/cryptoRefArray structure.
+  // Absent on legacy worker CBOM scans (produced before the reconcile).
+  cbom_graph?: CbomGraph | null
+  rbi_csf_rollup?: Record<string, unknown> | null
+}
+
+/** Normalized crypto dependency graph surfaced in CBOM scan_metadata (I1). */
+export interface CbomGraphNode {
+  id: string
+  label: string
+  kind: string
+  asset_type?: string | null
+  primitive?: string | null
+  impact?: string | null
+  quantum_vulnerable?: boolean
+  weak?: boolean
+}
+export interface CbomGraphEdge {
+  source: string
+  target: string
+  rel: string
+}
+export interface CbomGraph {
+  nodes: CbomGraphNode[]
+  edges: CbomGraphEdge[]
+}
+
+/** CBOM single-scan dashboard from backend generate_scan_dashboard (scan.py cbom branch) */
+export interface CbomScanDashboardData {
+  card_data: {
+    total_crypto_assets: number
+    total_weak_algorithms: number
+    total_quantum_vulnerable: number
+    total_certificates: number
+    total_keys: number
+    quantum_readiness_score: number
+    average_risk_score: number
+  }
+  remediation_metrics: {
+    mean_time_to_remediate: [number, number, number]
+    critical_issues_fixed: number
+    remediation_velocity: number
+    high_priority_backlog: number
+  }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  algorithm_type_distribution: Record<string, number>
+  strength_distribution: Record<string, number>
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown: number }
+  owasp_top_10_issues: Record<string, number>
+  compliance_controls: Record<string, number>
+  top_risks: Array<{
+    algorithm_name: string
+    algorithm_type: string
+    crypto_strength: string
+    quantum_safe: boolean
+    impact: string
+  }>
+}
+
+/** CBOM conversation (scan) row returned by list scans endpoint. Same shape as SCASBOMConversation. */
+export interface CBOMConversation {
+  id: number
+  title: string
+  scan_status: string
+  created_at: string
+  last_updated: string
+  estimated_credits: number | null
+  average_risk_score: number | null
+  branch: string | null
+  repo_url: string | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  total_quantum_vulnerable: number | null
+  total_weak_algorithms: number | null
+  zip_file_used: boolean | null
+  cbom_file_used: boolean | null
+  scan_binaries: boolean | null
+  info: string | null
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_weak?: number
+    total_quantum_vulnerable?: number
+    scan_binaries?: boolean
+  } | null
+  scan_metadata: CbomScanMetadata | null
+}
+
+/** Card counts returned by list CBOM scans */
+export interface CBOMListCardData {
+  pending_scans: number
+  started_scans: number
+  success_scans: number
+  failure_scans: number
+  not_started_scans: number
+  scans_created_today: number
+  scans_updated_today: number
+}
+
+/** CBOM list dashboard from backend generate_cbom_dashboard_data */
+export interface CBOMDashboardData {
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  algorithm_type_distribution: Record<string, number>
+  strength_distribution: Record<string, number>
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown: number }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  top_risks: Array<{
+    algorithm_name: string
+    algorithm_type: string
+    crypto_strength: string
+    quantum_safe: boolean
+    impact: string
+  }>
+  card_data: {
+    total_crypto_assets: number
+    total_weak_algorithms: number
+    total_quantum_vulnerable: number
+    total_certificates: number
+    total_keys: number
+    quantum_readiness_score: number
+    average_risk_score: number
+  }
+}
+
+export interface CBOMListResponse {
+  scans_list_data: CBOMConversation[]
+  dashboard_data: CBOMDashboardData
+}
+
+export interface CBOMConversationResponse {
+  title: string
+  repo_url?: string | null
+  scan_status: string
+  scan_metadata?: CbomScanMetadata | Record<string, unknown> | null
+  data: any
+  dashboard?: CbomScanDashboardData | null
+  findings?: CbomFinding[] | null
+  messages: SCASBOMConversationMessage[]
+  integration_settings?: Record<string, unknown> | null
+  info?: ScanInfoField | null
+}
+
+/** Team-scoped: GET /{team_id}/cbom/scans */
+const getCBOMScans = async (team_id: number): Promise<CBOMListResponse> => {
+  try {
+    const response = await api.get(`/${team_id}/cbom/scans`);
+    toast.success("CBOM scans fetched successfully");
+    return response.data as CBOMListResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching CBOM scans");
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id} */
+const getCBOMScanData = async ({
+  queryKey,
+}: {
+  queryKey: ["cbom-conversation-data", number, number];
+}): Promise<CBOMConversationResponse> => {
+  const [, team_id, scan_id] = queryKey;
+  try {
+    const response = await api.get(`/${team_id}/cbom/scan/${scan_id}`);
+    toast.success("CBOM scan data fetched successfully");
+    return response.data as CBOMConversationResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching CBOM scan data");
+    throw error;
+  }
+};
+
+const createCBOMScan = async (team_id: number, title: string): Promise<number> => {
+  try {
+    const response = await api.post(`/${team_id}/cbom/scan`, { title });
+    toast.success("CBOM scan created successfully");
+    return response.data.scan_id as number;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteCBOMScan = async (team_id: number, scan_id: number) => {
+  try {
+    const response = await api.delete(`/${team_id}/cbom/scan/${scan_id}`);
+    toast.success("CBOM scan deleted successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const renameCBOMScan = async ({
+  team_id,
+  scan_id,
+  title,
+}: {
+  team_id: number;
+  scan_id: number;
+  title: string;
+}) => {
+  try {
+    const response = await api.put(`/${team_id}/cbom/scan/${scan_id}`, { title });
+    toast.success("CBOM scan renamed successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/cbom/scan/{scan_id}/export */
+const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+  try {
+    const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
+    toast.success("CBOM export results fetched successfully");
+    return response.data;
+  } catch (error) {
+    showErrorToast(error, "Error fetching CBOM export results");
+    throw error;
+  }
+};
+
+/** Team-scoped: POST /{team_id}/cbom/scan/{scan_id}/reinitialize with FormData */
+const reinitializeCBOMScanWithPayload = async (
+  team_id: number,
+  scan_id: number,
+  start_scan_payload_string: string,
+  uploaded_file?: File | null
+) => {
+  const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+  const response = await api.post<{ message: string }>(
+    `/${team_id}/cbom/scan/${scan_id}/reinitialize`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  toast.success("CBOM scan reinitialized successfully");
+  return response.data;
+};
+
+export {
+  getCBOMScans,
+  getCBOMScanData,
+  createCBOMScan,
+  deleteCBOMScan,
+  renameCBOMScan,
+  getCBOMExportResults,
+  reinitializeCBOMScanWithPayload,
+}
+
+// -------------------------------------------------------------- AI BOM API Routes --------------------------------------------------------------
+
+/** AI BOM finding from backend get_findings_for_scan_type (ai_bom branch) */
+export interface AiBomFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  compliance_controls: Record<string, string> | null
+  owasp_top_10: Record<string, string> | null
+  owasp_top_10_llm: Record<string, string> | null
+  suggested_fix?: string
+  asset_name?: string
+  asset_type?: string
+  provider?: string
+  framework?: string
+  version?: string
+  license_type?: string
+  risk_category?: string
+  location?: string
+  snippet?: string
+  remediation?: RemediationData | null
+}
+
+/** AI BOM scan metadata from backend get_scan_metadata (ai_bom branch) */
+export interface AiBomScanMetadata {
+  repo_url?: string
+  branch?: string
+  zip_file_used?: boolean
+  ai_bom_file_used?: boolean
+  scan_binaries?: boolean
+  ai_bom_json?: Record<string, unknown>
+  ai_bom_compliance?: Record<string, unknown>
+  ai_bom_graph?: { nodes?: unknown[]; edges?: unknown[] }
+  ai_bom_scores?: Record<string, unknown>
+  ai_bom_spdx?: Record<string, unknown>
+  ai_bom_sarif?: Record<string, unknown>
+  rbi_csf_rollup?: Record<string, unknown> | null
+  error_message?: string
+}
+
+/** AI BOM single-scan dashboard from backend generate_scan_dashboard (scan.py ai_bom branch) */
+export interface AiBomScanDashboardData {
+  card_data: {
+    total_ai_assets: number
+    total_models: number
+    total_datasets: number
+    total_external_providers: number
+    total_high_risk_assets: number
+    total_unlicensed_assets: number
+    governance_readiness_score: number
+    average_risk_score: number
+  }
+  remediation_metrics: {
+    mean_time_to_remediate: [number, number, number]
+    critical_issues_fixed: number
+    remediation_velocity: number
+    high_priority_backlog: number
+  }
+  remediation_actions_required: {
+    total_findings: number
+    total_fixed: number
+    total_in_progress: number
+    total_not_started: number
+    total_ignored: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  asset_type_distribution: Record<string, number>
+  provider_distribution: Record<string, number>
+  license_distribution: Record<string, number>
+  risk_category_distribution: Record<string, number>
+  owasp_top_10_llm_issues: Record<string, number>
+  compliance_controls: Record<string, number>
+  top_risks: Array<{
+    asset_name: string
+    asset_type: string
+    provider: string
+    license_type: string
+    impact: string
+  }>
+}
+
+/** AI BOM conversation (scan) row returned by list scans endpoint. Same shape as CBOMConversation. */
+export interface AIBOMConversation {
+  id: number
+  title: string
+  scan_status: string
+  created_at: string
+  last_updated: string
+  estimated_credits: number | null
+  average_risk_score: number | null
+  branch: string | null
+  repo_url: string | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  total_high_risk_assets: number | null
+  total_unlicensed_assets: number | null
+  zip_file_used: boolean | null
+  ai_bom_file_used: boolean | null
+  info: string | null
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_high_risk?: number
+    total_unlicensed?: number
+  } | null
+  scan_metadata: AiBomScanMetadata | null
+}
+
+export interface AIBOMListResponse {
+  scans_list_data: AIBOMConversation[]
+  dashboard_data: AiBomScanDashboardData
+}
+
+export interface AIBOMConversationResponse {
+  title: string
+  repo_url?: string | null
+  scan_status: string
+  scan_metadata?: AiBomScanMetadata | Record<string, unknown> | null
+  data: any
+  dashboard?: AiBomScanDashboardData | null
+  findings?: AiBomFinding[] | null
+  messages: SCASBOMConversationMessage[]
+  integration_settings?: Record<string, unknown> | null
+  info?: ScanInfoField | null
+}
+
+/** Team-scoped: GET /{team_id}/ai_bom/scans */
+const getAIBOMScans = async (team_id: number): Promise<AIBOMListResponse> => {
+  try {
+    const response = await api.get(`/${team_id}/ai_bom/scans`);
+    return response.data as AIBOMListResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching AI BOM scans");
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id} */
+const getAIBOMScanData = async ({
+  queryKey,
+}: {
+  queryKey: ["ai_bom-conversation-data", number, number];
+}): Promise<AIBOMConversationResponse> => {
+  const [, team_id, scan_id] = queryKey;
+  try {
+    const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}`);
+    return response.data as AIBOMConversationResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching AI BOM scan data");
+    throw error;
+  }
+};
+
+const createAIBOMScan = async (team_id: number, title: string): Promise<number> => {
+  try {
+    const response = await api.post(`/${team_id}/ai_bom/scan`, { title });
+    toast.success("AI BOM scan created successfully");
+    return response.data.scan_id as number;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteAIBOMScan = async (team_id: number, scan_id: number) => {
+  try {
+    const response = await api.delete(`/${team_id}/ai_bom/scan/${scan_id}`);
+    toast.success("AI BOM scan deleted successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const renameAIBOMScan = async ({
+  team_id,
+  scan_id,
+  title,
+}: {
+  team_id: number;
+  scan_id: number;
+  title: string;
+}) => {
+  try {
+    const response = await api.put(`/${team_id}/ai_bom/scan/${scan_id}`, { title });
+    toast.success("AI BOM scan renamed successfully");
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+/** Team-scoped: GET /{team_id}/ai_bom/scan/{scan_id}/export */
+const getAIBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+  try {
+    const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}/export`, { responseType: "blob" });
+    toast.success("AI BOM export results fetched successfully");
+    return response.data;
+  } catch (error) {
+    showErrorToast(error, "Error fetching AI BOM export results");
+    throw error;
+  }
+};
+
+/** Team-scoped: POST /{team_id}/ai_bom/scan/{scan_id}/reinitialize with FormData */
+const reinitializeAIBOMScanWithPayload = async (
+  team_id: number,
+  scan_id: number,
+  start_scan_payload_string: string,
+  uploaded_file?: File | null
+) => {
+  const form = buildScanFormData(start_scan_payload_string, uploaded_file);
+  const response = await api.post<{ message: string }>(
+    `/${team_id}/ai_bom/scan/${scan_id}/reinitialize`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  toast.success("AI BOM scan reinitialized successfully");
+  return response.data;
+};
+
+export {
+  getAIBOMScans,
+  getAIBOMScanData,
+  createAIBOMScan,
+  deleteAIBOMScan,
+  renameAIBOMScan,
+  getAIBOMExportResults,
+  reinitializeAIBOMScanWithPayload,
+}
+
+// -------------------------------------------------------------- Remediation Types + API --------------------------------------------------------------
+
+export interface RemediationFix {
+    description: string
+    original_code: string
+    fixed_code: string
+    language: string
+    confidence: number
+    validation_notes: string
+    references: string[]
+}
+
+export interface RemediationExploitPayload {
+    description: string
+    payload: string
+    impact_demonstration: string
+    prerequisites: string
+    difficulty: "trivial" | "easy" | "moderate" | "hard" | "expert"
+    attack_vector: string
+}
+
+export interface RemediationData {
+    generated_at: string
+    status: "completed" | "failed"
+    fix?: RemediationFix
+    exploit_payload?: RemediationExploitPayload
+    diff?: string
+    error?: string
+}
+
+const generateFindingRemediation = async ({
+    team_id,
+    type,
+    scan_id,
+    finding_id,
+}: {
+    team_id: number
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom"
+    scan_id: number
+    finding_id: string
+}): Promise<RemediationData> => {
+    const response = await api.post<RemediationData>(
+        `/${team_id}/${type}/scan/${scan_id}/finding/${finding_id}/remediate`
+    )
+    return response.data
 }
 
 // -------------------------------------------------------------- Discovery API Routes --------------------------------------------------------------
@@ -2088,6 +3209,140 @@ export {
 
 // -------------------------------------------------------------- DAST API Routes --------------------------------------------------------------
 
+/** List item from return_dast_list_item (GET /{team_id}/dast/scans) */
+export interface DASTListItem {
+    id: number
+    title: string
+    created_at: string
+    last_updated: string
+    scan_status: string
+    estimated_credits: number | null
+    owner_user_email: string | null
+    owner_user_full_name: string | null
+    info: { current?: number } | null
+    risk_data: { total_critical: number; total_high: number; total_medium: number; total_low: number }
+    target_url: string | null
+    average_risk_score: number
+    urls_scanned: number
+    coverage_percentage: number
+}
+
+/** List dashboard from generate_dast_dashboard_data */
+export interface DASTListDashboardData {
+    card_data: {
+        total_scans: number
+        total_critical_issues: number
+        total_high_issues: number
+        total_medium_issues: number
+        total_low_issues: number
+        average_risk_score: number
+    }
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    issues_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
+    security_posture_overview: Record<string, number>
+    owasp_top_10_issues: Record<string, number>
+    average_risk_score_per_category: Record<string, number>
+    average_risk_score_per_confidence: { high: number; medium: number; low: number }
+    compliance_violations: Record<string, number>
+}
+
+export interface DASTListResponse {
+    scans_list_data: DASTListItem[]
+    dashboard_data: DASTListDashboardData
+}
+
+/** Single-scan dashboard from generate_scan_dashboard(scan_type="dast") */
+export interface DASTSingleScanDashboard {
+    card_data: {
+        total_critical_issues: number
+        total_high_issues: number
+        total_medium_issues: number
+        total_low_issues: number
+        average_risk_score: number
+        urls_scanned: number
+        coverage_percentage: number
+    }
+    severity_distribution: { critical: number; high: number; medium: number; low: number }
+    compliance_status: Record<string, number>
+    owasp_top_10_issues: Record<string, number>
+    vulnerability_category_issues_distribution: Record<string, number>
+    risk_scores_per_category: Record<string, { critical: number; high: number; medium: number; low: number }>
+    confidence_distribution: { high: number; medium: number; low: number }
+    security_category_assessment: Record<string, number>
+    compliance_risk_assessment: Record<string, number>
+    remediation_metrics: {
+        total_findings: number
+        total_fixed: number
+        total_in_progress: number
+        total_not_started: number
+        total_ignored: number
+    }
+}
+
+/** Response from GET /{team_id}/dast/scan/{scan_id} (get_scan) */
+export interface DASTScanResponse {
+    title: string
+    scan_metadata: Record<string, unknown> | null
+    scan_status: string
+    findings: unknown[]
+    dashboard: DASTSingleScanDashboard | null
+    messages: unknown[]
+    integration_settings: Record<string, unknown> | null
+    info: { current?: number } | null
+    data: unknown
+}
+
+const getDASTScans = async (team_id: number): Promise<DASTListResponse> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/scans`)
+        toast.success("Refreshed successfully")
+        return response.data as DASTListResponse
+    } catch (error) {
+        showErrorToast(error, "Error fetching DAST scans")
+        throw error
+    }
+}
+
+const getDASTScan = async (team_id: number, scan_id: number): Promise<DASTScanResponse> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/scan/${scan_id}`)
+        return response.data as DASTScanResponse
+    } catch (error) {
+        showErrorToast(error, "Error fetching DAST scan")
+        throw error
+    }
+}
+
+const deleteDASTScan = async (team_id: number, scan_id: number) => {
+    try {
+        const response = await api.delete(`/${team_id}/dast/scan/${scan_id}`)
+        toast.success("DAST scan deleted successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const renameDASTScan = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
+    try {
+        const response = await api.put(`/${team_id}/dast/scan/${scan_id}`, { title })
+        toast.success("DAST scan renamed successfully")
+        return response.data
+    } catch (error) {
+        throw error
+    }
+}
+
+const createDASTScan = async (team_id: number, title: string): Promise<number> => {
+    try {
+        const response = await api.post(`/${team_id}/dast/scan`, { title })
+        toast.success("DAST scan created successfully")
+        return (response.data as { scan_id: number }).scan_id
+    } catch (error) {
+        throw error
+    }
+}
+
 export interface DASTConversation {
     id: number
     title: string
@@ -2172,91 +3427,63 @@ const getDASTConversationMessages = async ({queryKey}: {queryKey: ['dast-convers
     }
 }
 
-export interface FormBasedDASTScanData {
-    target_url: string
+/** Auth fields for DAST (matches backend AuthRequirements). All required when starting a DAST scan. */
+export interface AuthRequirements {
     login_url: string
-    include_urls?: string[]
-    exclude_urls?: string[]
-    timeout_durations_mins?: number
-    poll_durations_seconds?: number
-    username_value: string
-    password_value: string
-    username_key: string
-    password_key: string
-    logged_in_regex: string
-    logged_out_regex: string
+    xpath_of_username_field: string
+    xpath_of_password_field: string
+    username: string
+    password: string
+    xpath_of_submit_button: string
 }
 
-export interface HeaderCookieDASTScanData {
+/** DAST start payload (matches backend StartDASTScanData). Include and exclude URL patterns are not used together. Auth is required. */
+export interface StartDASTScanData {
     target_url: string
-    attack_modules?: string[]
-    max_scan_time?: number
-    user_agent?: string
-    headers?: { name: string; value: string }[]
-    cookies?: { name: string; value: string }[]
-    scan_force?: "paranoid" | "sneaky" | "polite" | "normal" | "aggressive" | "insane"
-    exclude_url_patterns?: string[]
-    additional_urls?: string[]
+    auth: AuthRequirements
+    scan_speed?: "fast" | "medium" | "slow"
+    max_urls?: number
+    additional_urls_to_scan?: string[] | null
+    exclude_url_patterns?: string[] | null
+    include_url_patterns?: string[] | null
 }
 
+/** Start DAST scan via team-scoped route POST /{team_id}/dast/scan/{scan_id}/start */
 const startDASTScan = async (
-    {
-        conversation_id,
-        auth_mode,
-        form_based,
-        header_cookie_based
-    }: {   
-        conversation_id: number,
-        auth_mode: "form_based" | "header_cookie_based",
-        form_based?: FormBasedDASTScanData,
-        header_cookie_based?: HeaderCookieDASTScanData
-    }) => {
-    try {
-        const response = await api.post(`/dast/conversation/${conversation_id}/scan`, { 
-            dast_data: {
-                auth_mode,
-                form_based: form_based || null,
-                header_cookie_based: header_cookie_based || null
-            }
-        })
-        toast.success("DAST scan started successfully")
-        return response.data
-    } catch (error) {
-        throw error
-    }
+    { team_id, scan_id, dast }: { team_id: number; scan_id: number; dast: StartDASTScanData }
+) => {
+    const dastPayload = { ...dast, max_urls: dast.max_urls ?? 100 }
+    const payloadString = JSON.stringify({ dast: dastPayload })
+    return startScan(team_id, "dast", scan_id, payloadString, null)
 }
 
-const getDASTExportResults = async (conversation_id: number): Promise<any> => {
-    try {   
-        const response = await api.get(`/dast/conversation/${conversation_id}/export`)
+/** Export DAST scan results via GET /{team_id}/dast/scan/{scan_id}/export */
+const getDASTExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/scan/${scan_id}/export`, {
+            responseType: "blob",
+        })
         toast.success("DAST export results fetched successfully")
         return response.data
     } catch (error) {
-        showErrorToast(error,"Error fetching dast export results")
+        showErrorToast(error, "Error fetching DAST export results")
         throw error
     }
 }
 
+/** Reinitialize DAST scan via POST /{team_id}/dast/scan/{scan_id}/reinitialize */
 const reinitializeDASTScan = async (
-    {
-        conversation_id,
-        auth_mode,
-        form_based,
-        header_cookie_based
-    }: {   
-        conversation_id: number,
-        auth_mode: "form_based" | "header_cookie_based",
-        form_based?: FormBasedDASTScanData,
-        header_cookie_based?: HeaderCookieDASTScanData
-    }) => {
+    { team_id, scan_id, dast }: { team_id: number; scan_id: number; dast: StartDASTScanData }
+) => {
     try {
-        const response = await api.post(`/dast/conversation/${conversation_id}/reinitialize`, { 
-            dast_data: {
-                auth_mode,
-                form_based: form_based || null,
-                header_cookie_based: header_cookie_based || null
-            }
-        })
+        const dastPayload = { ...dast, max_urls: dast.max_urls ?? 100 }
+        const payloadString = JSON.stringify({ dast: dastPayload })
+        const form = buildScanFormData(payloadString, null)
+        const response = await api.post(
+            `/${team_id}/dast/scan/${scan_id}/reinitialize`,
+            form,
+            { headers: { "Content-Type": "multipart/form-data" } }
+        )
         toast.success("DAST scan reinitialized successfully")
         return response.data
     } catch (error) {
@@ -2265,10 +3492,15 @@ const reinitializeDASTScan = async (
 }
 
 export { 
-    getDASTConversations, 
-    deleteDASTConversation, 
-    renameDASTConversation, 
-    createDASTConversation, 
+    getDASTScans,
+    getDASTScan,
+    deleteDASTScan,
+    renameDASTScan,
+    createDASTScan,
+    getDASTConversations,
+    deleteDASTConversation,
+    renameDASTConversation,
+    createDASTConversation,
     getDASTConversationMessages,
     startDASTScan,
     getDASTExportResults,
@@ -2350,7 +3582,8 @@ export interface CicdIntegrationDashboard {
     integration_settings?: Record<string, { jira_project_id?: string | null } | null> | null
     scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null } | null> | null
     logs: CicdLog[]
-    vulns_over_time_chart_data?: VulnsOverTimeChartData | null
+    /** Vulns-over-time chart data (date -> severity counts); from get_cicd_vuln_chart_data */
+    dashboard_data?: VulnsOverTimeChartData | null
 }
 
 const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integration-dashboard', string, string, number, number]}): Promise<CicdIntegrationDashboard> => {

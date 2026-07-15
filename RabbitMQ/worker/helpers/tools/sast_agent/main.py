@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 from langchain_core.documents import Document
 from helpers.context.codebase_context import CodebaseContext
 from helpers.context.open_source_context import OpenSourceContext
@@ -104,6 +105,7 @@ class SASTAgent(BaseAgent):
             self.open_source_context = None
             self.logical_components : type[LogicalComponents] = []
             self.vulnerabilities : list[dict[str,list[type[CodebaseVulnerability]]]] = []
+            self.metadata : dict = {} 
 
         except Exception as e:
             raise ValueError(f"Error in initializing SASTAgent: {e}")
@@ -130,6 +132,11 @@ class SASTAgent(BaseAgent):
             self.codebase_collection_name = codebase_context.collection_name # SET codebase_collection_name ⭐
 
             self.codebase_context = codebase_context # SET codebase_context ⭐
+
+            try:
+                self.metadata = codebase_context.metadata # SET metadata ⭐
+            except Exception as e:
+                raise ValueError(f"Error in getting metadata from codebase context: {e}")
 
             summary : type[LogicalComponents] = output.summary
             
@@ -187,26 +194,12 @@ class SASTAgent(BaseAgent):
             except Exception as e:
                 console.print(f"Error while deleting temp directory : {str(e)}", style = "dim red")
 
-            # Deleting codebase context
-            console.print(f"Deleting codebase context ...",style="bold yellow")
-            if self.codebase_context_id:
-                if self.codebase_context.delete_context():
-                    console.print(f"Codebase context deleted successfully",style="bold green")
-                else:
-                    console.print(f"Failed to delete codebase context",style="bold red")
-            else:
-                console.print(f"Codebase context id not found",style="bold red")
-
-
-            # Deleting open source context
-            console.print(f"Deleting open source context ...",style="bold yellow")
-            if self.opensource_context_id:
-                if self.open_source_context.delete_context():
-                    console.print(f"Open source context deleted successfully",style="bold green")
-                else:
-                    console.print(f"Failed to delete open source context",style="bold red")
-            else:
-                console.print(f"Open source context id not found",style="bold red")
+            # Keep embeddings in Qdrant for cross-scan reuse.
+            # When the same repo is scanned again, the deterministic context_id
+            # lets the next scan find and reuse these embeddings instead of
+            # re-embedding, ensuring identical RAG results and LLM cache hits.
+            console.print(f"Keeping codebase context embeddings for reuse (context_id: {self.codebase_context_id})", style="dim bright_cyan")
+            console.print(f"Keeping open source context embeddings for reuse (context_id: {self.opensource_context_id})", style="dim bright_cyan")
 
 
 
@@ -251,6 +244,23 @@ class SASTAgent(BaseAgent):
 
             ## Relevant Results from an open source tool that looks for vulnerable patterns in the code:
             {relevant_open_source_results}
+
+            ### CVE Mapping (MANDATORY):
+            For EVERY vulnerability you identify, you MUST map it to known CVEs from the available CVE catalog in the output schema.
+            Guidelines:
+            - Match each vulnerability to the most relevant CVE(s) from the provided enum values
+            - A single vulnerability can relate to 1-3 CVEs
+            - Only use CVE IDs that exist in the provided enum
+            - If no exact CVE match exists, select the closest related CVE(s) based on vulnerability type and attack vector
+
+            ### Compliance Controls Mapping (MANDATORY):
+            For EVERY vulnerability, you MUST map it to the relevant compliance controls from the output schema.
+            Map vulnerabilities to the most relevant standards:
+            - NIST 800-53 controls (e.g., AC-*, SC-*, SI-*, AU-*, CM-*)
+            - ISO 27001 Annex A controls (e.g., A.8, A.10, A.12, A.14)
+            - OWASP categories (e.g., A01-A10)
+            - PCI DSS requirements where applicable
+            Always include at least 2-3 compliance controls per vulnerability.
             """
 
             
@@ -274,13 +284,18 @@ class SASTAgent(BaseAgent):
         try:
             formatted_string = ""
             for document in documents:
+                # Use basename for path-independent LLM prompts (same code in different
+                # dirs produces identical prompts → deterministic LLM cache + analysis)
+                _meta = dict(document.metadata)
+                if "source" in _meta:
+                    _meta["source"] = os.path.basename(_meta["source"])
                 temp = f"""
                 ===========================================================
                 # Content : 
                 {document.page_content} 
                 \n\n
                 ## Metadata 
-                {document.metadata}
+                {_meta}
                 ===========================================================
                 \n\n
                 """
@@ -326,7 +341,7 @@ class SASTAgent(BaseAgent):
             raise e 
     
 
-    def run_agent(self):
+    def run_agent(self)->tuple[list,dict]:
         """
         Cycles through each Logical Component of the codebase performing the ...
 
@@ -377,7 +392,9 @@ class SASTAgent(BaseAgent):
 
             
             console.print("---"*10 , style = "bold orange1 ")
-            for index, logical_component in enumerate(self.logical_components.logical_components[:10]):
+            # Sort logical components by title for deterministic ordering across runs
+            sorted_components = sorted(self.logical_components.logical_components, key=lambda c: c.title)
+            for index, logical_component in enumerate(sorted_components[:10]):
 
                 console.print(f"⏩ Analyzing Logical Component # {index + 1} : {logical_component.title} ... 🔃 " , style = "bold orange1 ")
                 
@@ -424,7 +441,7 @@ class SASTAgent(BaseAgent):
                 self.state_update_writer.write_progress_percentage(100)
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
-            return self.vulnerabilities
+            return (self.vulnerabilities,self.metadata)
         
 
 
@@ -443,7 +460,15 @@ class SASTAgent(BaseAgent):
             for item in output:
                 logical_component_title = item["logical_component_title"]
                 vulnerabilities = item["vulnerabilities"]
-                parsed_output.append({"logical_component_title":logical_component_title,"vulnerabilities":super().to_dict_list(vulnerabilities)})
+                parsed_vulnerabilities = super().to_dict_list(vulnerabilities)
+                parsed_output.append({"logical_component_title":logical_component_title,"vulnerabilities":parsed_vulnerabilities})
+
+            parsed_output.sort(
+                key=lambda row: (
+                    row.get("logical_component_title", ""),
+                    json.dumps(row.get("vulnerabilities", []), sort_keys=True, ensure_ascii=True),
+                )
+            )
             return parsed_output
         except Exception as e:
             raise e

@@ -5,6 +5,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 import json
 from helpers.context.s3_utils import download_zip_file, download_file
 import zipfile
@@ -36,30 +37,45 @@ def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
         return ""
 
 
+def _is_provider_url(url: str, host: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    hostname = hostname.lower()
+    return hostname == host or hostname.endswith("." + host)
+
 def is_github_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "github.com" in url
+    return _is_provider_url(url, "github.com")
 
 def is_gitlab_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "gitlab.com" in url
+    return _is_provider_url(url, "gitlab.com")
 
 def is_bitbucket_url(url: str) -> bool:
-    return url.startswith(("http://", "https://")) and "bitbucket.org" in url
+    return _is_provider_url(url, "bitbucket.org")
 
 class GithubContext(BaseModel):
     mode : Literal["github"] = "github"
     branch: str = Field(description="The branch of the GitHub repository to scan.",default="main")
     repo_url : str = Field(..., description="The URL of the GitHub repository to scan.")
-    PAT: str = Field(..., description="The GitHub token to use for authentication.")
+    PAT: str = Field(default="", description="The GitHub token to use for authentication. Empty for public repos.")
 
     @model_validator(mode='after')
     def check_valid_url_and_add_PAT(self):
-        if not self.PAT or not self.repo_url:
-            raise ValueError("PAT and repo_url are required")
+        if not self.repo_url:
+            raise ValueError("repo_url is required")
         if is_github_url(self.repo_url):
-            ind = self.repo_url.find("github.com")
-            repo = self.repo_url[ind:]
-            repo = f"https://{self.PAT}@{repo}"
-            self.repo_url = repo
+            if self.PAT:
+                ind = self.repo_url.find("github.com")
+                repo = self.repo_url[ind:]
+                repo = f"https://{self.PAT}@{repo}"
+                self.repo_url = repo
+            # else: public repo, keep original URL as-is
         else:
             raise ValueError(f"Invalid GitHub URL: {self.repo_url}")
         return self
@@ -135,6 +151,59 @@ class ZipContext(BaseModel):
     object_name: str = Field(..., description="The name of the object with zip file of the project to scan.")
 
 
+# SECURITY: Safe zip extraction limits
+MAX_EXTRACTED_SIZE = 2 * 1024 * 1024 * 1024  # 2GB max total extracted size
+MAX_COMPRESSION_RATIO = 100  # Zip bomb detection: 100x compression is suspicious
+MAX_FILES_IN_ARCHIVE = 50000  # Prevent file count DoS
+
+
+def safe_extract_zip(zip_path: str, extract_to: str) -> None:
+    """
+    Safely extract a zip file with protection against:
+    - Path traversal attacks (ZipSlip)
+    - Zip bombs (compression ratio and size limits)
+    - File count DoS attacks
+    """
+    from pathlib import Path
+    
+    extract_path = Path(extract_to).resolve()
+    
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        # Pre-check: Calculate totals before extraction
+        total_uncompressed = sum(info.file_size for info in zf.infolist())
+        total_compressed = sum(info.compress_size for info in zf.infolist())
+        file_count = len(zf.infolist())
+        
+        # Check 1: File count limit
+        if file_count > MAX_FILES_IN_ARCHIVE:
+            raise ValueError(f"Archive contains too many files: {file_count} > {MAX_FILES_IN_ARCHIVE}")
+        
+        # Check 2: Total size limit
+        if total_uncompressed > MAX_EXTRACTED_SIZE:
+            raise ValueError(f"Archive uncompressed size exceeds limit: {total_uncompressed} > {MAX_EXTRACTED_SIZE}")
+        
+        # Check 3: Zip bomb detection via compression ratio
+        if total_compressed > 0 and total_uncompressed / total_compressed > MAX_COMPRESSION_RATIO:
+            raise ValueError(f"Suspicious compression ratio detected (possible zip bomb)")
+        
+        # Safe extraction with path traversal protection
+        for info in zf.infolist():
+            # Resolve the full target path
+            target_path = (extract_path / info.filename).resolve()
+            
+            # Security check: Ensure target is within extract directory
+            if not str(target_path).startswith(str(extract_path)):
+                raise ValueError(f"Path traversal detected in archive: {info.filename}")
+            
+            # Create directory or extract file
+            if info.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+            else:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as source, open(target_path, 'wb') as target:
+                    target.write(source.read())
+
+
 def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
     try:
         # Download the zip file from the s3 bucket 
@@ -144,9 +213,8 @@ def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
         # create a temporary directory
         directory = tempfile.mkdtemp(prefix="repo_")
         
-        # extract the zip file to a temporary directory
-        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-            zip_ref.extractall(directory)
+        # SECURITY: Use safe extraction instead of extractall()
+        safe_extract_zip(zip_file_path, directory)
         
         return directory
     except Exception as e:

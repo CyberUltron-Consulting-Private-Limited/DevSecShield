@@ -1,166 +1,143 @@
-from typing import Literal
+import json
 from celery import Celery
 from rich.console import Console
+import time 
 from dotenv import load_dotenv
 import os
 import sys
-import json
-from wapiti import run_wapiti
-from zap import run_zap_scan_with_form_auth
-console = Console()
+from helpers.agent.base_vuln import parse_vuln_list
+from helpers.progress_writer import StateUpdateWriter
+from helpers.agent.main import DASTAgent
+from helpers.agent.context import StartDASTScanData
 
-# os.environ["IS_DOCKER_CONTAINER"] = "False"  # ⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+console = Console()
 
 #====================================== Setting credentials to connect to broker ================================================================
 try:
     load_dotenv()
-    is_docker_container = os.getenv("IS_DOCKER_CONTAINER")
-    if is_docker_container and is_docker_container == "True":
-        console.print(f"Docker container detected",style="bold green")
+    is_docker_container = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
+    
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "devsecshield-rabbitmq" if is_docker_container else "localhost")
+    RABBITMQ_PORT = os.getenv("RABBITMQ_PORT", "5672" if is_docker_container else "4672")
+    MONGO_HOST = os.getenv("MONGO_HOST", "devsecshield-mongodb" if is_docker_container else "localhost")
+    MONGO_PORT = os.getenv("MONGO_PORT", "27017")
 
-        #broker url
-        username = os.getenv("RABBIT_ADMIN_USERNAME")
-        password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@13.203.233.15:5672"
+    env_label = "Docker" if is_docker_container else "Local"
+    console.print(f"{env_label} environment detected", style="bold green")
 
-        #mongo url
+    # broker url
+    username = os.getenv("RABBIT_ADMIN_USERNAME")
+    password = os.getenv("RABBIT_ADMIN_PASSWORD")
+    if not username or not password:
+        raise Exception("RABBIT_ADMIN_USERNAME or RABBIT_ADMIN_PASSWORD not set")
+    broker_url = f"amqp://{username}:{password}@{RABBITMQ_HOST}:{RABBITMQ_PORT}"
+
+    # mongo url
+    mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
+    if not mongo_url:
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
         mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
-        mongo_host = "13.203.233.15"
-        mongo_port = "27017"
-        mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+        if mongo_username and mongo_password:
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
+        else:
+            mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
-        #check if credentials are set
-        if not username or not password  or not mongo_username or not mongo_password: 
-            raise Exception("Username, password or mongo username or password not set")
-        
-        console.print(f"Broker URL: {broker_url}",style="bold green")
-        console.print(f"Mongo URL: {mongo_url}",style="bold green")
-    else:
-        console.print(f"Local container detected",style="bold green")
-
-        #broker url
-        username = os.getenv("RABBIT_ADMIN_USERNAME")
-        password = os.getenv("RABBIT_ADMIN_PASSWORD")
-        broker_url = f"amqp://{username}:{password}@localhost:5672"
-
-        #mongo url
-        mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
-        if not username or not password or not mongo_url: 
-            raise Exception("Username, password or mongo url not set")
-        
-        #check if credentials are set
-        if not username or not password or not mongo_url: 
-            raise Exception("Username, password or mongo url not set")
-        
-        console.print(f"Broker URL: {broker_url}",style="bold green")
-        console.print(f"Mongo URL: {mongo_url}",style="bold green")
+    console.print(f"Broker URL: {RABBITMQ_HOST}:{RABBITMQ_PORT}", style="bold green")
+    console.print(f"Mongo URL: {MONGO_HOST}:{MONGO_PORT}", style="bold green")
+    # SECURITY: Credentials masked - never log sensitive connection strings
     
 except Exception as e :
     console.print(f"Error in getting credentials: {e}",style="dim red")
     sys.exit()
 
-
 #============================================================== Registering tasks to worker ==================================================================== 
 
 try:
-    # app = Celery('worker', broker=f"amqp://{username}:{password}@localhost:5672",backend='rpc://')
-    app = Celery('dast_worker', broker=broker_url,backend=mongo_url)
+    app = Celery('worker', broker=broker_url,backend=mongo_url)
     app.conf.update(
         RESULT_PERSISTENT=True,
         TASK_TRACK_STARTED=True,
+        # SECURITY: Global task timeout defaults to prevent unbounded execution
+        task_time_limit=1800,          # Hard kill after 30 minutes (DAST is slower)
+        task_soft_time_limit=1500,     # SoftTimeLimitExceeded after 25 minutes
+        task_acks_late=True,           # Re-queue if worker dies
+        task_reject_on_worker_lost=True,
     )
-    Console().print(f"Celery App instantiated",style="bold green")
+    console.print(f"Celery App instantiated",style="bold green")
 
 
     
-    @app.task(track_started=True)
-    def wapiti_dast(
-        target_url: str,
-        additional_urls: list[str] = [],
-        attack_modules: list[Literal["common", "all", "backup", "brute_login_form", "buster", "cms", "crlf", "csrf", "exec", "file", "htaccess", "htp", "ldap", "log4shell", "methods", "network_device", "nikto", "permanentxss", "redirect", "shellshock", "spring4shell", "sql", "ssl", "ssrf", "takeover", "timesql", "upload", "wapp", "wp_enum", "xss", "xxe"]] = ["common"],
-        max_scan_time: int = 60,
-        user_agent: str | None = None,
-        headers: list[dict] | None = None,
-        cookies: list[dict] | None = None,
-        scan_force: Literal["paranoid", "sneaky", "polite", "normal", "aggressive", "insane"] = "normal",
-        exclude_url_patterns: list[str] | None = None,
+    @app.task(track_started=True , bind=True)
+    def dast(
+        self,
+        dast_dict_context: dict,
         ):
-        """
-        Header inputs should look like : 
-        [
-            {
-                "name": "Authorization",
-                "value": "Bearer 1234567890"
-            }
-        ]
-        Cookie inputs should look like : 
-        [
-            {
-                "name": "session",
-                "value": "1234567890"
-            }
-        ]
-        """
-        try:
-            results = run_wapiti(
-                target_url=target_url,
-                additional_urls=additional_urls,
-                attack_modules=attack_modules,
-                max_scan_time=max_scan_time,
-                user_agent=user_agent,
-                headers=headers,
-                cookies=cookies,
-                scan_force=scan_force,
-                exclude_url_patterns=exclude_url_patterns,
+        try :
+
+            # with open("mock_data.json", "r") as f:
+            #     mock_data = json.load(f)
+            #     return mock_data
+
+            start_time = time.time()
+            
+            # STEP [ 1 ] : =========== Validate the context ======================
+            dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
+
+            console.print(f"DAST context: {dast_context}",style="bold green")
+            
+            progress_writer = StateUpdateWriter(self)
+
+            dast_agent = DASTAgent(
+                dast_context=dast_context,
+                state_update_writer=progress_writer,
             )
-            Console().print(f"DAST scan completed successfully",style="bold green")
-            return results
+
+            parsed_vulnerabilities, metadata = dast_agent.run()
+            end_time = time.time()
+            duration_of_scan = end_time - start_time
+            return {
+                "results": parsed_vulnerabilities,
+                "metadata": metadata,
+                "duration_of_scan": duration_of_scan,
+            }
+
         except Exception as e:
-            Console().print(f"Error in dast task: {str(e)}",style="bold red")
+            console.print(f"Error in dast task: {str(e)}",style="bold red")
             raise e
-    Console().print(f"Registered Wapiti DAST task ",style="bold green")
+        
+
+    console.print(f"Registered DAST scan task",style="bold green")
 
 
-    @app.task(track_started=True)
-    def zap_dast(
-         target_url: str,
-        login_url: str,
-        include_urls: list[str] = [],
-        exclude_urls: list[str] = [],
-        timeout_durations_mins: int = 20,
-        poll_durations_seconds: int = 5,
-        username_value: str = "test@example.com",
-        password_value: str = "weakPassword",
-        username_key: str = "username",
-        password_key: str = "password",
-        logged_in_regex: str = "\\Q<a href=\"logout.php\">Logout</a>\\E",
-        logged_out_regex: str = "(?:Location: [./]*login\\.php)|(?:\\Q<form action=\"login.php\" method=\"post\">\\E)",
-    ):
-        """
-        Run form based DAST scan using ZAP
-        """
-        try:
-            results = run_zap_scan_with_form_auth(
-                target_url=target_url,
-                login_url=login_url,
-                include_urls=include_urls,
-                exclude_urls=exclude_urls,
-                timeout_durations_mins=timeout_durations_mins,
-                poll_durations_seconds=poll_durations_seconds,
-                username_value=username_value,
-                password_value=password_value,
-                username_key=username_key,
-                password_key=password_key,
-                logged_in_regex=logged_in_regex,
-                logged_out_regex=logged_out_regex,
+
+
+
+    @app.task(track_started=True , bind=True)
+    def dast_estimation(
+        self,
+        dast_dict_context: dict,
+        ):
+        try :
+            
+            # STEP [ 1 ] : =========== Validate the context ======================
+            dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
+
+            console.print(f"DAST context: {dast_context}",style="bold green")
+            
+            dast_agent = DASTAgent(
+                dast_context=dast_context,
             )
-            Console().print(f"ZAP DAST scan completed successfully",style="bold green")
-            return results
+
+            return dast_agent.estimate_credits()
+
         except Exception as e:
-            Console().print(f"Error in zap dast task: {str(e)}",style="bold red")
+            console.print(f"Error in dast estimation task: {str(e)}",style="bold red")
             raise e
+        
+
+    console.print(f"Registered DAST estimation task",style="bold green")
+
 
 except Exception as e:
-    Console().print(f"Error occured while registering tasks : {str(e)}",style="bold red")
+    console.print(f"Error in registering tasks: {e}",style="bold red")
     sys.exit()

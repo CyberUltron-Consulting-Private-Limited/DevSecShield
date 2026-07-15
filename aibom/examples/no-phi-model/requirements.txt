@@ -1,0 +1,3 @@
+# Research bone-age estimator — no PHI, no clinical deployment.
+torch==2.3.1
+numpy==1.26.4

@@ -1,0 +1,8 @@
+[autogen] cloning https://github.com/microsoft/autogen (shallow)…
+[autogen] SHA=027ecf0a379bcc1d09956d46d12d44a3ad9cee14
+[autogen] scan path: python/packages/autogen-core
+[autogen] trusera done (trusera_exit=0)
+[autogen] ours done (ours_exit=0)
+[autogen] cisco analyze (agentic/bedrock)…
+[autogen] cisco done (exit=0)
+[autogen] DONE (clone removed)

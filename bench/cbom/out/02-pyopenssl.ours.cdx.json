@@ -1,0 +1,752 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:aa9eed85-5c8e-5f35-a4dd-1c2947f852ce",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "02-pyopenssl"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-aes-cbc-tests-test-crypto-py",
+      "name": "AES-CBC",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher",
+          "mode": "cbc"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:mode",
+          "value": "CBC"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-aes-cbc-tests-test-ssl-py",
+      "name": "AES-CBC",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher",
+          "mode": "cbc"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:mode",
+          "value": "CBC"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_ssl.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-aes-tests-test-ssl-py",
+      "name": "AES",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "block-cipher"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "block-cipher"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_ssl.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-dsa-src-openssl-crypto-py",
+      "name": "DSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        },
+        "oid": "1.2.840.10040.4.1"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "moderate"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-dsa-tests-test-crypto-py",
+      "name": "DSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        },
+        "oid": "1.2.840.10040.4.1"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "moderate"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-src-openssl-crypto-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "ed25519",
+          "nistQuantumSecurityLevel": 0,
+          "classicalSecurityLevel": 128
+        },
+        "oid": "1.3.101.112"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "128"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-tests-test-crypto-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "ed25519",
+          "nistQuantumSecurityLevel": 0,
+          "classicalSecurityLevel": 128
+        },
+        "oid": "1.3.101.112"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "128"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed448-src-openssl-crypto-py",
+      "name": "Ed448",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0,
+          "classicalSecurityLevel": 224
+        },
+        "oid": "1.3.101.113"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "224"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed448-tests-test-crypto-py",
+      "name": "Ed448",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0,
+          "classicalSecurityLevel": 224
+        },
+        "oid": "1.3.101.113"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "224"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-rsa-2048-tests-test-ssl-py",
+      "name": "RSA-2048",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "parameterSetIdentifier": "2048",
+          "nistQuantumSecurityLevel": 0,
+          "classicalSecurityLevel": 112
+        },
+        "oid": "1.2.840.113549.1.1.1"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:keySize",
+          "value": "2048"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationRoadmap",
+          "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "pke"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "112"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_ssl.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-tests-test-crypto-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "nistQuantumSecurityLevel": 2,
+          "classicalSecurityLevel": 128
+        },
+        "oid": "2.16.840.1.101.3.4.2.1"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "2"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "128"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-tests-test-ssl-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "nistQuantumSecurityLevel": 2,
+          "classicalSecurityLevel": 128
+        },
+        "oid": "2.16.840.1.101.3.4.2.1"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "2"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "128"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_ssl.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-512-tests-test-crypto-py",
+      "name": "SHA-512",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "nistQuantumSecurityLevel": 5,
+          "classicalSecurityLevel": 256
+        },
+        "oid": "2.16.840.1.101.3.4.2.3"
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "5"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:securityStrengthBits",
+          "value": "256"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-private-key-tests-test-crypto-py",
+      "name": "private-key (test_crypto.py)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "private-key",
+          "algorithmRef": "crypto-algo-rsa-2048-tests-test-ssl-py"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:algorithm",
+          "value": "RSA"
+        },
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "private-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-public-key-tests-test-crypto-py",
+      "name": "public-key (test_crypto.py)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "public-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_crypto.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pyca-cryptography",
+      "name": "pyca/cryptography",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/SSL.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pycryptodome",
+      "name": "PyCryptodome",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/__init__.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pyopenssl",
+      "name": "pyOpenSSL",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/SSL.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-ssl-stdlib",
+      "name": "ssl (stdlib)",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "src/OpenSSL/__init__.py"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:beb92649-8c9f-4fe6-b188-3299a9a890ec",
+  "metadata": {
+    "timestamp": "2026-06-26T05:38:45.496327+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "3"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "3"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "0.16"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "4d9c886d-a58e-49bc-ae3f-ce13f72d0247",
+      "type": "framework",
+      "name": "aws_bedrockagent_agent_alias.bedrock_agent_alias",
+      "description": "AWS Bedrock agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/main.tf:144"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-bedrockagent-agent-alias.bedrock-agent-alias"
+    },
+    {
+      "bom-ref": "9218da75-e7f7-4b4e-8c85-6aa0d55f0b0b",
+      "type": "framework",
+      "name": "aws_bedrockagent_agent.agent_supervisor",
+      "description": "AWS Bedrock agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/main.tf:174"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-bedrockagent-agent.agent-supervisor"
+    },
+    {
+      "bom-ref": "5b70c026-d5e3-4773-b28f-2c22fe867276",
+      "type": "machine-learning-model",
+      "name": "aws_bedrock_custom_model.custom_model",
+      "description": "AWS Bedrock completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/repos/09-tf-bedrock/main.tf:267"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-bedrock-custom-model.custom-model"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-06T16:47:29.545Z",
+  "projectRoot": "/Users/anshsinghal/Desktop/DevSecShield",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1783356449545
+}

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.python-version
+*.db
+C:\*
+DashboardSpecs.md
+Notes.md
+routes_arch.md
+validation_error.txt
+mongo-compose.yml
+testing.py
+*.pdf
+db_confs/

@@ -67,6 +67,8 @@ export function SASTOptionsSidebar({
   setRepoUrl,
   PAT,
   setPAT,
+  branch,
+  setBranch,
 }:{
   query: UseQueryResult<SastConversationResponse>;
   app_lang: AppLang;
@@ -77,13 +79,16 @@ export function SASTOptionsSidebar({
   setRepoUrl: Dispatch<SetStateAction<string>>;
   PAT: string;
   setPAT: Dispatch<SetStateAction<string>>;
+  branch: string;
+  setBranch: Dispatch<SetStateAction<string>>;
 }) {
   useEffect(() => {
     setAppLang(app_lang);
     setMode(mode);
     setRepoUrl(repo_url);
     setPAT(PAT);
-  }, [app_lang, mode, repo_url, PAT]);
+    setBranch(branch);
+  }, [app_lang, mode, repo_url, PAT, branch]);
 
   const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" >("ready");
   const [ error_message, setErrorMessage ] = useState<string | null>(null);
@@ -133,7 +138,7 @@ export function SASTOptionsSidebar({
       .filter((p) => p.length > 0);
     const payload: StartScanPayload = {
       sast: {
-        repo_context: zip_file_used ? null : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT },
+        repo_context: zip_file_used ? null : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT, branch: (branch?.trim() || "main") },
         zip_file_used,
         exclude_path_arrays: normalizedExclude.length > 0 ? normalizedExclude : null,
         app_lang: app_lang as SastAppLang,
@@ -197,7 +202,7 @@ export function SASTOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
-  }, [app_lang, mode, repo_url, PAT, uploaded_file]);
+  }, [app_lang, mode, repo_url, PAT, branch, uploaded_file]);
 
   /** Run scan allowed only after estimation process has been run this session (credits from estimate response only). */
   const displayCredits = estimatedCredits;
@@ -252,7 +257,8 @@ export function SASTOptionsSidebar({
     repo_url,
     PAT,
     app_lang,
-    mode
+    mode,
+    branch,
   }: {
     team_id: number;
     scan_id: number;
@@ -260,6 +266,7 @@ export function SASTOptionsSidebar({
     PAT: string;
     app_lang: AppLang;
     mode: Mode;
+    branch?: string;
   }) => {
     setOptionsSidebarState("ready");
     setErrorMessage(null);
@@ -283,7 +290,8 @@ export function SASTOptionsSidebar({
       repo_url,
       PAT,
       app_lang,
-      mode
+      mode,
+      branch: branch?.trim() || "main",
     });
   };
 
@@ -324,6 +332,8 @@ export function SASTOptionsSidebar({
               setRepoUrl={setRepoUrl}
               pat={PAT}
               setPat={setPAT}
+              branch={branch}
+              setBranch={setBranch}
               mode={mode}
               setMode={setMode}
             />
@@ -515,7 +525,8 @@ export function SASTOptionsSidebar({
                 repo_url,
                 PAT,
                 app_lang,
-                mode
+                mode,
+                branch,
               });
             }}
             disabled={reinitializeScanMutation.isPending}

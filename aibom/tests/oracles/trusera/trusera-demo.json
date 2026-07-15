@@ -1,0 +1,1459 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:df8e3bb8-6e2e-44ca-b734-4ffee8418417",
+  "metadata": {
+    "timestamp": "2026-06-25T05:56:34.761526+00:00",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "ai-bom",
+          "version": "3.6.0",
+          "manufacturer": {
+            "name": "Trusera",
+            "url": [
+              "https://trusera.dev"
+            ]
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "trusera:total_components",
+        "value": "44"
+      },
+      {
+        "name": "trusera:critical_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:high_count",
+        "value": "0"
+      },
+      {
+        "name": "trusera:medium_count",
+        "value": "6"
+      },
+      {
+        "name": "trusera:low_count",
+        "value": "38"
+      },
+      {
+        "name": "trusera:scan_duration_seconds",
+        "value": "0.33"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "8878d45a-6e6c-424f-a5be-0908c77d5ba7",
+      "type": "framework",
+      "name": "aws_bedrockagent_agent.support_agent",
+      "description": "AWS Bedrock agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:2"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "anthropic.claude-3-sonnet-20240229-v1:0"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-bedrockagent-agent.support-agent"
+    },
+    {
+      "bom-ref": "d858269a-8a57-44c7-9e3e-8e55a4b3061c",
+      "type": "service",
+      "name": "aws_sagemaker_endpoint.llm_endpoint",
+      "description": "AWS SageMaker completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:10"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS SageMaker"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-sagemaker-endpoint.llm-endpoint"
+    },
+    {
+      "bom-ref": "f4bf1a13-7839-4cb4-8106-af323eacf5e7",
+      "type": "service",
+      "name": "aws_sagemaker_endpoint_configuration.llm_config",
+      "description": "AWS SageMaker completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:15"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS SageMaker"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "gpu_instance"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-sagemaker-endpoint-configuration.llm-config"
+    },
+    {
+      "bom-ref": "8e7f52c8-3bfd-495e-9e59-4c1f83843cdd",
+      "type": "machine-learning-model",
+      "name": "aws_sagemaker_model.llm_model",
+      "description": "AWS SageMaker completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:26"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS SageMaker"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-sagemaker-model.llm-model"
+    },
+    {
+      "bom-ref": "ceda356b-7534-4cbe-9ba7-c3ba7545ce22",
+      "type": "service",
+      "name": "azurerm_cognitive_deployment.gpt4o",
+      "description": "Azure OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:37"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Azure OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/azurerm-cognitive-deployment.gpt4o"
+    },
+    {
+      "bom-ref": "1b50c00c-49be-42cb-81e9-b4a20f03c442",
+      "type": "framework",
+      "name": "google_vertex_ai_reasoning_engine.support_agent",
+      "description": "Google Vertex AI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:55"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google Vertex AI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/google-vertex-ai-reasoning-engine.support-agent"
+    },
+    {
+      "bom-ref": "d4f4e936-f708-483f-8157-3b4a8963e908",
+      "type": "library",
+      "name": "aws_bedrock_guardrail.content_safety",
+      "description": "AWS Bedrock tool_use",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "tool_use"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/infra/main.tf:63"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "AWS Bedrock"
+        },
+        {
+          "name": "trusera:source",
+          "value": "cloud"
+        }
+      ],
+      "purl": "pkg:pypi/aws-bedrock-guardrail.content-safety"
+    },
+    {
+      "bom-ref": "26cdd81e-0671-4db0-a7be-b13922d504f5",
+      "type": "framework",
+      "name": "langchain-openai",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain-openai"
+    },
+    {
+      "bom-ref": "f6b0ee6b-5adb-45eb-b558-670edf6a8871",
+      "type": "machine-learning-model",
+      "name": "chromadb",
+      "description": "ChromaDB embedding",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "embedding"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/chromadb"
+    },
+    {
+      "bom-ref": "a77058a8-9b49-44a8-87bc-1e2b8112414a",
+      "type": "machine-learning-model",
+      "name": "openai",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "be3b3171-a30b-4fbe-a65e-49e22446abfd",
+      "type": "framework",
+      "name": "langchain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "a3f0fc72-de76-4e0c-9c0b-ee7cadcc3083",
+      "type": "framework",
+      "name": "crewai",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "dependency files"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "081e2acf-f6ab-4eb8-9290-54ce14a1a45c",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/app.py:4"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "1fcc73ba-f491-4ce2-a746-6871f0296ac1",
+      "type": "machine-learning-model",
+      "name": "OpenAI API Key",
+      "description": "OpenAI unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/app.py:7"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai api key"
+    },
+    {
+      "bom-ref": "be089cf5-d4de-47dc-aeb6-497c10a585ed",
+      "type": "framework",
+      "name": "LangChain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/agents/langchain_pipeline.py:3"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "54b21f9e-d607-43cf-b4aa-013697bab6d2",
+      "type": "machine-learning-model",
+      "name": "LangChain Model",
+      "description": "OpenAI orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/agents/langchain_pipeline.py:8"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "gpt-4o"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain model"
+    },
+    {
+      "bom-ref": "3018fe90-6339-4736-8ca4-62b969a2167b",
+      "type": "framework",
+      "name": "CrewAI",
+      "description": "CrewAI agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/agents/crew.py:3"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "CrewAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/crewai"
+    },
+    {
+      "bom-ref": "e07e8d8e-b95c-4607-8ec5-70d6793f3039",
+      "type": "framework",
+      "name": "LangChain",
+      "description": "LangChain orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/agents/crew.py:4"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "LangChain"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain"
+    },
+    {
+      "bom-ref": "31838432-b75b-40b2-9874-f6d301e373db",
+      "type": "machine-learning-model",
+      "name": "OpenAI API Key",
+      "description": "OpenAI unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/agents/crew.py:6"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai api key"
+    },
+    {
+      "bom-ref": "88644b9d-5d02-4072-b325-29985fb293c3",
+      "type": "machine-learning-model",
+      "name": "LangChain Model",
+      "description": "OpenAI orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "5"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/agents/crew.py:6"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Model version not pinned (+5)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "unpinned_model"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "gpt-4"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/langchain model"
+    },
+    {
+      "bom-ref": "ce0f054f-8b1f-4a06-bd9e-8467d1ad1282",
+      "type": "machine-learning-model",
+      "name": "OpenAI",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/services/embeddings.py:4"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai"
+    },
+    {
+      "bom-ref": "037f5bc6-e196-4ecb-93e5-76b54dfc2721",
+      "type": "machine-learning-model",
+      "name": "OpenAI API Key",
+      "description": "OpenAI unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/services/embeddings.py:6"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "code"
+        }
+      ],
+      "purl": "pkg:pypi/openai api key"
+    },
+    {
+      "bom-ref": "7d0d699d-64d3-4469-8fe4-8fb5d4781dc1",
+      "type": "container",
+      "name": "ollama (ollama/ollama)",
+      "description": "Ollama unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/docker-compose.yml"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "docker"
+        }
+      ],
+      "purl": "pkg:docker/ollama (ollama/ollama)@latest",
+      "version": "latest"
+    },
+    {
+      "bom-ref": "20bb14c4-8bd6-40a6-b251-c98d61031162",
+      "type": "container",
+      "name": "vllm (vllm/vllm-openai)",
+      "description": "vLLM unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/docker-compose.yml"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "vLLM"
+        },
+        {
+          "name": "trusera:source",
+          "value": "docker"
+        }
+      ],
+      "purl": "pkg:docker/vllm (vllm/vllm-openai)@latest",
+      "version": "latest"
+    },
+    {
+      "bom-ref": "5243785d-2758-4415-ae69-617fd77c2c31",
+      "type": "container",
+      "name": "chromadb (chromadb/chroma)",
+      "description": "ChromaDB unknown",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "unknown"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/docker-compose.yml"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "ChromaDB"
+        },
+        {
+          "name": "trusera:source",
+          "value": "docker"
+        }
+      ],
+      "purl": "pkg:docker/chromadb (chromadb/chroma)@latest",
+      "version": "latest"
+    },
+    {
+      "bom-ref": "7f682dd7-a148-493c-8701-c79dcc1433ce",
+      "type": "framework",
+      "name": "AI Agent",
+      "description": "n8n agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "n8n webhook without authentication (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "webhook_no_auth"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/ai agent"
+    },
+    {
+      "bom-ref": "5541887d-aaaa-4491-9f38-f66184f3d434",
+      "type": "machine-learning-model",
+      "name": "OpenAI Model",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "gpt-4o-mini"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/openai model"
+    },
+    {
+      "bom-ref": "2ab5a849-22b0-48f1-8305-a595724ac692",
+      "type": "library",
+      "name": "Code Tool",
+      "description": "n8n tool_use",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "tool_use"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/code tool"
+    },
+    {
+      "bom-ref": "960baa6f-57ac-4305-8efb-9239f8e1bc38",
+      "type": "library",
+      "name": "HTTP Request Tool",
+      "description": "n8n tool_use",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "tool_use"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/lead-scorer.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/http request tool"
+    },
+    {
+      "bom-ref": "cf70ce54-9275-4294-8b01-bf1ed6977f2d",
+      "type": "framework",
+      "name": "AI Agent",
+      "description": "n8n agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "n8n webhook without authentication (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "webhook_no_auth"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/ai agent"
+    },
+    {
+      "bom-ref": "c8dfc44c-1dcc-487a-b6d0-bc53c72d0ece",
+      "type": "machine-learning-model",
+      "name": "OpenAI Chat Model",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "gpt-4o"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/openai chat model"
+    },
+    {
+      "bom-ref": "9346ded6-c6ff-4f5e-8964-9b8015fe9386",
+      "type": "library",
+      "name": "MCP Client",
+      "description": "MCP tool_use",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "20"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "tool_use"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "MCP"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "MCP client connected to unknown server (+20)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "mcp_unknown_server"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/mcp client"
+    },
+    {
+      "bom-ref": "71327a6c-fdd6-4fd7-b76b-614e75407a63",
+      "type": "framework",
+      "name": "Memory",
+      "description": "n8n orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "25"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/customer-support-agent.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "n8n webhook without authentication (+25)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "webhook_no_auth"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/memory"
+    },
+    {
+      "bom-ref": "17d40697-8e4a-477a-971a-869d9cd0bf66",
+      "type": "framework",
+      "name": "Research Agent",
+      "description": "n8n agent",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "agent"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/research agent"
+    },
+    {
+      "bom-ref": "bd37b83f-a880-402f-8a1e-fe8879be48ab",
+      "type": "machine-learning-model",
+      "name": "Anthropic Model",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "claude-3-5-sonnet-20241022"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic model"
+    },
+    {
+      "bom-ref": "9ec7c5c2-005d-43c4-a391-c3211f5d7a2b",
+      "type": "framework",
+      "name": "Summarization Chain",
+      "description": "n8n orchestration",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "orchestration"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "n8n"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/summarization chain"
+    },
+    {
+      "bom-ref": "0dcb6f3a-b189-4072-b9c0-cbdd99e79a1c",
+      "type": "machine-learning-model",
+      "name": "Google Gemini",
+      "description": "Google completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/workflows/multi-agent-pipeline.json"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Google"
+        },
+        {
+          "name": "trusera:model_name",
+          "value": "gemini-1.5-pro"
+        },
+        {
+          "name": "trusera:source",
+          "value": "n8n"
+        }
+      ],
+      "purl": "pkg:pypi/google gemini"
+    },
+    {
+      "bom-ref": "69a88e97-affc-472a-9b18-6608d8ff3e36",
+      "type": "service",
+      "name": "OpenAI Endpoint",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:2"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/openai endpoint"
+    },
+    {
+      "bom-ref": "305f60e9-51fe-4832-9b16-10b163e34caf",
+      "type": "service",
+      "name": "OpenAI API Key",
+      "description": "OpenAI completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:2"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "OpenAI"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/openai api key"
+    },
+    {
+      "bom-ref": "248d215e-d242-4217-9a9c-5c718c6cec63",
+      "type": "service",
+      "name": "Anthropic Endpoint",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:3"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic endpoint"
+    },
+    {
+      "bom-ref": "a89529ed-ce9c-443f-99c1-d9a29425250f",
+      "type": "service",
+      "name": "Anthropic API Key",
+      "description": "Anthropic completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:3"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Anthropic"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/anthropic api key"
+    },
+    {
+      "bom-ref": "ab00b8be-f614-4d91-a6bb-ba2b30914f1b",
+      "type": "service",
+      "name": "HuggingFace Endpoint",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:4"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface endpoint"
+    },
+    {
+      "bom-ref": "6bb1c2fe-d111-457b-b663-1cf4207066b9",
+      "type": "service",
+      "name": "HuggingFace API Key",
+      "description": "HuggingFace completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "30"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:4"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "HuggingFace"
+        },
+        {
+          "name": "trusera:risk_factors",
+          "value": "Hardcoded API key detected (+30)"
+        },
+        {
+          "name": "trusera:flags",
+          "value": "hardcoded_api_key"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/huggingface api key"
+    },
+    {
+      "bom-ref": "c8d73f46-aa5d-4204-bbfc-664fbe795bf5",
+      "type": "service",
+      "name": "Ollama Endpoint",
+      "description": "Ollama completion",
+      "properties": [
+        {
+          "name": "trusera:risk_score",
+          "value": "0"
+        },
+        {
+          "name": "trusera:usage_type",
+          "value": "completion"
+        },
+        {
+          "name": "trusera:source_location",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/aibom/tests/fixtures/trusera-demo/.env.example:11"
+        },
+        {
+          "name": "trusera:provider",
+          "value": "Ollama"
+        },
+        {
+          "name": "trusera:source",
+          "value": "network"
+        }
+      ],
+      "purl": "pkg:pypi/ollama endpoint"
+    }
+  ]
+}

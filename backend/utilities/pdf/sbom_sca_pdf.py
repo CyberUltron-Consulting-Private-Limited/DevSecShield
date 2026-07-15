@@ -494,6 +494,13 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 if len(cves) > 10:
                     story.append(Paragraph(f"... and {len(cves) - 10} more CVEs", normal_style))
 
+    if isinstance(scan_results, dict):
+        from backend.utilities.pdf.rbi_compliance_pdf import append_rbi_compliance_pdf_section
+
+        append_rbi_compliance_pdf_section(
+            story, scan_results, heading_style, normal_style, small_style
+        )
+
     # Build PDF with proper page handlers
     doc.build(story, onFirstPage=create_title_page, onLaterPages=create_header_footer)
     

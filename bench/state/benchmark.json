@@ -1,0 +1,90 @@
+{
+ "00-synthetic": {
+  "cisco": 7,
+  "trusera": 5,
+  "ours": 13,
+  "true_misses": [],
+  "our_unique_count": 4,
+  "sha": "local"
+ },
+ "01-chroma": {
+  "cisco": 47,
+  "trusera": 17,
+  "ours": 107,
+  "true_misses": [],
+  "our_unique_count": 81,
+  "sha": "207de39"
+ },
+ "02-langchain": {
+  "cisco": 15,
+  "trusera": 8,
+  "ours": 28,
+  "true_misses": [],
+  "our_unique_count": 18,
+  "sha": "57c83d4"
+ },
+ "03-llama-index": {
+  "cisco": 12,
+  "trusera": 10,
+  "ours": 46,
+  "true_misses": [],
+  "our_unique_count": 37,
+  "sha": "520aa4e"
+ },
+ "04-autogen": {
+  "cisco": 0,
+  "trusera": 2,
+  "ours": 36,
+  "true_misses": [],
+  "our_unique_count": 36,
+  "sha": "027ecf0"
+ },
+ "05-openai-cookbook": {
+  "cisco": 134,
+  "trusera": 15,
+  "ours": 159,
+  "true_misses": [],
+  "our_unique_count": 94,
+  "sha": "abd1e28"
+ },
+ "06-mcp-servers": {
+  "cisco": 5,
+  "trusera": 2,
+  "ours": 14,
+  "true_misses": [],
+  "our_unique_count": 10,
+  "sha": "7b1170d"
+ },
+ "07-hf-minilm": {
+  "cisco": 7,
+  "trusera": 11,
+  "ours": 17,
+  "true_misses": [],
+  "our_unique_count": 3,
+  "sha": "1110a24"
+ },
+ "08-monai": {
+  "cisco": 13,
+  "trusera": 1,
+  "ours": 2,
+  "true_misses": [],
+  "our_unique_count": 2,
+  "sha": "4ba89bd"
+ },
+ "09-tf-bedrock": {
+  "cisco": 1,
+  "trusera": 3,
+  "ours": 7,
+  "true_misses": [],
+  "our_unique_count": 6,
+  "sha": "4b74b7d"
+ },
+ "10-trl-sft": {
+  "cisco": 17,
+  "trusera": 5,
+  "ours": 42,
+  "true_misses": [],
+  "our_unique_count": 38,
+  "sha": "b3caa40"
+ }
+}

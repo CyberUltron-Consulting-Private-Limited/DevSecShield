@@ -1,0 +1,201 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:13999169-4151-588c-ab38-4aff6dc617d0",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "BoneAge-Research-Tool",
+      "version": "1.0.0"
+    },
+    "properties": [
+      {
+        "name": "clinical:modality",
+        "value": "DX (hand radiograph)"
+      },
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      },
+      {
+        "name": "regulatory:eu_ai_act_risk",
+        "value": "minimal (research use, not a deployed medical device)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "model-bone-age",
+      "name": "bone-age-estimator",
+      "version": "1.0.0",
+      "publisher": "OpenRad Research",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c758692e0123cc39801afedb60db5e6d681f2c135f9f988b2c07dbd97a52a8af"
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "supervised"
+          },
+          "task": "regression",
+          "architectureFamily": "convolutional neural network",
+          "modelArchitecture": "ResNet-18",
+          "datasets": [
+            {
+              "ref": "dataset-rsna-boneage"
+            }
+          ],
+          "inputs": [
+            {
+              "format": "DICOM DX image"
+            }
+          ],
+          "outputs": [
+            {
+              "format": "estimated bone age (months)"
+            }
+          ]
+        }
+      },
+      "properties": [
+        {
+          "name": "clinical:body_part",
+          "value": "hand"
+        },
+        {
+          "name": "clinical:intended_use",
+          "value": "research-only pediatric bone-age estimation (not for clinical use)"
+        },
+        {
+          "name": "clinical:modality",
+          "value": "DX (hand radiograph)"
+        },
+        {
+          "name": "clinical:uses_sensitive_personal_information",
+          "value": "no"
+        },
+        {
+          "name": "regulatory:eu_ai_act_risk",
+          "value": "minimal (research use, not a deployed medical device)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "dataset-rsna-boneage",
+      "name": "rsna-boneage",
+      "licenses": [
+        {
+          "license": {
+            "id": "CC-BY-NC-4.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "dataset:anonymization_method",
+          "value": "public-challenge de-identification (source-released)"
+        },
+        {
+          "name": "dataset:has_sensitive_personal_information",
+          "value": "no"
+        },
+        {
+          "name": "dataset:known_bias",
+          "value": "pediatric population only"
+        },
+        {
+          "name": "dataset:provenance",
+          "value": "RSNA Pediatric Bone Age Challenge 2017 (publicly released)"
+        },
+        {
+          "name": "dataset:sensitivity",
+          "value": "public, fully de-identified at source"
+        },
+        {
+          "name": "dataset:size",
+          "value": "14,236 studies"
+        },
+        {
+          "name": "dataset:type",
+          "value": "image (DICOM)"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-numpy",
+      "name": "numpy",
+      "version": "1.26.4",
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "version": "2.3.1",
+      "purl": "pkg:pypi/torch@2.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelfile-model.safetensors",
+      "name": "model.safetensors",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c758692e0123cc39801afedb60db5e6d681f2c135f9f988b2c07dbd97a52a8af"
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:weight_file",
+          "value": "true"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "model-bone-age",
+      "dependsOn": [
+        "dataset-rsna-boneage",
+        "lib-numpy",
+        "lib-torch",
+        "modelfile-model.safetensors"
+      ]
+    }
+  ]
+}

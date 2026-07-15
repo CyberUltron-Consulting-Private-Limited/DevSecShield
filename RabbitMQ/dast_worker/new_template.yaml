@@ -1,0 +1,63 @@
+
+id: template_template_name
+
+info:
+  name: template_template_name
+  author: pdteam
+  severity: high
+
+headless:
+
+  - steps:
+      - args:
+          url: "https://demo.testfire.net/login.jsp"
+        action: navigate
+      - action: waitload
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: jsmith
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[1]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: click
+      - action: waitload
+      - args:
+          by: xpath
+          value: demo123
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[2]/td[2]/input
+        action: text
+      - args:
+          by: xpath
+          xpath: /html/body/table/tbody/tr[2]/td[2]/div/form/table/tbody/tr[3]/td[2]/input
+        action: click
+      - action: waitload
+
+
+
+  - steps:
+      - args:
+          url: "https://demo.testfire.net"
+        action: navigate
+
+      - action: waitload
+
+      - action: script
+        name: extract_html
+        args:
+          code: |
+            () => {
+              return document.documentElement.outerHTML;
+            }
+    extractors:
+      - type: regex
+        part: extract_html
+        regex:
+          - "(?s)(.*)" # This regex captures the entire output of the script action
+

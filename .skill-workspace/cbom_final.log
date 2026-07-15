@@ -1,0 +1,320 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+[12:15:16] Starting 3 real CBOM scans (Bedrock model=None)
+[12:15:17] === SCAN START jjwt (https://github.com/jwtk/jjwt @ main) ===
+📦 Cloning https://github.com/jwtk/jjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_xhj6pa05 Branch:main
+[12:15:20]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 407 files, found 476 crypto usages
+CBOM Source Scanner: 131 unique crypto assets after dedup
+Source scanner found 131 crypto asset detections
+[12:15:20]    progress 30%
+[12:15:20]    progress 50%
+Generated CycloneDX CBOM with 131 components
+[12:15:20]    progress 60%
+Getting Cryptographic Output Model ....
+Getting Output Model ....
+✅ CVE cache HIT from MongoDB, count: 60
+CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+Creating Output Model ....
+Final Vulnerability Model created successfully
+Response Model created successfully
+Output Model generated successfully
+Cryptographic Output Model generated successfully
+🔍 Map-reduce cache MISS for hash 88f7dab9905076a9...
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Mapping length of documents 14
+🔍 Batch 0 map cache MISS (hash 401f91cbc5c1...)
+Documents data length before summarizing 30695
+Map Summary for Documents 0 to 10 .  Content length of map summary: 6552
+🔍 Batch 1 map cache MISS (hash 410c6650c127...)
+Documents data length before summarizing 9949
+Map Summary for Documents 10 to 20 .  Content length of map summary: 6984
+📊 Batch map summary: 0 cache hits, 2 misses out of 2 batches
+📊 Batch map summary: 0 cache hits, 2 misses out of 2 batches
+Map results length : 2
+Initial Summary : Combining first batch (upto 10 ) map results
+✅ Map-reduce result cached with hash 88f7dab9905076a9...
+Vulnerabilities from LLM enrichment: 5
+ 🔐 Vulnerability #1: Weak SHA-1 hash algorithm used for X.509 certificate 
+thumbprint
+ 🔐 Vulnerability #2: RSA signature algorithms (RS256/RS512) vulnerable to 
+quantum attacks
+ 🔐 Vulnerability #3: ECDSA signature algorithms (ES256/ES512) vulnerable to 
+quantum attacks
+ 🔐 Vulnerability #4: ECDH key exchange algorithm vulnerable to quantum attacks
+ 🔐 Vulnerability #5: X25519 elliptic curve used for key exchange is not 
+quantum-safe
+[12:15:37]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[12:15:37]    progress 100%
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+[12:15:37] === SCAN DONE  jjwt: 5 findings in 20s -> /tmp/cbom_runs/jjwt.json ===
+[12:15:38] === SCAN START php-jwt (https://github.com/firebase/php-jwt @ main) ===
+📦 Cloning https://github.com/firebase/php-jwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_drwoue5g Branch:main
+[12:15:39]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 13 files, found 318 crypto usages
+CBOM Source Scanner: 38 unique crypto assets after dedup
+Source scanner found 38 crypto asset detections
+[12:15:39]    progress 30%
+[12:15:39]    progress 50%
+Generated CycloneDX CBOM with 38 components
+[12:15:39]    progress 60%
+Getting Cryptographic Output Model ....
+Getting Output Model ....
+Using in-memory CVE cache, count: 60
+CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+Creating Output Model ....
+Final Vulnerability Model created successfully
+Response Model created successfully
+Output Model generated successfully
+Cryptographic Output Model generated successfully
+🔍 Map-reduce cache MISS for hash ee6e8b0ee5aa0d00...
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Mapping length of documents 4
+🔍 Batch 0 map cache MISS (hash ee6e8b0ee5aa...)
+Documents data length before summarizing 9609
+Map Summary for Documents 0 to 10 .  Content length of map summary: 3369
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+Skipping Combine and Refine steps as there is only 1 Map summary result .
+✅ Map-reduce result cached with hash ee6e8b0ee5aa0d00...
+Vulnerabilities from LLM enrichment: 2
+ 🔐 Vulnerability #1: ECDSA algorithm usage (ES256/ES384) - quantum vulnerable
+ 🔐 Vulnerability #2: RSA algorithm usage (RS256/RS512) - quantum vulnerable
+[12:15:52]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[12:15:52]    progress 100%
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+[12:15:52] === SCAN DONE  php-jwt: 2 findings in 14s -> /tmp/cbom_runs/php-jwt.json ===
+[12:15:53] === SCAN START node-jsonwebtoken (https://github.com/auth0/node-jsonwebtoken @ master) ===
+📦 Cloning https://github.com/auth0/node-jsonwebtoken → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_7lfkwfz8 Branch:master
+[12:15:54]    progress 10%
+Running CBOM source code scanner ...
+CBOM Source Scanner: scanned 46 files, found 323 crypto usages
+CBOM Source Scanner: 91 unique crypto assets after dedup
+Source scanner found 91 crypto asset detections
+[12:15:54]    progress 30%
+[12:15:54]    progress 50%
+Generated CycloneDX CBOM with 91 components
+[12:15:54]    progress 60%
+Getting Cryptographic Output Model ....
+Getting Output Model ....
+Using in-memory CVE cache, count: 60
+CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+Creating Output Model ....
+Final Vulnerability Model created successfully
+Response Model created successfully
+Output Model generated successfully
+Cryptographic Output Model generated successfully
+🔍 Map-reduce cache MISS for hash 2060a3d02e5a9062...
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Structured Bedrock LLM fetched successfully (JSON fallback)
+Mapping length of documents 10
+🔍 Batch 0 map cache MISS (hash 2060a3d02e5a...)
+Documents data length before summarizing 24076
+Map Summary for Documents 0 to 10 .  Content length of map summary: 5059
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+📊 Batch map summary: 0 cache hits, 1 misses out of 1 batches
+Skipping Combine and Refine steps as there is only 1 Map summary result .
+✅ Map-reduce result cached with hash 2060a3d02e5a9062...
+Vulnerabilities from LLM enrichment: 3
+ 🔐 Vulnerability #1: Use of DSA algorithm for digital signatures
+ 🔐 Vulnerability #2: Use of RSA algorithm for asymmetric encryption/signing
+ 🔐 Vulnerability #3: Use of ECDSA algorithm for asymmetric encryption/signing
+[12:16:04]    progress 90%
+Performing cleanup .... 🧹
+Temp Dir does Exist
+Removing temporary directory ...
+Temporary directory removed successfully
+[12:16:04]    progress 100%
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+⚠️ Owasp top 10 found in dumped,parsing it...
+✅ Owasp top 10 parsed successfully
+⚠️ Compliance controls found in dumped,parsing it...
+✅ Compliance controls parsed successfully
+⚠️ CVE's found in dumped,parsing it...
+✅ CVE's parsed successfully
+⚠️ Impact found in dumped,parsing it...
+✅ Impact parsed successfully
+⚠️ Algorithm type found in dumped,parsing it...
+✅ Algorithm type parsed successfully
+⚠️ Crypto strength found in dumped,parsing it...
+✅ Crypto strength parsed successfully
+✅ Vulnerability parsed successfully
+[12:16:04] === SCAN DONE  node-jsonwebtoken: 3 findings in 11s -> /tmp/cbom_runs/node-jsonwebtoken.json ===
+[12:16:04] ALL DONE: 3/5 succeeded

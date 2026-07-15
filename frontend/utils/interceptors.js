@@ -1,7 +1,10 @@
 import axios from "axios";
-// Base URL can be configured via env; falls back to local FastAPI server
-let backendURL = "http://127.0.0.1:8081"; // for local deveslopment
-// const backendURL = "https://devsecshieldapi.zeroshield.ai";
+// Base URL: set NEXT_PUBLIC_BACKEND_URL at build time (prod) or use local default
+const backendURL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://devsecshieldapi.zeroshield.ai"
+    : "http://127.0.0.1:8081");
 
 
 

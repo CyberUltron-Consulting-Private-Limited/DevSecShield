@@ -1,0 +1,68 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "bom-ref": "pkg:pypi/cryptography@42.0.5",
+      "evidence": {
+        "identity": [
+          {
+            "concludedValue": "/tmp/synth-fix/requirements.txt",
+            "confidence": 0.5,
+            "field": "purl",
+            "methods": [
+              {
+                "confidence": 0.5,
+                "technique": "manifest-analysis",
+                "value": "/tmp/synth-fix/requirements.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "name": "cryptography",
+      "purl": "pkg:pypi/cryptography@42.0.5",
+      "type": "library",
+      "version": "42.0.5"
+    },
+    {
+      "bom-ref": "pkg:pypi/pyopenssl@24.1.0",
+      "evidence": {
+        "identity": [
+          {
+            "concludedValue": "/tmp/synth-fix/requirements.txt",
+            "confidence": 0.5,
+            "field": "purl",
+            "methods": [
+              {
+                "confidence": 0.5,
+                "technique": "manifest-analysis",
+                "value": "/tmp/synth-fix/requirements.txt"
+              }
+            ]
+          }
+        ]
+      },
+      "name": "pyOpenSSL",
+      "purl": "pkg:pypi/pyopenssl@24.1.0",
+      "type": "library",
+      "version": "24.1.0"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "name": "synthetic-crypto-app",
+      "type": "application"
+    },
+    "tools": {
+      "components": [
+        {
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "type": "application",
+          "version": "11.11.0"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6"
+}

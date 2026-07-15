@@ -1,0 +1,41 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.8:3000
+✓ Ready in 1041ms
+
+api base url :  http://127.0.0.1:8081
+ GET /login 200 in 1454ms (next.js: 813ms, application-code: 641ms)
+ GET / 200 in 380ms (next.js: 109ms, application-code: 271ms)
+ GET /1/cbom/1/results 200 in 1305ms (next.js: 1025ms, application-code: 280ms)
+ GET /1/cbom/1/results 200 in 1729ms (next.js: 1304ms, application-code: 425ms)
+ GET /1/cbom/1/results 200 in 471ms (next.js: 130ms, application-code: 341ms)
+ GET /1/cbom/1/results 200 in 296ms (next.js: 6ms, application-code: 290ms)
+ GET /1/cbom/1/results 200 in 269ms (next.js: 9ms, application-code: 260ms)
+ GET /1/cbom/1/results 200 in 346ms (next.js: 7ms, application-code: 339ms)
+ GET /1/cbom/1/results 200 in 160ms (next.js: 12ms, application-code: 148ms)
+ GET /1/cbom/1/results 200 in 171ms (next.js: 8ms, application-code: 163ms)
+ GET /1/cbom/1/results 200 in 99ms (next.js: 8ms, application-code: 90ms)
+ GET / 200 in 727ms (next.js: 253ms, application-code: 474ms)
+✓ Compiled in 1353ms
+ GET /1/cbom/1/results 200 in 526ms (next.js: 247ms, application-code: 280ms)
+ GET /1/cbom/1/results 200 in 289ms (next.js: 8ms, application-code: 280ms)
+ GET /1/cbom/1/results 200 in 183ms (next.js: 5ms, application-code: 177ms)
+ GET /1/cbom/1/results 200 in 226ms (next.js: 13ms, application-code: 213ms)
+ GET /1/cbom/1/results 200 in 118ms (next.js: 18ms, application-code: 100ms)
+api base url :  http://127.0.0.1:8081
+ GET /login 200 in 751ms (next.js: 179ms, application-code: 572ms)
+✓ Compiled in 5.4s
+ GET /login 200 in 1482ms (next.js: 398ms, application-code: 1084ms)
+ GET /login 200 in 1013ms (next.js: 31ms, application-code: 982ms)
+ GET /login 200 in 478ms (next.js: 7ms, application-code: 471ms)
+ GET /login 200 in 439ms (next.js: 15ms, application-code: 424ms)
+○ Compiling /[team_id]/ai_bom ...
+api base url :  http://127.0.0.1:8081
+ GET /1/ai_bom 200 in 26.9s (next.js: 25.2s, application-code: 1763ms)
+○ Compiling /[team_id]/ai_bom/[scan_id] ...
+ GET /1/ai_bom/4 200 in 7.7s (next.js: 7.7s, application-code: 34ms)
+ GET /1/ai_bom/4 200 in 2.7s (next.js: 49ms, application-code: 2.6s)

@@ -1,0 +1,3 @@
+torch==2.2.0          # BSD-3-Clause
+numpy==1.26.4         # BSD-3-Clause
+pydicom==2.4.4        # MIT

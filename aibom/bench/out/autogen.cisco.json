@@ -1,0 +1,60 @@
+{
+  "aibom_analysis": {
+    "metadata": {
+      "run_id": "6a4a3969-72eb-4cc7-8b4c-ca75577fbb7e",
+      "analyzer_version": "1.0.3",
+      "started_at": "2026-06-26T05:41:06Z",
+      "output_format": "json",
+      "sources_requested": 1,
+      "llm_model": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "total_tokens": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "completed_at": "2026-06-26T05:42:46Z",
+      "error_count": 0,
+      "sources_analyzed": 1,
+      "sources_with_errors": 0,
+      "status": "completed",
+      "report_schema_version": "2"
+    },
+    "sources": {
+      "microsoft/autogen": {
+        "source_name": "microsoft/autogen",
+        "source_path": "/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/autogen/python/packages/autogen-core",
+        "components": {},
+        "relationships": [],
+        "summary": {
+          "status": "completed",
+          "source_kind": "local-path",
+          "assets_discovered": 0,
+          "last_generated_at": "2026-06-26T05:42:46Z"
+        },
+        "metadata": {
+          "source_kind": "git",
+          "source_ref_canonical": "github.com/microsoft/autogen",
+          "source_ref_version": "027ecf0a379bcc1d09956d46d12d44a3ad9cee14",
+          "elapsed_s": 100.36,
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    "summary": {
+      "total_sources": 1,
+      "total_components": 0,
+      "pending_agent_review": 0,
+      "test_only_components": 0,
+      "component_types": {},
+      "total_relationships": 0,
+      "risk_score": 0,
+      "risk_severity": "info"
+    },
+    "risk": {
+      "score": 0,
+      "severity": "info",
+      "flags": []
+    },
+    "errors": []
+  }
+}

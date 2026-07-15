@@ -2,8 +2,8 @@ from rich.console import Console
 from fastapi import HTTPException, status
 from pydantic import BaseModel , Field
 from enum import Enum
-from backend.ai_utils.llm import generate_structured_response, generate_structured_response_bedrock
-from backend.ai_utils.mock_export import mock_export_results
+from backend.utilities.ai.llm import generate_structured_response
+from backend.utilities.ai.mock_export import mock_export_results
 
 console = Console()
 

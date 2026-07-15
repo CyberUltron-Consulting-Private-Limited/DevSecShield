@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>clinithread-aibom — AI BOM Dashboard</title>
+  <!--
+    Self-contained, zero-build SPA. React 18 + Tailwind via CDN, JSX compiled in
+    the browser by Babel standalone. Renders PURELY from a ScanResult JSON
+    (`aibom scan|map|discover ... -o scan.json`). No localStorage, no app state
+    persisted anywhere — reload re-reads the file. Open via `aibom dashboard`,
+    or open this file and pick a ScanResult JSON.
+  -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0b1020; }
+    .card { background: #131a2e; border: 1px solid #243049; }
+    .scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #2c3a59; border-radius: 8px; }
+  </style>
+</head>
+<body class="text-slate-200">
+  <div id="root" class="min-h-screen"></div>
+
+  <!-- Custom type: NOT auto-run by the browser or Babel; the runner below
+       transforms it with the classic JSX runtime and executes it. -->
+  <script type="text/x-aibom-jsx" id="app-source">
+// Compiled in-browser by Babel standalone (classic runtime): JSX becomes
+// React.createElement (the UMD global) — no `react/jsx-runtime` ESM import.
+const { useState, useEffect, useMemo } = React;
+
+// ---- score scale (LOCKED, mirrors config/risk-weights.yaml `scale.bands`) ----
+const BAND = {
+  low:    { label: "LOW",    pill: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40", bar: "#10b981" },
+  medium: { label: "MEDIUM", pill: "bg-amber-500/20 text-amber-300 border-amber-500/40",       bar: "#f59e0b" },
+  high:   { label: "HIGH",   pill: "bg-rose-500/20 text-rose-300 border-rose-500/40",          bar: "#f43f5e" },
+};
+const VERDICT = {
+  pass: { label: "pass", cls: "bg-emerald-500/20 text-emerald-300", dot: "#10b981" },
+  fail: { label: "fail", cls: "bg-rose-500/20 text-rose-300",       dot: "#f43f5e" },
+  na:   { label: "n/a",  cls: "bg-slate-500/20 text-slate-300",     dot: "#64748b" },
+};
+const FW_LABEL = {
+  fda_524b: "FDA §524B", eu_ai_act_annexIV: "EU AI Act (Annex IV)",
+  gmlp: "GMLP (IMDRF)", hipaa: "HIPAA", nist_rmf: "NIST AI RMF",
+};
+
+const unsanctionedSet = (d) =>
+  new Set(d.flags.filter(f => f.code === "UNSANCTIONED_COMPONENT").map(f => f.target));
+
+// ----------------------------------------------------------------- primitives
+function Pill({ children, cls }) {
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>{children}</span>;
+}
+function Card({ title, right, children }) {
+  return (
+    <div className="card rounded-xl p-4 shadow-lg">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold tracking-wide text-slate-300 uppercase">{title}</h2>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- gauge
+function RiskGauge({ scores }) {
+  const band = BAND[scores.risk_band] || BAND.low;
+  const pct = Math.min(100, scores.risk_normalized || 0);
+  const r = 52, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
+  return (
+    <div className="flex items-center gap-6">
+      <svg width="140" height="140" viewBox="0 0 140 140" className="shrink-0">
+        <circle cx="70" cy="70" r={r} stroke="#243049" strokeWidth="12" fill="none" />
+        <circle cx="70" cy="70" r={r} stroke={band.bar} strokeWidth="12" fill="none"
+          strokeDasharray={c} strokeDashoffset={off} strokeLinecap="round"
+          transform="rotate(-90 70 70)" />
+        <text x="70" y="66" textAnchor="middle" className="fill-slate-100" style={{ fontSize: 30, fontWeight: 700 }}>{pct}</text>
+        <text x="70" y="88" textAnchor="middle" className="fill-slate-400" style={{ fontSize: 11 }}>/ 100</text>
+      </svg>
+      <div className="space-y-2">
+        <Pill cls={band.pill}>{band.label} RISK</Pill>
+        <div className="text-xs text-slate-400">raw risk total <span className="text-slate-200 font-semibold">{scores.risk_total}</span></div>
+        <div className="text-xs text-slate-400">{scores.flag_count} flag(s) raised</div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------- shadow panel
+function ShadowPanel({ data }) {
+  const uns = unsanctionedSet(data);
+  const rows = data.components.filter(c => uns.has(c.bom_ref));
+  return (
+    <Card title="Shadow AI" right={<Pill cls={rows.length ? BAND.high.pill : BAND.low.pill}>{rows.length} unsanctioned</Pill>}>
+      {rows.length === 0
+        ? <p className="text-sm text-slate-400">No unsanctioned components (run <code>discover --allowlist</code> to diff against your allowlist).</p>
+        : <ul className="space-y-2">
+            {rows.map(c => (
+              <li key={c.bom_ref} className="flex items-center justify-between bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                <div><div className="text-sm font-medium text-rose-200">{c.name}</div>
+                  <div className="text-xs text-slate-400">{c.kind}{c.publisher ? " · " + c.publisher : ""}</div></div>
+                <Pill cls={BAND.high.pill}>UNSANCTIONED</Pill>
+              </li>
+            ))}
+          </ul>}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------ inventory table
+function Inventory({ data }) {
+  const uns = unsanctionedSet(data);
+  const kinds = useMemo(() => ["all", ...Array.from(new Set(data.components.map(c => c.kind))).sort()], [data]);
+  const [kind, setKind] = useState("all");
+  const rows = data.components.filter(c => kind === "all" || c.kind === kind);
+  return (
+    <Card title="Inventory" right={<span className="text-xs text-slate-400">{data.components.length} components · {data.edges.length} edges</span>}>
+      <div className="flex flex-wrap gap-1 mb-3">
+        {kinds.map(k => (
+          <button key={k} onClick={() => setKind(k)}
+            className={`px-2 py-0.5 rounded-full text-xs border ${kind === k ? "bg-sky-500/30 text-sky-200 border-sky-500/50" : "border-slate-600 text-slate-400 hover:text-slate-200"}`}>{k}</button>
+        ))}
+      </div>
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-slate-400 border-b border-slate-700">
+            <th className="py-2 pr-3 font-medium">Component</th><th className="py-2 pr-3 font-medium">Kind</th>
+            <th className="py-2 pr-3 font-medium">Vendor</th><th className="py-2 pr-3 font-medium">Version</th>
+            <th className="py-2 font-medium">Status</th></tr></thead>
+          <tbody>
+            {rows.map(c => (
+              <tr key={c.bom_ref} className="border-b border-slate-800/70">
+                <td className="py-2 pr-3 text-slate-100">{c.name}</td>
+                <td className="py-2 pr-3"><span className="text-xs text-slate-300 bg-slate-700/40 rounded px-1.5 py-0.5">{c.kind}</span></td>
+                <td className="py-2 pr-3 text-slate-400">{c.publisher || "—"}</td>
+                <td className="py-2 pr-3 text-slate-400">{c.version || "—"}</td>
+                <td className="py-2">{uns.has(c.bom_ref)
+                  ? <Pill cls={BAND.high.pill}>unsanctioned</Pill>
+                  : <Pill cls={BAND.low.pill}>ok</Pill>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+// ----------------------------------------------------------------- heatmap
+function Heatmap({ data }) {
+  const byc = data.scores.by_component || {};
+  const byf = data.scores.by_flag || {};
+  const refName = Object.fromEntries(data.components.map(c => [c.bom_ref, c.name]));
+  const comp = Object.entries(byc).sort((a, b) => b[1] - a[1]);
+  const flags = Object.entries(byf).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...comp.map(e => e[1]), ...flags.map(e => e[1]));
+  const tone = (v) => v <= 0 ? BAND.low.bar : v / max <= 0.34 ? BAND.low.bar : v / max <= 0.66 ? BAND.medium.bar : BAND.high.bar;
+  const Bars = ({ entries, name }) => (
+    <div className="space-y-1.5">
+      {entries.length === 0 && <p className="text-sm text-slate-500">none</p>}
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex items-center gap-2">
+          <div className="w-40 truncate text-xs text-slate-300" title={name ? (refName[k] || k) : k}>{name ? (refName[k] || k) : k}</div>
+          <div className="flex-1 bg-slate-800 rounded h-4 overflow-hidden">
+            <div className="h-4 rounded" style={{ width: `${(v / max) * 100}%`, background: tone(v) }} />
+          </div>
+          <div className="w-8 text-right text-xs text-slate-400">{v}</div>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <Card title="Risk heatmap" right={<span className="text-xs text-slate-400">raw flag-weight contribution</span>}>
+      <div className="grid md:grid-cols-2 gap-5">
+        <div><div className="text-xs uppercase text-slate-500 mb-2">by component</div><Bars entries={comp} name /></div>
+        <div><div className="text-xs uppercase text-slate-500 mb-2">by flag</div><Bars entries={flags} /></div>
+      </div>
+    </Card>
+  );
+}
+
+// --------------------------------------------------------------- compliance
+function FrameworkCard({ fw, b }) {
+  const [open, setOpen] = useState(false);
+  const total = b.pass + b.fail + b.na || 1;
+  const cov = b.coverage == null ? "n/a" : `${Math.round(b.coverage * 100)}%`;
+  return (
+    <div className="bg-slate-900/40 border border-slate-700 rounded-lg p-3">
+      <div className="flex items-center justify-between cursor-pointer" onClick={() => setOpen(o => !o)}>
+        <div className="font-medium text-slate-100 text-sm">{FW_LABEL[fw] || fw}</div>
+        <div className="text-xs text-slate-400">coverage {cov} <span className="ml-1">{open ? "▾" : "▸"}</span></div>
+      </div>
+      <div className="flex h-2 rounded overflow-hidden my-2">
+        <div style={{ width: `${(b.pass / total) * 100}%`, background: VERDICT.pass.dot }} />
+        <div style={{ width: `${(b.fail / total) * 100}%`, background: VERDICT.fail.dot }} />
+        <div style={{ width: `${(b.na / total) * 100}%`, background: VERDICT.na.dot }} />
+      </div>
+      <div className="flex gap-3 text-xs text-slate-400">
+        <span><span className="text-emerald-300 font-semibold">{b.pass}</span> pass</span>
+        <span><span className="text-rose-300 font-semibold">{b.fail}</span> fail</span>
+        <span><span className="text-slate-300 font-semibold">{b.na}</span> n/a</span>
+      </div>
+      {open && (
+        <ul className="mt-3 space-y-1.5 border-t border-slate-800 pt-2">
+          {b.requirements.map(r => {
+            const v = VERDICT[r.verdict] || VERDICT.na;
+            return (
+              <li key={r.id} className="flex items-start gap-2 text-xs">
+                <span className={`shrink-0 px-1.5 py-0.5 rounded ${v.cls}`}>{v.label}</span>
+                <div><span className="text-slate-300 font-medium">{r.id}</span> <span className="text-slate-400">{r.title}</span>
+                  {r.evidence && <div className="text-slate-500">{r.evidence}</div>}</div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+function Compliance({ data }) {
+  const frameworks = Object.keys(data.compliance).filter(k => k !== "disclaimer");
+  if (frameworks.length === 0)
+    return <Card title="Compliance readiness"><p className="text-sm text-slate-400">No compliance report in this ScanResult. Generate with <code>aibom map</code> / <code>aibom dashboard</code>.</p></Card>;
+  return (
+    <Card title="Compliance readiness" right={<span className="text-xs text-slate-500">advisory · pass / fail / n-a</span>}>
+      <div className="grid md:grid-cols-2 gap-3">
+        {frameworks.map(fw => <FrameworkCard key={fw} fw={fw} b={data.compliance[fw]} />)}
+      </div>
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------- per-site drift
+function Sites({ data }) {
+  const sites = data.components
+    .filter(c => (c.properties || {})["site:drift_status"] != null)
+    .map(c => {
+      const p = c.properties || {};
+      const models = data.edges.filter(e => e.rel === "deployed_at" && e.dst === c.bom_ref)
+        .map(e => (data.components.find(x => x.bom_ref === e.src) || {}).name).filter(Boolean);
+      return { ref: c.bom_ref, name: c.name, version: p["site:version"], validated: p["site:last_validated"], drift: p["site:drift_status"], models };
+    });
+  if (sites.length === 0)
+    return <Card title="Deployment sites"><p className="text-sm text-slate-400">No deployed sites (<code>deployed_at</code> edges) in this scan.</p></Card>;
+  return (
+    <Card title="Deployment sites" right={<span className="text-xs text-slate-400">{sites.length} site(s)</span>}>
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-slate-400 border-b border-slate-700">
+            <th className="py-2 pr-3 font-medium">Site</th><th className="py-2 pr-3 font-medium">Model(s)</th>
+            <th className="py-2 pr-3 font-medium">Version</th><th className="py-2 pr-3 font-medium">Last validated</th>
+            <th className="py-2 font-medium">Drift</th></tr></thead>
+          <tbody>
+            {sites.map(s => {
+              const drifted = s.drift === "drift-detected";
+              return (
+                <tr key={s.ref} className="border-b border-slate-800/70">
+                  <td className="py-2 pr-3 text-slate-100">{s.name}</td>
+                  <td className="py-2 pr-3 text-slate-400">{s.models.join(", ") || "—"}</td>
+                  <td className="py-2 pr-3 text-slate-400">{s.version || "—"}</td>
+                  <td className="py-2 pr-3 text-slate-400">{s.validated || "—"}</td>
+                  <td className="py-2"><Pill cls={drifted ? BAND.high.pill : BAND.low.pill}>{s.drift}</Pill></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------- loader
+function Loader({ onData }) {
+  const onFile = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { try { onData(JSON.parse(r.result)); } catch (err) { alert("Not a valid ScanResult JSON: " + err.message); } };
+    r.readAsText(f);
+  };
+  return (
+    <div className="max-w-md mx-auto mt-32 text-center card rounded-xl p-8">
+      <h1 className="text-xl font-bold text-slate-100 mb-2">clinithread-aibom dashboard</h1>
+      <p className="text-sm text-slate-400 mb-6">Load a ScanResult JSON produced by<br /><code className="text-sky-300">aibom scan | map | discover -o scan.json</code></p>
+      <label className="inline-block cursor-pointer bg-sky-500/20 border border-sky-500/50 text-sky-200 px-4 py-2 rounded-lg hover:bg-sky-500/30">
+        Choose ScanResult JSON…
+        <input type="file" accept="application/json,.json" className="hidden" onChange={onFile} />
+      </label>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------- app
+function App() {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    // Auto-load a co-located scan.json (written by `aibom dashboard`). No
+    // persistence: nothing is read from or written to localStorage.
+    fetch("./scan.json").then(r => r.ok ? r.json() : Promise.reject()).then(setData).catch(() => setErr(true));
+  }, []);
+
+  if (!data) return err === null ? <div className="text-center mt-32 text-slate-500">loading…</div> : <Loader onData={setData} />;
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-sky-400">AI Bill of Materials</div>
+          <h1 className="text-2xl font-bold text-slate-100">{data.subject?.name || "Scan result"}</h1>
+        </div>
+        <label className="text-xs text-slate-400 cursor-pointer hover:text-slate-200">
+          load another…
+          <input type="file" accept=".json" className="hidden"
+            onChange={e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { setData(JSON.parse(r.result)); } catch {} }; r.readAsText(f); }} />
+        </label>
+      </header>
+
+      <div className="grid md:grid-cols-3 gap-5">
+        <Card title="Overall risk"><RiskGauge scores={data.scores} /></Card>
+        <div className="md:col-span-2"><ShadowPanel data={data} /></div>
+      </div>
+
+      <Inventory data={data} />
+      <Heatmap data={data} />
+      <Compliance data={data} />
+      <Sites data={data} />
+
+      <footer className="text-xs text-slate-500 border-t border-slate-800 pt-3">
+        {data.compliance?.disclaimer || "Advisory only — an AI BOM creates visibility, not assurance."}
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+
+  <script>
+    // Explicit transform pins runtime:"classic" so no ESM import is emitted
+    // (the default "automatic" runtime would inject `import ... from
+    // "react/jsx-runtime"`, which fails when inserted as a classic script).
+    (function () {
+      var src = document.getElementById("app-source").textContent;
+      var out = Babel.transform(src, {
+        presets: [["react", { runtime: "classic" }]],
+        filename: "aibom-dashboard.jsx",
+      }).code;
+      var s = document.createElement("script");
+      s.textContent = out;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

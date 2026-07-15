@@ -1,0 +1,272 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:1ababad2-4874-59e2-b613-686eaf8c1e9f",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "ChestXR-Triage-MultiSite",
+      "version": "2.1.0"
+    },
+    "properties": [
+      {
+        "name": "clinical:modality",
+        "value": "DX (chest radiograph)"
+      },
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      },
+      {
+        "name": "regulatory:eu_ai_act_risk",
+        "value": "high-risk (Annex I / MDR)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "model-chestxr-multisite",
+      "name": "chestxr-triage-multisite",
+      "version": "2.1.0",
+      "publisher": "Acme Medical AI",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "eca8fb4fe4a32d2f6e8a1ea367a0698aa19e3bab06965825cc1bd6db12679c97"
+        }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": {
+            "type": "supervised"
+          },
+          "task": "classification/detection",
+          "architectureFamily": "convolutional neural network",
+          "modelArchitecture": "ResNet-50",
+          "datasets": [
+            {
+              "ref": "dataset-chestxr-train"
+            }
+          ],
+          "inputs": [
+            {
+              "format": "DICOM DX image"
+            }
+          ],
+          "outputs": [
+            {
+              "format": "nodule probability + bounding box"
+            }
+          ]
+        }
+      },
+      "properties": [
+        {
+          "name": "clinical:body_part",
+          "value": "chest"
+        },
+        {
+          "name": "clinical:intended_use",
+          "value": "triage and prioritization of chest radiographs (SaMD)"
+        },
+        {
+          "name": "clinical:modality",
+          "value": "DX (chest radiograph)"
+        },
+        {
+          "name": "clinical:processes_phi",
+          "value": "true"
+        },
+        {
+          "name": "clinical:uses_sensitive_personal_information",
+          "value": "yes"
+        },
+        {
+          "name": "regulatory:eu_ai_act_risk",
+          "value": "high-risk (Annex I / MDR)"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "dataset-chestxr-train",
+      "name": "chestxr-training-cohort",
+      "licenses": [
+        {
+          "license": {
+            "name": "internal-restricted"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "dataset:anonymization_method",
+          "value": "HIPAA Safe Harbor"
+        },
+        {
+          "name": "dataset:has_sensitive_personal_information",
+          "value": "no"
+        },
+        {
+          "name": "dataset:known_bias",
+          "value": "skews adult, 2 scanner vendors"
+        },
+        {
+          "name": "dataset:provenance",
+          "value": "3 US health systems, 2019-2024, IRB-approved, de-identified"
+        },
+        {
+          "name": "dataset:sensitivity",
+          "value": "PHI removed; Safe Harbor de-identification"
+        },
+        {
+          "name": "dataset:size",
+          "value": "412,000 studies"
+        },
+        {
+          "name": "dataset:type",
+          "value": "image (DICOM)"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-numpy",
+      "name": "numpy",
+      "version": "1.26.4",
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydicom",
+      "name": "pydicom",
+      "version": "2.4.4",
+      "purl": "pkg:pypi/pydicom@2.4.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-torch",
+      "name": "torch",
+      "version": "2.3.1",
+      "purl": "pkg:pypi/torch@2.3.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "service-acme-cloud",
+      "name": "Acme Imaging AI Cloud",
+      "properties": [
+        {
+          "name": "service:baa",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "type": "platform",
+      "bom-ref": "site-lakeside-regional",
+      "name": "Lakeside Regional Medical Center",
+      "properties": [
+        {
+          "name": "site:drift_status",
+          "value": "drift-detected"
+        },
+        {
+          "name": "site:last_validated",
+          "value": "2025-11-15"
+        },
+        {
+          "name": "site:version",
+          "value": "2.0.3"
+        }
+      ]
+    },
+    {
+      "type": "platform",
+      "bom-ref": "site-mercy-general",
+      "name": "Mercy General Hospital",
+      "properties": [
+        {
+          "name": "site:drift_status",
+          "value": "stable"
+        },
+        {
+          "name": "site:last_validated",
+          "value": "2026-03-01"
+        },
+        {
+          "name": "site:version",
+          "value": "2.1.0"
+        }
+      ]
+    },
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "modelfile-model.safetensors",
+      "name": "model.safetensors",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "eca8fb4fe4a32d2f6e8a1ea367a0698aa19e3bab06965825cc1bd6db12679c97"
+        }
+      ],
+      "properties": [
+        {
+          "name": "model:weight_file",
+          "value": "true"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "model-chestxr-multisite",
+      "dependsOn": [
+        "dataset-chestxr-train",
+        "lib-numpy",
+        "lib-pydicom",
+        "lib-torch",
+        "modelfile-model.safetensors",
+        "service-acme-cloud",
+        "site-lakeside-regional",
+        "site-mercy-general"
+      ]
+    }
+  ]
+}

@@ -1,8 +1,10 @@
-from fastapi import APIRouter
+import datetime
+from fastapi import APIRouter, BackgroundTasks
 from typing import Annotated
 from fastapi import Depends, HTTPException, status , Header
 from rich.console import Console
 from sqlmodel import Session, delete, select, update
+from starlette.concurrency import run_in_threadpool
 from backend.new_models import Team
 from backend.utilities.auth.auth_utils import (
     create_access_token,
@@ -12,7 +14,11 @@ from backend.utilities.auth.auth_utils import (
     verify_password,
     get_current_user_from_refresh_token,
     get_current_user_from_access_token,
-    get_user_from_header_or_raise_exception
+    get_user_from_header_or_raise_exception,
+    create_and_store_verification_code,
+    local_dev_verification_enabled,
+    send_verification_email,
+    verification_code_is_valid,
 )
 from backend.new_models import *
 from backend.utilities.auth.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
@@ -20,7 +26,7 @@ from fastapi_throttle import RateLimiter
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
 from rich.console import Console
-from backend.get_db import dev_environment
+from starlette.concurrency import run_in_threadpool
 console = Console()
 
 
@@ -29,9 +35,12 @@ router = APIRouter(
 )
 
 
-limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
+# SECURITY: Tiered rate limiting for auth endpoints
+limiter = RateLimiter(times=20, seconds=30)  # General: 20 requests per 30 seconds
+limiter_strict = RateLimiter(times=5, seconds=60)  # Strict: 5 requests per 60 seconds (login, signup)
+limiter_very_strict = RateLimiter(times=3, seconds=120)  # Very strict: 3 requests per 120 seconds (verification codes)
 
-@router.post('/signup', summary="Create new user", dependencies=[Depends(limiter)])
+@router.post('/signup', summary="Create new user", dependencies=[Depends(limiter_strict)])
 async def create_user(data: UserSignup):
     """
     Request Fields:
@@ -43,20 +52,17 @@ async def create_user(data: UserSignup):
     """
     try:
 
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()
-        if verification_code is None:
-            print("invalid verification code 🔴")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code"
-            )
-        else:
-            # code verified and performing cleanup
+            if not verification_code_is_valid(session, data.email, data.verification_code):
+                print("invalid verification code 🔴")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired verification code",
+                )
             print("code verified and performing cleanup 🟩")
             session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))
             session.commit()
@@ -77,9 +83,10 @@ async def create_user(data: UserSignup):
             session.add(new_team)
             session.commit()
             session.refresh(new_team)
+            hashed_password = await run_in_threadpool(get_hashed_password, data.password)
             new_user = User(
                 email=data.email, 
-                password=get_hashed_password(data.password),
+                password=hashed_password,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 session_active=True, # activating session for new user
@@ -103,7 +110,7 @@ async def create_user(data: UserSignup):
             raise e
         raise HTTPException(status_code=403, detail="Could not create user, please try again later")
 
-@router.post('/login', summary="Create access and refresh tokens for user. body should be form data", response_model=TokenSchema, dependencies=[Depends(limiter)])
+@router.post('/login', summary="Create access and refresh tokens for user. body should be form data", response_model=TokenSchema, dependencies=[Depends(limiter_strict)])
 async def login(form_data: UserLogin):
     """
     Request Fields:
@@ -114,21 +121,18 @@ async def login(form_data: UserLogin):
     """
 
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == form_data.email, VerificationCode.code == form_data.verification_code)).first()
-        if verification_code is None:
-            print("invalid verification code 🔴")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code"
-            )
-        else:
-            # code verified and performing cleanup
+            if not verification_code_is_valid(session, form_data.email, form_data.verification_code):
+                print("invalid verification code 🔴")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid verification code",
+                )
             print("code verified and performing cleanup 🟩")
             session.exec(delete(VerificationCode).where(VerificationCode.email == form_data.email))
             session.commit()
@@ -143,7 +147,8 @@ async def login(form_data: UserLogin):
             )
 
         hashed_pass = user.password
-        if not verify_password(form_data.password, hashed_pass):
+        is_valid = await run_in_threadpool(verify_password, form_data.password, hashed_pass)
+        if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
@@ -178,8 +183,8 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
     - refresh_token: str
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
 
         refresh_token = data.refresh_token
@@ -207,8 +212,8 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
 @router.get('/get_user', summary="Get user details", dependencies=[Depends(limiter)])
 async def get_user(Authorization: Annotated[str | None, Header()] = None):
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
         
         if Authorization is None:
             raise HTTPException(
@@ -217,7 +222,13 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
             )
 
 
-        access_token = Authorization.split(" ")[1]
+        parts = Authorization.split(" ")
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Authorization header format"
+            )
+        access_token = parts[1]
         user = await get_current_user_from_access_token(engine, access_token)
         return {
             "email": user.email,
@@ -233,22 +244,29 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
             raise e
         raise HTTPException(status_code=403, detail="Could not get user details, please try again later")
 
-@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(limiter)])
-async def send_verification_code(data: CodeSend):
+@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(limiter_very_strict)])
+async def send_verification_code(data: CodeSend, background_tasks: BackgroundTasks):
     """
     Request Fields:
     - email: str
+    
+    This endpoint returns immediately after storing the code in DB.
+    Email sending happens in background, so response is <50ms.
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
+        # STEP 1: Fast DB insert - returns immediately (fixed code for local demo user)
+        code = create_and_store_verification_code(data.email, engine)
 
-
-        await send_verification_code_and_save_to_db(data.email, engine)
+        # STEP 2: Queue email (skipped for local fixed-OTP demo account)
+        if not local_dev_verification_enabled(data.email):
+            background_tasks.add_task(send_verification_email, data.email, code)
+        
         return {
             "message": "Verification code sent to user"
-        }, 200
+        }
     except Exception as e:
         Console().print(f"error in send_verification_code: {e} 🔴", style="bold red")
         if isinstance(e,psycopg2.Error):
@@ -266,22 +284,24 @@ async def reset_password(data: ResetPassword):
     - password: str
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         # STEP 1-------------verifying verification code
         with Session(engine) as session:
-            verification_code = session.exec(select(VerificationCode).where(VerificationCode.email == data.email, VerificationCode.code == data.verification_code)).first()
-        if verification_code is None:
-            Console().print("invalid verification code 🔴", style="bold red")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code"
-            )
+            if not verification_code_is_valid(session, data.email, data.verification_code):
+                Console().print("invalid verification code 🔴", style="bold red")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired verification code",
+                )
+            session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))
+            session.commit()
 
         # STEP 2-------------updating password
         with Session(engine) as session:
-            session.exec(update(User).where(User.email == data.email).values(password=get_hashed_password(data.password)))
+            hashed_pwd = await run_in_threadpool(get_hashed_password, data.password)
+            session.exec(update(User).where(User.email == data.email).values(password=hashed_pwd))
             session.commit()
             user = session.exec(select(User).where(User.email == data.email)).first()
         return {
@@ -301,8 +321,8 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
     - Authorization: str
     """
     try:
-        engine = get_db(dev_environment=dev_environment)
-        mongo_client_db = get_mongo_client_db(dev_environment=dev_environment)
+        engine = get_db()
+        mongo_client_db = get_mongo_client_db()
 
         user = await get_user_from_header_or_raise_exception(engine, Authorization, ignore_session_active=True)
         with Session(engine) as session:

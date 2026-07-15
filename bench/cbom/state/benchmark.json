@@ -1,0 +1,38 @@
+{
+  "00-synthetic": {
+    "cbomkit": {
+      "oracle_assets": 6,
+      "ours": 13,
+      "true_misses": [],
+      "our_unique_count": 10
+    },
+    "cdxgen": {
+      "oracle_assets": 2,
+      "ours": 4,
+      "true_misses": [],
+      "our_unique_count": 2
+    }
+  },
+  "01-pyjwt": {
+    "cbomkit": {
+      "oracle_assets": 9,
+      "ours": 13,
+      "true_misses": [],
+      "our_unique_count": 11
+    }
+  },
+  "02-pyopenssl": {
+    "cbomkit": {
+      "oracle_assets": 0,
+      "ours": 10,
+      "true_misses": [],
+      "our_unique_count": 10
+    },
+    "cdxgen": {
+      "oracle_assets": 1,
+      "ours": 4,
+      "true_misses": [],
+      "our_unique_count": 3
+    }
+  }
+}

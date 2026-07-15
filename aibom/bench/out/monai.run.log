@@ -1,0 +1,8 @@
+[monai] cloning https://github.com/Project-MONAI/MONAI (shallow)…
+[monai] SHA=4ba89bd818a44395842f11f3316b5aaad48353a6
+[monai] scan path: monai
+[monai] trusera done (trusera_exit=0)
+[monai] ours done (ours_exit=0)
+[monai] cisco analyze (agentic/bedrock)…
+[monai] cisco done (exit=0)
+[monai] DONE (clone removed)

@@ -31,19 +31,26 @@ import {
   startScan,
   getMCPExportResults,
   reinitializeMCPScan,
+  type MCPConversationResponse,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
 
 type ServerMode = "httpstreamable" | "sse";
 
-interface MCPConversationResponse {
-  scan_status: string;
-  messages: unknown[];
-  scan_metadata?: { server_url?: string; server_mode?: string; headers?: Record<string, string> } | null;
-  title?: string;
-}
+type MCPEnvironment = "production" | "staging" | "development";
 
-function buildPayloadString(serverUrl: string, serverMode: ServerMode, headersJson: string): string {
+const MCP_ENVIRONMENTS: { value: MCPEnvironment; label: string }[] = [
+  { value: "development", label: "Development" },
+  { value: "staging", label: "Staging" },
+  { value: "production", label: "Production" },
+];
+
+function buildPayloadString(
+  serverUrl: string,
+  serverMode: ServerMode,
+  headersJson: string,
+  environment: MCPEnvironment
+): string {
   const headers =
     headersJson.trim() === ""
       ? undefined
@@ -53,6 +60,7 @@ function buildPayloadString(serverUrl: string, serverMode: ServerMode, headersJs
       server_url: serverUrl.trim(),
       server_mode: serverMode,
       headers: headers ?? null,
+      environment,
     },
   });
 }
@@ -75,6 +83,7 @@ export function MCPOptionsSidebar({
 
   const [serverUrl, setServerUrl] = useState("");
   const [serverMode, setServerMode] = useState<ServerMode>("sse");
+  const [environment, setEnvironment] = useState<MCPEnvironment>("development");
   const [headersJson, setHeadersJson] = useState("");
   const [headersError, setHeadersError] = useState<string | null>(null);
 
@@ -113,7 +122,7 @@ export function MCPOptionsSidebar({
   const buildPayloadStringSafe = (): string => {
     const validation = validateScanInputs();
     if (!validation.valid) throw new Error(validation.message);
-    return buildPayloadString(serverUrl, serverMode, headersJson);
+    return buildPayloadString(serverUrl, serverMode, headersJson, environment);
   };
 
   const estimateCreditsMutation = useMutation({
@@ -174,7 +183,7 @@ export function MCPOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
-  }, [serverUrl, serverMode, headersJson]);
+  }, [serverUrl, serverMode, environment, headersJson]);
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
@@ -200,17 +209,27 @@ export function MCPOptionsSidebar({
       setOptionsSidebarState("ready");
       setErrorMessage(null);
     }
-    if (query.data?.scan_metadata?.server_url) {
-      setServerUrl(query.data.scan_metadata.server_url);
+    const meta = query.data?.scan_metadata as {
+      server_url?: string;
+      server_mode?: string;
+      headers?: Record<string, string>;
+      environment?: string;
+    } | null | undefined;
+    if (meta?.server_url) {
+      setServerUrl(meta.server_url);
+    }
+    if (meta?.server_mode === "httpstreamable" || meta?.server_mode === "sse") {
+      setServerMode(meta.server_mode as ServerMode);
     }
     if (
-      query.data?.scan_metadata?.server_mode === "httpstreamable" ||
-      query.data?.scan_metadata?.server_mode === "sse"
+      meta?.environment === "production" ||
+      meta?.environment === "staging" ||
+      meta?.environment === "development"
     ) {
-      setServerMode(query.data.scan_metadata.server_mode as ServerMode);
+      setEnvironment(meta.environment as MCPEnvironment);
     }
-    if (query.data?.scan_metadata?.headers && typeof query.data.scan_metadata.headers === "object") {
-      setHeadersJson(JSON.stringify(query.data.scan_metadata.headers, null, 2));
+    if (meta?.headers && typeof meta.headers === "object") {
+      setHeadersJson(JSON.stringify(meta.headers, null, 2));
     }
   }, [
     query.data?.scan_status,
@@ -219,7 +238,7 @@ export function MCPOptionsSidebar({
 
   const payloadString =
     scanInputsValid && !headersError
-      ? buildPayloadString(serverUrl, serverMode, headersJson)
+      ? buildPayloadString(serverUrl, serverMode, headersJson, environment)
       : "";
 
   const reinitializeScanMutation = useMutation({
@@ -311,6 +330,34 @@ export function MCPOptionsSidebar({
                   <SelectItem value="sse" className="text-white hover:bg-zinc-700 cursor-pointer">
                     sse
                   </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mcp-environment" className="text-zinc-300">
+                Environment
+              </Label>
+              <Select
+                value={environment}
+                onValueChange={(v) => setEnvironment(v as MCPEnvironment)}
+              >
+                <SelectTrigger
+                  id="mcp-environment"
+                  className="bg-zinc-800 border-zinc-700 text-white focus:text-white cursor-pointer"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-zinc-800 border-zinc-700">
+                  {MCP_ENVIRONMENTS.map((e) => (
+                    <SelectItem
+                      key={e.value}
+                      value={e.value}
+                      className="text-white hover:bg-zinc-700 cursor-pointer"
+                    >
+                      {e.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

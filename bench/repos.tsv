@@ -1,0 +1,12 @@
+#id	slug	clone_url	scan_subdir	note
+00-synthetic	local/synthetic-ai-app	-	.	ground-truth fixture (copied to bench/repos/00-synthetic)
+01-chroma	chroma-core/chroma	-	.	local copy
+02-langchain	langchain-ai/langchain	https://github.com/langchain-ai/langchain	libs/core	scoped: core package (repo is huge)
+03-llama-index	run-llama/llama_index	https://github.com/run-llama/llama_index	llama-index-core	scoped: core package
+04-autogen	microsoft/autogen	https://github.com/microsoft/autogen	python/packages/autogen-core	scoped: core package
+05-openai-cookbook	openai/openai-cookbook	https://github.com/openai/openai-cookbook	examples	notebooks; scoped to examples
+06-mcp-servers	modelcontextprotocol/servers	https://github.com/modelcontextprotocol/servers	src	the reference MCP servers
+07-hf-minilm	sentence-transformers/all-MiniLM-L6-v2	https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2	.	HF model repo: safetensors + model card
+08-monai	Project-MONAI/MONAI	https://github.com/Project-MONAI/MONAI	.	clinical imaging framework; scoped to monai/
+09-tf-bedrock	aws-ia/terraform-aws-bedrock	https://github.com/aws-ia/terraform-aws-bedrock	.	Terraform with Bedrock/SageMaker resources
+10-trl-sft	huggingface/trl	https://github.com/huggingface/trl	trl	transformers Trainer + datasets fine-tuning (TRL)

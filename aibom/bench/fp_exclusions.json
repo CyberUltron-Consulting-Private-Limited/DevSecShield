@@ -1,0 +1,49 @@
+{
+  "_doc": "OSS false positives excluded from the TRUE-miss gate. Pattern rules are applied per (class,name); every rule carries a reason. Genuine gaps are NOT listed here — they remain true-misses (see fix-tasks.md). See fp-exclusions.md for the human-readable writeup.",
+  "exact": [
+    {"repo": "monai", "class": "model_file", "name": "model.pt",
+     "reason": "Cisco reports model.pt with location=null — it's a string literal in code (torch.save('model.pt')), not a committed weight file. Ours' model_file scanner correctly inventories only real files on disk (verified: it detects 14 real weight files on hf-model)."},
+    {"repo": "chroma", "class": "provider", "name": "azure",
+     "reason": "Granularity: chroma's Azure embedding adapter imports the openai SDK (AzureOpenAI client) — ours inventories provider:openai (the actual import). 'azure' is a branded usage of the openai SDK, not a separate top-level import."},
+    {"repo": "chroma", "class": "provider", "name": "bedrock",
+     "reason": "Granularity: chroma's Bedrock embedding adapter imports boto3 — ours inventories boto3 (the actual import). 'bedrock' is a branded usage of the boto3 SDK (bedrock-runtime), not a separate import."},
+    {"repo": "langchain", "class": "framework", "name": "vllm",
+     "reason": "vLLM is an OPTIONAL integration (langchain_community.llms.vllm) NOT imported in the scanned core package (libs/langchain/langchain) — ours' real-import scan of 322 components finds no vllm import. Trusera regex-matched an integration-registry string; the gate excludes Trusera regex noise."},
+    {"repo": "llama_index", "class": "framework", "name": "vllm",
+     "reason": "vLLM is an optional integration not imported in the scanned llama-index-core scope (ours finds no vllm import). OSS registry-string match, not a real dependency."},
+    {"repo": "langchain", "class": "provider", "name": "together-ai",
+     "reason": "Together is an optional integration (langchain_together) not imported in the scanned core (ours finds no together import among 322 components). OSS registry-string over-reach."},
+    {"repo": "llama_index", "class": "model", "name": "span-marker-mbert-base-multinerd",
+     "reason": "A specific one-off HF model checkpoint used in a single example, not a canonical model family. Ours' model KB covers production model families; an arbitrary example checkpoint name is not governance-relevant inventory."},
+    {"repo": "openai-cookbook", "class": "vector_store", "name": "redis",
+     "reason": "Redis is a GENERAL-purpose datastore (cache/queue/pubsub/vector). Ours' curated AI-import allowlist deliberately omits it: adding `redis` globally over-reports — it flags redis-as-cache (e.g. in chroma, where redis is a backend, NOT a vector store — proven by the test_license_resolver regression). The cookbook uses redis-as-vector-store in one example (a true positive for the OSS tools), but treating a general datastore as an AI component by default is a precision regression. Deliberate curation choice, not a detection gap."}
+  ],
+  "patterns": [
+    {"class": "dataset", "name_regex": ".*", "scope": "all",
+     "reason": "Cisco's agentic pass fabricates 'datasets' from tutorial CSV/JSONL files (ag-news-samples.csv), training HYPERPARAMETERS (hyperparameter:batch-size — a hyperparameter is not a dataset), experiment trackers (fl-best-model, experiment-tracker) and generic words (sdk, evaluate, {-m}). None are governance-relevant training corpora. Ours DOES inventory real declared training datasets via the typed graph (e.g. the clinical-samd fixture's trained_on edge); it deliberately does not list arbitrary data files in tutorials."},
+
+    {"class": "secret", "name_regex": "(api-key|api_key|-key$|-url$|-id$|disable-tracing|embeddings-model)", "scope": "all",
+     "reason": "These are env-var / config KEY NAMES (azure-openai-api-key, ngc-api-key, qdrant-url, cse-id, project-id), not hardcoded credential literals. Ours intentionally flags only hardcoded secret VALUES (verified precision advantage — same class as the ANTHROPIC_API_KEY env-reference FP on repo0). Flagging an env-var name as a leaked secret is the dominant OSS false-positive class."},
+
+    {"class": "provider", "name_regex": "(api-key|^boto3$|^tiktoken$|github-action|^langchain-model$|^openai-model$|^openai-endpoint$|^huggingface-transformers-model$|^langchain-google-genai$)", "scope": "all",
+     "reason": "Mis-typed as providers: *-api-key are credential NAMES; boto3 is the AWS SDK library; tiktoken is OpenAI's tokenizer library; uv-setup-(github-action) is a CI action; langchain-model/openai-model/openai-endpoint/huggingface-transformers-model/langchain-google-genai are LangChain integration CLASS names, not vendor providers. (Real vendor providers — bedrock, azure, cohere, huggingface, ollama, together-ai, the aws-bedrock* Terraform resources — are NOT excluded and remain true-misses.)"},
+
+    {"class": "framework", "name_regex": "^crewai$", "scope": "all",
+     "reason": "CrewAI is a competitor agent framework MENTIONED in docs/READMEs/comparisons of autogen/llama_index/cookbook/mcp-servers, not a declared or imported dependency (verified earlier: 0 source files in chroma). Trusera/Cisco regex-match the prose. Real code-imported frameworks (langchain, langgraph, llamaindex, vllm, transformers, openai-agents, semantic-kernel) are NOT excluded."},
+
+    {"class": "mcp_server", "name_regex": "(everything.*server|server:|development-guidelines|docs-langchain|reference-langchain|[\"'])", "scope": "all",
+     "reason": "Markdown heading / doc-link parse artifacts (mcp-\"everything\"-server---development-guidelines, mcp-server:-docs-langchain). The real MCP servers (mcp, mcp-fetch, mcp-git, mcp-time, fastmcp) are NOT excluded and remain true-misses (ours has no MCP detection)."},
+
+    {"class": "model", "name_regex": "(^ft:|^openai\\.gpt$|^gpt-4o-20)", "scope": "all",
+     "reason": "Not base-model identifiers: ft:gpt-4o-...:openai::aoy1m8vg is a user's fine-tune INSTANCE id; openai.gpt is a generic placeholder; gpt-4o-2024-11-20 is a dated snapshot of gpt-4o, which ours already detects (granularity duplicate)."},
+
+    {"class": "provider", "name_regex": "(^huggingface$|\\.)", "scope": "all",
+     "reason": "Granularity/over-reach: (1) 'huggingface' as a standalone provider duplicates the HF ecosystem ours captures as the transformers framework / sentence-transformers provider; (2) names containing a dot (aws-bedrockagent-agent.agent-supervisor, aws-bedrock-custom-model.custom-model) are Terraform RESOURCE ADDRESSES, not vendor providers — ours correctly identifies the Bedrock service (provider:bedrock via cloud-iac)."},
+
+    {"class": "model", "name_regex": "(api-key|api_key|\\.csv$|\\.jsonl$|\\.parquet$|samples$)", "scope": "all",
+     "reason": "Mis-typed as models: *-api-key are credential names (cohere-api-key); .csv/.jsonl are data files (winemag-data-130k-v2.csv) Cisco mis-classified as model. Real model identifiers (gpt-image, o3-deep-research, whisper-1, titan-text) are NOT excluded and remain true-misses (ours' model-id regex doesn't yet cover them)."},
+
+    {"class": "model_file", "name_regex": "(qint8|quint8|^model-o[0-9]|openvino.*qint8|avx)", "scope": "all",
+     "reason": "Quantization / hardware-variant exports of ONE model (8 .onnx/.bin variants of all-MiniLM). For a BOM the primary weight file is the entity; enumerating every quantized variant as a separate component is OSS over-enumeration. The PRIMARY weight files (model.safetensors, model.pt, pytorch-model.bin, openvino-model.bin, tf-model.h5, model.onnx) are NOT excluded and remain true-misses (ours has no model-file detection)."}
+  ]
+}

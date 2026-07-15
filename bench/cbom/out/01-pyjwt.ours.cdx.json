@@ -1,0 +1,1289 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:f4fa3c73-f2cb-5f1a-a3f3-a217587cb981",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "01-pyjwt"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-dsa-jwt-utils-py",
+      "name": "DSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "moderate"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/utils.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ecdsa-jwt-algorithms-py",
+      "name": "ECDSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ecdsa-jwt-utils-py",
+      "name": "ECDSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/utils.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ecdsa-tests-test-utils-py",
+      "name": "ECDSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_utils.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-jwt-algorithms-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "Ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "Ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-jwt-api-jwk-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "Ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "Ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/api_jwk.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-jwt-utils-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/utils.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-tests-test-advisory-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_advisory.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-tests-test-algorithms-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "Ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "Ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed25519-tests-test-utils-py",
+      "name": "Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_utils.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed448-jwt-algorithms-py",
+      "name": "Ed448",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "curve": "Ed25519",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "Ed25519"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-ed448-tests-test-algorithms-py",
+      "name": "Ed448",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:nistQuantumSecurityLevel",
+          "value": "0"
+        },
+        {
+          "name": "crypto:pqcMigrationTarget",
+          "value": "ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "signature"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "true"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-hmac-jwt-algorithms-py",
+      "name": "HMAC",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "mac"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "mac"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-jwt-algorithms-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-tests-test-algorithms-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-tests-test-api-jwk-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_api_jwk.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-256-tests-test-api-jws-py",
+      "name": "SHA-256",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_api_jws.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-384-jwt-algorithms-py",
+      "name": "SHA-384",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-384-tests-test-algorithms-py",
+      "name": "SHA-384",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "curve": "P-384"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "P-384"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-384-tests-test-api-jwk-py",
+      "name": "SHA-384",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_api_jwk.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-512-jwt-algorithms-py",
+      "name": "SHA-512",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-512-tests-test-algorithms-py",
+      "name": "SHA-512",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "curve": "P-521"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:curve",
+          "value": "P-521"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-algo-sha-512-tests-test-api-jwk-py",
+      "name": "SHA-512",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "algorithm"
+        },
+        {
+          "name": "crypto:primitive",
+          "value": "hash"
+        },
+        {
+          "name": "crypto:quantumVulnerable",
+          "value": "false"
+        },
+        {
+          "name": "crypto:strength",
+          "value": "strong"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_api_jwk.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-cert-tests-keys-testkey-rsa-cer-cert",
+      "name": "testkey_rsa.cer",
+      "cryptoProperties": {
+        "assetType": "certificate",
+        "certificateProperties": {
+          "notValidBefore": "2015-03-18T01:16:14Z",
+          "notValidAfter": "2018-03-17T01:16:14Z"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "certificate"
+        },
+        {
+          "name": "crypto:keySize",
+          "value": "2048"
+        },
+        {
+          "name": "crypto:notValidAfter",
+          "value": "2018-03-17T01:16:14Z"
+        },
+        {
+          "name": "crypto:notValidBefore",
+          "value": "2015-03-18T01:16:14Z"
+        },
+        {
+          "name": "crypto:publicKeyAlgorithm",
+          "value": "rsaEncryption"
+        },
+        {
+          "name": "crypto:selfSigned",
+          "value": "true"
+        },
+        {
+          "name": "crypto:signatureAlgorithm",
+          "value": "sha256WithRSAEncryption"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/testkey_rsa.cer"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-private-key-tests-keys-testkey-ed25519-pem",
+      "name": "private-key (testkey_ed25519.pem)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "private-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "private-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/testkey_ed25519.pem"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-private-key-tests-test-advisory-py",
+      "name": "private-key (test_advisory.py)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "private-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "private-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_advisory.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-public-key-tests-keys-testkey-ec-pub",
+      "name": "public-key (testkey_ec.pub)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "public-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/testkey_ec.pub"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-public-key-tests-keys-testkey-ed25519-pub-pem",
+      "name": "public-key (testkey_ed25519.pub.pem)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "public-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/testkey_ed25519.pub.pem"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-public-key-tests-keys-testkey-pkcs1-pub-pem",
+      "name": "public-key (testkey_pkcs1.pub.pem)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:algorithm",
+          "value": "RSA"
+        },
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "public-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/testkey_pkcs1.pub.pem"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-material-public-key-tests-keys-testkey2-rsa-pub-pem",
+      "name": "public-key (testkey2_rsa.pub.pem)",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "related-crypto-material"
+        },
+        {
+          "name": "crypto:materialKind",
+          "value": "public-key"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/testkey2_rsa.pub.pem"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-protocol-ssh-jwt-utils-py",
+      "name": "SSH",
+      "cryptoProperties": {
+        "assetType": "protocol",
+        "protocolProperties": {
+          "type": "ssh"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "protocol"
+        },
+        {
+          "name": "crypto:protocolType",
+          "value": "ssh"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/utils.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-protocol-tls-jwt-jwks-client-py",
+      "name": "TLS",
+      "cryptoProperties": {
+        "assetType": "protocol",
+        "protocolProperties": {
+          "type": "tls"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "protocol"
+        },
+        {
+          "name": "crypto:protocolType",
+          "value": "tls"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/jwks_client.py"
+        }
+      ]
+    },
+    {
+      "type": "cryptographic-asset",
+      "bom-ref": "crypto-protocol-tls-tests-test-jwks-client-py",
+      "name": "TLS",
+      "cryptoProperties": {
+        "assetType": "protocol",
+        "protocolProperties": {
+          "type": "tls"
+        }
+      },
+      "properties": [
+        {
+          "name": "crypto:assetType",
+          "value": "protocol"
+        },
+        {
+          "name": "crypto:protocolType",
+          "value": "tls"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/test_jwks_client.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-hashlib-stdlib",
+      "name": "hashlib (stdlib)",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-hmac-stdlib",
+      "name": "hmac (stdlib)",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pyca-cryptography",
+      "name": "pyca/cryptography",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/algorithms.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-pyjwt",
+      "name": "PyJWT",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "tests/keys/__init__.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "crypto-lib-ssl-stdlib",
+      "name": "ssl (stdlib)",
+      "properties": [
+        {
+          "name": "crypto:role",
+          "value": "library"
+        },
+        {
+          "name": "discovery:source",
+          "value": "jwt/jwks_client.py"
+        }
+      ]
+    }
+  ]
+}

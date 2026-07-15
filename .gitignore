@@ -13,3 +13,12 @@ __pycache__/
 *.pyzwzwzwz
 node_modules/
 .venv/
+load_testing/
+# ruflo runtime (never commit)
+*.rvf
+*.rvf.lock
+ruvector.db
+**/ruvector.db
+.swarm/
+**/memory.db*
+agentdb.rvf*

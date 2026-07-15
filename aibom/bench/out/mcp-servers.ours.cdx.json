@@ -1,0 +1,142 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:ba69435c-f0d9-5ef1-91e4-e0263f012bb9",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-06-21T00:00:00Z",
+    "tools": [
+      {
+        "name": "clinithread-aibom",
+        "version": "0.1.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "src"
+    },
+    "properties": [
+      {
+        "name": "regulatory:disclaimer",
+        "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "lib-click",
+      "name": "click",
+      "purl": "pkg:pypi/click",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-gitpython",
+      "name": "gitpython",
+      "purl": "pkg:pypi/gitpython"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-httpx",
+      "name": "httpx",
+      "purl": "pkg:pypi/httpx",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-markdownify",
+      "name": "markdownify",
+      "purl": "pkg:pypi/markdownify"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-mcp",
+      "name": "mcp",
+      "purl": "pkg:pypi/mcp"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-mcp-server-fetch",
+      "name": "mcp-server-fetch",
+      "version": "0.6.3",
+      "purl": "pkg:pypi/mcp-server-fetch@0.6.3"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-mcp-server-git",
+      "name": "mcp-server-git",
+      "version": "0.6.2",
+      "purl": "pkg:pypi/mcp-server-git@0.6.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-mcp-server-time",
+      "name": "mcp-server-time",
+      "version": "0.6.2",
+      "purl": "pkg:pypi/mcp-server-time@0.6.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-protego",
+      "name": "protego",
+      "purl": "pkg:pypi/protego"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-pydantic",
+      "name": "pydantic",
+      "purl": "pkg:pypi/pydantic",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-readabilipy",
+      "name": "readabilipy",
+      "purl": "pkg:pypi/readabilipy"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-requests",
+      "name": "requests",
+      "purl": "pkg:pypi/requests",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tzdata",
+      "name": "tzdata",
+      "purl": "pkg:pypi/tzdata"
+    },
+    {
+      "type": "library",
+      "bom-ref": "lib-tzlocal",
+      "name": "tzlocal",
+      "purl": "pkg:pypi/tzlocal"
+    }
+  ]
+}

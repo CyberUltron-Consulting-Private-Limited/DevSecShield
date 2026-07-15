@@ -1,0 +1,7 @@
+# chromadb: vector store -> OWASP (vector/embedding + sensitive-info); licensed -> Low
+chromadb==0.5.0
+# licensed, pinned -> Low
+torch==2.2.0
+# unpinned (>=) AND unlicensed (not in SPDX manifest) -> FRAMEWORK_NO_LICENSE
+# (note severity -> Low) + supply-chain OWASP signal
+internal-triage-sdk>=0.3.0

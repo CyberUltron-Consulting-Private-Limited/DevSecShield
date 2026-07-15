@@ -1,0 +1,10 @@
+# Sanctioned AI components for shadow-AI discovery (Phase 4).
+# A discovered shadow-AI component (agent / MCP / vector store / cloud service /
+# endpoint / container / …) whose name, bom_ref, or purl matches an entry here is
+# SANCTIONED; anything else gets an UNSANCTIONED_COMPONENT flag.
+# Matching is case-insensitive.
+sanctioned:
+  - Acme Imaging AI Cloud      # the BAA'd inference vendor (service-acme-cloud)
+  - AWS Bedrock                # approved managed LLM platform
+  - Chroma                     # approved vector store
+  - service-acme-cloud

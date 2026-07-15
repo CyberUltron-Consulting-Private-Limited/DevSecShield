@@ -1,0 +1,8 @@
+[tf-bedrock] cloning https://github.com/aws-ia/terraform-aws-bedrock (shallow)…
+[tf-bedrock] SHA=4b74b7dd5110292cb34ca911448581153484f13f
+[tf-bedrock] scan path: /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/tf-bedrock
+[tf-bedrock] trusera done (trusera_exit=0)
+[tf-bedrock] ours done (ours_exit=0)
+[tf-bedrock] cisco analyze (agentic/bedrock)…
+[tf-bedrock] cisco done (exit=0)
+[tf-bedrock] DONE (clone removed)

@@ -1,5 +1,77 @@
 from enum import Enum
 
+
+class MCPResourceCategory(str, Enum):
+    WEB = "web"                         # HTTP, APIs, browsing, crawling
+    FILE_SYSTEM = "file_system"         # read/write/list local or remote files
+    CODE_EXECUTION = "code_execution"   # run code, scripts, shells, notebooks
+    DATABASE = "database"               # SQL / NoSQL databases
+    SEARCH = "search"                   # full-text or indexed search engines
+    VECTOR_STORE = "vector_store"       # embedding / vector databases
+    DOCUMENT_STORE = "document_store"   # blob / object / document storage
+    CACHE = "cache"                     # in-memory or key-value stores
+
+    AI_MODEL = "ai_model"               # LLMs, ML inference endpoints
+    EMBEDDING = "embedding"             # embedding generation services
+
+    AUTH = "auth"                       # auth, users, tokens, identity
+    SECRETS = "secrets"                 # secret managers / vaults
+
+    VERSION_CONTROL = "version_control" # git and similar systems
+    PACKAGE_REGISTRY = "package_registry"  # artifact / package repositories
+
+    CONTAINER = "container"             # container runtimes / images
+    CLOUD = "cloud"                     # cloud control planes / infra APIs
+
+    MESSAGE_QUEUE = "message_queue"     # queues / pub-sub
+    EVENT_STREAM = "event_stream"       # streaming systems
+
+    SCHEDULER = "scheduler"             # cron, job schedulers, workflow runners
+    OBSERVABILITY = "observability"     # logs, metrics, traces
+
+    CONFIG = "config"                   # configuration / feature flags / params
+
+
+class LicenseCategory(Enum):
+    """
+    Risk level splitup : 
+
+    Low risk ---> permissive , public_domain , unknown
+
+    Medium risk ---> weak_copyleft , creative_commons , commercial
+
+    High risk ---> strong_copyleft , network_copyleft , source_available
+
+    """
+    PERMISSIVE = "permissive"
+    WEAK_COPYLEFT = "weak_copyleft"
+    STRONG_COPYLEFT = "strong_copyleft"
+    NETWORK_COPYLEFT = "network_copyleft"
+    SOURCE_AVAILABLE = "source_available"
+    COMMERCIAL = "commercial"
+    PUBLIC_DOMAIN = "public_domain"
+    CREATIVE_COMMONS = "creative_commons"
+    UNKNOWN = "unknown"
+
+class DependencyType(Enum):
+    DIRECT = "direct"
+    TRANSITIVE = "transitive"
+
+class Reachability(Enum):
+    REACHABLE = "reachable"
+    POTENTIALLY_REACHABLE = "potentially_reachable"
+    NOT_REACHABLE = "not_reachable"
+    UNKNOWN = "unknown"
+
+
+class IACVulnerabilityCategory(Enum):
+    NETWORK_SECURITY = "Network Security"
+    DATA_PROTECTION = "Data Protection"
+    ACCESS_CONTROL = "Access Control"
+    LOGGING_AND_MONITORING = "Logging and Monitoring"
+    SECRET_MANAGEMENT = "Secret Management"
+    AUDIT_AND_COMPLIANCE = "Audit and Compliance"
+
 class OWASPTop10(Enum):
     BROKEN_ACCESS_CONTROL = "A01:2021 - Broken Access Control"
     CRYPTOGRAPHIC_FAILURES = "A02:2021 - Cryptographic Failures"
@@ -24,6 +96,25 @@ class OWASPTop10LLM(Enum):
     EXCESSIVE_AGENCY = "LLM08:2025 - Excessive Agency"
     OVERRELIANCE = "LLM09:2025 - Overreliance"
     MODEL_THEFT = "LLM10:2025 - Model Theft"
+
+class MitreAtlasTactic(Enum):
+    RECONNAISSANCE = "reconnaissance"
+    RESOURCE_DEVELOPMENT = "resource_development"
+    INITIAL_ACCESS = "initial_access"
+
+    ML_MODEL_ACCESS = "ml_model_access"
+
+    EXECUTION = "execution"
+    PERSISTENCE = "persistence"
+    PRIVILEGE_ESCALATION = "privilege_escalation"
+    DEFENSE_EVASION = "defense_evasion"
+    CREDENTIAL_ACCESS = "credential_access"
+    DISCOVERY = "discovery"
+    LATERAL_MOVEMENT = "lateral_movement"
+
+    COLLECTION = "collection"
+    EXFILTRATION = "exfiltration"
+    IMPACT = "impact"
 
 class ComplianceControls(Enum):
     # === ISO 27001 ===
@@ -177,3 +268,58 @@ class Impact(Enum):
     MEDIUM = "Medium"
     HIGH = "High"
     CRITICAL = "Critical"
+
+
+# ========================================= CBOM Enums =========================================
+
+class CryptoAssetType(str, Enum):
+    HASH = "hash"
+    SYMMETRIC_CIPHER = "symmetric_cipher"
+    ASYMMETRIC_CIPHER = "asymmetric_cipher"
+    MAC = "mac"
+    KEY_DERIVATION = "key_derivation"
+    SIGNATURE = "signature"
+    PROTOCOL = "protocol"
+    CERTIFICATE = "certificate"
+    KEY = "key"
+    SECRET = "secret"
+    RANDOM_NUMBER_GENERATOR = "random_number_generator"
+
+class CryptoStrength(str, Enum):
+    WEAK = "weak"               # MD5, SHA1, DES, RC4, RSA<1024
+    MODERATE = "moderate"       # 3DES, RSA-1024, SHA-224
+    STRONG = "strong"           # AES-128+, SHA-256+, RSA-2048+ (but quantum-vulnerable)
+    QUANTUM_SAFE = "quantum_safe"  # CRYSTALS-Kyber, Dilithium, SPHINCS+, etc.
+
+
+# ===== AI-BOM Enums =====
+
+class AIComponentType(str, Enum):
+    LOCAL_MODEL_FILE = "local_model_file"
+    EXTERNAL_PROVIDER = "external_provider"
+    HUGGINGFACE_MODEL = "huggingface_model"
+    ML_FRAMEWORK = "ml_framework"
+    AI_FRAMEWORK = "ai_framework"
+    DATASET = "dataset"
+    PROMPT_ASSET = "prompt_asset"
+    EMBEDDING_MODEL = "embedding_model"
+
+class AIRiskCategory(str, Enum):
+    UNTRUSTED_MODEL_DESERIALIZATION = "untrusted_model_deserialization"
+    UNPINNED_MODEL_VERSION = "unpinned_model_version"
+    DEPRECATED_EOL_MODEL = "deprecated_eol_model"
+    MISSING_MODEL_CARD_LINEAGE = "missing_model_card_lineage"
+    LICENSE_COMPLIANCE_GAP = "license_compliance_gap"
+    DATA_PRIVACY_TRAINING_CONFIG = "data_privacy_training_config"
+    MODEL_THEFT_EXPOSURE = "model_theft_exposure"
+
+class ModelProvider(str, Enum):
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    BEDROCK = "bedrock"
+    VERTEX = "vertex"
+    COHERE = "cohere"
+    MISTRAL = "mistral"
+    HUGGINGFACE = "huggingface"
+    LOCAL = "local"
+    UNKNOWN = "unknown"

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+Notes.md
+README.md
+dast_results_testing.json
+mock_data.json
+docker-compose.yml
+helpers - Shortcut.lnk
+markdown_output/

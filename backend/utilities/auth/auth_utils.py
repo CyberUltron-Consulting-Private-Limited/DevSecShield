@@ -63,7 +63,7 @@ async def get_current_user_from_access_token(engine: Engine, token: str, ignore_
             )
             token_data = TokenPayload(**payload)
             
-            if datetime.fromtimestamp(token_data.exp) < datetime.now():
+            if datetime.fromtimestamp(token_data.exp, tz=timezone.utc) < datetime.now(timezone.utc):
                 print("Token expired 🔴")
                 raise HTTPException(
                     status_code = status.HTTP_401_UNAUTHORIZED,
@@ -81,18 +81,19 @@ async def get_current_user_from_access_token(engine: Engine, token: str, ignore_
             
         with Session(engine) as session:
             user = session.exec(select(User).where(User.email == token_data.sub)).first()
-        
+
+        if user is None:
+            print("Could not find user 🔴")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         if not user.session_active and not ignore_session_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Session not active",
-            )
-        
-        if user is None:
-            print("Could not find user 🔴")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Could not find user",
             )
         print("User found 🟩")
 
@@ -113,7 +114,7 @@ async def get_current_user_from_refresh_token(engine: Engine, token: str) -> Use
             )
             token_data = TokenPayload(**payload)
             
-            if datetime.fromtimestamp(token_data.exp) < datetime.now():
+            if datetime.fromtimestamp(token_data.exp, tz=timezone.utc) < datetime.now(timezone.utc):
                 with Session(engine) as session:
                     statement = select(User).where(User.email == token_data.sub)
                     user = session.exec(statement).first()
@@ -143,6 +144,11 @@ async def get_current_user_from_refresh_token(engine: Engine, token: str) -> Use
         with Session(engine) as session:
             user = session.exec(select(User).where(User.email == token_data.sub)).first()
         
+        if user and not user.session_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Session not active",
+            )
         
         if user is None:
             with Session(engine) as session:
@@ -163,7 +169,10 @@ async def get_user_from_header_or_raise_exception(engine: Engine,Authorization: 
     if not Authorization:
         print("No Authorization header provided 🔴")
         raise HTTPException(status_code=401, detail="Unauthorized")
-    access_token = Authorization.split(" ")[1]
+    parts = Authorization.split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid Authorization header format")
+    access_token = parts[1]
     user = await get_current_user_from_access_token(engine, access_token, ignore_session_active)
     return user
 
@@ -254,10 +263,72 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Local-only: fixed OTP for demo login (set in backend/.env; omit in prod).
+LOCAL_DEV_VERIFICATION_EMAIL = os.getenv("LOCAL_DEV_VERIFICATION_EMAIL", "").strip().lower()
+LOCAL_DEV_VERIFICATION_CODE = os.getenv("LOCAL_DEV_VERIFICATION_CODE", "").strip()
+
+
+def local_dev_verification_enabled(email: str) -> bool:
+    return bool(
+        LOCAL_DEV_VERIFICATION_EMAIL
+        and LOCAL_DEV_VERIFICATION_CODE
+        and email.strip().lower() == LOCAL_DEV_VERIFICATION_EMAIL
+    )
+
+
+def verification_code_is_valid(session: Session, email: str, code: str) -> bool:
+    if local_dev_verification_enabled(email) and code == LOCAL_DEV_VERIFICATION_CODE:
+        return True
+    row = session.exec(
+        select(VerificationCode).where(
+            VerificationCode.email == email,
+            VerificationCode.code == code,
+            VerificationCode.expires_at >= datetime.now(timezone.utc),
+        )
+    ).first()
+    return row is not None
+
+
 def generate_verification_code():
-    import random
-    code = ''.join(random.choices('0123456789', k=6))
+    import secrets
+    code = ''.join(secrets.choice('0123456789') for _ in range(6))
     return code
+
+def create_and_store_verification_code(recipient_email: str, engine: Engine) -> str:
+    """Fast DB-only insert. Returns 6-digit code."""
+    if local_dev_verification_enabled(recipient_email):
+        return LOCAL_DEV_VERIFICATION_CODE
+    code = generate_verification_code()
+    with Session(engine) as session:
+        verification_code = VerificationCode(email=recipient_email, code=code)
+        session.add(verification_code)
+        session.commit()
+    return code
+
+def send_verification_email(recipient_email: str, code: str):
+    """Synchronous wrapper for background task. Sends email without blocking request."""
+    body = create_verification_email_html(code)
+    try:
+        # Using asyncio.run to wrap the async call in sync context
+        import asyncio
+        asyncio.run(send_outlook_email(
+            recipient_email=recipient_email,
+            subject="Verification code",
+            html_body=body))
+    except Exception as e:
+        print(f"Background email send failed for {recipient_email}: {e} 🔴")
+
+async def send_verification_email_async(recipient_email: str, code: str):
+    """Async email sender for truly non-blocking background execution."""
+    body = create_verification_email_html(code)
+    try:
+        await send_outlook_email(
+            recipient_email=recipient_email,
+            subject="Verification code",
+            html_body=body)
+        print(f"✓ Verification email sent to {recipient_email} in background")
+    except Exception as e:
+        print(f"Background email send failed for {recipient_email}: {e} 🔴")
 
 async def send_verification_code_and_save_to_db( recipient_email: str , engine: Engine):
     code = generate_verification_code()

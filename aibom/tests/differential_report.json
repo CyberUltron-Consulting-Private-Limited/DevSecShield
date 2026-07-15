@@ -1,0 +1,184 @@
+{
+  "chroma": {
+    "framework": {
+      "extra": [],
+      "missed": [
+        "crewai",
+        "langchain"
+      ],
+      "n_match": 0,
+      "n_oracle": 2,
+      "n_ours": 0,
+      "oracle_tool": "trusera",
+      "passed": false,
+      "precision": null,
+      "recall": 0.0,
+      "threshold": 0.9
+    },
+    "model": {
+      "extra": [
+        "all-minilm-l6-v2",
+        "all-mpnet-base-v2",
+        "baai/bge-base-en-v1.5",
+        "baai/bge-large-en-v1.5",
+        "baai/bge-m3",
+        "baai/bge-small-en-v1.5",
+        "bge-m3",
+        "bge-small-en-v1.5",
+        "claude-3-5-sonnet-20241022",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-20250514",
+        "embed-english-light-v2.0",
+        "embed-english-light-v3.0",
+        "embed-english-v2.0",
+        "embed-english-v3.0",
+        "embed-multilingual-light-v3.0",
+        "embed-multilingual-v2.0",
+        "embed-multilingual-v3.0",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-embedding-001",
+        "gemini-embedding-2-preview",
+        "gemini-pro",
+        "gpt-3.5-turbo",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-5-chat-latest",
+        "gpt-5-nano",
+        "jina-embeddings-v3",
+        "llama2",
+        "mixtral-8x7b-instruct-v0.1",
+        "nomic-embed-text-v1",
+        "sentence-transformers/all-minilm-l6-v2",
+        "sentence-transformers/all-mpnet-base-v2",
+        "text-embedding-004",
+        "text-embedding-3",
+        "text-embedding-3-large",
+        "text-embedding-3-small",
+        "text-embedding-ada-002",
+        "xenova/all-mpnet-base-v2"
+      ],
+      "missed": [],
+      "n_match": 4,
+      "n_oracle": 4,
+      "n_ours": 44,
+      "oracle_tool": "cisco",
+      "passed": true,
+      "precision": 0.09090909090909091,
+      "recall": 1.0,
+      "threshold": 0.7
+    },
+    "provider": {
+      "extra": [],
+      "missed": [
+        "anthropic",
+        "azure openai",
+        "cohere",
+        "google.generativeai",
+        "mistral",
+        "mistralai",
+        "ollama",
+        "openai",
+        "sentence-transformers",
+        "together ai",
+        "transformers"
+      ],
+      "n_match": 1,
+      "n_oracle": 12,
+      "n_ours": 1,
+      "oracle_tool": "trusera",
+      "passed": false,
+      "precision": 1.0,
+      "recall": 0.08333333333333333,
+      "threshold": 0.9
+    }
+  },
+  "synthetic": {
+    "framework": {
+      "extra": [],
+      "missed": [],
+      "n_match": 2,
+      "n_oracle": 2,
+      "n_ours": 2,
+      "oracle_tool": "trusera",
+      "passed": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "threshold": 0.9
+    },
+    "model": {
+      "extra": [],
+      "missed": [],
+      "n_match": 3,
+      "n_oracle": 3,
+      "n_ours": 3,
+      "oracle_tool": "cisco",
+      "passed": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "threshold": 0.7
+    },
+    "provider": {
+      "extra": [],
+      "missed": [],
+      "n_match": 3,
+      "n_oracle": 3,
+      "n_ours": 3,
+      "oracle_tool": "trusera",
+      "passed": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "threshold": 0.9
+    }
+  },
+  "trusera-demo": {
+    "framework": {
+      "extra": [],
+      "missed": [],
+      "n_match": 2,
+      "n_oracle": 2,
+      "n_ours": 2,
+      "oracle_tool": "trusera",
+      "passed": true,
+      "precision": 1.0,
+      "recall": 1.0,
+      "threshold": 0.9
+    },
+    "model": {
+      "extra": [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-sonnet-20240229-v1",
+        "gemini-1.5-pro",
+        "gpt-4o",
+        "gpt-4o-global",
+        "gpt-4o-mini",
+        "llama-3-8b"
+      ],
+      "missed": [],
+      "n_match": 3,
+      "n_oracle": 3,
+      "n_ours": 10,
+      "oracle_tool": "cisco",
+      "passed": true,
+      "precision": 0.3,
+      "recall": 1.0,
+      "threshold": 0.7
+    },
+    "provider": {
+      "extra": [
+        "aws bedrock",
+        "azure openai",
+        "ollama"
+      ],
+      "missed": [],
+      "n_match": 1,
+      "n_oracle": 1,
+      "n_ours": 4,
+      "oracle_tool": "trusera",
+      "passed": true,
+      "precision": 0.25,
+      "recall": 1.0,
+      "threshold": 0.9
+    }
+  }
+}

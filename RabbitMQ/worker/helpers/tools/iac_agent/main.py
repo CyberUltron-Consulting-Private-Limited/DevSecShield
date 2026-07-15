@@ -10,8 +10,10 @@ from rich.console import Console
 from helpers.tools.sast_agent.semgrep_util import run_sast_scan_on_directory
 from helpers.context.schema import * 
 from helpers.tools.iac_agent.summary_manager import IACSummaryManager , FinalIACVulnerabilities
+from helpers.tools.iac_agent.diagram_summary_manager import IACArchitecture, IACDiagramSummaryManager
 from helpers.tools.iac_agent.context import IACTypeContext
 from helpers.context.progress_writer import StateUpdateWriter
+from helpers.tools.iac_agent.diagram import generate_dependency_diagram
 
 
 console = Console()
@@ -88,6 +90,8 @@ class IACAgent(BaseAgent):
 
             #initializing
             self.vulnerabilities : list[type[CodebaseVulnerability]] | None = None
+            self.dependency_diagram : str | None = None
+            self.metadata : dict | None = None
 
         except Exception as e:
             raise ValueError(f"Error in initializing IACAgent: {e}")
@@ -104,19 +108,31 @@ class IACAgent(BaseAgent):
                 include_files_extensions=self.include_files_extensions, 
                 include_path_arrays=self.include_path_arrays,
             )
+            
+            # getting IAC Vulnerabilities 
             output = codebase_context.prepare_context(
                 load_documents_to_vector_store=False,
                 summary_manager=IACSummaryManager(iac_types=self.iac_types)
             )
-
-
             summary : type[FinalIACVulnerabilities] = output.summary
-
             console.print(f"Vulnerabilities length : {len(summary.vulnerabilities)}",style="bold yellow")
             for index , vulnerability in enumerate(summary.vulnerabilities):
                 console.print(f" 🔧 Vulnerability # {index + 1} : {vulnerability.title}",style="bold yellow")
 
             self.vulnerabilities = summary.vulnerabilities # SET vulnerabilities ⭐
+
+            self.metadata = codebase_context.metadata # SET metadata ⭐
+
+
+
+            # getting IAC Dependency Architecture 
+            architecture_output  = codebase_context.prepare_context(
+                load_documents_to_vector_store=False,
+                summary_manager=IACDiagramSummaryManager()
+            )
+            summary_output : IACArchitecture= architecture_output.summary
+            iac_dependency_architecture = summary_output.architecture_description
+            self.dependency_diagram = generate_dependency_diagram(iac_dependency_architecture)  # SET dependency_diagram ⭐
 
         except Exception as e:
             raise ValueError(f"Error in populating codebase context: {e}")
@@ -177,7 +193,7 @@ class IACAgent(BaseAgent):
                 self.state_update_writer.write_progress_percentage(100)
 
             # STEP [ 6 ] ================================ Return Vulnerabilities model =================================================================
-            return self.vulnerabilities
+            return self.vulnerabilities , self.dependency_diagram , self.metadata
 
 
         except Exception as e:

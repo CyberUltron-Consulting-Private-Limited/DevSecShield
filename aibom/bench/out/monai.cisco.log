@@ -1,0 +1,246 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analyzing Source:                                                            │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+INFO: Stage 1/4 — scanning 1 path(s)
+INFO: Pass 2 prep: pre-cached 474 / 474 files via async I/O
+INFO: Stage 2/4 — cross-reference resolution
+INFO: Stage 3/4 — agentic classification (all 510 components)
+INFO: Pre-agentic dedup: 510 → 205 components (305 context-free duplicates removed)
+INFO: Running agentic enrichment with global.anthropic.claude-haiku-4-5-20251001-v1:0 (3 simple, 202 complex, 0 relationships, concurrency=1)
+INFO: Found credentials in shared credentials file: ~/.aws/credentials
+INFO: Tier 1 (simple confirmations): 3 candidates via global.anthropic.claude-haiku-4-5-20251001-v1:0 (batch=5)
+INFO: 3 components → 1 locality-aware batches (concurrency=1)
+INFO: Agentic batch 1/1 — 3 components [model.pt, fl_best_model, fl_final_model]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 3.1s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Retry pass: 3 degraded components, cooling down 30s
+INFO: Retrying 2 batches sequentially (batch_size=2)
+INFO: Agentic batch 1/2 — 2 components [model.pt, fl_best_model]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 1.0s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/2 — 1 components [fl_final_model]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 0.7s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Retry pass complete: 0/3 recovered, 3 still degraded
+INFO: Decision memo now holds 3 verdicts
+INFO: Tier 2 (complex reasoning): 202 candidates via global.anthropic.claude-haiku-4-5-20251001-v1:0
+INFO: 202 components → 41 locality-aware batches (concurrency=1)
+INFO: Agentic batch 1/41 — 5 components [torch, training_run, training_run, training_run, training_run]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/41 — 5 components [dataset, hyperparameter:batch_size, training_run, hyperparameter:weight_decay, hyperparameter:batch_size]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 3/41 — 5 components [hyperparameter:dropout, training_run, hyperparameter:dropout, hyperparameter:dropout, dataset]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 3 failed after 0.8s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+WARNING: Agentic circuit breaker: skipping batches 4–41 after 3 consecutive failures
+INFO: Retry pass: 202 degraded components, cooling down 30s
+INFO: Retrying 101 batches sequentially (batch_size=2)
+INFO: Agentic batch 1/101 — 2 components [torch, training_run]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 1 failed after 1.1s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 2/101 — 2 components [training_run, training_run]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 2 failed after 1.0s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+INFO: Agentic batch 3/101 — 2 components [training_run, dataset]
+INFO: Using Bedrock Invoke API to generate response
+ERROR: Error raised by bedrock service
+Traceback (most recent call last):
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/langchain_aws/llms/bedrock.py", line 1179, in _prepare_input_and_invoke
+    response = self.client.invoke_model(**request_options)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 606, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/anshsinghal/.local/share/uv/tools/cisco-aibom/lib/python3.13/site-packages/botocore/client.py", line 1094, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.errorfactory.ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted
+WARNING: Batch 3 failed after 0.9s: An error occurred (ValidationException) when calling the InvokeModel operation: response_format: Extra inputs are not permitted | tool_stats={}
+WARNING: Retry circuit breaker: skipping retry batches 4–101
+INFO: Retry pass complete: 0/202 recovered, 202 still degraded
+INFO: Decision memo now holds 5 verdicts
+INFO: Agentic enrichment complete: 205 enriched, 0 new components, 0 new relationships, 0 risk flags, tokens=0 (prompt=0, completion=0)
+INFO: Stage 4/4 — assembling results
+INFO: Consolidation: 510 → 14 components (-496 duplicates)
+INFO: AI-only dependency policy: 14 → 13 components (-1 non-AI dependencies)
+INFO: Cached result: 5c738036fca9 → /Users/anshsinghal/.aibom/cache/scan/5c738036fca99c526e15f20facaa9675.json
+Report written to 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/out/monai.cisco.json
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Analysis Summary (v2) •                                                      │
+│ /Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+        Components in         
+/Users/anshsinghal/Desktop/Dev
+SecShield/aibom/bench/repos/mo
+          nai/monai           
+                              
+  Category             Count  
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+  dataset              1      
+  experiment_tracker   1      
+  hyperparameter       5      
+  model                3      
+  model_artifact       1      
+  secret               1      
+  training_run         1      
+                              
+╭─────────────────╮
+│ DATASET details │
+╰─────────────────╯
+  dataset framework=pytorch 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/data/datal
+oader.py:26
+╭────────────────────────────╮
+│ EXPERIMENT_TRACKER details │
+╰────────────────────────────╯
+  experiment_tracker framework=tensorboard 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/t
+ensorboard_handlers.py:29
+╭────────────────────────╮
+│ HYPERPARAMETER details │
+╰────────────────────────╯
+  hyperparameter:batch_size framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/metrics/cu
+mulative_average.py:36
+  hyperparameter:weight_decay framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers
+/novograd.py:63
+  hyperparameter:dropout framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/networks/n
+ets/fullyconnectednet.py:27
+  hyperparameter:num_epochs framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/handlers/s
+tats_handler.py:287
+  hyperparameter:warmup_steps framework=python-kwargs 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers
+/lr_scheduler.py:89
+╭───────────────╮
+│ MODEL details │
+╰───────────────╯
+  model.pt model=model.pt 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/nnune
+t/nnunet_bundle.py:314
+  fl_best_model model=fl_best_model 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/c
+onstants.py:23
+  fl_final_model model=fl_final_model 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/fl/utils/c
+onstants.py:24
+╭────────────────────────╮
+│ MODEL_ARTIFACT details │
+╰────────────────────────╯
+  model_artifact framework=keras 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/apps/recon
+struction/fastmri_reader.py:31
+╭────────────────╮
+│ SECRET details │
+╰────────────────╯
+  env:NGC_API_KEY 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/bundle/scr
+ipts.py:572
+╭──────────────────────╮
+│ TRAINING_RUN details │
+╰──────────────────────╯
+  training_run framework=pytorch/tensorflow 
+/Users/anshsinghal/Desktop/DevSecShield/aibom/bench/repos/monai/monai/optimizers
+/lr_scheduler.py:17
