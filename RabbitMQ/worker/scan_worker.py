@@ -15,6 +15,7 @@ from helpers.tools.sca_sbom_agent.main import SCASBOMAgent
 from helpers.tools.iac_agent.main import IACAgent
 from helpers.tools.cbom_agent.main import CBOMAgent
 from helpers.tools.ai_bom_agent.main import AIBOMAgent
+from helpers.tools.mobile_agent.main import MobileAgent
 from helpers.tools.iac_agent.context import IACTypeContext, validate_dict_with_iac_context
 from helpers.tools.llm_agent.context import LLMBenchmarkingContext
 from helpers.tools.llm_agent.main import LLMBenchmarkingAgent
@@ -905,8 +906,73 @@ try:
     console.print(f"Registered AI BOM estimation task", style="bold green")
 
 
+    # ------------------------------------------- Mobile App Security Scanning task -------------------------------------------------------------------------------------------
+    @app.task(track_started=True, bind=True, soft_time_limit=3600, time_limit=4200)
+    def mobile(
+        self,
+        file_dict_context: dict | None = None,
+        original_filename: str | None = None,
+    ):
+        agent = None
+        try:
+            if not file_dict_context:
+                raise Exception("No file context provided for mobile scan")
+            # original_filename may live inside the dict from format_input
+            if original_filename is None and isinstance(file_dict_context, dict):
+                original_filename = file_dict_context.get("original_filename")
+            file_context = validate_dict_with_file_context(file_dict_context)
+            state_update_writer = StateUpdateWriter(self)
+            agent = MobileAgent(
+                file_context=file_context,
+                state_update_writer=state_update_writer,
+                original_filename=original_filename,
+            )
+            return agent.run()
+        except Exception as e:
+            console.print(f"Error in mobile task: {str(e)}", style="bold red")
+            raise e
+        finally:
+            if agent:
+                agent.cleanup()
+            if file_dict_context:
+                try:
+                    fc = validate_dict_with_file_context(file_dict_context)
+                    if delete_file(fc.bucket_name, fc.object_name):
+                        console.print("Deleted mobile binary from bucket", style="bold green")
+                except Exception as cleanup_err:
+                    console.print(f"Error deleting mobile binary from bucket: {cleanup_err}", style="bold red")
+
+    console.print("Registered Mobile App Security task", style="bold green")
 
 
+    @app.task(track_started=True)
+    def mobile_estimation(
+        file_dict_context: dict | None = None,
+        original_filename: str | None = None,
+    ):
+        try:
+            if not file_dict_context:
+                raise Exception("No file context provided for mobile estimation")
+            validate_dict_with_file_context(file_dict_context)
+            # Flat estimate: mobile static analysis is heavier than source zip scans
+            return 15.0
+        except Exception as e:
+            console.print(f"Error in mobile estimation task: {str(e)}", style="bold red")
+            raise e
+        finally:
+            if file_dict_context:
+                try:
+                    fc = validate_dict_with_file_context(file_dict_context)
+                    delete_file(fc.bucket_name, fc.object_name)
+                except Exception:
+                    pass
+
+    console.print("Registered Mobile App Security estimation task", style="bold green")
+
+
+
+
+    #  # ------------------------------------------- Agent discovery Scanning task -------------------------------------------------------------------------------------------
 
 
 

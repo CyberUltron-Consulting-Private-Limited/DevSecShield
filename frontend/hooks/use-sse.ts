@@ -20,7 +20,7 @@ const streamChatbotResponse = async (
     abortController?: AbortController
 ): Promise<AbortController> => {
 
-    const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom', 'ai_bom'];
+    const valid_types = ['sast', 'llm', 'mcp', 'iac', 'leakage', 'sbom_sca', 'agent_discovery', 'dast', 'cbom', 'ai_bom', 'mobile'];
     if (!valid_types.includes(type)) {
         throw new Error('Invalid conversation type');
     }

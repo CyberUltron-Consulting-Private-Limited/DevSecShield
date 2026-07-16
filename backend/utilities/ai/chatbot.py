@@ -66,6 +66,7 @@ SCAN_TYPE_DISPLAY_NAMES = {
     "agent_discovery": "AI Agent Discovery",
     "cbom": "CBOM (Cryptographic Bill of Materials)",
     "ai_bom": "AI-BOM (AI Bill of Materials)",
+    "mobile": "Mobile App Security",
 }
 
 

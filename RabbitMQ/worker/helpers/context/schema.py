@@ -137,6 +137,16 @@ class AIComponentVulnerability(BaseVulnerability):
     owasp_top_10_llm : list[OWASPTop10LLM] = Field(default_factory=list, description="A list of OWASP Top 10 for LLM Applications vulnerabilities that this component is related to")
 
 
+# ========================================= Mobile App Security Schemas =========================================
+
+class MobileVulnerability(BaseVulnerability):
+    owasp_top_10 : list[OWASPTop10] = Field(default_factory=list)
+    compliance_controls : list[ComplianceControls] = Field(default_factory=list)
+    category : str | None = Field(default=None, description="Finding category e.g. permissions, code_analysis, certificate")
+    rule_id : str | None = Field(default=None, description="Analyzer rule identifier if available")
+    file_path : str | None = Field(default=None, description="Path inside the app package if available")
+
+
 
 
 

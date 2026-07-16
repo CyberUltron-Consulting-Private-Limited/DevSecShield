@@ -76,12 +76,19 @@ export interface StartAiBomScanData {
   ai_bom_file_used: boolean;
 }
 
+/** Mobile App Security: binary upload only */
+export interface StartMobileScanData {
+  apk_file_used: boolean;
+  file_name?: string | null;
+}
+
 export interface StartScanPayload {
   sast?: StartSastScanData | null;
   iac?: StartIACScanData | null;
   sbom_sca?: StartSBOMScanData | null;
   cbom?: StartCBOMScanData | null;
   ai_bom?: StartAiBomScanData | null;
+  mobile?: StartMobileScanData | null;
 }
 
 // -------------------------------------------------------------- SAST API Routes --------------------------------------------------------------
@@ -469,7 +476,7 @@ const reinitializeSastScan = async (params: {
 /** Send a message to a scan. POST /{team_id}/{type}/scan/{scan_id}/message */
 const sendMessageToScan = async (
     team_id: number,
-    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast" | "cbom" | "ai_bom",
+    type: "sast" | "iac" | "sbom_sca" | "llm" | "mcp" | "leakage" | "agent_discovery" | "dast" | "cbom" | "ai_bom" | "mobile",
     scan_id: number,
     user_message: string
 ): Promise<{ content: string }> => {
@@ -488,7 +495,7 @@ const buildScanFormData = (start_scan_payload_string: string, uploaded_file?: Fi
 /** Estimate credits for a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/estimate_credits */
 const estimateCreditsForScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom" | "mobile",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -505,7 +512,7 @@ const estimateCreditsForScan = async (
 /** Start a scan. POST FormData to /{team_id}/{type}/scan/{scan_id}/start */
 const startScan = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom" | "mobile",
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
@@ -530,7 +537,7 @@ export interface CreateTicketData {
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
 const createTicket = async (
   team_id: number,
-  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom",
+  type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom" | "mobile",
   scan_id: number,
   data: CreateTicketData
 ): Promise<{ message: string }> => {
@@ -1800,7 +1807,7 @@ const updateScan = async ({
     data,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom" | "mobile";
     scan_id: number;
     data: UpdateScanPayload;
 }) => {
@@ -1817,7 +1824,7 @@ const toggleFindingState = async ({
     state,
 }: {
     team_id: number;
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom";
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom" | "mobile";
     scan_id: number;
     finding_id: string;
     state: "fixed" | "ignored" | "in_progress" | "not_started";
@@ -2596,6 +2603,167 @@ export {
   reinitializeAIBOMScanWithPayload,
 }
 
+// -------------------------------------------------------------- Mobile App Security API Routes --------------------------------------------------------------
+
+export interface MobileFinding {
+  id: string
+  title: string
+  description: string
+  impact: string
+  risk_score: number
+  status: string
+  category?: string
+  rule_id?: string
+  location?: string
+  suggested_fix?: string
+  compliance_controls?: unknown
+  owasp_top_10?: unknown
+  remediation?: RemediationData | null
+}
+
+export interface MobileSummary {
+  app_name?: string | null
+  package_name?: string | null
+  version_name?: string | null
+  platform?: string | null
+  security_score?: number | null
+  file_name?: string | null
+}
+
+export interface MobileConversation {
+  id: number
+  title: string
+  created_at: string
+  last_updated: string
+  scan_status: string
+  estimated_credits?: number | null
+  owner_user_email?: string
+  owner_user_full_name?: string
+  info?: ScanInfoField | null
+  risk_data?: ScanRiskData | null
+  apk_file_used?: boolean | null
+  file_name?: string | null
+  app_name?: string | null
+  package_name?: string | null
+  average_risk_score?: number | null
+}
+
+export interface MobileListDashboardData {
+  card_data: {
+    total_findings: number
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    average_risk_score: number
+    total_scans: number
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  category_distribution: Record<string, number>
+  top_risks: Array<{ title?: string; category?: string; impact?: string }>
+}
+
+export interface MobileListResponse {
+  scans_list_data: MobileConversation[]
+  dashboard_data: MobileListDashboardData
+}
+
+export interface MobileScanDashboard {
+  card_data: {
+    total_findings: number
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    average_risk_score: number
+    security_score?: number | null
+    app_name?: string | null
+    package_name?: string | null
+    version_name?: string | null
+    platform?: string | null
+  }
+  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  category_distribution: Record<string, number>
+  top_risks: Array<{ title?: string; category?: string; impact?: string; risk_score?: number }>
+  mobile_summary?: MobileSummary
+  remediation_actions_required?: Record<string, number>
+}
+
+export interface MobileConversationResponse {
+  title: string
+  scan_metadata?: {
+    apk_file_used?: boolean
+    file_name?: string | null
+    mobile_summary?: MobileSummary | null
+  } | null
+  scan_status: string
+  findings: MobileFinding[]
+  dashboard: MobileScanDashboard
+  messages: { id: number; content: string; role: "user" | "assistant"; timestamp: string; is_streaming: boolean }[]
+  info?: ScanInfoField | null
+  data?: { results?: MobileFinding[]; mobile_summary?: MobileSummary; duration_of_scan?: number } | null
+}
+
+const getMobileScans = async (team_id: number): Promise<MobileListResponse> => {
+  const response = await api.get(`/${team_id}/mobile/scans`);
+  return response.data as MobileListResponse;
+};
+
+const getMobileScanData = async ({
+  queryKey,
+}: {
+  queryKey: ["mobile-conversation-data", number, number];
+}): Promise<MobileConversationResponse> => {
+  const [, team_id, scan_id] = queryKey;
+  try {
+    const response = await api.get(`/${team_id}/mobile/scan/${scan_id}`);
+    return response.data as MobileConversationResponse;
+  } catch (error) {
+    showErrorToast(error, "Error fetching Mobile App Security scan data");
+    throw error;
+  }
+};
+
+const createMobileScan = async (team_id: number, title: string): Promise<number> => {
+  const response = await api.post(`/${team_id}/mobile/scan`, { title });
+  toast.success("Mobile App Security scan created");
+  return response.data.scan_id as number;
+};
+
+const deleteMobileScan = async (team_id: number, scan_id: number) => {
+  const response = await api.delete(`/${team_id}/mobile/scan/${scan_id}`);
+  toast.success("Scan deleted");
+  return response.data;
+};
+
+const renameMobileScan = async ({
+  team_id,
+  scan_id,
+  title,
+}: {
+  team_id: number;
+  scan_id: number;
+  title: string;
+}) => {
+  const response = await api.put(`/${team_id}/mobile/scan/${scan_id}`, { title });
+  toast.success("Scan renamed");
+  return response.data;
+};
+
+const getMobileExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
+  const response = await api.get(`/${team_id}/mobile/scan/${scan_id}/export`, { responseType: "blob" });
+  return response.data;
+};
+
+export {
+  getMobileScans,
+  getMobileScanData,
+  createMobileScan,
+  deleteMobileScan,
+  renameMobileScan,
+  getMobileExportResults,
+}
+
 // -------------------------------------------------------------- Remediation Types + API --------------------------------------------------------------
 
 export interface RemediationFix {
@@ -2633,7 +2801,7 @@ const generateFindingRemediation = async ({
     finding_id,
 }: {
     team_id: number
-    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom"
+    type: "sast" | "iac" | "sbom_sca" | "mcp" | "llm" | "dast" | "cbom" | "ai_bom" | "mobile"
     scan_id: number
     finding_id: string
 }): Promise<RemediationData> => {

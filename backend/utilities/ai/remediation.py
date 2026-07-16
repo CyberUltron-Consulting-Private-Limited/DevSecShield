@@ -79,6 +79,12 @@ REMEDIATION_SYSTEM_PROMPTS: dict[str, str] = {
         "license-compliance gaps, removing deprecated/EOL models, and protecting training-data privacy. "
         "Map fixes to the OWASP Top 10 for LLM Applications where relevant."
     ),
+    "mobile": (
+        "You are a senior mobile application security engineer.\n"
+        "Given a mobile app security finding (Android/iOS), generate concrete remediation steps.\n"
+        "Focus on: insecure storage, exported components, weak crypto, certificate pinning, "
+        "permission minimization, WebView hardening, and OWASP Mobile Top 10."
+    ),
 }
 
 EXPLOIT_SYSTEM_PROMPT = (

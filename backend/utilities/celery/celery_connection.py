@@ -42,7 +42,7 @@ def get_celery_app():
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
         mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
         if mongo_username and mongo_password:
-            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/?authSource=admin"
         else:
             mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 

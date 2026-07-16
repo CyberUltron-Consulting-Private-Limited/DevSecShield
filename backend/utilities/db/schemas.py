@@ -242,6 +242,21 @@ class StartAIBOMScanData(BaseStartRepositoryScanData):
         return self
 
 
+class StartMobileScanData(BaseModel):
+    """Mobile app binary upload (APK / IPA / XAPK / APKS)."""
+    apk_file_used: bool = True
+    file_name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_data(self):
+        if not self.apk_file_used:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Mobile app binary file is required",
+            )
+        return self
+
+
 class StartScanPayload(BaseModel):
     sast : StartSastScanData | None = None
     iac : StartIACScanData | None = None
@@ -251,3 +266,4 @@ class StartScanPayload(BaseModel):
     dast : StartDASTScanData | None = None
     cbom : StartCBOMScanData | None = None
     ai_bom : StartAIBOMScanData | None = None
+    mobile : StartMobileScanData | None = None

@@ -1,0 +1,15 @@
+name: devsecshield-mobile-analyzer
+services:
+  mobile-analyzer:
+    image: opensecurity/mobile-security-framework-mobsf:latest
+    container_name: devsecshield-mobile-analyzer
+    restart: unless-stopped
+    ports:
+      # Bind to localhost only — not exposed on LAN
+      - "127.0.0.1:8000:8000"
+    environment:
+      MOBSF_API_KEY: ${MOBSF_API_KEY}
+    # No host volume: named volumes on Windows often break MobSF's non-root
+    # user (uid 9901) with PermissionError on ~/.MobSF. Ephemeral data is fine
+    # for local integration; re-chown a bind mount to 9901:9901 if you need
+    # persistence later.

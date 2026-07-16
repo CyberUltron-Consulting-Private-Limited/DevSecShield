@@ -21,6 +21,7 @@ import {
   Infinity,
   ShieldCheck,
   Settings,
+  Smartphone,
 } from "lucide-react";
 import {
   Sidebar,
@@ -155,6 +156,7 @@ const toolsItems = [
   { name: "LLM", path: "llm", icon: Box },
   { name: "IAC", path: "iac", icon: FileText },
   { name: "DAST ", path: "dast", icon: Globe },
+  { name: "Mobile App Security", path: "mobile", icon: Smartphone },
 ];
 
 const workflowItems = [

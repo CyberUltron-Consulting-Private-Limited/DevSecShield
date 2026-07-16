@@ -49,7 +49,7 @@ def get_mongo_client_db():
         return _mongo_db
     
     if mongo_username and mongo_password:
-        mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
+        mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/?authSource=admin"
     else:
         mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
     

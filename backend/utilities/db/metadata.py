@@ -81,5 +81,10 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "ai_bom_file_used": start_scan_payload.ai_bom.ai_bom_file_used,
                 "scan_binaries": start_scan_payload.ai_bom.scan_binaries,
             }
+        case "mobile":
+            return {
+                "apk_file_used": start_scan_payload.mobile.apk_file_used,
+                "file_name": start_scan_payload.mobile.file_name,
+            }
         case _:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid scan type")

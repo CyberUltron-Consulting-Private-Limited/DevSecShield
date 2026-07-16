@@ -103,7 +103,7 @@ const ChatWindow = ({
   }, [query.data, query.error]);
 
   // check type of conversation (path format: /team_id/type/scan_id or similar)
-  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | 'cbom' | 'ai_bom' | undefined;
+  let type: 'sast' | 'llm' | 'mcp' | 'iac' | 'leakage' | 'sbom_sca' | 'agent_discovery' | 'dast' | 'cbom' | 'ai_bom' | 'mobile' | undefined;
   const typeSegment = pathParts[1];
   if (typeSegment === 'sast') {
       type = 'sast';
@@ -134,6 +134,9 @@ const ChatWindow = ({
   }
   else if (typeSegment === 'ai_bom') {
       type = 'ai_bom';
+  }
+  else if (typeSegment === 'mobile') {
+      type = 'mobile';
   }
   else {
       toast.error('Invalid conversation type');
@@ -227,6 +230,9 @@ const ChatWindow = ({
     }
     else if (type === 'ai_bom') {
       queryClient.invalidateQueries({ queryKey: ['ai_bom-conversation-data', team_id, scan_id] });
+    }
+    else if (type === 'mobile') {
+      queryClient.invalidateQueries({ queryKey: ['mobile-conversation-data', team_id, scan_id] });
     }
     else {
       toast.error('Invalid conversation type');

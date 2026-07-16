@@ -1,5 +1,9 @@
 # Local container test compose - builds from source, connects to host-exposed infra
 # Usage: docker compose -f compose/container-test/docker-compose.yml up --build
+#
+# Mongo must use the infra Docker network (devsecshield-mongodb). Do NOT use
+# host.docker.internal:27017 on Windows — a local mongod on 127.0.0.1:27017
+# often shadows the published container port and causes auth 500s.
 
 services:
 
@@ -14,14 +18,19 @@ services:
       IS_DOCKER_CONTAINER: "True"
       RABBITMQ_HOST: "host.docker.internal"
       RABBITMQ_PORT: "4672"
-      MONGO_HOST: "host.docker.internal"
+      MONGO_HOST: "devsecshield-mongodb"
       MONGO_PORT: "27017"
       QDRANT_HOST: "host.docker.internal"
       QDRANT_PORT: "7333"
-      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
+      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@devsecshield-mongodb:27017/?authSource=admin"
+      MOBSF_URL: "http://host.docker.internal:8000"
+      MOBSF_API_KEY: "devsecshield-mobile-analyzer-key-change-in-prod"
     command: uv run celery -A scan_worker worker -P threads --loglevel=info -Q scan_worker_queue
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - infra
 
   backend-test:
     container_name: devsecshield-backend-test
@@ -36,12 +45,15 @@ services:
       IS_DOCKER_CONTAINER: "True"
       PG_HOST: "host.docker.internal"
       PG_PORT: "4433"
-      MONGO_HOST: "host.docker.internal"
+      MONGO_HOST: "devsecshield-mongodb"
       MONGO_PORT: "27017"
       RABBITMQ_HOST: "host.docker.internal"
       RABBITMQ_PORT: "4672"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - infra
 
   frontend-test:
     container_name: devsecshield-frontend-test
@@ -66,9 +78,17 @@ services:
       IS_DOCKER_CONTAINER: "True"
       RABBITMQ_HOST: "host.docker.internal"
       RABBITMQ_PORT: "4672"
-      MONGO_HOST: "host.docker.internal"
+      MONGO_HOST: "devsecshield-mongodb"
       MONGO_PORT: "27017"
-      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
+      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@devsecshield-mongodb:27017/?authSource=admin"
     command: uv run celery -A dast_worker worker -P threads --loglevel=info -Q dast_worker_queue
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - infra
+
+networks:
+  infra:
+    external: true
+    name: devsecshield-infra-services_app-network

@@ -27,7 +27,7 @@ def mongo_db_create_collections_and_documents(
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
         mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
         if mongo_username and mongo_password:
-            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/"
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{mongo_host}:{mongo_port}/?authSource=admin"
         else:
             mongo_url = f"mongodb://{mongo_host}:{mongo_port}/"
         

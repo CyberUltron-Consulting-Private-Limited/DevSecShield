@@ -1471,6 +1471,82 @@ def generate_scan_dashboard(
                 "remediation_metrics": remediation_metrics,
             }
 
+        elif scan_type == "mobile":
+            severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            category_distribution = defaultdict(int)
+            top_risks_entries = []
+            mobile_risk_score_for_impact = {"critical": 9, "high": 7, "medium": 5, "low": 2}
+
+            for vulnerability in results:
+                impact = vulnerability.get("impact") or "Low"
+                impact_lower = impact.lower()
+                if impact_lower in severity_distribution:
+                    severity_distribution[impact_lower] += 1
+                category = vulnerability.get("category") or "general"
+                category_distribution[category] += 1
+                risk_score = mobile_risk_score_for_impact.get(impact_lower, 0)
+                top_risks_entries.append({
+                    "title": vulnerability.get("title", "Unknown"),
+                    "category": category,
+                    "impact": impact,
+                    "risk_score": risk_score,
+                })
+
+            total_findings = sum(severity_distribution.values())
+            if total_findings > 0:
+                weighted = (
+                    severity_distribution["critical"] * 4
+                    + severity_distribution["high"] * 3
+                    + severity_distribution["medium"] * 2
+                    + severity_distribution["low"] * 1
+                ) / total_findings
+                average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+            else:
+                average_risk_score = 0.0
+
+            impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+            top_risks_list = sorted(
+                top_risks_entries,
+                key=lambda x: impact_order.get((x.get("impact") or "low").lower(), 0),
+                reverse=True,
+            )[:10]
+
+            findings = get_findings_for_scan_id(scan_id=scan_id)
+            remediation_metrics = get_remediation_metrics(findings)
+            status_metrics = get_issue_status_metrics(findings)
+
+            mobile_summary = {}
+            if scan and isinstance(scan.scan_data, dict):
+                mobile_summary = scan.scan_data.get("mobile_summary") or {}
+
+            return {
+                "card_data": {
+                    "total_findings": total_findings,
+                    "total_critical": severity_distribution["critical"],
+                    "total_high": severity_distribution["high"],
+                    "total_medium": severity_distribution["medium"],
+                    "total_low": severity_distribution["low"],
+                    "average_risk_score": round(average_risk_score * 10) / 10,
+                    "security_score": mobile_summary.get("security_score"),
+                    "app_name": mobile_summary.get("app_name"),
+                    "package_name": mobile_summary.get("package_name"),
+                    "version_name": mobile_summary.get("version_name"),
+                    "platform": mobile_summary.get("platform"),
+                },
+                "severity_distribution": severity_distribution,
+                "category_distribution": dict(category_distribution),
+                "top_risks": top_risks_list,
+                "mobile_summary": mobile_summary,
+                "remediation_actions_required": {
+                    "total_findings": len(findings),
+                    "total_fixed": status_metrics.get("fixed", 0),
+                    "total_in_progress": status_metrics.get("in_progress", 0),
+                    "total_not_started": status_metrics.get("not_started", 0),
+                    "total_ignored": status_metrics.get("ignored", 0),
+                },
+                "remediation_metrics": remediation_metrics,
+            }
+
     except Exception as e:
         console.print(f"Error in generate_scan_dashboard: {e}",style="bold red")
         raise e

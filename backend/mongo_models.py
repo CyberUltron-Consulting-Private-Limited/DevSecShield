@@ -12,7 +12,8 @@ ConversationType = Literal[
     "mcp",
     "dast",
     "cbom",
-    "ai_bom"
+    "ai_bom",
+    "mobile",
 ]
 
 # Message/Active context types

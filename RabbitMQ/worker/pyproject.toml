@@ -23,6 +23,7 @@ dependencies = [
     "sqlmodel>=0.0.27",
     "tree-sitter>=0.25.2",
     "clinithread-aibom",
+    "requests>=2.32.0",
 ]
 
 # The clinithread-aibom engine lives in this monorepo; consume it as an editable

@@ -129,6 +129,8 @@ def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_typ
             return generate_cbom_dashboard_data(scans=scans)
         elif scan_type == "ai_bom":
             return generate_ai_bom_dashboard_data(scans=scans)
+        elif scan_type == "mobile":
+            return generate_mobile_dashboard_data(scans=scans)
     except Exception as e:
         console.print(f"Error in generating dashboard data for scan list: {e}", style="bold red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in generating dashboard data for scan list, please try again later")
@@ -2001,5 +2003,66 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
         "risk_category_distribution": dict(risk_category_distribution),
         "owasp_top_10_llm_issues": dict(owasp_top_10_llm_issues),
         "compliance_controls": dict(compliance_controls),
+        "top_risks": top_risks_list,
+    }
+
+
+def _mobile_results(scan: Scan) -> list:
+    if not scan.scan_data or not isinstance(scan.scan_data, dict):
+        return []
+    return scan.scan_data.get("results", []) or []
+
+
+def generate_mobile_dashboard_data(scans: list[Scan]) -> dict:
+    severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    category_distribution = defaultdict(int)
+    top_risks_entries = []
+
+    for scan in scans:
+        if scan.scan_status != "success":
+            continue
+        for vulnerability in _mobile_results(scan):
+            impact = (vulnerability.get("impact") or "low").lower()
+            if impact in severity_distribution:
+                severity_distribution[impact] += 1
+            category = vulnerability.get("category") or "general"
+            category_distribution[category] += 1
+            top_risks_entries.append({
+                "title": vulnerability.get("title", "Unknown"),
+                "category": category,
+                "impact": vulnerability.get("impact") or "Low",
+            })
+
+    total_findings = sum(severity_distribution.values())
+    if total_findings > 0:
+        weighted = (
+            severity_distribution["critical"] * 4
+            + severity_distribution["high"] * 3
+            + severity_distribution["medium"] * 2
+            + severity_distribution["low"] * 1
+        ) / total_findings
+        average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+    else:
+        average_risk_score = 0.0
+
+    impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    top_risks_list = sorted(
+        top_risks_entries,
+        key=lambda x: impact_order.get((x.get("impact") or "low").lower(), 0),
+        reverse=True,
+    )[:10]
+
+    return {
+        "card_data": {
+            "total_findings": total_findings,
+            "total_critical": severity_distribution["critical"],
+            "total_high": severity_distribution["high"],
+            "total_medium": severity_distribution["medium"],
+            "total_low": severity_distribution["low"],
+            "average_risk_score": round(average_risk_score * 10) / 10,
+            "total_scans": len([s for s in scans if s.scan_status == "success"]),
+        },
+        "severity_distribution": severity_distribution,
+        "category_distribution": dict(category_distribution),
         "top_risks": top_risks_list,
     }

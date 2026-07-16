@@ -36,6 +36,7 @@ const SCAN_TYPE_LABELS: Record<string, string> = {
   dast: "DAST",
   cbom: "CBOM",
   ai_bom: "AI BOM",
+  mobile: "Mobile App Security",
 };
 
 /** Blue shades for chart fills (light to dark) */

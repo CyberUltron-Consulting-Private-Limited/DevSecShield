@@ -7,6 +7,7 @@ from backend.utilities.pdf.llm_pdf import generate_pdf as generate_pdf_for_llm
 from backend.utilities.pdf.dast_pdf import generate_pdf as generate_pdf_for_dast
 from backend.utilities.pdf.cbom_pdf import generate_pdf as generate_pdf_for_cbom
 from backend.utilities.pdf.ai_bom_pdf import generate_pdf as generate_pdf_for_ai_bom
+from backend.utilities.pdf.mobile_pdf import generate_pdf as generate_pdf_for_mobile
 
 
 
@@ -31,3 +32,5 @@ def generate_pdf_for_type(type: scan_types , scan_data: dict , output_path: str)
             return generate_pdf_for_cbom(scan_data, output_path)
         case "ai_bom":
             return generate_pdf_for_ai_bom(scan_data, output_path)
+        case "mobile":
+            return generate_pdf_for_mobile(scan_data, output_path)

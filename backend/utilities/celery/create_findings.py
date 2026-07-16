@@ -133,7 +133,7 @@ def create_findings_in_mongo_db(
             if len(to_insert) > 0:
                 mongo_db["scan_findings"].insert_many(to_insert)
         
-        elif scan_type == "cbom" or scan_type == "ai_bom":
+        elif scan_type == "cbom" or scan_type == "ai_bom" or scan_type == "mobile":
             results = scan_results["results"]
             to_insert = []
             for vulnerability in results:

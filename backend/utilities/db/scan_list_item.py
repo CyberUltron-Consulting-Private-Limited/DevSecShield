@@ -491,6 +491,56 @@ def return_cbom_list_item(scan : Scan) -> dict:
     }
 
 
+def return_mobile_list_item(scan: Scan) -> dict:
+    total_critical, total_high, total_medium, total_low = 0, 0, 0, 0
+    average_risk_score = 0.0
+    if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
+        for vulnerability in scan.scan_data["results"]:
+            impact = (vulnerability.get("impact") or "").lower()
+            if impact == "critical":
+                total_critical += 1
+            elif impact == "high":
+                total_high += 1
+            elif impact == "medium":
+                total_medium += 1
+            elif impact == "low":
+                total_low += 1
+
+    risk_data = {
+        "total_critical": total_critical,
+        "total_high": total_high,
+        "total_medium": total_medium,
+        "total_low": total_low,
+    }
+
+    total_findings = total_critical + total_high + total_medium + total_low
+    if total_findings > 0:
+        weighted = (total_critical * 4 + total_high * 3 + total_medium * 2 + total_low * 1) / total_findings
+        average_risk_score = min(10.0, max(0.0, (weighted / 4) * 10))
+
+    summary = {}
+    if scan.scan_data and isinstance(scan.scan_data, dict):
+        summary = scan.scan_data.get("mobile_summary") or {}
+
+    return {
+        "id": scan.id,
+        "title": scan.title,
+        "created_at": scan.created_at,
+        "last_updated": scan.last_updated,
+        "scan_status": scan.scan_status.lower(),
+        "estimated_credits": scan.credit_consumed,
+        "owner_user_email": scan.owner_user.email,
+        "owner_user_full_name": f"{scan.owner_user.first_name} {scan.owner_user.last_name}",
+        "info": scan.info,
+        "risk_data": risk_data,
+        "apk_file_used": scan.scan_metadata.get("apk_file_used", True) if scan.scan_metadata else True,
+        "file_name": scan.scan_metadata.get("file_name") if scan.scan_metadata else None,
+        "app_name": summary.get("app_name"),
+        "package_name": summary.get("package_name"),
+        "average_risk_score": average_risk_score,
+    }
+
+
 
 
 def return_ai_bom_list_item(scan : Scan) -> dict:

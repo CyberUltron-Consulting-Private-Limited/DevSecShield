@@ -232,3 +232,14 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "ai_bom_sarif": ai_bom_sarif,
             "rbi_csf_rollup": rbi_csf_rollup,
         }
+
+    elif scan_type == "mobile":
+        _meta = scan.scan_metadata or {}
+        mobile_summary = None
+        if scan.scan_data and isinstance(scan.scan_data, dict):
+            mobile_summary = scan.scan_data.get("mobile_summary")
+        return {
+            "apk_file_used": bool(_meta.get("apk_file_used", True)),
+            "file_name": _meta.get("file_name"),
+            "mobile_summary": mobile_summary,
+        }

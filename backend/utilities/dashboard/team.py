@@ -194,13 +194,16 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         })
     
     # STEP [ 5 ] : ================================= number of types of scans run in the past month ================================================
-    scan_type_count : dict[str,int] = { "sast": 0, "llm": 0, "mcp": 0, "iac": 0, "leakage": 0, "sbom_sca": 0, "agent_discovery": 0, "dast": 0, "cbom": 0, "ai_bom": 0 }
+    scan_type_count : dict[str,int] = { "sast": 0, "llm": 0, "mcp": 0, "iac": 0, "leakage": 0, "sbom_sca": 0, "agent_discovery": 0, "dast": 0, "cbom": 0, "ai_bom": 0, "mobile": 0 }
     scans_in_past_month : list[Scan] = []
     for scan in scans:
         if scan.created_at.date() >= datetime.now().date() - timedelta(days=30):
             scans_in_past_month.append(scan)
     for scan in scans_in_past_month:
-        scan_type_count[scan.scan_type] += 1
+        if scan.scan_type in scan_type_count:
+            scan_type_count[scan.scan_type] += 1
+        else:
+            scan_type_count[scan.scan_type] = 1
     
     # STEP [ 6 ] : ========================== Detected high and critical vulnerabilities in the past month ================================================
     

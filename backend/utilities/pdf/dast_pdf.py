@@ -73,7 +73,12 @@ def get_impact_color(impact: str) -> colors.Color:
     return colors.HexColor("#6B7280")
 
 
-def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate) -> None:
+def create_title_page(
+    canvas_obj: canvas.Canvas,
+    doc: SimpleDocTemplate,
+    title: str = "DAST Security Scan Report",
+    subtitle: str = "Dynamic Application Security Testing Analysis",
+) -> None:
     """Create a title page for the PDF."""
     canvas_obj.saveState()
 
@@ -82,7 +87,7 @@ def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate) -> None
     canvas_obj.drawCentredString(
         doc.pagesize[0] / 2.0,
         doc.pagesize[1] / 2.0 + 80,
-        "DAST Security Scan Report",
+        title,
     )
 
     canvas_obj.setFont("Helvetica", 14)
@@ -90,7 +95,7 @@ def create_title_page(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate) -> None
     canvas_obj.drawCentredString(
         doc.pagesize[0] / 2.0,
         doc.pagesize[1] / 2.0 + 40,
-        "Dynamic Application Security Testing Analysis",
+        subtitle,
     )
 
     logo_path = os.path.join(os.path.dirname(__file__), "Zero Shield Logo.png")
@@ -134,7 +139,12 @@ def create_header_footer(canvas_obj: canvas.Canvas, doc: SimpleDocTemplate) -> N
     canvas_obj.restoreState()
 
 
-def generate_pdf(scan_data: dict, output_path: str) -> str:
+def generate_pdf(
+    scan_data: dict,
+    output_path: str,
+    report_title: str = "DAST Security Scan Report",
+    report_subtitle: str = "Dynamic Application Security Testing Analysis",
+) -> str:
     """
     Generate a PDF report from DAST scan results.
 
@@ -432,7 +442,11 @@ def generate_pdf(scan_data: dict, output_path: str) -> str:
                 story.append(Spacer(1, 0.12 * inch))
                 story.append(Paragraph(_escape_html(suggested_fix[:1500]) + ("..." if len(suggested_fix) > 1500 else ""), normal_style))
 
-    doc.build(story, onFirstPage=create_title_page, onLaterPages=create_header_footer)
+    doc.build(
+        story,
+        onFirstPage=lambda c, d: create_title_page(c, d, report_title, report_subtitle),
+        onLaterPages=create_header_footer,
+    )
     return output_path
 
 
