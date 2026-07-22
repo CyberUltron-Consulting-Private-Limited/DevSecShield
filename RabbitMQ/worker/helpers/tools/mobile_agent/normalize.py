@@ -8,6 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from helpers.tools.mobile_agent.sanitize import (
+    normalize_mstg_reference,
+    sanitize_finding_fields,
+)
+
 _SEVERITY_MAP = {
     "critical": "Critical",
     "high": "High",
@@ -35,6 +40,19 @@ _SKIP_RULE_KEYS = frozenset(
 # Binary hardening checks we skip when marked benign.
 _BENIGN_SEVERITIES = frozenset({"info", "secure", "good", "low", ""})
 
+_OWASP_MOBILE_LABELS = {
+    "m1": "M1 - Improper Platform Usage",
+    "m2": "M2 - Insecure Data Storage",
+    "m3": "M3 - Insecure Communication",
+    "m4": "M4 - Insecure Authentication",
+    "m5": "M5 - Insufficient Cryptography",
+    "m6": "M6 - Insecure Authorization",
+    "m7": "M7 - Client Code Quality",
+    "m8": "M8 - Code Tampering",
+    "m9": "M9 - Reverse Engineering",
+    "m10": "M10 - Extraneous Functionality",
+}
+
 
 def _impact(raw: Any) -> str:
     if raw is None:
@@ -55,6 +73,39 @@ def _clean_description(title: str, description: str) -> str:
     return desc
 
 
+def _compliance_from_metadata(meta: Any) -> tuple[dict[str, str], dict[str, str]]:
+    """Map MobSF rule metadata to DevSecShield compliance / OWASP fields."""
+    data = _as_dict(meta)
+    compliance: dict[str, str] = {}
+    owasp: dict[str, str] = {}
+
+    masvs = data.get("masvs")
+    if masvs:
+        compliance[f"MASVS_{masvs}"] = f"MASVS - {masvs}"
+
+    cwe = data.get("cwe")
+    if cwe:
+        cwe_str = str(cwe).strip()
+        key = cwe_str.upper().replace(" ", "_")
+        compliance[key] = cwe_str if cwe_str.upper().startswith("CWE") else f"CWE - {cwe_str}"
+
+    cvss = data.get("cvss")
+    if cvss is not None and str(cvss).strip() != "":
+        compliance["CVSS"] = f"CVSS {cvss}"
+
+    ref = data.get("ref")
+    if ref:
+        url = normalize_mstg_reference(str(ref))
+        compliance["OWASP_MSTG"] = url
+
+    owasp_mobile = data.get("owasp-mobile") or data.get("owasp_mobile")
+    if owasp_mobile and str(owasp_mobile).strip():
+        om = str(owasp_mobile).strip().lower()
+        owasp[om.upper()] = _OWASP_MOBILE_LABELS.get(om, f"OWASP Mobile - {om.upper()}")
+
+    return compliance, owasp
+
+
 def _finding(
     title: str,
     description: str,
@@ -63,20 +114,23 @@ def _finding(
     category: str = "general",
     rule_id: str | None = None,
     file_path: str | None = None,
+    owasp_top_10: dict[str, str] | None = None,
+    compliance_controls: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     title = title[:500]
-    return {
+    finding = {
         "title": title,
         "description": _clean_description(title, description),
         "impact": impact,
-        "owasp_top_10": [],
-        "compliance_controls": [],
+        "owasp_top_10": owasp_top_10 or {},
+        "compliance_controls": compliance_controls or {},
         "suggested_fix": (suggested_fix or "").strip(),
         "category": category,
         "rule_id": rule_id,
         "file_path": file_path or "",
         "location": file_path or "",
     }
+    return sanitize_finding_fields(finding)
 
 
 def _from_code_findings(section: Any, category: str) -> list[dict[str, Any]]:
@@ -104,6 +158,7 @@ def _from_code_findings(section: Any, category: str) -> list[dict[str, Any]]:
             file_path = first if isinstance(first, str) else _as_dict(first).get("file_path")
         elif isinstance(files, str):
             file_path = files
+        compliance, owasp = _compliance_from_metadata(meta)
         out.append(
             _finding(
                 title=str(title),
@@ -113,6 +168,8 @@ def _from_code_findings(section: Any, category: str) -> list[dict[str, Any]]:
                 category=category,
                 rule_id=str(rule_id),
                 file_path=str(file_path) if file_path else None,
+                owasp_top_10=owasp,
+                compliance_controls=compliance,
             )
         )
     return out

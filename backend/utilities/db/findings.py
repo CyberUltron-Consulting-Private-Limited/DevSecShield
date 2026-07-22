@@ -1,6 +1,7 @@
 from backend.get_db import get_mongo_client_db
 from backend.mongo_models import ScanFindings
 from backend.new_models import scan_types
+from backend.utilities.mobile.sanitize import sanitize_mobile_finding
 
 
 
@@ -235,7 +236,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
     elif scan_type == "mobile":
         findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
         for finding in findings_fetched:
-            fd = finding.get("finding_data", {})
+            fd = sanitize_mobile_finding(finding.get("finding_data", {}))
             findings.append({
                 "id": str(finding["_id"]),
                 "title": fd.get("title", ""),
@@ -243,8 +244,8 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "impact": fd.get("impact") or "Low",
                 "risk_score": _mobile_risk_score(fd.get("impact")),
                 "status": finding.get("finding_status", "not_started"),
-                "compliance_controls": fd.get("compliance_controls") or [],
-                "owasp_top_10": fd.get("owasp_top_10") or [],
+                "compliance_controls": fd.get("compliance_controls") or {},
+                "owasp_top_10": fd.get("owasp_top_10") or {},
                 "suggested_fix": fd.get("suggested_fix", ""),
                 "category": fd.get("category", ""),
                 "rule_id": fd.get("rule_id", ""),

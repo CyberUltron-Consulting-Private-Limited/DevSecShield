@@ -9,6 +9,7 @@ from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_average_resolution_time, get_issue_address_metrics, get_issue_status_metrics
 from backend.utilities.dashboard.garak_probes import GARAK_PROBES_DESCRIPTION
+from backend.utilities.mobile.sanitize import compliance_metric_label, sanitize_mobile_finding
 
 risk_score_for_impact = {
     "critical" : 10.0,
@@ -1472,8 +1473,13 @@ def generate_scan_dashboard(
             }
 
         elif scan_type == "mobile":
+            results = [
+                sanitize_mobile_finding(v) for v in results if isinstance(v, dict)
+            ]
             severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
             category_distribution = defaultdict(int)
+            owasp_top_10_metrics = defaultdict(int)
+            compliance_controls_metrics = defaultdict(int)
             top_risks_entries = []
             mobile_risk_score_for_impact = {"critical": 9, "high": 7, "medium": 5, "low": 2}
 
@@ -1491,6 +1497,26 @@ def generate_scan_dashboard(
                     "impact": impact,
                     "risk_score": risk_score,
                 })
+
+                owasp = vulnerability.get("owasp_top_10") or {}
+                if isinstance(owasp, dict):
+                    for value in owasp.values():
+                        if value:
+                            owasp_top_10_metrics[str(value)] += 1
+                elif isinstance(owasp, list):
+                    for item_val in owasp:
+                        if item_val:
+                            owasp_top_10_metrics[str(item_val)] += 1
+
+                compliance = vulnerability.get("compliance_controls") or {}
+                if isinstance(compliance, dict):
+                    for value in compliance.values():
+                        if value:
+                            compliance_controls_metrics[compliance_metric_label(str(value))] += 1
+                elif isinstance(compliance, list):
+                    for item_val in compliance:
+                        if item_val:
+                            compliance_controls_metrics[str(item_val)] += 1
 
             total_findings = sum(severity_distribution.values())
             if total_findings > 0:
@@ -1535,6 +1561,8 @@ def generate_scan_dashboard(
                 },
                 "severity_distribution": severity_distribution,
                 "category_distribution": dict(category_distribution),
+                "owasp_top_10_metrics": dict(owasp_top_10_metrics),
+                "compliance_controls_metrics": dict(compliance_controls_metrics),
                 "top_risks": top_risks_list,
                 "mobile_summary": mobile_summary,
                 "remediation_actions_required": {

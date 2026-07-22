@@ -2616,8 +2616,8 @@ export interface MobileFinding {
   rule_id?: string
   location?: string
   suggested_fix?: string
-  compliance_controls?: unknown
-  owasp_top_10?: unknown
+  compliance_controls?: Record<string, string> | null
+  owasp_top_10?: Record<string, string> | null
   remediation?: RemediationData | null
 }
 
@@ -2684,6 +2684,8 @@ export interface MobileScanDashboard {
   }
   severity_distribution: { critical: number; high: number; medium: number; low: number }
   category_distribution: Record<string, number>
+  owasp_top_10_metrics?: Record<string, number>
+  compliance_controls_metrics?: Record<string, number>
   top_risks: Array<{ title?: string; category?: string; impact?: string; risk_score?: number }>
   mobile_summary?: MobileSummary
   remediation_actions_required?: Record<string, number>

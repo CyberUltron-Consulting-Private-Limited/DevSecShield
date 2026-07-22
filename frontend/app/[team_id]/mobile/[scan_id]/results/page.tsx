@@ -63,6 +63,28 @@ import { Cell, Pie, PieChart } from "recharts";
 
 const PAGE_SIZE = 10;
 
+type OwaspOrCompliance = Record<string, string> | Array<Record<string, string>> | null | undefined;
+
+function getOwaspComplianceEntries(val: OwaspOrCompliance): [string, string][] {
+  if (val == null) return [];
+  if (Array.isArray(val)) {
+    return val.flatMap((item) => {
+      if (item && typeof item === "object") {
+        return Object.entries(item).filter(([, v]) => v != null && String(v).trim() !== "") as [string, string][];
+      }
+      return [];
+    });
+  }
+  if (typeof val === "object") {
+    return Object.entries(val).filter(([, v]) => v != null && String(v).trim() !== "") as [string, string][];
+  }
+  return [];
+}
+
+function getOwaspComplianceCount(val: OwaspOrCompliance): number {
+  return getOwaspComplianceEntries(val).length;
+}
+
 const GENERIC_SUGGESTED_FIX =
   "Review and remediate according to mobile security best practices.";
 
@@ -166,6 +188,15 @@ export default function MobileResultsPage() {
       { name: "Low", value: sev.low, fill: "#2563eb" },
     ].filter((d) => d.value > 0);
   }, [dashboard]);
+
+  const complianceMetrics = dashboard?.compliance_controls_metrics ?? {};
+  const owaspMetrics = dashboard?.owasp_top_10_metrics ?? {};
+  const topCompliance = Object.entries(complianceMetrics)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8);
+  const topOwasp = Object.entries(owaspMetrics)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8);
 
   const chartConfig = {
     Critical: { label: "Critical" },
@@ -335,6 +366,51 @@ export default function MobileResultsPage() {
           </Card>
         )}
 
+        {(topCompliance.length > 0 || topOwasp.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {topCompliance.length > 0 && (
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader>
+                  <CardTitle className="text-base">Compliance mappings</CardTitle>
+                  <CardDescription>MASVS, CWE, CVSS, and MSTG references from code findings</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2 text-sm">
+                    {topCompliance.map(([label, count]) => (
+                      <li key={label} className="flex items-start justify-between gap-3">
+                        <span className="text-zinc-600 dark:text-zinc-400 break-words">{label}</span>
+                        <Badge variant="secondary" className="shrink-0 tabular-nums">
+                          {count}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+            {topOwasp.length > 0 && (
+              <Card className="border-zinc-200 dark:border-zinc-800">
+                <CardHeader>
+                  <CardTitle className="text-base">OWASP Mobile Top 10</CardTitle>
+                  <CardDescription>Mapped mobile risk categories from code findings</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2 text-sm">
+                    {topOwasp.map(([label, count]) => (
+                      <li key={label} className="flex items-start justify-between gap-3">
+                        <span className="text-zinc-600 dark:text-zinc-400 break-words">{label}</span>
+                        <Badge variant="secondary" className="shrink-0 tabular-nums">
+                          {count}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
             <CardTitle>Findings</CardTitle>
@@ -416,13 +492,14 @@ export default function MobileResultsPage() {
                       <TableHead className="min-w-[280px]">Title</TableHead>
                       <TableHead className="min-w-[120px]">Category</TableHead>
                       <TableHead className="min-w-[90px]">Impact</TableHead>
+                      <TableHead className="min-w-[100px]">Standards</TableHead>
                       <TableHead className="min-w-[220px]">Location</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filtered.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-zinc-500 py-12">
+                        <TableCell colSpan={5} className="text-center text-zinc-500 py-12">
                           No findings match your filters
                         </TableCell>
                       </TableRow>
@@ -448,6 +525,14 @@ export default function MobileResultsPage() {
                           </TableCell>
                           <TableCell className="align-top">
                             <Badge className={impactClass(f.impact)}>{f.impact}</Badge>
+                          </TableCell>
+                          <TableCell className="align-top text-sm text-zinc-600 dark:text-zinc-400 tabular-nums">
+                            {(() => {
+                              const count =
+                                getOwaspComplianceCount(f.compliance_controls as OwaspOrCompliance) +
+                                getOwaspComplianceCount(f.owasp_top_10 as OwaspOrCompliance);
+                              return count > 0 ? count : "—";
+                            })()}
                           </TableCell>
                           <TableCell className="align-top text-sm text-zinc-500 whitespace-normal break-all">
                             {f.location || "—"}
@@ -539,6 +624,45 @@ export default function MobileResultsPage() {
                   <div>
                     <dt className="font-medium text-zinc-700 dark:text-zinc-300">Rule</dt>
                     <dd className="mt-1 font-mono text-xs break-all">{selectedFinding.rule_id}</dd>
+                  </div>
+                )}
+                {getOwaspComplianceEntries(selectedFinding.owasp_top_10 as OwaspOrCompliance).length > 0 && (
+                  <div>
+                    <dt className="font-medium text-zinc-700 dark:text-zinc-300">OWASP Mobile Top 10</dt>
+                    <dd className="mt-2 flex flex-wrap gap-2">
+                      {getOwaspComplianceEntries(selectedFinding.owasp_top_10 as OwaspOrCompliance).map(
+                        ([, description]) => (
+                          <Badge key={description} variant="outline" className="font-normal whitespace-normal">
+                            {description}
+                          </Badge>
+                        )
+                      )}
+                    </dd>
+                  </div>
+                )}
+                {getOwaspComplianceEntries(selectedFinding.compliance_controls as OwaspOrCompliance).length > 0 && (
+                  <div>
+                    <dt className="font-medium text-zinc-700 dark:text-zinc-300">Compliance & standards</dt>
+                    <dd className="mt-2 space-y-2">
+                      {getOwaspComplianceEntries(selectedFinding.compliance_controls as OwaspOrCompliance).map(
+                        ([key, description]) => (
+                          <div key={key} className="text-zinc-600 dark:text-zinc-400 break-words">
+                            {key === "MSTG" || key === "OWASP_MSTG" ? (
+                              <a
+                                href={description}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                OWASP MSTG reference
+                              </a>
+                            ) : (
+                              description
+                            )}
+                          </div>
+                        )
+                      )}
+                    </dd>
                   </div>
                 )}
                 {hasScannerSuggestedFix(selectedFinding.suggested_fix) ? (
