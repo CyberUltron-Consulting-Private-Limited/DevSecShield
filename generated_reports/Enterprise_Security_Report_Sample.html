@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Security Report — Refined Light Sample</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:#f4f4f5; --surface:#fff; --ink:#18181b; --muted:#71717a;
+      --border:#e4e4e7; --accent:#27272a;
+      --crit:#e11d48; --high:#ea580c; --med:#d97706; --low:#0284c7;
+      --sans:Inter,system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:var(--sans);color:var(--ink);background:var(--bg);padding:28px 24px}
+    .shell{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+    .brand{display:flex;gap:14px;align-items:center}
+    .mark{width:42px;height:42px;border-radius:10px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+    .kicker{margin:0;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+    h1{margin:4px 0 0;font-size:22px;letter-spacing:-.03em}
+    .sub{margin:5px 0 0;font-size:13px;color:var(--muted)}
+    .meta{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .chip{background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px}
+    .chip label{display:block;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+    .chip span{font-size:13px;font-weight:600}
+    .mono{font-family:var(--mono);font-size:12px}
+    .kpis{display:grid;grid-template-columns:1.35fr repeat(4,1fr);gap:12px}
+    .kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;box-shadow:0 1px 2px rgba(24,24,27,.04),0 6px 20px rgba(24,24,27,.05);position:relative;overflow:hidden}
+    .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#a1a1aa}
+    .kpi.c::before{background:var(--crit)}.kpi.h::before{background:var(--high)}.kpi.r::before{background:var(--accent)}
+    .kpiLabel{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px}
+    .kpiVal{font-size:26px;font-weight:700;letter-spacing:-.03em;line-height:1}
+    .kpiHint{margin-top:8px;font-size:11px;color:var(--muted)}
+    .grade{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-size:20px;font-weight:750;background:#fff1f2;color:#9f1239;border:1px solid #fecdd3}
+    .risk{display:flex;gap:12px;align-items:center}
+    .chart{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 18px;box-shadow:0 1px 2px rgba(24,24,27,.04)}
+    .chart h2{margin:0 0 12px;font-size:13px}
+    .bar{display:flex;height:12px;border-radius:999px;overflow:hidden;border:1px solid var(--border);background:#f4f4f5}
+    .bar i{display:block;height:100%}
+    .leg{display:flex;gap:18px;margin-top:10px;font-size:12px;color:var(--muted)}
+    .leg strong{color:var(--ink)}
+    .dot{width:8px;height:8px;border-radius:99px;display:inline-block;margin-right:6px}
+    .panel{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.04)}
+    .ph{display:flex;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:linear-gradient(#fff,#fafafa)}
+    .ph h2{margin:0;font-size:14px}
+    .acc{border-bottom:1px solid var(--border)}.acc:last-child{border-bottom:0}
+    .acc summary{list-style:none;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 16px;cursor:pointer}
+    .acc summary::-webkit-details-marker{display:none}
+    .acc summary:hover{background:#fafafa}
+    .pill{display:inline-flex;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+    .pc{background:#fff1f2;color:#9f1239;border:1px solid #fecdd3}
+    .phigh{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+    .pm{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+    .pl{background:#f0f9ff;color:#075985;border:1px solid #bae6fd}
+    .t{font-size:13px;font-weight:600}.p{font-size:11.5px;color:#52525b}
+    .body{padding:0 16px 14px;background:#fcfcfc;border-top:1px dashed var(--border);font-size:13px;color:#3f3f46}
+    pre{background:#18181b;color:#e4e4e7;padding:10px 12px;border-radius:8px;font-family:var(--mono);font-size:11.5px;overflow:auto}
+    .foot{text-align:center;font-size:11px;color:var(--muted)}
+    @media(max-width:900px){.meta,.kpis{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="brand">
+      <div class="mark">ZS</div>
+      <div>
+        <p class="kicker">Acme Financial · Security Assessment</p>
+        <h1>payments-api</h1>
+        <p class="sub">Zero Shield · Unified AppSec</p>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="chip"><label>Project</label><span>payments-api</span></div>
+      <div class="chip"><label>Scan timestamp</label><span>Jul 22, 2026 · 10:14 AM IST</span></div>
+      <div class="chip"><label>Commit</label><span class="mono">a7f3c91…2468</span></div>
+      <div class="chip"><label>Branch</label><span class="mono">main</span></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi r">
+        <div class="kpiLabel">Risk score</div>
+        <div class="risk">
+          <div class="grade">D</div>
+          <div><div class="kpiVal">72</div><div class="kpiHint">High risk · 0–100 scale</div></div>
+        </div>
+      </div>
+      <div class="kpi"><div class="kpiLabel">Total issues</div><div class="kpiVal">8</div><div class="kpiHint">5 SAST · 3 SBOM CVEs</div></div>
+      <div class="kpi c"><div class="kpiLabel">Critical</div><div class="kpiVal">2</div><div class="kpiHint">Immediate remediation</div></div>
+      <div class="kpi h"><div class="kpiLabel">High</div><div class="kpiVal">3</div><div class="kpiHint">Current sprint priority</div></div>
+      <div class="kpi"><div class="kpiLabel">Scan time</div><div class="kpiVal" style="font-size:22px">2m 14s</div><div class="kpiHint">Completed successfully</div></div>
+    </div>
+    <div class="chart">
+      <h2>Vulnerability breakdown</h2>
+      <div class="bar">
+        <i style="flex:2;background:var(--crit)"></i>
+        <i style="flex:3;background:var(--high)"></i>
+        <i style="flex:2;background:var(--med)"></i>
+        <i style="flex:1;background:var(--low)"></i>
+      </div>
+      <div class="leg">
+        <span><i class="dot" style="background:var(--crit)"></i>Critical <strong>2</strong></span>
+        <span><i class="dot" style="background:var(--high)"></i>High <strong>3</strong></span>
+        <span><i class="dot" style="background:var(--med)"></i>Medium <strong>2</strong></span>
+        <span><i class="dot" style="background:var(--low)"></i>Low <strong>1</strong></span>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>SAST findings</h2><span class="mono" style="color:var(--muted);font-size:12px">5 issues</span></div>
+      <details class="acc" open>
+        <summary>
+          <span class="pill pc">Critical</span>
+          <span><div class="t">SQL injection via string-concatenated query</div><div class="p mono">services/query_builder.py:87</div></span>
+          <span class="mono" style="color:var(--muted);font-size:11px">SAST-001</span>
+        </summary>
+        <div class="body">
+          <p>User-controlled input is concatenated into a SQL statement.</p>
+          <pre>cursor.execute("SELECT * FROM users WHERE id=" + user_id)</pre>
+        </div>
+      </details>
+      <details class="acc">
+        <summary>
+          <span class="pill phigh">High</span>
+          <span><div class="t">Exposed database URL written to stdout</div><div class="p mono">backup.py:42</div></span>
+          <span class="mono" style="color:var(--muted);font-size:11px">SAST-002</span>
+        </summary>
+        <div class="body"><pre>print(db_url)</pre></div>
+      </details>
+      <details class="acc">
+        <summary>
+          <span class="pill phigh">High</span>
+          <span><div class="t">Plaintext passwords copied into backup artifacts</div><div class="p mono">backup.py:118</div></span>
+          <span class="mono" style="color:var(--muted);font-size:11px">SAST-003</span>
+        </summary>
+        <div class="body"><pre>password=user.password,</pre></div>
+      </details>
+      <details class="acc">
+        <summary>
+          <span class="pill pm">Medium</span>
+          <span><div class="t">Hard-coded restore path reduces environment isolation</div><div class="p mono">restore.py:23</div></span>
+          <span class="mono" style="color:var(--muted);font-size:11px">SAST-004</span>
+        </summary>
+        <div class="body"><pre>sqlite_file_name = "backups/26-11-2025-Backup.db"</pre></div>
+      </details>
+      <details class="acc">
+        <summary>
+          <span class="pill pl">Low</span>
+          <span><div class="t">Verbose exception details returned to clients</div><div class="p mono">api/errors.py:55</div></span>
+          <span class="mono" style="color:var(--muted);font-size:11px">SAST-005</span>
+        </summary>
+        <div class="body"><pre>return JSONResponse({"detail": str(exc)}, status_code=500)</pre></div>
+      </details>
+    </div>
+    <p class="foot">Confidential · Zero Shield Enterprise Security Report · Refined Light sample</p>
+  </div>
+</body>
+</html>
