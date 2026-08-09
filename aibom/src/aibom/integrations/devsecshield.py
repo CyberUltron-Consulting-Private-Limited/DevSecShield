@@ -329,6 +329,27 @@ def _humanize(code: str) -> str:
     return code.replace("_", " ").title()
 
 
+def _inventory_description(comp: AIComponent) -> str:
+    """Finding-centric issue text for unflagged inventory rows (governance gaps)."""
+    kind = (comp.kind or "").lower()
+    if kind == "model":
+        card = getattr(comp, "model_card", None)
+        has_tech = bool(
+            card
+            and (getattr(card, "model_architecture", None) or getattr(card, "task", None))
+        )
+        if not has_tech:
+            return (
+                "Issue: missing model-card technical documentation "
+                "(architecture/task) required for AI governance."
+            )
+        if not (comp.version and str(comp.version).strip()):
+            return "Issue: model lacks version in the AI inventory."
+        if not _license_str(getattr(comp, "licenses", None)):
+            return "Issue: model lacks a declared license for integrity review."
+    return f"Inventoried AI component ({comp.kind})."
+
+
 def _legacy_compliance(flags: list[Flag]) -> dict[str, str]:
     """Map flagged findings to ISO 42001 / NIST controls; clean inventory -> {}."""
     if not flags:
@@ -372,10 +393,13 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         impact = stacked.capitalize() if stacked else "Low"
         risk_category = _DEFAULT_RISK
         suggested_fix = _DEFAULT_FIX
-        description = f"Inventoried AI component ({comp.kind})."
+        description = _inventory_description(comp)
     return {
         "title": comp.name,
         "description": description,
+        # Stable inventory identity — FE joins posture refs → findings via bom_ref
+        # (Mongo ObjectId overwrites ``id`` after persist; bom_ref stays).
+        "bom_ref": comp.bom_ref,
         "impact": impact,
         "owasp_top_10": [],
         # Dict (never list) so dashboard .items() aggregation works. Flagged rows

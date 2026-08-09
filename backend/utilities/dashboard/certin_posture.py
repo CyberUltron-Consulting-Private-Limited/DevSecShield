@@ -225,33 +225,38 @@ def build_certin_posture(
 
 
 def build_team_certin_posture_from_scans(scans: list[Any]) -> dict[str, Any] | None:
-    """Merge CERT-In posture from the latest successful BOM scan of each type."""
-    latest: dict[str, dict[str, Any]] = {}
-    for scan_type, compliance_key in (
-        ("ai_bom", "ai_bom_compliance"),
-        ("cbom", "cbom_compliance"),
-        ("sbom_sca", "sbom_compliance"),
-    ):
-        candidates = [
-            s
-            for s in scans
-            if getattr(s, "scan_type", None) == scan_type
-            and (getattr(s, "scan_status", "") or "").strip().upper() == "SUCCESS"
-            and isinstance(getattr(s, "scan_data", None), dict)
-            and s.scan_data.get(compliance_key)
-        ]
-        if not candidates:
-            continue
-        candidates.sort(key=lambda s: getattr(s, "created_at", None) or "", reverse=True)
-        latest[compliance_key] = candidates[0].scan_data[compliance_key]
+    """Merge CERT-In posture from the best successful BOM scan of each type.
 
-    if not latest:
+    AI BOM prefers a scan where ``cert_in_aibom`` is in-scope (models present) so a
+    newer framework-only scan cannot blank T10-* as out_of_scope.
+    """
+    from backend.utilities.dashboard.bom_team_pick import pick_latest_bom_compliance
+
+    ai = pick_latest_bom_compliance(
+        scans,
+        scan_type="ai_bom",
+        compliance_key="ai_bom_compliance",
+        prefer_frameworks=("cert_in_aibom",),
+    )
+    cb = pick_latest_bom_compliance(
+        scans,
+        scan_type="cbom",
+        compliance_key="cbom_compliance",
+        prefer_frameworks=("cert_in_cbom",),
+    )
+    sb = pick_latest_bom_compliance(
+        scans,
+        scan_type="sbom_sca",
+        compliance_key="sbom_compliance",
+        prefer_frameworks=("cert_in_sbom",),
+    )
+    if not any((ai, cb, sb)):
         return None
 
     return build_certin_posture(
-        ai_bom_compliance=latest.get("ai_bom_compliance"),
-        cbom_compliance=latest.get("cbom_compliance"),
-        sbom_compliance=latest.get("sbom_compliance"),
+        ai_bom_compliance=ai,
+        cbom_compliance=cb,
+        sbom_compliance=sb,
     )
 
 

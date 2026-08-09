@@ -21,6 +21,7 @@ import {
   countRelatedFindings,
   type RelatedFindingFields,
 } from "@/utils/relatedFindingMatch";
+import { RequirementFindingDetail } from "@/components/compliance/RequirementFindingDetail";
 
 export type RbiCsfRequirement = {
   id: string;
@@ -146,20 +147,34 @@ export function RbiCsfRequirementDrilldown({
                   {r.source && (
                     <div className="text-xs text-zinc-500">Cite: {r.source}</div>
                   )}
-                  {r.evidence && (
-                    <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                      <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                        Why:{" "}
-                      </span>
-                      {r.evidence}
-                    </div>
-                  )}
-                  {r.resolve_hint && (
+                  <RequirementFindingDetail
+                    verdict={r.verdict}
+                    evidence={r.evidence}
+                    refs={refs}
+                    findings={findings}
+                    refAliases={refAliases}
+                  />
+                  {r.resolve_hint && !(
+                    (r.verdict === "out_of_scope" || r.verdict === "na") &&
+                    (findings?.length ?? 0) > 0 &&
+                    refs.length === 0
+                  ) && (
                     <div className="text-xs text-zinc-600 dark:text-zinc-400">
                       <span className="font-medium text-zinc-700 dark:text-zinc-300">
                         How to resolve:{" "}
                       </span>
                       {r.resolve_hint}
+                    </div>
+                  )}
+                  {(r.verdict === "out_of_scope" || r.verdict === "na") &&
+                    (findings?.length ?? 0) > 0 &&
+                    refs.length === 0 && (
+                    <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                        How to resolve:{" "}
+                      </span>
+                      Open Findings for inventoried assets; this control applies
+                      only when AI models are present
                     </div>
                   )}
                   {refs.length > 0 && (() => {

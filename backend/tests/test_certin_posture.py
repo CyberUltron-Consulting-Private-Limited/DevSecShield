@@ -168,6 +168,75 @@ def test_team_posture_picks_latest_success_scan_per_type() -> None:
     assert out["certin_posture"]["cbom_crypto_assets"]["fail"] == 0
 
 
+def test_team_certin_prefers_in_scope_aibom_over_newer_oos() -> None:
+    """Newest framework-only AI BOM must not blank T10-* as out_of_scope."""
+    older_in_scope = SimpleNamespace(
+        scan_type="ai_bom",
+        scan_status="SUCCESS",
+        created_at="2026-01-01",
+        scan_data={
+            "ai_bom_compliance": {
+                "cert_in_aibom": {
+                    "pass": 0,
+                    "fail": 1,
+                    "out_of_scope": 0,
+                    "not_bom_evidenceable": 0,
+                    "na": 0,
+                    "coverage": 0.0,
+                    "requirements": [
+                        {
+                            "id": "T10-Model-Version",
+                            "title": "Model Version",
+                            "source": "CERT-In",
+                            "verdict": "fail",
+                            "evidence": "T10-Model-Version: 148/148 model(s) lack required field",
+                            "refs": ["modelref-dall-e-3"],
+                            "attestable": False,
+                        }
+                    ],
+                },
+                "disclaimer": "advisory",
+            }
+        },
+    )
+    newer_oos = SimpleNamespace(
+        scan_type="ai_bom",
+        scan_status="SUCCESS",
+        created_at="2026-08-01",
+        scan_data={
+            "ai_bom_compliance": {
+                "cert_in_aibom": {
+                    "pass": 0,
+                    "fail": 0,
+                    "out_of_scope": 1,
+                    "not_bom_evidenceable": 0,
+                    "na": 0,
+                    "coverage": None,
+                    "requirements": [
+                        {
+                            "id": "T10-Model-Version",
+                            "title": "Model Version",
+                            "source": "CERT-In",
+                            "verdict": "out_of_scope",
+                            "evidence": "no AI models detected; CERT-In AIBOM guidelines do not apply",
+                            "refs": [],
+                            "attestable": False,
+                        }
+                    ],
+                },
+                "disclaimer": "advisory",
+            }
+        },
+    )
+    out = build_team_certin_posture_from_scans([older_in_scope, newer_oos])
+    assert out is not None
+    reqs = out["certin_posture"]["aibom_ai_assets"]["requirements"]
+    t10 = next(r for r in reqs if r["id"] == "T10-Model-Version")
+    assert t10["verdict"] == "fail"
+    assert "lack required field" in (t10.get("evidence") or "")
+    assert t10["resolve_hint"] == "Fix related assets / findings"
+
+
 def test_team_posture_skips_non_success() -> None:
     pending = SimpleNamespace(
         scan_type="cbom",

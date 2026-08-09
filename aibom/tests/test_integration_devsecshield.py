@@ -50,7 +50,7 @@ _FINDING_FIELDS = {
     "title", "description", "impact", "owasp_top_10", "compliance_controls",
     "suggested_fix", "component_name", "component_type", "framework", "version",
     "source", "license", "location", "snippet", "risk_category",
-    "owasp_top_10_llm", "model_card", "risk_score",
+    "owasp_top_10_llm", "model_card", "risk_score", "bom_ref",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}
