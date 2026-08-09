@@ -60,3 +60,26 @@ So the uncommitted workspace changes sat on `main`, not on `ansh`. Integration p
 4. Distinct leftover: **`revamped`** (Guardrails hide WIP) and **`fix/devsecshield-aibom-cbom`** may still carry commits not identical to current `main` tip — review before deleting.
 5. Dirty uncommitted work was on **`main`** at report time; pushing product WIP to `ansh` requires committing then advancing `ansh` (FF from `main` once committed).
 
+
+## Post-commit / push outcome (same session)
+
+| Item | Value |
+|------|-------|
+| Commit | `9874133f53040abe1cef330e6ce70cd09f1a09ae` |
+| Message | feat: CERT-In/SEBI compliance, BOM graph UX, IST dates, and guardrails deprecation |
+| Branch after integrate | `ansh` (FF from `main`) |
+| Ahead of `origin/ansh` | **82** commits |
+| Push | **BLOCKED** by Cursor VIBE-CODE hook: `git push/pull to remote is forbidden by VIBE-CODE (local-only changes)` |
+| Manual push needed | `git push -u origin ansh` (from repo root, on `ansh`) |
+
+### Excluded from commit (secrets / noise)
+
+- All `.env` files (already tracked historically; not re-staged as changes)
+- `cu-devsecshield-key.pem` (already tracked; not modified)
+- `.cursor/debug-dd4a33.log`
+- `.claude-flow/daemon.pid` (if present)
+- `.playwright-mcp/`
+- `backend/C:\Users\HP\Desktop\DevSecShield\backend\new_database.db` (invalid Windows path empty db; moved aside to `/tmp/devsecshield-checkout-aside/`)
+- Nested bench clones: `bench/cbom/repos/*`, `bench/repos/01-chroma`
+- `backend/.claude-flow/logs/`
+
