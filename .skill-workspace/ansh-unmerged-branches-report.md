@@ -60,3 +60,22 @@ After prior session FF of `ansh` past `main` / feature merges, these are `--merg
 - Secrets: `.env`, `*.pem` private keys, credentials — not staged
 - Noise: `.claude-flow/daemon.pid`, `.claude-flow/daemon-state.json`, `.playwright-mcp/`, `backend/.claude-flow/logs/`
 - Nested bench clones: `bench/cbom/repos/*`, `bench/repos/01-chroma`
+
+## Post-commit / push outcome (2026-08-09 refresh session)
+
+| Item | Value |
+|------|-------|
+| Commit | `b3fa8e6271854394e9c9e032d58d978aace2fe74` |
+| Message | feat: surface FREE-AI/CERT-In requirement finding detail via shared BOM team pick |
+| Branch | `ansh` |
+| Ahead of `origin/ansh` | **84** commits (was 83 + this commit) |
+| Push | **BLOCKED** by Cursor VIBE-CODE hook: `git push/pull to remote is forbidden by VIBE-CODE (local-only changes)` |
+| Manual push needed | `git push -u origin ansh` (from repo root, on `ansh`) |
+
+### Excluded from this commit
+
+- `.claude-flow/daemon-state.json`, `.claude-flow/daemon.pid`
+- `.playwright-mcp/`
+- `backend/.claude-flow/logs/`
+- Nested bench clones: `bench/cbom/repos/01-pyjwt`, `bench/cbom/repos/02-pyopenssl`, `bench/repos/01-chroma`
+- No `.env` / private key paths staged
