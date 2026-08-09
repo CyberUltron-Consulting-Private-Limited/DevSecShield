@@ -330,6 +330,10 @@
       ],
       "properties": [
         {
+          "name": "discovery:source",
+          "value": "model.safetensors"
+        },
+        {
           "name": "model:weight_file",
           "value": "true"
         }

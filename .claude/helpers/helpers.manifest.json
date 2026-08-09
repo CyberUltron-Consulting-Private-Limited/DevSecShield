@@ -1,12 +1,13 @@
 {
   "manifest": {
-    "version": "3.25.6",
+    "version": "3.34.0",
     "files": {
       "auto-memory-hook.mjs": "68be7e9a9eba7bf9c4e8a230db7bf61a243b965639f8504842799d6c6ca28762",
-      "hook-handler.cjs": "bc4d2d26823d49b3ab1dded2946b66369f1f67bd76b4c30dca9f3b6df3cca8f0",
-      "intelligence.cjs": "bd1f8e4b034944aee1df0391dc47ac2e8cc4b3aa542c65407a59d49620bbf76b"
+      "hook-handler.cjs": "dae295fb9ae2626b89899c19a20cc911541af82b52d2eeb9b214d618b96e9a86",
+      "intelligence.cjs": "4e637e065b8f712ce6cf28cccab4244fe222dff2b984690d830bfc40d21fd050",
+      "statusline.cjs": "0457fe53f8cd2c56458ff178392536a5868efd1a573665fa43bc01d2d95ca677"
     }
   },
-  "signature": "3D6EGXwOvFuWMNrgRU9zcNzvyxyzmDMdsCaOOs74M9sTouS2soV0yrNhyybgbqFf8bhy08KDLW0O7tohDYLbBg==",
+  "signature": "GyTvYvhL7vIta/4yyz1rIyl+DWJ+x4dJVfmcrKZJXlh4E/TcQK2bszRznlaG1o7LWSZTudaYj50w+/7dlv6lDg==",
   "algorithm": "ed25519"
 }

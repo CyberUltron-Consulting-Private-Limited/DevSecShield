@@ -42,6 +42,7 @@ import type { SBOMSCADashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -145,7 +146,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
     { name: "Reachable", count: dashboardData.reachability_distribution.reachable, fill: "hsl(142 71% 45%)" },
     { name: "Potentially Reachable", count: dashboardData.reachability_distribution.potentially_reachable, fill: "hsl(45 93% 47%)" },
     { name: "Not Reachable", count: dashboardData.reachability_distribution.not_reachable, fill: "hsl(25 95% 53%)" },
-    { name: "Unknown", count: dashboardData.reachability_distribution.unknown, fill: "hsl(220 9% 46%)" },
+    { name: "Not Assessed", count: dashboardData.reachability_distribution.not_assessed, fill: "hsl(220 9% 46%)" },
   ].filter((r) => r.count > 0), [dashboardData.reachability_distribution]);
 
   const barConfig = { count: { label: "Issues", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
@@ -165,7 +166,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
   } satisfies ChartConfig;
 
   // Section 5: Licenses distribution - all categories with default 0
-  const LICENSE_CATEGORIES = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial", "strong_copyleft", "network_copyleft", "source_available", "unknown"] as const;
+  const LICENSE_CATEGORIES = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial", "strong_copyleft", "network_copyleft", "source_available", "not_declared"] as const;
   const licenseLabels: Record<string, string> = {
     permissive: "Permissive",
     public_domain: "Public Domain",
@@ -175,7 +176,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
     strong_copyleft: "Strong Copyleft",
     network_copyleft: "Network Copyleft",
     source_available: "Source Available",
-    unknown: "Unknown",
+    not_declared: "Not declared",
   };
   const licensesTotal = useMemo(() => {
     const sum = LICENSE_CATEGORIES.reduce((a, k) => a + (dashboardData.licenses_distribution[k] ?? 0), 0);
@@ -188,9 +189,9 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
       "Reachable",
       "Potentially Reachable",
       "Not Reachable",
-      "Unknown",
+      "Not Assessed",
     ] as const;
-    const keys = ["reachable", "potentially_reachable", "not_reachable", "unknown"] as const;
+    const keys = ["reachable", "potentially_reachable", "not_reachable", "not_assessed"] as const;
     const scores = dashboardData.average_risk_score_per_reachability_level;
     return levels.map((level, i) => ({
       xLabel: `R${i + 1}`,
@@ -402,7 +403,7 @@ function SBOMSCAScanListDashboard({ dashboardData }: { dashboardData: SBOMSCADas
               <ChartContainer config={areaConfig} className="h-[280px] w-full">
                 <AreaChart data={vulnerabilityTrendsData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
@@ -639,11 +640,6 @@ export default function SBOMSCAPage() {
     },
     onError: (error) => { showErrorToast(error); },
   });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {

@@ -33,12 +33,19 @@ class ModelFileScanner(Scanner):
             ref = f"modelfile-{wf.name.lower()}"
             if ctx.has_ref(ref):  # de-dup same filename across subdirs
                 continue
+            # Relative path so the adapter can populate finding.location
+            # (discovery:source → location). Without this, hash-named .bin
+            # weight files land in Shadow AI with an empty Location field.
+            rel = wf.relative_to(ctx.root).as_posix()
             ctx.add_component(
                 ModelFileComponent(
                     bom_ref=ref,
                     name=wf.name,
                     hashes=[sha256_hash(wf)],
-                    properties={"model:weight_file": "true"},
+                    properties={
+                        "model:weight_file": "true",
+                        "discovery:source": rel,
+                    },
                 )
             )
 

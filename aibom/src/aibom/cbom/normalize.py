@@ -29,6 +29,12 @@ from aibom.cbom.weakness import (
     WEAK_CRYPTO_CODES,
 )
 from aibom.emit import get_reporter
+from aibom.graph_view import (
+    COMPACT_MAX_NODES,
+    EXPANDED_MAX_NODES,
+    build_graph_view,
+    compact_cbom_graph,
+)
 from aibom.model.component import AIComponent
 from aibom.model.result import ScanResult
 
@@ -58,18 +64,52 @@ def _impact_for(comp: AIComponent, result: ScanResult) -> str:
     return "Low"
 
 
+def _risk_score_for(comp: AIComponent, result: ScanResult) -> float:
+    """0–10 differentiated risk from stacked flag weight + impact floor."""
+    impact = _impact_for(comp, result)
+    base = {"Critical": 7.5, "High": 5.5, "Medium": 3.5, "Low": 1.2}.get(impact, 1.2)
+    raw = float((result.scores or {}).get("by_component", {}).get(comp.bom_ref, 0.0) or 0.0)
+    # raw weights typically land 0–16; fold into remaining headroom above the floor.
+    score = base + raw * 0.25
+    return round(min(10.0, max(0.0, score)), 1)
+
+
+def _finding_description(comp: AIComponent, result: ScanResult) -> str:
+    """Join flag messages for a component (HoverCard / finding Dialog copy)."""
+    props = comp.properties or {}
+    flags = result.flags_for(comp.bom_ref)
+    return "; ".join(f.message for f in flags if f.message) or (
+        f"Inventoried crypto asset ({props.get('crypto:assetType') or comp.kind})."
+    )
+
+
+def _pqc_suggested_fix(props: dict[str, Any]) -> str:
+    """Remediation string for a quantum-vulnerable algorithm (mirrors adapter)."""
+    target = props.get("crypto:pqcMigrationTarget")
+    if props.get("crypto:quantumVulnerable") == "true" and target:
+        return (
+            "Plan migration to post-quantum cryptography "
+            f"({target}); NIST deprecates quantum-vulnerable public-key "
+            "cryptography after 2030 and disallows it after 2035."
+        )
+    return (
+        "Keep this cryptographic asset in the organization's crypto inventory "
+        "and post-quantum migration plan."
+    )
+
+
 def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
     """One crypto asset -> a CBOM finding row (carries every chart field)."""
     props = comp.properties or {}
     flags = result.flags_for(comp.bom_ref)
     codes = sorted(f.code for f in flags)
-    description = "; ".join(f.message for f in flags if f.message) or (
-        f"Inventoried crypto asset ({props.get('crypto:assetType') or comp.kind})."
-    )
     nqsl = props.get("crypto:nistQuantumSecurityLevel")
     ssb = props.get("crypto:securityStrengthBits")
     return {
         "title": comp.name,
+        # Stable inventory identity — FE joins charts → findings via bom_ref
+        # (Mongo ObjectId overwrites ``id`` after persist; bom_ref stays).
+        "bom_ref": comp.bom_ref,
         "impact": _impact_for(comp, result),
         "asset_type": props.get("crypto:assetType"),
         "primitive": props.get("crypto:primitive"),
@@ -79,6 +119,11 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "curve": props.get("crypto:curve"),
         "protocol_version": props.get("crypto:protocolVersion"),
         "not_valid_after": props.get("crypto:notValidAfter"),
+        "self_signed": props.get("crypto:selfSigned") == "true",
+        "expired": EXPIRED_CERTIFICATE in codes,
+        "material_kind": props.get("crypto:materialKind"),
+        "container_format": props.get("crypto:containerFormat"),
+        "parse_status": props.get("crypto:parseStatus"),
         "quantum_vulnerable": props.get("crypto:quantumVulnerable") == "true",
         "nist_quantum_security_level": int(nqsl) if nqsl is not None else None,
         "pqc_migration_target": props.get("crypto:pqcMigrationTarget"),
@@ -87,8 +132,9 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "hybrid": props.get("crypto:hybrid") == "true",
         "weak": any(c in _WEAKNESS_CODES for c in codes),
         "finding_codes": codes,
-        "description": description,
+        "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
+        "risk_score": _risk_score_for(comp, result),
     }
 
 
@@ -99,7 +145,7 @@ def _algorithm_distribution(assets: list[AIComponent]) -> dict[str, int]:
         props = c.properties or {}
         if props.get("crypto:assetType") != "algorithm":
             continue
-        primitive = props.get("crypto:primitive") or "unknown"
+        primitive = props.get("crypto:primitive") or "other"
         dist[primitive] = dist.get(primitive, 0) + 1
     return dict(sorted(dist.items()))
 
@@ -124,27 +170,53 @@ def _pqc_migration_rows(
     already rendered into ``crypto:pqcMigrationTarget`` / ``crypto:pqcMigrationRoadmap``
     by the PQC scanner, so the F2 quantum-vulnerable list + migration-roadmap
     panel render the exact algorithm-by-algorithm plan without re-deriving it.
-    Deterministic: sorted by impact rank then name.
+
+    Additive enrichment for the grouped UX (location + bom_ref + HoverCard
+    detail): ``location`` / ``bom_ref`` / ``description`` / ``suggested_fix`` /
+    ``finding_codes``. Instance count stays 1:1 with ``quantum_vulnerable``;
+    grouping is presentation-only on the frontend.
+
+    Deterministic: sorted by impact rank then name then bom_ref.
     """
-    rows = [
-        {
-            "name": c.name,
-            "primitive": props.get("crypto:primitive"),
-            "key_size": props.get("crypto:keySize"),
-            "curve": props.get("crypto:curve"),
-            "nist_quantum_security_level": (
-                int(nqsl) if (nqsl := props.get("crypto:nistQuantumSecurityLevel"))
-                is not None else None
-            ),
-            "migration_target": props.get("crypto:pqcMigrationTarget"),
-            "migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
-            "impact": _impact_for(c, result),
-        }
-        for c in assets
-        if (props := c.properties or {}).get("crypto:assetType") == "algorithm"
-        and props.get("crypto:quantumVulnerable") == "true"
-    ]
-    rows.sort(key=lambda r: (_IMPACT_RANK.get(str(r["impact"]), 9), str(r["name"])))
+    rows: list[dict[str, Any]] = []
+    for c in assets:
+        props = c.properties or {}
+        if props.get("crypto:assetType") != "algorithm":
+            continue
+        if props.get("crypto:quantumVulnerable") != "true":
+            continue
+        flags = result.flags_for(c.bom_ref)
+        nqsl = props.get("crypto:nistQuantumSecurityLevel")
+        rows.append(
+            {
+                "name": c.name,
+                "primitive": props.get("crypto:primitive"),
+                "key_size": props.get("crypto:keySize"),
+                "curve": props.get("crypto:curve"),
+                "nist_quantum_security_level": (
+                    int(nqsl) if nqsl is not None else None
+                ),
+                "migration_target": props.get("crypto:pqcMigrationTarget"),
+                "migration_roadmap": props.get("crypto:pqcMigrationRoadmap"),
+                "impact": _impact_for(c, result),
+                "location": (
+                    props.get("crypto:source")
+                    or props.get("discovery:source")
+                    or ""
+                ),
+                "bom_ref": c.bom_ref,
+                "description": _finding_description(c, result),
+                "suggested_fix": _pqc_suggested_fix(props),
+                "finding_codes": sorted(f.code for f in flags),
+            }
+        )
+    rows.sort(
+        key=lambda r: (
+            _IMPACT_RANK.get(str(r["impact"]), 9),
+            str(r["name"]),
+            str(r.get("bom_ref") or ""),
+        )
+    )
     return rows
 
 
@@ -213,9 +285,47 @@ def _certificate_expiry(
                     "crypto:signatureAlgorithm"
                 ),
                 "key_size": (c.properties or {}).get("crypto:keySize"),
+                "location": (c.properties or {}).get("discovery:source"),
+                "bom_ref": c.bom_ref,
             }
         )
     rows.sort(key=lambda r: str(r["name"]))
+    return rows
+
+
+# Material kinds shown on the Certificate expiry / related UI alongside X.509.
+# Keys and opaque keystores (credential) — not IV/salt/nonce misuse material.
+_KEY_MATERIAL_KINDS = frozenset(
+    {"private-key", "public-key", "secret-key", "key", "credential"}
+)
+
+
+def _key_material_rows(assets: list[AIComponent]) -> list[dict[str, Any]]:
+    """Related key / keystore rows for the Certificate expiry chart (harden).
+
+    X.509 certificates carry ``notValidAfter``; PEM keys and opaque JKS/PKCS#12
+    containers do not. Surfacing them as a sibling series stops the empty-expiry
+    chart from looking like a miss when the scan found keys but no certs.
+    """
+    rows: list[dict[str, Any]] = []
+    for c in assets:
+        props = c.properties or {}
+        if props.get("crypto:assetType") != "related-crypto-material":
+            continue
+        kind = props.get("crypto:materialKind") or "unknown"
+        if kind not in _KEY_MATERIAL_KINDS:
+            continue
+        rows.append(
+            {
+                "name": c.name,
+                "material_kind": kind,
+                "container_format": props.get("crypto:containerFormat"),
+                "parse_status": props.get("crypto:parseStatus"),
+                "location": props.get("discovery:source"),
+                "bom_ref": c.bom_ref,
+            }
+        )
+    rows.sort(key=lambda r: (str(r["material_kind"]), str(r["name"])))
     return rows
 
 
@@ -339,6 +449,9 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         key=lambda f: (_IMPACT_RANK.get(f["impact"], 9), str(f["title"]))
     )
     bom = _bom(result)  # render once; cbom_json + cbom_graph share it
+    full_graph = _crypto_graph(result, bom)
+    # Additive compact/expanded projections — full ``cbom_graph`` stays intact
+    # for contracts; FE prefers compact for Card, expanded for Dialog.
     return {
         # --- inventory rows (every crypto asset, carrying its chart fields) ---
         "results": findings,
@@ -346,12 +459,29 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         "cbom_json": bom,
         "cbom_compliance": result.compliance or {},
         "cbom_scores": result.scores or {},
-        "cbom_graph": _crypto_graph(result, bom),
+        "cbom_graph": full_graph,
+        "cbom_graph_compact": compact_cbom_graph(
+            full_graph,
+            max_nodes=COMPACT_MAX_NODES,
+            collapse_orphans=True,
+            collapse_duplicate_labels=True,
+        ),
+        "cbom_graph_expanded": compact_cbom_graph(
+            full_graph,
+            max_nodes=EXPANDED_MAX_NODES,
+            collapse_orphans=False,
+            collapse_duplicate_labels=True,
+        ),
+        # Alias used by scan_metadata / FE (nodes+edges+meta).
+        "cbom_graph_view": build_graph_view(
+            full_graph, lane="cbom", max_nodes=COMPACT_MAX_NODES
+        ),
         "cbom_distributions": {
             "algorithms": _algorithm_distribution(assets),
             "weakness": _weakness_distribution(result),
             "pqc": _pqc_readiness(assets, result),
             "certificates": _certificate_expiry(assets, result),
+            "key_material": _key_material_rows(assets),
             "protocols": _protocol_distribution(assets),
         },
         "quantum_vulnerable_count": sum(

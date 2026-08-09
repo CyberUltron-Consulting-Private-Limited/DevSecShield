@@ -27,6 +27,8 @@ FRAMEWORKS = [
     "hipaa",
     "nist_rmf",
     "rbi_free_ai",
+    "cert_in_aibom",
+    "sebi_cscrf_aibom",
 ]
 ALIASES = {
     "fda524b": "fda_524b",

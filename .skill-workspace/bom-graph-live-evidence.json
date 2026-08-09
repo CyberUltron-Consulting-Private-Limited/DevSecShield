@@ -1,0 +1,259 @@
+{
+  "cbom_94": {
+    "nodes": 96,
+    "edges": 4,
+    "kinds": {
+      "crypto_asset": 91,
+      "framework": 5
+    },
+    "asset_types": {
+      "algorithm": 24,
+      "certificate": 1,
+      "library": 5,
+      "related-crypto-material": 63,
+      "protocol": 3
+    },
+    "weak": 59,
+    "quantum_vulnerable": 13,
+    "dangling_edges": 0,
+    "rels": {
+      "signatureAlgorithm": 1,
+      "algorithm": 1,
+      "cipherSuite": 1,
+      "cryptoRef": 1
+    },
+    "density": 0.0004,
+    "per_col": {
+      "algorithm": 24,
+      "certificate": 1,
+      "library": 5,
+      "related-crypto-material": 63,
+      "protocol": 3
+    },
+    "layout_est_h_px": 4156,
+    "layout_est_w_px": 1250,
+    "viewport_h": 360,
+    "overflow_y_factor": 11.54,
+    "long_span_edges": 3,
+    "same_col_edges": 0,
+    "sample_nodes": [
+      {
+        "id": "crypto-algo-dsa-jwt-utils-py",
+        "label": "DSA",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ecdsa-jwt-algorithms-py",
+        "label": "ECDSA",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ecdsa-jwt-utils-py",
+        "label": "ECDSA",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ecdsa-tests-test-utils-py",
+        "label": "ECDSA",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ed25519-jwt-algorithms-py",
+        "label": "Ed25519",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ed25519-jwt-api-jwk-py",
+        "label": "Ed25519",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ed25519-jwt-utils-py",
+        "label": "Ed25519",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      },
+      {
+        "id": "crypto-algo-ed25519-tests-test-advisory-py",
+        "label": "Ed25519",
+        "kind": "crypto_asset",
+        "asset_type": "algorithm",
+        "weak": false,
+        "impact": "Medium"
+      }
+    ],
+    "sample_edges": [
+      {
+        "source": "crypto-cert-tests-keys-testkey-rsa-cer-cert",
+        "target": "crypto-algo-sha-256-jwt-algorithms-py",
+        "rel": "signatureAlgorithm"
+      },
+      {
+        "source": "crypto-material-public-key-tests-keys-testkey-pkcs1-pub-pem",
+        "target": "crypto-algo-rsa-jwt-algorithms-py",
+        "rel": "algorithm"
+      },
+      {
+        "source": "crypto-protocol-ssh-jwt-utils-py",
+        "target": "crypto-algo-rsa-jwt-algorithms-py",
+        "rel": "cipherSuite"
+      },
+      {
+        "source": "crypto-protocol-ssh-jwt-utils-py",
+        "target": "crypto-algo-rsa-jwt-algorithms-py",
+        "rel": "cryptoRef"
+      }
+    ]
+  },
+  "aibom_95": {
+    "nodes": 175,
+    "edges": 148,
+    "kinds": {
+      "cloud_service": 3,
+      "framework": 9,
+      "model_file": 12,
+      "model": 148,
+      "secret": 3
+    },
+    "model_count": 148,
+    "other_count": 27,
+    "layout_est_h_px": 17740,
+    "viewport_h": 340,
+    "overflow_y_factor": 52.18,
+    "dangling_edges": 0,
+    "rels": {
+      "depends_on": 148
+    },
+    "density": 0.0049,
+    "max_out_degree": 1,
+    "max_in_degree": 148,
+    "sample_nodes": [
+      {
+        "id": "cloud_service-api-openai-com",
+        "label": "OpenAI API",
+        "kind": "cloud_service"
+      },
+      {
+        "id": "cloud_service-aws-bedrock",
+        "label": "AWS Bedrock",
+        "kind": "cloud_service"
+      },
+      {
+        "id": "cloud_service-openai-azure-com",
+        "label": "Azure OpenAI",
+        "kind": "cloud_service"
+      },
+      {
+        "id": "lib-anyio",
+        "label": "anyio",
+        "kind": "framework"
+      },
+      {
+        "id": "lib-distro",
+        "label": "distro",
+        "kind": "framework"
+      },
+      {
+        "id": "lib-httpx",
+        "label": "httpx",
+        "kind": "framework"
+      },
+      {
+        "id": "lib-jiter",
+        "label": "jiter",
+        "kind": "framework"
+      },
+      {
+        "id": "lib-openai",
+        "label": "openai",
+        "kind": "framework"
+      },
+      {
+        "id": "lib-pydantic",
+        "label": "pydantic",
+        "kind": "framework"
+      },
+      {
+        "id": "lib-sniffio",
+        "label": "sniffio",
+        "kind": "framework"
+      }
+    ],
+    "sample_edges": [
+      {
+        "source": "modelref-babbage-002",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-dall-e-2",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-dall-e-3",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-davinci-002",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-gpt-3-5",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-gpt-3-5-turbo",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-gpt-3-5-turbo-0125",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-gpt-3-5-turbo-0301",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-gpt-3-5-turbo-0613",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      },
+      {
+        "source": "modelref-gpt-3-5-turbo-1106",
+        "target": "lib-openai",
+        "rel": "depends_on"
+      }
+    ],
+    "two_column_only": true,
+    "uses_dagre_elk": false
+  },
+  "cbom_repo": "https://github.com/jpadilla/pyjwt",
+  "aibom_repo": "https://github.com/openai/openai-python"
+}

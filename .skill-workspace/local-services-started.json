@@ -1,0 +1,14 @@
+{
+  "key": "local-services-started",
+  "ts": "2026-08-09T14:06:00Z",
+  "backend": {"url": "http://127.0.0.1:8081", "pids": "16299,16320", "docs": 200, "health": 200},
+  "frontend": {"url": "http://127.0.0.1:3000", "pid": "18305", "http": 200},
+  "scan_worker": {"pids": "18270,18282,18284", "ready": true, "queue": "scan_worker_queue"},
+  "rabbitmq": ":4672",
+  "postgres": ":4433",
+  "mongo": ":27017",
+  "flower": ":5555",
+  "guardrail_worker": true,
+  "dast_worker": true,
+  "status": "healthy"
+}

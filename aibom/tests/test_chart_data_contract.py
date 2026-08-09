@@ -45,9 +45,11 @@ def _dashboard_arrays(fixture: str) -> dict:
     asset_types, providers = Counter(), Counter()
     licenses, risk_categories = Counter(), Counter()
     risk_per_finding: list[int] = []
+    compliance = Counter()
     for f in findings:
-        for _key, label in (f.get("owasp_top_10_llm") or {}).items():
-            owasp[label] += 1
+        # Dashboard aggregates OWASP by short code (LLM01..LLM10), not full labels.
+        for code in (f.get("owasp_top_10_llm") or {}):
+            owasp[code] += 1
         imp = (f.get("impact") or "Low").lower()
         severity[imp] += 1
         risk_per_finding.append(_RISK.get(imp, 2))
@@ -59,8 +61,11 @@ def _dashboard_arrays(fixture: str) -> dict:
             licenses[f["license"]] += 1
         if f.get("risk_category"):
             risk_categories[f["risk_category"]] += 1
+        cc = f.get("compliance_controls") or {}
+        if isinstance(cc, dict):
+            for _k, label in cc.items():
+                compliance[label] += 1
 
-    compliance = Counter()
     for fw_key, fw in (out.get("ai_bom_compliance") or {}).items():
         if fw_key == "disclaimer" or not isinstance(fw, dict):
             continue
@@ -95,11 +100,25 @@ def test_every_chart_array_non_empty(fixture: str) -> None:
 
 
 def test_owasp_labels_are_real_2025_taxonomy() -> None:
-    """The dashboard OWASP labels are the REAL OWASP-LLM-Top-10:2025 codes
-    (LLM02 Sensitive Info, LLM03 Supply Chain, LLM08 Vector & Embedding, …) —
-    consistent with ScanResult.owasp — not the legacy 2023 numbering."""
-    valid = tuple(f"LLM{n:02d}:2025" for n in range(1, 11))
+    """Dashboard OWASP metric keys are REAL OWASP-LLM-Top-10:2025 short codes
+    (LLM02 Sensitive Info, LLM03 Supply Chain, LLM08 Vector & Embedding, …)."""
+    valid = {f"LLM{n:02d}" for n in range(1, 11)}
     d = _dashboard_arrays("scoring-calibration")
-    assert d["owasp"], "no OWASP labels emitted"
-    for label in d["owasp"]:
-        assert label.startswith(valid), f"non-2025 OWASP label: {label!r}"
+    assert d["owasp"], "no OWASP codes emitted"
+    for code in d["owasp"]:
+        assert code in valid, f"non-2025 OWASP code: {code!r}"
+
+
+def test_flagged_findings_carry_compliance_controls_dict() -> None:
+    """Flagged findings must carry a compliance_controls dict (not []) so the
+    dashboard per-row aggregation is not a permanent no-op."""
+    d = _dashboard_arrays("scoring-calibration")
+    flagged = [f for f in d["findings"] if f.get("impact") in ("Critical", "High", "Medium")]
+    assert flagged, "scoring-calibration must produce flagged findings"
+    with_cc = [f for f in flagged if isinstance(f.get("compliance_controls"), dict) and f["compliance_controls"]]
+    assert with_cc, "flagged findings missing compliance_controls maps"
+    for f in d["findings"]:
+        assert isinstance(f.get("compliance_controls"), dict), (
+            f"{f.get('title')}: compliance_controls must be dict, got "
+            f"{type(f.get('compliance_controls'))}"
+        )

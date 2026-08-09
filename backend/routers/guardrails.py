@@ -1,3 +1,10 @@
+"""DEPRECATED: Guardrails authenticated API router.
+
+The Guardrails product UI has been removed from the user-facing frontend.
+This router remains mounted for legacy/internal API callers. Do not add new
+user-facing product surfaces that depend on these endpoints.
+"""
+
 from datetime import datetime
 from datetime import timezone
 from typing import Annotated
@@ -19,11 +26,11 @@ from backend.utilities.team.credits import deduct_credits_from_team
 from backend.utilities.team.validation import check_if_user_is_in_team
 console = Console()
 
-router = APIRouter(prefix="/guardrails",tags=["Guardrails"])
+router = APIRouter(prefix="/guardrails", tags=["Guardrails (deprecated)"])
 
 # revamped ✅
 limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
-@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team")
+@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team", deprecated=True)
 async def list_guardrails_integrations( 
     team_id: int,
     background_tasks: BackgroundTasks, 
@@ -78,7 +85,7 @@ async def list_guardrails_integrations(
 
 
 # revamped ✅
-@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team")
+@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team", deprecated=True)
 async def create_guardrails_integration(
     team_id: int, 
     data: CreateGuardrailsIntegrationData, 
@@ -128,7 +135,7 @@ async def create_guardrails_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration")
+@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration", deprecated=True)
 async def get_guardrails_integration(
     team_id: int, 
     integration_id: int, 
@@ -232,7 +239,7 @@ async def get_guardrails_integration(
 
 
 # revamped ✅
-@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration")
+@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration", deprecated=True)
 async def update_guardrails_integration(
     team_id: int, 
     integration_id: int, 
@@ -295,7 +302,7 @@ async def update_guardrails_integration(
 
 
 # revamped ✅
-@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration")
+@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration", deprecated=True)
 async def delete_guardrails_integration(
     team_id: int, 
     integration_id: int, 
@@ -346,7 +353,7 @@ async def delete_guardrails_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration")
+@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration", deprecated=True)
 async def get_guardrails_integration_settings(
     team_id: int, 
     integration_id: int, 
@@ -381,7 +388,7 @@ async def get_guardrails_integration_settings(
 
 
 # new ✅
-@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration")
+@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration", deprecated=True)
 async def rotate_guardrails_api_key(
     team_id: int,
     integration_id: int,

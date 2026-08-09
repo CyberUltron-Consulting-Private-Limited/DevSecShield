@@ -193,39 +193,54 @@ try:
             
 
             # STEP [ 3 ] : =========== Initialize the agent , and run the agent ======================
+            def _finalize_sbom(agent: SCASBOMAgent, result):
+                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
+
+                vuln_rows = agent.to_dict_list(result) if result else []
+                inventory = list(getattr(agent, "inventory_rows", None) or [])
+                # Vuln-shaped rows win on dependency key; inventory fills gaps.
+                by_dep: dict = {}
+                for row in inventory:
+                    dep = str((row or {}).get("dependency") or "").strip()
+                    if dep:
+                        by_dep[dep] = row
+                for row in vuln_rows:
+                    dep = str((row or {}).get("dependency") or "").strip()
+                    if dep:
+                        by_dep[dep] = row
+                    else:
+                        by_dep[f"__vuln_{len(by_dep)}"] = row
+                parsed_output = list(by_dep.values())
+                end_time = time.time()
+                duration_of_scan = end_time - start_time
+                return enrich_sbom_scan(
+                    parsed_output,
+                    duration_of_scan,
+                    bom_properties=getattr(agent, "bom_properties", None) or None,
+                    sbom_json=getattr(agent, "sbom_json", None),
+                )
+
             if repo_context:
                 agent = SCASBOMAgent(
                     context=repo_context,
                     state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
-                parsed_output = agent.to_dict_list(result)
-                end_time = time.time()
-                duration_of_scan = end_time - start_time
-                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
-                return enrich_sbom_scan(parsed_output, duration_of_scan)
+                return _finalize_sbom(agent, result)
             elif zip_context:
                 agent = SCASBOMAgent(
                     zip_context=zip_context,
                     state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
-                parsed_output = agent.to_dict_list(result)
-                end_time = time.time()
-                duration_of_scan = end_time - start_time
-                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
-                return enrich_sbom_scan(parsed_output, duration_of_scan)
+                return _finalize_sbom(agent, result)
             elif file_context:
                 agent = SCASBOMAgent(
                     sbom_json_file_context=file_context,
                     state_update_writer=state_update_writer,
                 )
                 result = agent.run_agent()
-                parsed_output = agent.to_dict_list(result)
-                end_time = time.time()
-                duration_of_scan = end_time - start_time
-                from aibom.integrations.sbom_devsecshield import enrich_sbom_scan
-                return enrich_sbom_scan(parsed_output, duration_of_scan)
+                return _finalize_sbom(agent, result)
             else:
                 raise Exception("Unable to run sbom_sca scan with the provided context")
 

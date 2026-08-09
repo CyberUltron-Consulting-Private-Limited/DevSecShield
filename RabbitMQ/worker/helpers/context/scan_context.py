@@ -70,10 +70,19 @@ class GithubContext(BaseModel):
         if not self.repo_url:
             raise ValueError("repo_url is required")
         if is_github_url(self.repo_url):
-            if self.PAT:
+            pat = (self.PAT or "").strip()
+            # Ignore accidental paste of a repo URL into the PAT field.
+            # Using a URL as username produces: https://https://github.com/...@github.com/...
+            if pat and ("://" in pat or "github.com" in pat.lower() or "@" in pat):
+                Console().print(
+                    "Ignoring PAT that looks like a URL/host (not a token); cloning as public repo",
+                    style="bold yellow",
+                )
+                pat = ""
+            if pat:
                 ind = self.repo_url.find("github.com")
                 repo = self.repo_url[ind:]
-                repo = f"https://{self.PAT}@{repo}"
+                repo = f"https://{pat}@{repo}"
                 self.repo_url = repo
             # else: public repo, keep original URL as-is
         else:

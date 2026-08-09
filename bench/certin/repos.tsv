@@ -1,0 +1,16 @@
+# lane	id	slug	url	sha	subdir	oracle_notes
+cbom	c1	jpadilla/pyjwt	https://github.com/jpadilla/pyjwt	7144e45	.	cbomkit+cdxgen; bench/cbom 01-pyjwt
+cbom	c2	pyca/pyopenssl	https://github.com/pyca/pyopenssl	c6b4a5f	.	cbomkit+cdxgen; bench/cbom 02-pyopenssl
+cbom	c3	pyca/cryptography	https://github.com/pyca/cryptography	ef7d12d	src	cbomkit+cdxgen; bench/cbom 03-cryptography
+cbom	c4	mitmproxy/mitmproxy	https://github.com/mitmproxy/mitmproxy	88462f4	mitmproxy	cbomkit+cdxgen; bench/cbom 04-mitmproxy
+cbom	c5	paramiko/paramiko	https://github.com/paramiko/paramiko	d60d5c1	.	cbomkit+cdxgen; bench/cbom 05-paramiko
+ai_bom	a1	karpathy/nanoGPT	https://github.com/karpathy/nanoGPT	3adf61e	.	product live; Trusera/Cisco when available
+ai_bom	a2	langchain-ai/langchain	https://github.com/langchain-ai/langchain	57c83d4	libs/core	bench AIBOM 02-langchain
+ai_bom	a3	microsoft/autogen	https://github.com/microsoft/autogen	027ecf0	.	bench AIBOM 04-autogen
+ai_bom	a4	openai/openai-python	https://github.com/openai/openai-python	0c09a3f	.	product ai_bom e2e peer
+ai_bom	a5	modelcontextprotocol/servers	https://github.com/modelcontextprotocol/servers	7b1170d	.	bench AIBOM 06-mcp-servers
+sbom_sca	s1	psf/requests	https://github.com/psf/requests	1f6589e	.	cdxgen inventory; SBOM e2e default
+sbom_sca	s2	pallets/flask	https://github.com/pallets/flask	6a2f545	.	cdxgen inventory
+sbom_sca	s3	urllib3/urllib3	https://github.com/urllib3/urllib3	824d97b	.	cdxgen inventory
+sbom_sca	s4	sqlalchemy/sqlalchemy	https://github.com/sqlalchemy/sqlalchemy	5995834	.	cdxgen inventory
+sbom_sca	s5	pallets/click	https://github.com/pallets/click	00e592c	.	cdxgen inventory

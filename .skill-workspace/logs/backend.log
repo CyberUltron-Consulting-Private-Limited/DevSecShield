@@ -1,0 +1,35 @@
+
+   FastAPI   Starting development server 🚀
+ 
+             Searching for package file structure from directories with         
+             __init__.py files                                                  
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+             Importing from /Users/anshsinghal/Desktop/DevSecShield
+ 
+    module   📁 backend        
+             ├── 🐍 __init__.py
+             └── 🐍 main.py    
+ 
+      code   Importing the FastAPI app object from the module with the following
+             code:                                                              
+ 
+             from backend.main import app
+ 
+       app   Using import string: backend.main:app
+ 
+    server   Server started at http://127.0.0.1:8081
+    server   Documentation at http://127.0.0.1:8081/docs
+ 
+       tip   Running in development mode, for production use: fastapi run
+ 
+             Logs:
+ 
+      INFO   Will watch for changes in these directories:                       
+             ['/Users/anshsinghal/Desktop/DevSecShield/backend']
+     ERROR   [Errno 48] Address already in use
+

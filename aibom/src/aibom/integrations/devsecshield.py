@@ -42,7 +42,14 @@ from typing import Any
 
 import aibom.compliance as _compliance
 from aibom.emit import get_reporter
+from aibom.graph_view import (
+    COMPACT_MAX_NODES,
+    EXPANDED_MAX_NODES,
+    build_graph_view,
+    compact_aibom_graph,
+)
 from aibom.model.component import AIComponent
+from aibom.scan.parsers.license_resolver import resolve_license
 from aibom.model.result import Flag, ScanResult
 from aibom.owasp import OWASP_LLM_LABELS as _OWASP_2025_LABELS
 from aibom.owasp import categories_for_component as _owasp_categories
@@ -107,24 +114,101 @@ _DEFAULT_FIX = "Review this AI/ML component and bring it under AI governance."
 
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
+# Display labels must match frontend/lib/owasp-compliance-labels.ts so dashboard
+# aggregation (map VALUES) renders correctly on AiBomResults Compliance Controls.
+_COMPLIANCE_PRIVACY = {
+    "ISO42001_2": "ISO 42001 - Data Governance and Transparency",
+    "NIST80053_AC": "NIST 800-53 - Access Control",
+}
+_COMPLIANCE_SUPPLY = {
+    "ISO42001_1": "ISO 42001 - AI Risk Management",
+    "ISO42001_3": "ISO 42001 - Model Lifecycle Management",
+}
+_PRIVACY_FLAG_CODES = frozenset(
+    {
+        "HARDCODED_SECRET",
+        "MODEL_PHI_AT_INFERENCE",
+        "DATASET_NO_DEIDENT",
+    }
+)
+_SUPPLY_FLAG_CODES = frozenset(
+    {
+        "FRAMEWORK_NO_LICENSE",
+        "MODEL_NO_LICENSE",
+        "MODEL_LICENSE_UNKNOWN",
+        "UNSANCTIONED_COMPONENT",
+        "DATASET_DECLARED_NOT_FOUND",
+        "MODEL_EU_AI_ACT_HIGH_RISK",
+    }
+)
+
 ProgressCb = Callable[[int, str], None]
 
 
-def _provider(publisher: str | None, name: str, kind: str) -> str:
-    """Infer a ModelProvider value from a component's vendor/name/kind."""
-    text = f"{publisher or ''} {name}".lower()
+def _provider(
+    publisher: str | None,
+    name: str,
+    kind: str,
+    *,
+    location: str = "",
+    props: dict[str, Any] | None = None,
+) -> str:
+    """Infer a ModelProvider value from a component's vendor/name/kind/path.
+
+    Never returns ``unknown`` — every inventory row gets a concrete label
+    (cloud vendor, ``pypi``, ``credential``, or ``local``).
+    """
+    props = props or {}
+    text = " ".join(
+        str(x)
+        for x in (
+            publisher or "",
+            name,
+            location,
+            props.get("discovery:source", ""),
+            props.get("discovery:host", ""),
+            props.get("discovery:snippet", ""),
+        )
+        if x
+    ).lower()
+    # Ordered: more-specific aliases before broad substrings (openai before open).
     for needle, value in (
-        ("openai", "openai"),
         ("anthropic", "anthropic"),
+        ("claude", "anthropic"),
         ("bedrock", "bedrock"),
+        ("amazon-bedrock", "bedrock"),
+        ("aws-bedrock", "bedrock"),
+        ("azure", "azure"),
         ("vertex", "vertex"),
         ("cohere", "cohere"),
         ("mistral", "mistral"),
         ("hugging", "huggingface"),
+        ("ollama", "ollama"),
+        ("openai", "openai"),
     ):
         if needle in text:
             return value
-    return "local" if kind == "model" else "unknown"
+
+    name_l = (name or "").lower()
+    kind_l = (kind or "").lower()
+    # Framework / library inventory → PyPI ecosystem (not a hosted AI vendor).
+    if kind_l in ("framework",) or "framework" in kind_l:
+        return "pypi"
+    # Secrets without a path-named vendor → credential bucket.
+    if "credential" in name_l or "secret" in name_l or kind_l in ("secret", "credential"):
+        return "credential"
+    # Models, embeddings, weight artifacts, datasets, prompts → local.
+    if (
+        kind_l in ("model", "embedding_model", "dataset", "prompt")
+        or name_l.endswith(".bin")
+        or name_l.endswith(".safetensors")
+        or name_l.endswith(".gguf")
+        or name_l.endswith(".pt")
+        or name_l.endswith(".pth")
+        or name_l.endswith(".onnx")
+    ):
+        return "local"
+    return "local"
 
 
 def _component_type(kind: str) -> str:
@@ -183,12 +267,82 @@ def _license_str(licenses: Any) -> str | None:
     return None
 
 
+_ARTIFACT_SUFFIXES = (".bin", ".safetensors", ".gguf", ".pt", ".pth", ".onnx")
+
+
+def _finding_license(comp: AIComponent) -> str:
+    """Concrete license label for a finding row (never unknown / None)."""
+    declared = _license_str(getattr(comp, "licenses", None))
+    if declared and declared.strip().lower() not in ("unknown", "none", "null"):
+        return declared.strip()
+
+    name = comp.name or ""
+    name_l = name.lower()
+    kind = (comp.kind or "").lower()
+
+    if "credential" in name_l or "secret" in name_l or kind in ("secret", "credential"):
+        return "LicenseRef-not-applicable"
+
+    if any(name_l.endswith(sfx) for sfx in _ARTIFACT_SUFFIXES):
+        return "LicenseRef-not-declared"
+
+    if kind == "framework":
+        spdx = resolve_license(name)
+        if spdx:
+            return spdx
+        return "LicenseRef-not-declared"
+
+    # Hosted services / external surfaces without a package license.
+    if kind in ("service", "cloud_service", "endpoint") or _component_type(kind) == (
+        "external_provider"
+    ):
+        text = f"{(comp.publisher or '')} {name}".lower()
+        if any(
+            n in text
+            for n in (
+                "openai",
+                "bedrock",
+                "azure",
+                "anthropic",
+                "vertex",
+                "cohere",
+                "mistral",
+                "ollama",
+                "hugging",
+                "api",
+            )
+        ):
+            return "LicenseRef-proprietary"
+        return "LicenseRef-not-declared"
+
+    spdx = resolve_license(name)
+    if spdx:
+        return spdx
+    return "LicenseRef-not-declared"
+
+
 def _impact(flag: Flag) -> str:
     return _CODE_IMPACT.get(flag.code) or _SEVERITY_IMPACT.get(flag.severity, "Medium")
 
 
 def _humanize(code: str) -> str:
     return code.replace("_", " ").title()
+
+
+def _legacy_compliance(flags: list[Flag]) -> dict[str, str]:
+    """Map flagged findings to ISO 42001 / NIST controls; clean inventory -> {}."""
+    if not flags:
+        return {}
+    codes = {f.code for f in flags}
+    out: dict[str, str] = {}
+    if codes & _PRIVACY_FLAG_CODES:
+        out.update(_COMPLIANCE_PRIVACY)
+    if codes & _SUPPLY_FLAG_CODES:
+        out.update(_COMPLIANCE_SUPPLY)
+    if not out:
+        # Any other flag still evidences AI governance controls.
+        out.update(_COMPLIANCE_SUPPLY)
+    return out
 
 
 def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
@@ -224,7 +378,9 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "description": description,
         "impact": impact,
         "owasp_top_10": [],
-        "compliance_controls": [],
+        # Dict (never list) so dashboard .items() aggregation works. Flagged rows
+        # get deterministic ISO 42001 / NIST maps; clean inventory stays {}.
+        "compliance_controls": _legacy_compliance(flags),
         "suggested_fix": suggested_fix,
         "component_name": comp.name,
         "component_type": _component_type(comp.kind),
@@ -233,19 +389,38 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "model_card": _card_summary(comp),
         "framework": comp.name if comp.kind == "framework" else None,
         "version": comp.version,
-        "source": _provider(comp.publisher, comp.name, comp.kind),
-        "license": _license_str(getattr(comp, "licenses", None)),
+        "source": _provider(
+            comp.publisher,
+            comp.name,
+            comp.kind,
+            location=props.get("discovery:source") or props.get("discovery:host") or "",
+            props=props,
+        ),
+        "license": _finding_license(comp),
         "location": props.get("discovery:source") or props.get("discovery:host") or "",
         "snippet": props.get("discovery:snippet", ""),
         "risk_category": risk_category,
-        # OWASP-LLM categories (dict {ENUM_NAME: platform_label}) so the backend
-        # dashboard can aggregate them into the results-page OWASP chart. Reads
-        # the component + its flags via the pure mapper — never flattened to [].
-        # Real OWASP-LLM-Top-10:2025 categories (the canonical aibom.owasp mapper),
-        # emitted as full "LLMxx:2025 - <meaning>" labels so the dashboard chart
-        # shows the correct 2025 names (LLM08 Vector & Embedding, LLM02 Sensitive
-        # Information Disclosure, LLM03 Supply Chain) regardless of the frontend's
-        # legacy label map. Consistent with ScanResult.owasp (same mapper).
+        "risk_score": round(
+            min(
+                10.0,
+                max(
+                    0.0,
+                    {"Critical": 7.5, "High": 5.5, "Medium": 3.5, "Low": 1.2}.get(
+                        impact, 1.2
+                    )
+                    + float(
+                        (result.scores or {})
+                        .get("by_component", {})
+                        .get(comp.bom_ref, 0.0)
+                        or 0.0
+                    )
+                    * 0.25,
+                ),
+            ),
+            1,
+        ),
+        # OWASP-LLM categories as {LLM0x: full 2025 label}. Dashboard aggregates
+        # by KEY (short code); FE resolves labels via OWASP_LLM_KEY_TO_LABEL.
         "owasp_top_10_llm": {
             code: f"{code}:2025 - {_OWASP_2025_LABELS[code]}"
             for code in sorted(_owasp_categories(comp, flags))
@@ -292,6 +467,7 @@ def normalize(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
             f["title"],
         )
     )
+    full_graph = _graph(result)
     return {
         # --- locked contract fields ---
         "results": findings,
@@ -301,7 +477,26 @@ def normalize(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
         # --- additive (downloadable artifacts + graph + scores) ---
         "ai_bom_spdx": _bom(result, "spdx"),
         "ai_bom_sarif": _bom(result, "sarif"),
-        "ai_bom_graph": _graph(result),
+        # Full inventory graph (contracts). Compact/expanded views are additive —
+        # FE dependency canvas prefers ``ai_bom_graph_compact`` / ``_expanded``.
+        "ai_bom_graph": full_graph,
+        "ai_bom_graph_compact": compact_aibom_graph(
+            full_graph,
+            max_nodes=COMPACT_MAX_NODES,
+            hub_cluster_models=True,
+            family_group_models=True,
+            collapse_orphans=True,
+        ),
+        "ai_bom_graph_expanded": compact_aibom_graph(
+            full_graph,
+            max_nodes=EXPANDED_MAX_NODES,
+            hub_cluster_models=True,
+            family_group_models=True,
+            collapse_orphans=False,
+        ),
+        "ai_bom_graph_view": build_graph_view(
+            full_graph, lane="aibom", max_nodes=COMPACT_MAX_NODES
+        ),
         "ai_bom_scores": result.scores or {},
         # OWASP-LLM-2025 distribution {code: count} (aibom.owasp; populated on
         # every scan by the pipeline). Carried THROUGH — never flattened.

@@ -1,0 +1,10 @@
+{
+  "packages": [
+    "httpbin",
+    "pytest",
+    "pytest-cov",
+    "pytest-httpbin",
+    "trustme",
+    "wheel"
+  ]
+}

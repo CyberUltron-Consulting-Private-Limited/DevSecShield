@@ -1,0 +1,6 @@
+{
+  "packages": [
+    "mypy",
+    "urllib3"
+  ]
+}

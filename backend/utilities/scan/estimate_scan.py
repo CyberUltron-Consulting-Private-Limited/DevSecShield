@@ -23,7 +23,7 @@ console = Console()
 _DEBUG_LOG_PATH = "/Users/anshsinghal/Desktop/DevSecShield/.cursor/debug-dd4a33.log"
 # SAST estimation clones repos and builds embeddings; 60s was too tight (prod task ~59.6s).
 ESTIMATION_POLL_INTERVAL_SEC = 2
-ESTIMATION_POLL_MAX_ATTEMPTS = 120  # up to ~240s
+ESTIMATION_POLL_MAX_ATTEMPTS = 300  # up to ~600s (multi-engine SBOM / large clones)
 
 
 def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str, run_id: str = "pre-fix") -> None:

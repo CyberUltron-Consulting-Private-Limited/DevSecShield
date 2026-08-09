@@ -1,0 +1,34 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "components": [],
+  "metadata": {
+    "tools": {
+      "services": [
+        {
+          "name": "cbomkit-theia",
+          "provider": {
+            "name": "PQCA"
+          },
+          "services": [
+            {
+              "name": "Secret Detection Plugin"
+            },
+            {
+              "name": "OpenSSL Config Plugin"
+            },
+            {
+              "name": "Certificate File Plugin"
+            },
+            {
+              "name": "Problematic CA Detection Plugin"
+            }
+          ],
+          "version": "edge"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6",
+  "version": 1
+}

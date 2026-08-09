@@ -1,0 +1,6 @@
+#id	slug	clone_url	scan_subdir	note
+01-requests	psf/requests	https://github.com/psf/requests	.	HTTP client; SBOM e2e default
+02-flask	pallets/flask	https://github.com/pallets/flask	.	WSGI framework
+03-urllib3	urllib3/urllib3	https://github.com/urllib3/urllib3	.	HTTP transport
+04-sqlalchemy	sqlalchemy/sqlalchemy	https://github.com/sqlalchemy/sqlalchemy	.	ORM
+05-click	pallets/click	https://github.com/pallets/click	.	CLI toolkit

@@ -34,8 +34,10 @@ _AI_COMPONENT_TYPE = {
 }
 _MODEL_PROVIDER = {
     "openai", "anthropic", "bedrock", "vertex", "cohere", "mistral",
-    "huggingface", "local", "unknown",
+    "huggingface", "azure", "ollama", "pypi", "credential", "local",
+    "unknown",  # legacy payloads only; emitters must not produce it
 }
+_MODEL_PROVIDER_EMITTED = _MODEL_PROVIDER - {"unknown"}
 _AI_RISK_CATEGORY = {
     "untrusted_model_deserialization", "unpinned_model_version",
     "deprecated_eol_model", "missing_model_card_lineage",
@@ -48,7 +50,7 @@ _FINDING_FIELDS = {
     "title", "description", "impact", "owasp_top_10", "compliance_controls",
     "suggested_fix", "component_name", "component_type", "framework", "version",
     "source", "license", "location", "snippet", "risk_category",
-    "owasp_top_10_llm", "model_card",
+    "owasp_top_10_llm", "model_card", "risk_score",
 }
 _LOCKED_KEYS = {"results", "ai_bom_json", "ai_bom_compliance", "duration_of_scan"}
 _ADDITIVE_KEYS = {"ai_bom_spdx", "ai_bom_sarif", "ai_bom_graph", "ai_bom_scores"}
@@ -83,17 +85,22 @@ def test_every_finding_matches_the_locked_finding_schema() -> None:
         assert set(f) == _FINDING_FIELDS, f"finding keys drift: {set(f)}"
         assert f["impact"] in _IMPACT
         assert f["component_type"] in _AI_COMPONENT_TYPE
-        assert f["source"] in _MODEL_PROVIDER
+        assert f["source"] in _MODEL_PROVIDER_EMITTED
+        assert f["source"] != "unknown"
         assert f["risk_category"] in _AI_RISK_CATEGORY
+        assert isinstance(f["risk_score"], (int, float))
+        assert 0.0 <= float(f["risk_score"]) <= 10.0
         assert isinstance(f["owasp_top_10"], list)
         # owasp_top_10_llm is the SERIALIZED platform shape: {ENUM_NAME: label}
         # (the worker's base_vuln dumps list[OWASPTop10LLM] -> dict, and the
         # backend dashboard reads it via .items()). A list would crash the
         # dashboard's aggregation, so the stored contract is a dict.
         assert isinstance(f["owasp_top_10_llm"], dict)
-        assert isinstance(f["compliance_controls"], list)
+        assert isinstance(f["compliance_controls"], dict)
+        assert isinstance(f["license"], str) and f["license"].strip()
+        assert f["license"].strip().lower() != "unknown"
         # str|None scalar fields must never leak a dict/object (worker schema).
-        for scalar in ("framework", "version", "license", "location", "snippet"):
+        for scalar in ("framework", "version", "location", "snippet"):
             assert f[scalar] is None or isinstance(f[scalar], str), scalar
 
 
@@ -152,6 +159,19 @@ def test_compliance_pass_fail_na_preserved() -> None:
     assert frameworks
     for fw in frameworks:
         assert {"pass", "fail", "na"} <= set(comp[fw])
+
+
+def test_cert_in_aibom_carried_in_run_object() -> None:
+    """Phase 2: worker entry must surface CERT-In AIBOM compliance."""
+    from aibom.compliance.cert_in.common import requirements_for
+
+    out = _run(_CLINICAL)
+    comp = out["ai_bom_compliance"]
+    assert "cert_in_aibom" in comp, "cert_in_aibom dropped from adapter run-object"
+    ci = comp["cert_in_aibom"]
+    reqs = ci.get("requirements") or []
+    assert len(reqs) == len(requirements_for("cert_in_aibom")) == 32
+    assert "nist_rmf" in comp or "eu_ai_act_annexIV" in comp
 
 
 def test_scores_carry_band_and_normalized() -> None:

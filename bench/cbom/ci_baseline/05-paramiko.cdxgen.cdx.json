@@ -1,0 +1,101 @@
+{
+  "annotations": [
+    {
+      "annotator": {
+        "component": {
+          "authors": [
+            {
+              "name": "OWASP Foundation"
+            }
+          ],
+          "bom-ref": "pkg:npm/@cyclonedx/cdxgen@11.11.0",
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "publisher": "OWASP Foundation",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@11.11.0",
+          "type": "application",
+          "version": "11.11.0"
+        }
+      },
+      "bom-ref": "metadata-annotations",
+      "subjects": [
+        "pkg:pypi/paramiko@5.0.0"
+      ],
+      "text": "This Software Bill-of-Materials (SBOM) document was created on Sunday, August 9, 2026 with cdxgen. The data was captured during the build lifecycle phase. The document describes an application named 'paramiko' with version '5.0.0'. BOM file is empty without components.",
+      "timestamp": "2026-08-09T07:53:54Z"
+    }
+  ],
+  "bomFormat": "CycloneDX",
+  "components": [],
+  "dependencies": [
+    {
+      "dependsOn": [],
+      "ref": "pkg:pypi/paramiko@5.0.0"
+    }
+  ],
+  "metadata": {
+    "authors": [
+      {
+        "name": "OWASP Foundation"
+      }
+    ],
+    "component": {
+      "authors": [
+        {
+          "email": "jeff@bitprophet.org",
+          "name": "Jeff Forcier"
+        }
+      ],
+      "bom-ref": "pkg:pypi/paramiko@5.0.0",
+      "description": "SSH2 protocol library",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-2.1",
+            "url": "https://opensource.org/licenses/LGPL-2.1"
+          }
+        }
+      ],
+      "name": "paramiko",
+      "properties": [
+        {
+          "name": "cdx:pypi:requiresPython",
+          "value": ">=3.9"
+        },
+        {
+          "name": "SrcFile",
+          "value": "/Users/anshsinghal/Desktop/DevSecShield/bench/cbom/repos/05-paramiko/pyproject.toml"
+        }
+      ],
+      "purl": "pkg:pypi/paramiko@5.0.0",
+      "type": "application",
+      "version": "5.0.0"
+    },
+    "lifecycles": [
+      {
+        "phase": "build"
+      }
+    ],
+    "properties": [],
+    "tools": {
+      "components": [
+        {
+          "authors": [
+            {
+              "name": "OWASP Foundation"
+            }
+          ],
+          "bom-ref": "pkg:npm/@cyclonedx/cdxgen@11.11.0",
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "publisher": "OWASP Foundation",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@11.11.0",
+          "type": "application",
+          "version": "11.11.0"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6",
+  "version": 2
+}

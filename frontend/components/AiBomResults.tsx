@@ -58,9 +58,20 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getAIBOMExportResults, updateScan, toggleFindingState, createTicket, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { getAIBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import {
+  buildRefAliasMap,
+  findingMatchesRelatedRefs,
+} from "@/utils/relatedFindingMatch";
 import { OWASP_LLM_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
+import { FRAMEWORK_LABELS } from "@/components/compliance/frameworkLabels";
+
+function complianceChartLabel(key: string): string {
+  const full =
+    COMPLIANCE_KEY_TO_LABEL[key] ?? FRAMEWORK_LABELS[key] ?? key;
+  return full.length > 32 ? `${full.slice(0, 30)}…` : full;
+}
 import {
   ChartContainer,
   ChartTooltip,
@@ -91,6 +102,8 @@ import {
   type Scores as AiBomScores,
 } from "@/components/ai-bom/AiBomVisualizations";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
+import { type CertInRollupData } from "@/components/certin/certinShared";
 import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
@@ -208,6 +221,7 @@ export default function AiBomResults({
 
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
   const [searchQuery, setSearchQuery] = useState("");
+  const [relatedFindingRefs, setRelatedFindingRefs] = useState<string[]>([]);
   const [licenseFilter, setLicenseFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [providerFilter, setProviderFilter] = useState("all");
@@ -228,23 +242,47 @@ export default function AiBomResults({
     setJiraProjectId(initialJiraProjectId);
   }, [initialJiraProjectId]);
 
+  const relatedRefAliases = useMemo(() => {
+    const fromMeta = (scanMetadata as AiBomScanMetadata | null)?.ai_bom_graph as
+      | { nodes?: { id?: string; label?: string }[] }
+      | undefined;
+    return buildRefAliasMap(fromMeta?.nodes);
+  }, [scanMetadata]);
+
   const filteredFindings = useMemo(() => {
     if (!findingsList) return [];
-    return findingsList.filter((f) => {
+    return findingsList.filter((f, i) => {
       const q = searchQuery.toLowerCase();
+      const name = (f.asset_name || f.title || "").toLowerCase();
+      const desc = (f.description || "").toLowerCase();
+      const loc = (f.location || "").toLowerCase();
+      const id = (f.id || "").toLowerCase();
       const matchSearch =
         !q ||
-        (f.asset_name || f.title || "").toLowerCase().includes(q) ||
-        (f.description || "").toLowerCase().includes(q) ||
-        (f.location || "").toLowerCase().includes(q);
+        name.includes(q) ||
+        desc.includes(q) ||
+        loc.includes(q) ||
+        id.includes(q);
+      const matchRefs = findingMatchesRelatedRefs(f, relatedFindingRefs, {
+        aliases: relatedRefAliases,
+        findingIndex: i,
+      });
       const matchLicense = licenseFilter === "all" || f.license_type === licenseFilter;
       const matchType = typeFilter === "all" || f.asset_type === typeFilter;
       const matchProvider = providerFilter === "all" || f.provider === providerFilter;
       const matchImpact = filterImpact === "all" || (f.impact || "").toLowerCase() === filterImpact.toLowerCase();
       const matchRisk = matchesRiskScoreFilter(f.risk_score, filterRiskScore);
-      return matchSearch && matchLicense && matchType && matchProvider && matchImpact && matchRisk;
+      return matchSearch && matchRefs && matchLicense && matchType && matchProvider && matchImpact && matchRisk;
     });
-  }, [findingsList, searchQuery, licenseFilter, typeFilter, providerFilter, filterImpact, filterRiskScore]);
+  }, [findingsList, searchQuery, relatedFindingRefs, relatedRefAliases, licenseFilter, typeFilter, providerFilter, filterImpact, filterRiskScore]);
+
+  const handleViewRelatedFindings = (refs: string[]) => {
+    setRelatedFindingRefs(refs);
+    setSearchQuery("");
+    requestAnimationFrame(() => {
+      document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const uniqueTypes = useMemo(() => {
     if (!findingsList) return [];
@@ -428,6 +466,71 @@ export default function AiBomResults({
     }
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCertInAttest = async (
+    frameworkKey: string,
+    requirementId: string,
+    file: File,
+  ) => {
+    if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
+      throw new Error("Missing team or scan id");
+    }
+    await postCertInAttestation(tid, "ai_bom", sid, frameworkKey, requirementId, file);
+    queryClient.invalidateQueries({ queryKey: ["ai_bom-conversation-data"] });
+  };
+
+  const handleDownloadVex = async () => {
+    try {
+      const cached = (scanMetadata as AiBomScanMetadata | null)?.vex_json;
+      const vex = cached ?? (await getCertInVex(tid, "ai_bom", sid));
+      downloadBlob(
+        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
+        `ai-bom-vex-${scan_id}.json`,
+      );
+      toast.success("VEX downloaded");
+      queryClient.invalidateQueries({ queryKey: ["ai_bom-conversation-data"] });
+    } catch (err) {
+      showErrorToast(err, "Failed to download VEX");
+    }
+  };
+
+  const handleDownloadSignature = async () => {
+    try {
+      let sig = (scanMetadata as AiBomScanMetadata | null)?.bom_signature;
+      if (!sig) {
+        const res = await postCertInSign(tid, "ai_bom", sid);
+        sig = res.bom_signature;
+        queryClient.invalidateQueries({ queryKey: ["ai_bom-conversation-data"] });
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(sig, null, 2)], { type: "application/json" }),
+        `ai-bom-signature-${scan_id}.json`,
+      );
+      toast.success("BOM signature downloaded");
+    } catch (err) {
+      showErrorToast(err, "Failed to download BOM signature");
+    }
+  };
+
+  const handleDownloadEvidencePack = async () => {
+    try {
+      const blob = await getCertInEvidencePack(tid, "ai_bom", sid);
+      downloadBlob(blob, `certin-evidence-pack-ai_bom-${scan_id}.zip`);
+      toast.success("Evidence pack downloaded");
+      queryClient.invalidateQueries({ queryKey: ["ai_bom-conversation-data"] });
+    } catch (err) {
+      showErrorToast(err, "Failed to download evidence pack");
+    }
+  };
+
   const cardData = dashboard?.card_data;
   const remediation = dashboard?.remediation_actions_required;
   const remediationKpis = dashboard?.remediation_metrics;
@@ -496,13 +599,14 @@ export default function AiBomResults({
       .filter((d) => d.count > 0);
   }, [dashboard]);
 
-  // OWASP LLM Top 10 data
+  // OWASP LLM Top 10 data — dashboard keys are LLM01..LLM10 short codes
   const owaspMetrics = useMemo(() => dashboard?.owasp_top_10_llm_issues ?? {}, [dashboard]);
   const owaspEntries = useMemo(() => {
     return Object.entries(owaspMetrics).map(([key, actualCount], index) => {
+      // Prefer 2025 short-code labels; fall back to raw key (legacy full label).
       const displayValue = OWASP_LLM_KEY_TO_LABEL[key] ?? key;
       return {
-        name: displayValue.length > 20 ? `${displayValue.slice(0, 20)}...` : displayValue,
+        name: displayValue.length > 28 ? `${displayValue.slice(0, 28)}...` : displayValue,
         key,
         displayValue,
         actualCount,
@@ -521,9 +625,15 @@ export default function AiBomResults({
   const complianceMetrics = useMemo(() => dashboard?.compliance_controls ?? {}, [dashboard]);
   const complianceBarData = useMemo(() => {
     return Object.entries(complianceMetrics)
-      .map(([key, count]) => ({ name: COMPLIANCE_KEY_TO_LABEL[key] ?? key, count }))
+      .map(([key, count]) => ({
+        name: complianceChartLabel(key),
+        fullName: COMPLIANCE_KEY_TO_LABEL[key] ?? FRAMEWORK_LABELS[key] ?? key,
+        count,
+      }))
       .sort((a, b) => b.count - a.count);
   }, [complianceMetrics]);
+  const complianceChartRows = complianceBarData.slice(0, 10);
+  const complianceChartHeight = Math.max(280, complianceChartRows.length * 36);
   const hasComplianceData = complianceBarData.length > 0;
 
   // Risk scores per finding
@@ -595,6 +705,17 @@ export default function AiBomResults({
                 onClick={() => handleDownloadArtifact("ai_bom_sarif", "sarif", "SARIF 2.1.0")}
               >
                 SARIF 2.1.0
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>CERT-In (advisory)</DropdownMenuLabel>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadVex()}>
+                VEX
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadSignature()}>
+                Signature JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => void handleDownloadEvidencePack()}>
+                Evidence pack (ZIP)
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -867,12 +988,41 @@ export default function AiBomResults({
                     {!hasComplianceData ? (
                       <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No compliance data available</div>
                     ) : (
-                      <ChartContainer config={complianceBarChartConfig} className="mx-auto aspect-auto h-[280px] w-full max-h-[280px] cursor-pointer">
-                        <BarChart data={complianceBarData.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+                      <ChartContainer
+                        config={complianceBarChartConfig}
+                        className="mx-auto aspect-auto w-full cursor-pointer"
+                        style={{ height: complianceChartHeight }}
+                      >
+                        <BarChart
+                          data={complianceChartRows}
+                          layout="vertical"
+                          margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
+                          barCategoryGap={10}
+                        >
                           <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                           <XAxis type="number" hide />
-                          <YAxis dataKey="name" type="category" width={140} tickLine={false} axisLine={false} className="text-xs" />
-                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <YAxis
+                            dataKey="name"
+                            type="category"
+                            width={168}
+                            interval={0}
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 11 }}
+                            className="text-xs"
+                          />
+                          <ChartTooltip
+                            content={
+                              <ChartTooltipContent
+                                labelFormatter={(_, payload) =>
+                                  String(
+                                    (payload?.[0]?.payload as { fullName?: string } | undefined)
+                                      ?.fullName ?? "",
+                                  )
+                                }
+                              />
+                            }
+                          />
                           <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[0, 4, 4, 0]} />
                         </BarChart>
                       </ChartContainer>
@@ -1145,14 +1295,34 @@ export default function AiBomResults({
           <AiBomVisualizations
             compliance={meta?.ai_bom_compliance as AiBomCompliance | undefined}
             graph={meta?.ai_bom_graph as AiBomGraph | undefined}
+            graphCompact={meta?.ai_bom_graph_compact as AiBomGraph | undefined}
+            graphExpanded={meta?.ai_bom_graph_expanded as AiBomGraph | undefined}
             scores={meta?.ai_bom_scores as AiBomScores | undefined}
             aiBomJson={meta?.ai_bom_json as Record<string, unknown> | undefined}
             findings={(findingsList ?? []) as unknown as Record<string, unknown>[]}
+            onAttest={handleCertInAttest}
+            onOpenFinding={(f) =>
+              setSelectedFinding(f as unknown as AiBomFinding)
+            }
           />
-          <RbiCsfRollup rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined} />
+          <RbiCsfRollup
+            rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
+            onAttest={handleCertInAttest}
+            onViewFindings={handleViewRelatedFindings}
+            findings={findingsList ?? []}
+            refAliases={relatedRefAliases}
+          />
+          <CertInLanePosture
+            lane="aibom"
+            rollup={meta?.certin_posture as CertInRollupData | undefined}
+            onAttest={handleCertInAttest}
+            onViewFindings={handleViewRelatedFindings}
+            findings={findingsList ?? []}
+            refAliases={relatedRefAliases}
+          />
 
           {/* Findings Table */}
-          <Card>
+          <Card id="bom-findings">
             <CardHeader>
               <CardTitle>AI Asset Findings</CardTitle>
               <CardDescription>
@@ -1168,7 +1338,10 @@ export default function AiBomResults({
                     type="search"
                     placeholder="Search findings..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setRelatedFindingRefs([]);
+                      setSearchQuery(e.target.value);
+                    }}
                     className="pl-9 h-9 cursor-text"
                     aria-label="Search findings table"
                   />
@@ -1333,7 +1506,9 @@ export default function AiBomResults({
                       {filteredFindings.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={11} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                            No findings match your filters.
+                            {relatedFindingRefs.length > 0
+                              ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
+                              : "No findings match your filters."}
                           </TableCell>
                         </TableRow>
                       ) : (

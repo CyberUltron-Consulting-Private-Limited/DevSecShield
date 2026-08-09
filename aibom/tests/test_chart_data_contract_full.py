@@ -44,8 +44,8 @@ def _dashboard_arrays(fixture: str) -> dict[str, list | dict]:
 
     severity = Counter((f.get("impact") or "Low") for f in findings)
     asset_types = Counter((f.get("component_type") or "unknown") for f in findings)
-    providers = Counter((f.get("source") or "unknown") for f in findings)
-    licenses = Counter((f.get("license") or "unknown") for f in findings)
+    providers = Counter((f.get("source") or "local") for f in findings)
+    licenses = Counter((f.get("license") or "LicenseRef-not-declared") for f in findings)
     risk_categories = Counter((f.get("risk_category") or "unknown") for f in findings)
     owasp = Counter(
         label for f in findings for label in (f.get("owasp_top_10_llm") or {}).values()

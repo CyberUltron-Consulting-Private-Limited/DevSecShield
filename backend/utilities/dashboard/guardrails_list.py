@@ -1,3 +1,8 @@
+"""DEPRECATED: Guardrails list-page dashboard aggregation.
+
+Retained for legacy Guardrails router responses. Not surfaced in the product UI.
+"""
+
 from backend.get_db import get_db , get_mongo_client_db
 from sqlmodel import Session, select
 from backend.new_models import GuardrailsIntegration , Team 
