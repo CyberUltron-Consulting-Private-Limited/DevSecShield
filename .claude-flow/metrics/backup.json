@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-07-28T15:00:27.700Z",
-  "backedUp": false,
-  "sizeBytes": 0,
-  "rotatedAway": 0,
-  "skipped": "no-db"
+  "timestamp": "2026-08-10T02:47:17.457Z",
+  "backedUp": true,
+  "path": "/home/contact_cyberultron_com/DevSecShield/.swarm/backups/memory-2026-08-10T02-47-17-449Z.db",
+  "sizeBytes": 770048,
+  "rotatedAway": 0
 }

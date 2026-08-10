@@ -1,0 +1,1021 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - generic [ref=f2e5]:
+      - button "Ansh Singhal's Team 306.16 credits" [ref=f2e117] [cursor=pointer]:
+        - generic [ref=f2e12]:
+          - text: Ansh Singhal's Team
+          - generic [ref=f2e118]: 306.16 credits
+      - generic [ref=f2e16]:
+        - list [ref=f2e19]:
+          - listitem [ref=f2e20]:
+            - link "Home" [ref=f2e21] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f2e26]:
+          - generic [ref=f2e27]: Scanning Utilities
+          - list [ref=f2e29]:
+            - listitem [ref=f2e30]:
+              - link "SAST" [ref=f2e31] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f2e36]:
+              - link "SCA + SBOM" [ref=f2e37] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f2e43]:
+              - link "CBOM" [ref=f2e44] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f2e49]:
+              - link "AI BOM" [ref=f2e50] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f2e55]:
+              - link "MCP" [ref=f2e56] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f2e61]:
+              - link "LLM" [ref=f2e62] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f2e67]:
+              - link "IAC" [ref=f2e68] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f2e73]:
+              - link "DAST" [ref=f2e74] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f2e79]:
+          - generic [ref=f2e80]: Integrations
+          - list [ref=f2e82]:
+            - listitem [ref=f2e83]:
+              - link "CI / CD" [ref=f2e84] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f2e89]:
+        - list [ref=f2e90]:
+          - listitem [ref=f2e91]:
+            - link "Teams" [ref=f2e92] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f2e99]:
+            - link "Settings" [ref=f2e100] [cursor=pointer]:
+              - /url: /1/settings
+        - button "KS Krishna Sharma shivam@cyberultron.com" [ref=f2e119] [cursor=pointer]:
+          - generic [ref=f2e120]: KS
+          - generic [ref=f2e121]:
+            - paragraph [ref=f2e122]: Krishna Sharma
+            - paragraph [ref=f2e123]: shivam@cyberultron.com
+    - main [ref=f2e112]:
+      - generic [ref=f2e126]:
+        - generic [ref=f2e127]:
+          - generic [ref=f2e129]:
+            - heading "AI BOM Scan Results" [level=1] [ref=f2e130]
+            - paragraph [ref=f2e134]: Agent analysis of AI assets, providers, and governance readiness
+          - generic [ref=f2e135]:
+            - button "Download BOM" [ref=f2e136] [cursor=pointer]
+            - button "PDF Report" [ref=f2e137] [cursor=pointer]
+            - button "Chat with the Results" [ref=f2e138] [cursor=pointer]
+        - generic [ref=f2e139]:
+          - button "Results" [ref=f2e140] [cursor=pointer]
+          - button "Ticketing integrations" [ref=f2e144] [cursor=pointer]
+        - generic [ref=f2e148]:
+          - generic [ref=f2e155]:
+            - paragraph [ref=f2e156]: Repository
+            - paragraph [ref=f2e157]: https://github.com/cohere-ai/cohere-python
+          - generic [ref=f2e165]:
+            - paragraph [ref=f2e166]: Branch
+            - paragraph [ref=f2e167]: main
+        - generic [ref=f2e168]:
+          - generic [ref=f2e169]:
+            - generic [ref=f2e176]:
+              - paragraph [ref=f2e177]: AI Assets
+              - paragraph [ref=f2e178]: "24"
+            - generic [ref=f2e185]:
+              - paragraph [ref=f2e186]: Models
+              - paragraph [ref=f2e187]: "9"
+            - generic [ref=f2e195]:
+              - paragraph [ref=f2e196]: Datasets
+              - paragraph [ref=f2e197]: "0"
+            - generic [ref=f2e203]:
+              - paragraph [ref=f2e204]: External Providers
+              - paragraph [ref=f2e205]: "2"
+            - generic [ref=f2e211]:
+              - paragraph [ref=f2e212]: High Risk
+              - paragraph [ref=f2e213]: "0"
+            - generic [ref=f2e221]:
+              - paragraph [ref=f2e222]: Unlicensed
+              - paragraph [ref=f2e223]: "6"
+            - generic [ref=f2e229]:
+              - paragraph [ref=f2e230]: Governance Ready
+              - paragraph [ref=f2e231]: 12.5%
+            - generic [ref=f2e237]:
+              - paragraph [ref=f2e238]: Avg Risk
+              - paragraph [ref=f2e239]: "3.1"
+          - generic [ref=f2e240]:
+            - generic [ref=f2e241]:
+              - generic [ref=f2e242]: Remediation Progress
+              - generic [ref=f2e243]: Finding status breakdown
+            - generic [ref=f2e244]:
+              - generic [ref=f2e245]:
+                - generic [ref=f2e246]: "Fixed: 0"
+                - generic [ref=f2e247]: "In Progress: 0"
+                - generic [ref=f2e248]: "Not Started: 24"
+                - generic [ref=f2e249]: "Ignored: 0"
+              - progressbar [ref=f2e250]
+              - paragraph [ref=f2e252]: 0/24 findings resolved
+          - generic [ref=f2e253]:
+            - generic [ref=f2e254]:
+              - generic [ref=f2e255]:
+                - generic [ref=f2e256]: OWASP LLM Top 10
+                - generic [ref=f2e260]: Distribution by OWASP LLM category
+              - generic [ref=f2e261]:
+                - generic [ref=f2e262] [cursor=pointer]
+                - generic [ref=f2e274]:
+                  - generic [ref=f2e275]: LLM03:2025 - Supply Chain
+                  - generic [ref=f2e278]: LLM08:2025 - Vector and Embedding Weaknesses
+            - generic [ref=f2e281]:
+              - generic [ref=f2e282]:
+                - generic [ref=f2e283]: Risk Metrics
+                - generic [ref=f2e286]: Findings by impact severity
+              - generic [ref=f2e287]:
+                - img [ref=f2e291]:
+                  - generic [ref=f2e294]:
+                    - generic [ref=f2e295]: Critical
+                    - generic [ref=f2e297]: High
+                    - generic [ref=f2e299]: Medium
+                    - generic [ref=f2e301]: Low
+                - paragraph [ref=f2e318]: Findings for each impact level (Critical, High, Medium, Low)
+            - generic [ref=f2e319]:
+              - generic [ref=f2e320]:
+                - generic [ref=f2e321]: Compliance Controls
+                - generic [ref=f2e324]: Findings mapped to compliance frameworks
+              - img [ref=f2e329]:
+                - generic [ref=f2e333]:
+                  - generic [ref=f2e334]: EU AI Act (Annex IV)
+                  - generic [ref=f2e336]: RBI FREE-AI
+                  - generic [ref=f2e338]: ISO 42001 - AI RiskManagement
+                  - generic [ref=f2e340]: ISO 42001 - ModelLifecycle Ma…
+                  - generic [ref=f2e342]: NIST AI RMF
+                  - generic [ref=f2e344]: CERT-In AIBOM(Guidelines v2.0)
+                  - generic [ref=f2e346]: SEBI CSCRF (AIBOM)
+          - generic [ref=f2e365]:
+            - generic [ref=f2e366]:
+              - generic [ref=f2e367]:
+                - generic [ref=f2e368]: Asset Types
+                - generic [ref=f2e371]: Distribution by AI asset type
+              - img [ref=f2e376]:
+                - generic [ref=f2e380]:
+                  - generic [ref=f2e381]: "0"
+                  - generic [ref=f2e383]: "4"
+                  - generic [ref=f2e385]: "8"
+                  - generic [ref=f2e387]: "12"
+                  - generic [ref=f2e389]: "16"
+                - generic [ref=f2e392]:
+                  - generic [ref=f2e393]: ml framework
+                  - generic [ref=f2e395]: local modelfile
+                  - generic [ref=f2e397]: externalprovider
+            - generic [ref=f2e408]:
+              - generic [ref=f2e409]:
+                - generic [ref=f2e410]: Providers
+                - generic [ref=f2e413]: Distribution by AI provider
+              - img [ref=f2e418]:
+                - generic [ref=f2e422]:
+                  - generic [ref=f2e423]: "0"
+                  - generic [ref=f2e425]: "3"
+                  - generic [ref=f2e427]: "6"
+                  - generic [ref=f2e429]: "9"
+                  - generic [ref=f2e431]: "12"
+                - generic [ref=f2e434]:
+                  - generic [ref=f2e435]: pypi
+                  - generic [ref=f2e437]: cohere
+                  - generic [ref=f2e439]: bedrock
+                  - generic [ref=f2e441]: local
+            - generic [ref=f2e454]:
+              - generic [ref=f2e455]:
+                - generic [ref=f2e456]: License Distribution
+                - generic [ref=f2e461]: Distribution by license type
+              - img [ref=f2e466]:
+                - generic [ref=f2e470]:
+                  - generic [ref=f2e471]: LicenseRef-not-declared
+                  - generic [ref=f2e473]: MIT
+                  - generic [ref=f2e475]: BSD-3-Clause
+                  - generic [ref=f2e477]: PSF-2.0
+                - generic [ref=f2e480]:
+                  - generic [ref=f2e481]: "0"
+                  - generic [ref=f2e483]: "3"
+                  - generic [ref=f2e485]: "6"
+                  - generic [ref=f2e487]: "9"
+                  - generic [ref=f2e489]: "12"
+            - generic [ref=f2e506]:
+              - generic [ref=f2e507]:
+                - generic [ref=f2e508]: Risk Categories
+                - generic [ref=f2e511]: Distribution by risk category
+              - img [ref=f2e516]:
+                - generic [ref=f2e520]:
+                  - generic [ref=f2e521]: license compliance gap
+                  - generic [ref=f2e523]: missing model card lineage
+                - generic [ref=f2e526]:
+                  - generic [ref=f2e527]: "0"
+                  - generic [ref=f2e529]: "5"
+                  - generic [ref=f2e531]: "10"
+                  - generic [ref=f2e533]: "15"
+                  - generic [ref=f2e535]: "20"
+            - generic [ref=f2e544]:
+              - generic [ref=f2e545]:
+                - generic [ref=f2e546]: Risk Scores per Finding
+                - generic [ref=f2e550]: Risk score by finding (top 24, descending)
+              - img [ref=f2e555]:
+                - generic [ref=f2e559]:
+                  - generic [ref=f2e560]: F1
+                  - generic [ref=f2e562]: F2
+                  - generic [ref=f2e564]: F3
+                  - generic [ref=f2e566]: F4
+                  - generic [ref=f2e568]: F5
+                  - generic [ref=f2e570]: F6
+                  - generic [ref=f2e572]: F7
+                  - generic [ref=f2e574]: F8
+                  - generic [ref=f2e576]: F9
+                  - generic [ref=f2e578]: F10
+                  - generic [ref=f2e580]: F11
+                  - generic [ref=f2e582]: F12
+                  - generic [ref=f2e584]: F13
+                  - generic [ref=f2e586]: F14
+                  - generic [ref=f2e588]: F15
+                  - generic [ref=f2e590]: F16
+                  - generic [ref=f2e592]: F17
+                  - generic [ref=f2e594]: F18
+                  - generic [ref=f2e596]: F19
+                  - generic [ref=f2e598]: F20
+                  - generic [ref=f2e600]: F21
+                  - generic [ref=f2e602]: F22
+                  - generic [ref=f2e604]: F23
+                  - generic [ref=f2e606]: F24
+          - generic [ref=f2e614]:
+            - generic [ref=f2e615]:
+              - generic [ref=f2e616]: Remediation Metrics
+              - generic [ref=f2e617]: Performance and efficiency tracking
+            - generic [ref=f2e619]:
+              - generic [ref=f2e620]:
+                - paragraph [ref=f2e625]: Mean Time to Remediate
+                - paragraph [ref=f2e626]: <0.1 days
+                - paragraph [ref=f2e627]: "Target: 3 days"
+                - generic [ref=f2e628]:
+                  - progressbar [ref=f2e629]
+                  - generic [ref=f2e631]: —
+              - generic [ref=f2e632]:
+                - paragraph [ref=f2e637]: Critical Issues Fixed
+                - paragraph [ref=f2e638]: 0%
+                - paragraph [ref=f2e639]: "Target: 95%"
+                - generic [ref=f2e640]:
+                  - progressbar [ref=f2e641]
+                  - generic [ref=f2e643]: +95%
+              - generic [ref=f2e644]:
+                - paragraph [ref=f2e648]: High Priority Backlog
+                - paragraph [ref=f2e649]: "0"
+                - paragraph [ref=f2e650]: "Target: 10"
+                - generic [ref=f2e651]:
+                  - progressbar [ref=f2e652]
+                  - generic [ref=f2e654]: "+10"
+              - generic [ref=f2e655]:
+                - paragraph [ref=f2e659]: Remediation Velocity
+                - paragraph [ref=f2e660]: 0/week
+                - paragraph [ref=f2e661]: "Target: 20/week"
+                - generic [ref=f2e662]:
+                  - progressbar [ref=f2e663]
+                  - generic [ref=f2e665]: "+20"
+        - generic [ref=f2e666]:
+          - generic [ref=f2e667]:
+            - heading "AI Governance & Lineage" [level=2] [ref=f2e668]
+            - paragraph [ref=f2e669]: Healthcare AI-BOM insights — compliance readiness, supply-chain lineage, deployment drift, and model provenance.
+          - generic [ref=f2e670]:
+            - generic [ref=f2e671]:
+              - generic [ref=f2e672]:
+                - generic [ref=f2e673]: Regulatory Compliance Readiness
+                - generic [ref=f2e677]: Per-framework verdicts (advisory). Coverage = pass / (pass + fail). Out of scope (framework doesn't apply) and Not BOM-evidenceable (process evidence) are reported separately — never folded into pass or fail. Click a bar for per-requirement detail.
+              - generic [ref=f2e678]:
+                - generic [ref=f2e679]:
+                  - generic [ref=f2e680]: Frameworks
+                  - button "All" [ref=f2e681] [cursor=pointer]
+                  - button "India / CERT-In / SEBI" [ref=f2e682] [cursor=pointer]
+                - img [ref=f2e687]:
+                  - generic [ref=f2e689]:
+                    - generic [ref=f2e690]: FDA §524B
+                    - generic [ref=f2e692]: EU AI Act (AnnexIV)
+                    - generic [ref=f2e694]: GMLP (IMDRF)
+                    - generic [ref=f2e696]: HIPAA
+                    - generic [ref=f2e698]: NIST AI RMF
+                    - generic [ref=f2e700]: RBI FREE-AI
+                    - generic [ref=f2e702]: CERT-In AIBOM(Guidelines v2.0)
+                    - generic [ref=f2e704]: SEBI CSCRF(AIBOM)
+                  - generic [ref=f2e708]:
+                    - generic [ref=f2e710] [cursor=pointer]
+                    - generic [ref=f2e712] [cursor=pointer]
+                  - generic [ref=f2e715]:
+                    - generic [ref=f2e717] [cursor=pointer]
+                    - generic [ref=f2e719] [cursor=pointer]
+                    - generic [ref=f2e721] [cursor=pointer]
+                    - generic [ref=f2e723] [cursor=pointer]
+                    - generic [ref=f2e725] [cursor=pointer]
+                  - generic [ref=f2e728]:
+                    - generic [ref=f2e730] [cursor=pointer]
+                    - generic [ref=f2e732] [cursor=pointer]
+                    - generic [ref=f2e734] [cursor=pointer]
+                  - generic [ref=f2e737]:
+                    - generic [ref=f2e739] [cursor=pointer]
+                    - generic [ref=f2e741] [cursor=pointer]
+                    - generic [ref=f2e743] [cursor=pointer]
+                    - generic [ref=f2e745] [cursor=pointer]
+                    - generic [ref=f2e747] [cursor=pointer]
+                  - generic [ref=f2e752] [cursor=pointer]
+                - generic [ref=f2e753]:
+                  - generic [ref=f2e754]: Pass
+                  - generic [ref=f2e756]: Pass (evidence)
+                  - generic [ref=f2e758]: Fail
+                  - generic [ref=f2e760]: Out of scope
+                  - generic [ref=f2e762]: Not BOM-evidenceable
+                  - generic [ref=f2e764]: N/A
+            - generic [ref=f2e766]:
+              - generic [ref=f2e767]:
+                - generic [ref=f2e768]:
+                  - generic [ref=f2e769]: AI Supply-Chain Graph
+                  - generic [ref=f2e775]:
+                    - text: Typed lineage — model → training data, libraries, serving vendor, and deployment sites.
+                    - generic [ref=f2e776]: Showing 8 clustered nodes of 29. Open fullscreen for more detail.
+                - button "Expand dependency graph" [ref=f2e777]: Expand
+              - generic [ref=f2e778]:
+                - application [ref=f2e781]:
+                  - generic [ref=f2e783]:
+                    - generic:
+                      - generic:
+                        - img:
+                          - group "Edge from cluster:models:lib-cohere:command-light to lib-cohere":
+                            - generic [ref=f2e784]: depends on
+                        - img:
+                          - group "Edge from cluster:models:lib-cohere:command-nightly to lib-cohere":
+                            - generic [ref=f2e786]: depends on
+                        - img:
+                          - group "Edge from cluster:models:lib-cohere:command-r to lib-cohere":
+                            - generic [ref=f2e788]: depends on
+                        - img:
+                          - group "Edge from cluster:models:lib-cohere:embed-english to lib-cohere":
+                            - generic [ref=f2e790]: depends on
+                        - img:
+                          - group "Edge from cluster:models:lib-cohere:embed-multilingual to lib-cohere":
+                            - generic [ref=f2e792]: depends on
+                      - generic:
+                        - group: command-light* → cohere (2)
+                        - group: command-nightly* → cohere (1)
+                        - group: command-r* → cohere (5)
+                        - group: embed-english* → cohere (3)
+                        - group: embed-multilingual* → cohere (3)
+                        - group: Unlinked cloud_service (2)
+                        - group: Unlinked framework (12)
+                        - group: cohere
+                  - generic "Graph viewport controls" [ref=f2e794]:
+                    - button "Zoom In" [ref=f2e795] [cursor=pointer]
+                    - button "Zoom Out" [ref=f2e798] [cursor=pointer]
+                    - button "Fit View" [ref=f2e801] [cursor=pointer]
+                - generic [ref=f2e805]:
+                  - generic [ref=f2e806]: model
+                  - generic [ref=f2e808]: dataset
+                  - generic [ref=f2e810]: framework
+                  - generic [ref=f2e812]: prompt
+                  - generic [ref=f2e814]: service
+                  - generic [ref=f2e816]: cloud_service
+                  - generic [ref=f2e818]: endpoint
+                  - generic [ref=f2e820]: secret
+                  - generic [ref=f2e822]: embedding_model
+            - generic [ref=f2e824]:
+              - generic [ref=f2e825]:
+                - generic [ref=f2e826]: Model Card
+                - generic [ref=f2e830]: Architecture, task, and lineage metadata.
+              - generic [ref=f2e831]:
+                - generic [ref=f2e832]:
+                  - text: Model
+                  - combobox [ref=f2e833] [cursor=pointer]:
+                    - generic: embed-english-light-v3.0
+                - paragraph [ref=f2e834]: Showing embed-english-light-v3.0 — selected because it has the richest BOM model card among inventoried models
+                - generic [ref=f2e835]:
+                  - generic [ref=f2e836]:
+                    - term [ref=f2e837]: Name
+                    - definition [ref=f2e838]: embed-english-light-v3.0
+                  - generic [ref=f2e839]:
+                    - term [ref=f2e840]: Version
+                    - definition [ref=f2e841]: Unspecified
+                  - generic [ref=f2e842]:
+                    - term [ref=f2e843]: Approach
+                    - definition [ref=f2e844]: Not declared in BOM
+                  - generic [ref=f2e845]:
+                    - term [ref=f2e846]: Task
+                    - definition [ref=f2e847]: text-embedding
+                  - generic [ref=f2e848]:
+                    - term [ref=f2e849]: Architecture family
+                    - definition [ref=f2e850]: transformer
+                  - generic [ref=f2e851]:
+                    - term [ref=f2e852]: Model architecture
+                    - definition [ref=f2e853]: Cohere Embed (proprietary)
+                  - generic [ref=f2e854]:
+                    - term [ref=f2e855]: Card source
+                    - definition [ref=f2e856]: BOM modelCard
+            - generic [ref=f2e857]:
+              - generic [ref=f2e858]:
+                - generic [ref=f2e859]: Risk by Component
+                - generic [ref=f2e862]:
+                  - text: Normalized risk
+                  - generic [ref=f2e863]: 42.3/100
+                  - text: · MEDIUM band (locked scale)
+              - img [ref=f2e868]:
+                - generic [ref=f2e870]:
+                  - generic [ref=f2e871]: lib-aiohttp
+                  - generic [ref=f2e873]: lib-boto3
+                  - generic [ref=f2e875]: lib-fastavro
+                  - generic [ref=f2e877]: lib-httpx-aiohttp
+                  - generic [ref=f2e879]: lib-oci
+                  - generic [ref=f2e881]: lib-types-requests
+            - generic [ref=f2e898]:
+              - generic [ref=f2e899]:
+                - generic [ref=f2e900]:
+                  - text: Shadow AI
+                  - generic [ref=f2e906]: (18)
+                - generic [ref=f2e907]: Ungoverned / third-party AI surfaces (no model-card lineage or external provider).
+              - list [ref=f2e909]:
+                - listitem [ref=f2e910]:
+                  - generic [ref=f2e911]:
+                    - generic [ref=f2e912]:
+                      - generic [ref=f2e913]: AWS Bedrock
+                      - generic [ref=f2e914]: external_provider · bedrock
+                    - generic [ref=f2e915]: Low
+                - listitem [ref=f2e916]:
+                  - generic [ref=f2e917]:
+                    - generic [ref=f2e918]:
+                      - generic [ref=f2e919]: AWS SageMaker
+                      - generic [ref=f2e920]: external_provider · local
+                    - generic [ref=f2e921]: Low
+                - listitem [ref=f2e922]:
+                  - generic [ref=f2e923]:
+                    - generic [ref=f2e924]:
+                      - generic [ref=f2e925]: cohere
+                      - generic [ref=f2e926]: ml_framework · cohere
+                    - generic [ref=f2e927]: Low
+                - listitem [ref=f2e928]:
+                  - generic [ref=f2e929]:
+                    - generic [ref=f2e930]:
+                      - generic [ref=f2e931]: command-nightly
+                      - generic [ref=f2e932]: local_model_file · cohere
+                    - generic [ref=f2e933]: Low
+                - listitem [ref=f2e934]:
+                  - generic [ref=f2e935]:
+                    - generic [ref=f2e936]:
+                      - generic [ref=f2e937]: command-r-08-2024
+                      - generic [ref=f2e938]: local_model_file · cohere
+                    - generic [ref=f2e939]: Low
+                - listitem [ref=f2e940]:
+                  - generic [ref=f2e941]:
+                    - generic [ref=f2e942]:
+                      - generic [ref=f2e943]: command-r-plus-08-2024
+                      - generic [ref=f2e944]: local_model_file · cohere
+                    - generic [ref=f2e945]: Low
+                - listitem [ref=f2e946]:
+                  - generic [ref=f2e947]:
+                    - generic [ref=f2e948]:
+                      - generic [ref=f2e949]: embed-english-light-v3.0
+                      - generic [ref=f2e950]: local_model_file · cohere
+                    - generic [ref=f2e951]: Low
+                - listitem [ref=f2e952]:
+                  - generic [ref=f2e953]:
+                    - generic [ref=f2e954]:
+                      - generic [ref=f2e955]: embed-english-v3
+                      - generic [ref=f2e956]: local_model_file · cohere
+                    - generic [ref=f2e957]: Low
+                - listitem [ref=f2e958]:
+                  - generic [ref=f2e959]:
+                    - generic [ref=f2e960]:
+                      - generic [ref=f2e961]: embed-english-v3.0
+                      - generic [ref=f2e962]: local_model_file · cohere
+                    - generic [ref=f2e963]: Low
+                - listitem [ref=f2e964]:
+                  - generic [ref=f2e965]:
+                    - generic [ref=f2e966]:
+                      - generic [ref=f2e967]: embed-multilingual-light-v3.0
+                      - generic [ref=f2e968]: local_model_file · cohere
+                    - generic [ref=f2e969]: Low
+                - listitem [ref=f2e970]:
+                  - generic [ref=f2e971]:
+                    - generic [ref=f2e972]:
+                      - generic [ref=f2e973]: embed-multilingual-v3
+                      - generic [ref=f2e974]: local_model_file · cohere
+                    - generic [ref=f2e975]: Low
+                - listitem [ref=f2e976]:
+                  - generic [ref=f2e977]:
+                    - generic [ref=f2e978]:
+                      - generic [ref=f2e979]: embed-multilingual-v3.0
+                      - generic [ref=f2e980]: local_model_file · cohere
+                    - generic [ref=f2e981]: Low
+                - listitem [ref=f2e982]:
+                  - generic [ref=f2e983]:
+                    - generic [ref=f2e984]:
+                      - generic [ref=f2e985]: httpx
+                      - generic [ref=f2e986]: ml_framework · pypi
+                    - generic [ref=f2e987]: Low
+                - listitem [ref=f2e988]:
+                  - generic [ref=f2e989]:
+                    - generic [ref=f2e990]:
+                      - generic [ref=f2e991]: pydantic
+                      - generic [ref=f2e992]: ml_framework · pypi
+                    - generic [ref=f2e993]: Low
+                - listitem [ref=f2e994]:
+                  - generic [ref=f2e995]:
+                    - generic [ref=f2e996]:
+                      - generic [ref=f2e997]: pydantic-core
+                      - generic [ref=f2e998]: ml_framework · pypi
+                    - generic [ref=f2e999]: Low
+                - listitem [ref=f2e1000]:
+                  - generic [ref=f2e1001]:
+                    - generic [ref=f2e1002]:
+                      - generic [ref=f2e1003]: requests
+                      - generic [ref=f2e1004]: ml_framework · pypi
+                    - generic [ref=f2e1005]: Low
+                - listitem [ref=f2e1006]:
+                  - generic [ref=f2e1007]:
+                    - generic [ref=f2e1008]:
+                      - generic [ref=f2e1009]: tokenizers
+                      - generic [ref=f2e1010]: ml_framework · pypi
+                    - generic [ref=f2e1011]: Low
+                - listitem [ref=f2e1012]:
+                  - generic [ref=f2e1013]:
+                    - generic [ref=f2e1014]:
+                      - generic [ref=f2e1015]: typing_extensions
+                      - generic [ref=f2e1016]: ml_framework · pypi
+                    - generic [ref=f2e1017]: Low
+        - generic [ref=f2e1018]:
+          - generic [ref=f2e1019]:
+            - generic [ref=f2e1020]: RBI CSF Posture Rollup
+            - generic [ref=f2e1024]: FREE-AI requirement verdicts aggregated into the five RBI Cyber Security Framework pillars. Coverage = pass / (pass + fail); process-only controls are reported separately.
+          - img [ref=f2e1029]:
+            - generic [ref=f2e1033]:
+              - generic [ref=f2e1034]: RBI CSF — Governance
+              - generic [ref=f2e1036]: RBI CSF — RiskIdentification
+              - generic [ref=f2e1038]: RBI CSF — RiskProtection
+              - generic [ref=f2e1040]: RBI CSF — ThreatDetection
+              - generic [ref=f2e1042]: RBI CSF — Response &Recovery
+            - generic [ref=f2e1046]:
+              - generic [ref=f2e1048] [cursor=pointer]
+              - generic [ref=f2e1050] [cursor=pointer]
+              - generic [ref=f2e1052] [cursor=pointer]
+            - generic [ref=f2e1055]:
+              - generic [ref=f2e1057] [cursor=pointer]
+              - generic [ref=f2e1059] [cursor=pointer]
+              - generic [ref=f2e1061] [cursor=pointer]
+              - generic [ref=f2e1063] [cursor=pointer]
+            - generic [ref=f2e1066]:
+              - generic [ref=f2e1068] [cursor=pointer]
+              - generic [ref=f2e1070] [cursor=pointer]
+              - generic [ref=f2e1072] [cursor=pointer]
+        - generic [ref=f2e1073]:
+          - generic [ref=f2e1074]:
+            - generic [ref=f2e1075]: CERT-In AIBOM posture (advisory)
+            - generic [ref=f2e1080]: AI model and dataset inventory and AI process controls for this scan. Does not constitute certification. HBOM deferred — not in product scope.
+          - img [ref=f2e1085]:
+            - generic [ref=f2e1089]:
+              - generic [ref=f2e1090]: AI model & datasetinventory
+              - generic [ref=f2e1092]: AI process controls
+            - generic [ref=f2e1098] [cursor=pointer]
+            - generic [ref=f2e1103] [cursor=pointer]
+            - generic [ref=f2e1106]:
+              - generic [ref=f2e1108] [cursor=pointer]
+              - generic [ref=f2e1110] [cursor=pointer]
+        - generic [ref=f2e1111]:
+          - generic [ref=f2e1112]:
+            - generic [ref=f2e1113]: AI Asset Findings
+            - generic [ref=f2e1114]: 24 of 24 findings. Select rows to create Jira tickets or bulk-change status; use Actions to change finding state.
+          - generic [ref=f2e1115]:
+            - generic [ref=f2e1116]:
+              - searchbox "Search findings table" [ref=f2e1121]
+              - combobox [ref=f2e1122] [cursor=pointer]:
+                - generic: All impacts
+              - button "Risk score" [ref=f2e1123] [cursor=pointer]
+              - combobox [ref=f2e1125] [cursor=pointer]:
+                - generic: All types
+              - combobox [ref=f2e1126] [cursor=pointer]:
+                - generic: All providers
+              - combobox [ref=f2e1127] [cursor=pointer]:
+                - generic: All licenses
+            - table [ref=f2e1133]:
+              - rowgroup [ref=f2e1134]:
+                - row [ref=f2e1135]:
+                  - columnheader [ref=f2e1136]:
+                    - checkbox "Select all rows" [ref=f2e1137] [cursor=pointer]
+                  - columnheader "Asset" [ref=f2e1138]
+                  - columnheader "Type" [ref=f2e1139]
+                  - columnheader "Provider" [ref=f2e1140]
+                  - columnheader "License" [ref=f2e1141]
+                  - columnheader "Risk" [ref=f2e1142]
+                  - columnheader "Impact" [ref=f2e1143]
+                  - columnheader "Risk score" [ref=f2e1144]
+                  - columnheader "Location" [ref=f2e1145]
+                  - columnheader "Status" [ref=f2e1146]
+                  - columnheader "Actions" [ref=f2e1147]
+              - rowgroup [ref=f2e1148]:
+                - row [ref=f2e1149] [cursor=pointer]:
+                  - cell [ref=f2e1150]:
+                    - checkbox "Select aiohttp" [ref=f2e1151]
+                  - cell "aiohttp" [ref=f2e1152]
+                  - cell "ml framework" [ref=f2e1153]
+                  - cell "pypi" [ref=f2e1154]
+                  - cell "LicenseRef-not-declared" [ref=f2e1155]
+                  - cell "license compliance gap" [ref=f2e1157]
+                  - cell "Medium" [ref=f2e1158]
+                  - cell "5.1" [ref=f2e1160]
+                  - cell [ref=f2e1162]
+                  - cell "not started" [ref=f2e1163]
+                  - cell [ref=f2e1165]:
+                    - button "Finding actions" [ref=f2e1166]: Action
+                - row [ref=f2e1167] [cursor=pointer]:
+                  - cell [ref=f2e1168]:
+                    - checkbox "Select boto3" [ref=f2e1169]
+                  - cell "boto3" [ref=f2e1170]
+                  - cell "ml framework" [ref=f2e1171]
+                  - cell "pypi" [ref=f2e1172]
+                  - cell "LicenseRef-not-declared" [ref=f2e1173]
+                  - cell "license compliance gap" [ref=f2e1175]
+                  - cell "Medium" [ref=f2e1176]
+                  - cell "5.1" [ref=f2e1178]
+                  - cell [ref=f2e1180]
+                  - cell "not started" [ref=f2e1181]
+                  - cell [ref=f2e1183]:
+                    - button "Finding actions" [ref=f2e1184]: Action
+                - row [ref=f2e1185] [cursor=pointer]:
+                  - cell [ref=f2e1186]:
+                    - checkbox "Select fastavro" [ref=f2e1187]
+                  - cell "fastavro" [ref=f2e1188]
+                  - cell "ml framework" [ref=f2e1189]
+                  - cell "pypi" [ref=f2e1190]
+                  - cell "LicenseRef-not-declared" [ref=f2e1191]
+                  - cell "license compliance gap" [ref=f2e1193]
+                  - cell "Medium" [ref=f2e1194]
+                  - cell "5.1" [ref=f2e1196]
+                  - cell [ref=f2e1198]
+                  - cell "not started" [ref=f2e1199]
+                  - cell [ref=f2e1201]:
+                    - button "Finding actions" [ref=f2e1202]: Action
+                - row [ref=f2e1203] [cursor=pointer]:
+                  - cell [ref=f2e1204]:
+                    - checkbox "Select httpx-aiohttp" [ref=f2e1205]
+                  - cell "httpx-aiohttp" [ref=f2e1206]
+                  - cell "ml framework" [ref=f2e1207]
+                  - cell "pypi" [ref=f2e1208]
+                  - cell "LicenseRef-not-declared" [ref=f2e1209]
+                  - cell "license compliance gap" [ref=f2e1211]
+                  - cell "Medium" [ref=f2e1212]
+                  - cell "5.1" [ref=f2e1214]
+                  - cell [ref=f2e1216]
+                  - cell "not started" [ref=f2e1217]
+                  - cell [ref=f2e1219]:
+                    - button "Finding actions" [ref=f2e1220]: Action
+                - row [ref=f2e1221] [cursor=pointer]:
+                  - cell [ref=f2e1222]:
+                    - checkbox "Select oci" [ref=f2e1223]
+                  - cell "oci" [ref=f2e1224]
+                  - cell "ml framework" [ref=f2e1225]
+                  - cell "pypi" [ref=f2e1226]
+                  - cell "LicenseRef-not-declared" [ref=f2e1227]
+                  - cell "license compliance gap" [ref=f2e1229]
+                  - cell "Medium" [ref=f2e1230]
+                  - cell "5.1" [ref=f2e1232]
+                  - cell [ref=f2e1234]
+                  - cell "not started" [ref=f2e1235]
+                  - cell [ref=f2e1237]:
+                    - button "Finding actions" [ref=f2e1238]: Action
+                - row [ref=f2e1239] [cursor=pointer]:
+                  - cell [ref=f2e1240]:
+                    - checkbox "Select types-requests" [ref=f2e1241]
+                  - cell "types-requests" [ref=f2e1242]
+                  - cell "ml framework" [ref=f2e1243]
+                  - cell "pypi" [ref=f2e1244]
+                  - cell "LicenseRef-not-declared" [ref=f2e1245]
+                  - cell "license compliance gap" [ref=f2e1247]
+                  - cell "Medium" [ref=f2e1248]
+                  - cell "5.1" [ref=f2e1250]
+                  - cell [ref=f2e1252]
+                  - cell "not started" [ref=f2e1253]
+                  - cell [ref=f2e1255]:
+                    - button "Finding actions" [ref=f2e1256]: Action
+                - row [ref=f2e1257] [cursor=pointer]:
+                  - cell [ref=f2e1258]:
+                    - checkbox "Select AWS Bedrock" [ref=f2e1259]
+                  - cell "AWS Bedrock" [ref=f2e1260]
+                  - cell "external provider" [ref=f2e1261]
+                  - cell "bedrock" [ref=f2e1262]
+                  - cell "LicenseRef-proprietary" [ref=f2e1263]
+                  - cell "missing model card lineage" [ref=f2e1265]
+                  - cell "Low" [ref=f2e1266]
+                  - cell "2.2" [ref=f2e1268]
+                  - cell "metadata.json" [ref=f2e1270]
+                  - cell "not started" [ref=f2e1271]
+                  - cell [ref=f2e1273]:
+                    - button "Finding actions" [ref=f2e1274]: Action
+                - row [ref=f2e1275] [cursor=pointer]:
+                  - cell [ref=f2e1276]:
+                    - checkbox "Select AWS SageMaker" [ref=f2e1277]
+                  - cell "AWS SageMaker" [ref=f2e1278]
+                  - cell "external provider" [ref=f2e1279]
+                  - cell "local" [ref=f2e1280]
+                  - cell "LicenseRef-not-declared" [ref=f2e1281]
+                  - cell "missing model card lineage" [ref=f2e1283]
+                  - cell "Low" [ref=f2e1284]
+                  - cell "2.6" [ref=f2e1286]
+                  - cell "metadata.json" [ref=f2e1288]
+                  - cell "not started" [ref=f2e1289]
+                  - cell [ref=f2e1291]:
+                    - button "Finding actions" [ref=f2e1292]: Action
+                - row [ref=f2e1293] [cursor=pointer]:
+                  - cell [ref=f2e1294]:
+                    - checkbox "Select cohere" [ref=f2e1295]
+                  - cell "cohere" [ref=f2e1296]
+                  - cell "ml framework" [ref=f2e1297]
+                  - cell "cohere" [ref=f2e1298]
+                  - cell "MIT" [ref=f2e1299]
+                  - cell "missing model card lineage" [ref=f2e1301]
+                  - cell "Low" [ref=f2e1302]
+                  - cell "1.7" [ref=f2e1304]
+                  - cell [ref=f2e1306]
+                  - cell "not started" [ref=f2e1307]
+                  - cell [ref=f2e1309]:
+                    - button "Finding actions" [ref=f2e1310]: Action
+                - row [ref=f2e1311] [cursor=pointer]:
+                  - cell [ref=f2e1312]:
+                    - checkbox "Select command-nightly" [ref=f2e1313]
+                  - cell "command-nightly" [ref=f2e1314]
+                  - cell "local model file" [ref=f2e1315]
+                  - cell "cohere" [ref=f2e1316]
+                  - cell "LicenseRef-proprietary" [ref=f2e1317]
+                  - cell "missing model card lineage" [ref=f2e1319]
+                  - cell "Low" [ref=f2e1320]
+                  - cell "2.0" [ref=f2e1322]
+                  - cell [ref=f2e1324]
+                  - cell "not started" [ref=f2e1325]
+                  - cell [ref=f2e1327]:
+                    - button "Finding actions" [ref=f2e1328]: Action
+                - row [ref=f2e1329] [cursor=pointer]:
+                  - cell [ref=f2e1330]:
+                    - checkbox "Select command-r-08-2024" [ref=f2e1331]
+                  - cell "command-r-08-2024" [ref=f2e1332]
+                  - cell "local model file" [ref=f2e1333]
+                  - cell "cohere" [ref=f2e1334]
+                  - cell "LicenseRef-proprietary" [ref=f2e1335]
+                  - cell "missing model card lineage" [ref=f2e1337]
+                  - cell "Low" [ref=f2e1338]
+                  - cell "2.0" [ref=f2e1340]
+                  - cell [ref=f2e1342]
+                  - cell "not started" [ref=f2e1343]
+                  - cell [ref=f2e1345]:
+                    - button "Finding actions" [ref=f2e1346]: Action
+                - row [ref=f2e1347] [cursor=pointer]:
+                  - cell [ref=f2e1348]:
+                    - checkbox "Select command-r-plus-08-2024" [ref=f2e1349]
+                  - cell "command-r-plus-08-2024" [ref=f2e1350]
+                  - cell "local model file" [ref=f2e1351]
+                  - cell "cohere" [ref=f2e1352]
+                  - cell "LicenseRef-proprietary" [ref=f2e1353]
+                  - cell "missing model card lineage" [ref=f2e1355]
+                  - cell "Low" [ref=f2e1356]
+                  - cell "2.0" [ref=f2e1358]
+                  - cell [ref=f2e1360]
+                  - cell "not started" [ref=f2e1361]
+                  - cell [ref=f2e1363]:
+                    - button "Finding actions" [ref=f2e1364]: Action
+                - row [ref=f2e1365] [cursor=pointer]:
+                  - cell [ref=f2e1366]:
+                    - checkbox "Select embed-english-light-v3.0" [ref=f2e1367]
+                  - cell "embed-english-light-v3.0" [ref=f2e1368]
+                  - cell "local model file" [ref=f2e1369]
+                  - cell "cohere" [ref=f2e1370]
+                  - cell "LicenseRef-proprietary" [ref=f2e1371]
+                  - cell "missing model card lineage" [ref=f2e1373]
+                  - cell "Low" [ref=f2e1374]
+                  - cell "2.0" [ref=f2e1376]
+                  - cell [ref=f2e1378]
+                  - cell "not started" [ref=f2e1379]
+                  - cell [ref=f2e1381]:
+                    - button "Finding actions" [ref=f2e1382]: Action
+                - row [ref=f2e1383] [cursor=pointer]:
+                  - cell [ref=f2e1384]:
+                    - checkbox "Select embed-english-v3" [ref=f2e1385]
+                  - cell "embed-english-v3" [ref=f2e1386]
+                  - cell "local model file" [ref=f2e1387]
+                  - cell "cohere" [ref=f2e1388]
+                  - cell "LicenseRef-proprietary" [ref=f2e1389]
+                  - cell "missing model card lineage" [ref=f2e1391]
+                  - cell "Low" [ref=f2e1392]
+                  - cell "2.0" [ref=f2e1394]
+                  - cell [ref=f2e1396]
+                  - cell "not started" [ref=f2e1397]
+                  - cell [ref=f2e1399]:
+                    - button "Finding actions" [ref=f2e1400]: Action
+                - row [ref=f2e1401] [cursor=pointer]:
+                  - cell [ref=f2e1402]:
+                    - checkbox "Select embed-english-v3.0" [ref=f2e1403]
+                  - cell "embed-english-v3.0" [ref=f2e1404]
+                  - cell "local model file" [ref=f2e1405]
+                  - cell "cohere" [ref=f2e1406]
+                  - cell "LicenseRef-proprietary" [ref=f2e1407]
+                  - cell "missing model card lineage" [ref=f2e1409]
+                  - cell "Low" [ref=f2e1410]
+                  - cell "2.0" [ref=f2e1412]
+                  - cell [ref=f2e1414]
+                  - cell "not started" [ref=f2e1415]
+                  - cell [ref=f2e1417]:
+                    - button "Finding actions" [ref=f2e1418]: Action
+                - row [ref=f2e1419] [cursor=pointer]:
+                  - cell [ref=f2e1420]:
+                    - checkbox "Select embed-multilingual-light-v3.0" [ref=f2e1421]
+                  - cell "embed-multilingual-light-v3.0" [ref=f2e1422]
+                  - cell "local model file" [ref=f2e1423]
+                  - cell "cohere" [ref=f2e1424]
+                  - cell "LicenseRef-proprietary" [ref=f2e1425]
+                  - cell "missing model card lineage" [ref=f2e1427]
+                  - cell "Low" [ref=f2e1428]
+                  - cell "2.0" [ref=f2e1430]
+                  - cell [ref=f2e1432]
+                  - cell "not started" [ref=f2e1433]
+                  - cell [ref=f2e1435]:
+                    - button "Finding actions" [ref=f2e1436]: Action
+                - row [ref=f2e1437] [cursor=pointer]:
+                  - cell [ref=f2e1438]:
+                    - checkbox "Select embed-multilingual-v3" [ref=f2e1439]
+                  - cell "embed-multilingual-v3" [ref=f2e1440]
+                  - cell "local model file" [ref=f2e1441]
+                  - cell "cohere" [ref=f2e1442]
+                  - cell "LicenseRef-proprietary" [ref=f2e1443]
+                  - cell "missing model card lineage" [ref=f2e1445]
+                  - cell "Low" [ref=f2e1446]
+                  - cell "2.0" [ref=f2e1448]
+                  - cell [ref=f2e1450]
+                  - cell "not started" [ref=f2e1451]
+                  - cell [ref=f2e1453]:
+                    - button "Finding actions" [ref=f2e1454]: Action
+                - row [ref=f2e1455] [cursor=pointer]:
+                  - cell [ref=f2e1456]:
+                    - checkbox "Select embed-multilingual-v3.0" [ref=f2e1457]
+                  - cell "embed-multilingual-v3.0" [ref=f2e1458]
+                  - cell "local model file" [ref=f2e1459]
+                  - cell "cohere" [ref=f2e1460]
+                  - cell "LicenseRef-proprietary" [ref=f2e1461]
+                  - cell "missing model card lineage" [ref=f2e1463]
+                  - cell "Low" [ref=f2e1464]
+                  - cell "2.0" [ref=f2e1466]
+                  - cell [ref=f2e1468]
+                  - cell "not started" [ref=f2e1469]
+                  - cell [ref=f2e1471]:
+                    - button "Finding actions" [ref=f2e1472]: Action
+                - row [ref=f2e1473] [cursor=pointer]:
+                  - cell [ref=f2e1474]:
+                    - checkbox "Select httpx" [ref=f2e1475]
+                  - cell "httpx" [ref=f2e1476]
+                  - cell "ml framework" [ref=f2e1477]
+                  - cell "pypi" [ref=f2e1478]
+                  - cell "BSD-3-Clause" [ref=f2e1479]
+                  - cell "missing model card lineage" [ref=f2e1481]
+                  - cell "Low" [ref=f2e1482]
+                  - cell "1.7" [ref=f2e1484]
+                  - cell [ref=f2e1486]
+                  - cell "not started" [ref=f2e1487]
+                  - cell [ref=f2e1489]:
+                    - button "Finding actions" [ref=f2e1490]: Action
+                - row [ref=f2e1491] [cursor=pointer]:
+                  - cell [ref=f2e1492]:
+                    - checkbox "Select pydantic" [ref=f2e1493]
+                  - cell "pydantic" [ref=f2e1494]
+                  - cell "ml framework" [ref=f2e1495]
+                  - cell "pypi" [ref=f2e1496]
+                  - cell "MIT" [ref=f2e1497]
+                  - cell "missing model card lineage" [ref=f2e1499]
+                  - cell "Low" [ref=f2e1500]
+                  - cell "1.7" [ref=f2e1502]
+                  - cell [ref=f2e1504]
+                  - cell "not started" [ref=f2e1505]
+                  - cell [ref=f2e1507]:
+                    - button "Finding actions" [ref=f2e1508]: Action
+                - row [ref=f2e1509] [cursor=pointer]:
+                  - cell [ref=f2e1510]:
+                    - checkbox "Select pydantic-core" [ref=f2e1511]
+                  - cell "pydantic-core" [ref=f2e1512]
+                  - cell "ml framework" [ref=f2e1513]
+                  - cell "pypi" [ref=f2e1514]
+                  - cell "MIT" [ref=f2e1515]
+                  - cell "missing model card lineage" [ref=f2e1517]
+                  - cell "Low" [ref=f2e1518]
+                  - cell "1.7" [ref=f2e1520]
+                  - cell [ref=f2e1522]
+                  - cell "not started" [ref=f2e1523]
+                  - cell [ref=f2e1525]:
+                    - button "Finding actions" [ref=f2e1526]: Action
+                - row [ref=f2e1527] [cursor=pointer]:
+                  - cell [ref=f2e1528]:
+                    - checkbox "Select requests" [ref=f2e1529]
+                  - cell "requests" [ref=f2e1530]
+                  - cell "ml framework" [ref=f2e1531]
+                  - cell "pypi" [ref=f2e1532]
+                  - cell "Apache-2.0" [ref=f2e1533]
+                  - cell "missing model card lineage" [ref=f2e1535]
+                  - cell "Low" [ref=f2e1536]
+                  - cell "1.7" [ref=f2e1538]
+                  - cell [ref=f2e1540]
+                  - cell "not started" [ref=f2e1541]
+                  - cell [ref=f2e1543]:
+                    - button "Finding actions" [ref=f2e1544]: Action
+                - row [ref=f2e1545] [cursor=pointer]:
+                  - cell [ref=f2e1546]:
+                    - checkbox "Select tokenizers" [ref=f2e1547]
+                  - cell "tokenizers" [ref=f2e1548]
+                  - cell "ml framework" [ref=f2e1549]
+                  - cell "pypi" [ref=f2e1550]
+                  - cell "Apache-2.0" [ref=f2e1551]
+                  - cell "missing model card lineage" [ref=f2e1553]
+                  - cell "Low" [ref=f2e1554]
+                  - cell "1.7" [ref=f2e1556]
+                  - cell [ref=f2e1558]
+                  - cell "not started" [ref=f2e1559]
+                  - cell [ref=f2e1561]:
+                    - button "Finding actions" [ref=f2e1562]: Action
+                - row [ref=f2e1563] [cursor=pointer]:
+                  - cell [ref=f2e1564]:
+                    - checkbox "Select typing_extensions" [ref=f2e1565]
+                  - cell "typing_extensions" [ref=f2e1566]
+                  - cell "ml framework" [ref=f2e1567]
+                  - cell "pypi" [ref=f2e1568]
+                  - cell "PSF-2.0" [ref=f2e1569]
+                  - cell "missing model card lineage" [ref=f2e1571]
+                  - cell "Low" [ref=f2e1572]
+                  - cell "1.7" [ref=f2e1574]
+                  - cell [ref=f2e1576]
+                  - cell "not started" [ref=f2e1577]
+                  - cell [ref=f2e1579]:
+                    - button "Finding actions" [ref=f2e1580]: Action
+        - generic [ref=f2e1581]:
+          - generic [ref=f2e1582]:
+            - generic [ref=f2e1583]: Top AI Risks
+            - generic [ref=f2e1584]: Highest-risk AI assets
+          - table [ref=f2e1587]:
+            - rowgroup [ref=f2e1588]:
+              - row [ref=f2e1589]:
+                - columnheader "Asset" [ref=f2e1590]
+                - columnheader "Type" [ref=f2e1591]
+                - columnheader "Provider" [ref=f2e1592]
+                - columnheader "License" [ref=f2e1593]
+                - columnheader "Impact" [ref=f2e1594]
+            - rowgroup [ref=f2e1595]:
+              - row [ref=f2e1596]:
+                - cell "aiohttp" [ref=f2e1597]
+                - cell "ml framework" [ref=f2e1598]
+                - cell "pypi" [ref=f2e1599]
+                - cell "LicenseRef-not-declared" [ref=f2e1600]
+                - cell "Medium" [ref=f2e1602]
+              - row [ref=f2e1603]:
+                - cell "boto3" [ref=f2e1604]
+                - cell "ml framework" [ref=f2e1605]
+                - cell "pypi" [ref=f2e1606]
+                - cell "LicenseRef-not-declared" [ref=f2e1607]
+                - cell "Medium" [ref=f2e1609]
+              - row [ref=f2e1610]:
+                - cell "fastavro" [ref=f2e1611]
+                - cell "ml framework" [ref=f2e1612]
+                - cell "pypi" [ref=f2e1613]
+                - cell "LicenseRef-not-declared" [ref=f2e1614]
+                - cell "Medium" [ref=f2e1616]
+              - row [ref=f2e1617]:
+                - cell "httpx-aiohttp" [ref=f2e1618]
+                - cell "ml framework" [ref=f2e1619]
+                - cell "pypi" [ref=f2e1620]
+                - cell "LicenseRef-not-declared" [ref=f2e1621]
+                - cell "Medium" [ref=f2e1623]
+              - row [ref=f2e1624]:
+                - cell "oci" [ref=f2e1625]
+                - cell "ml framework" [ref=f2e1626]
+                - cell "pypi" [ref=f2e1627]
+                - cell "LicenseRef-not-declared" [ref=f2e1628]
+                - cell "Medium" [ref=f2e1630]
+              - row [ref=f2e1631]:
+                - cell "types-requests" [ref=f2e1632]
+                - cell "ml framework" [ref=f2e1633]
+                - cell "pypi" [ref=f2e1634]
+                - cell "LicenseRef-not-declared" [ref=f2e1635]
+                - cell "Medium" [ref=f2e1637]
+              - row [ref=f2e1638]:
+                - cell "AWS SageMaker" [ref=f2e1639]
+                - cell "external provider" [ref=f2e1640]
+                - cell "local" [ref=f2e1641]
+                - cell "LicenseRef-not-declared" [ref=f2e1642]
+                - cell "Low" [ref=f2e1644]
+              - row [ref=f2e1645]:
+                - cell "AWS Bedrock" [ref=f2e1646]
+                - cell "external provider" [ref=f2e1647]
+                - cell "bedrock" [ref=f2e1648]
+                - cell "LicenseRef-proprietary" [ref=f2e1649]
+                - cell "Low" [ref=f2e1651]
+              - row [ref=f2e1652]:
+                - cell "command-nightly" [ref=f2e1653]
+                - cell "local model file" [ref=f2e1654]
+                - cell "cohere" [ref=f2e1655]
+                - cell "LicenseRef-proprietary" [ref=f2e1656]
+                - cell "Low" [ref=f2e1658]
+              - row [ref=f2e1659]:
+                - cell "command-r-08-2024" [ref=f2e1660]
+                - cell "local model file" [ref=f2e1661]
+                - cell "cohere" [ref=f2e1662]
+                - cell "LicenseRef-proprietary" [ref=f2e1663]
+                - cell "Low" [ref=f2e1665]
+  - region "Notifications alt+T"
+  - alert [ref=f2e116]
+  - generic [ref=f2e1666]: AI model & dataset inventory

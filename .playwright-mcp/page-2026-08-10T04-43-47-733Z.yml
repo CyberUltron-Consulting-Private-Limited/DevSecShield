@@ -1,0 +1,54 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e2]:
+    - generic [ref=f7e5]:
+      - button "Loading…" [ref=f7e8] [cursor=pointer]
+      - generic [ref=f7e16]:
+        - list [ref=f7e19]:
+          - listitem [ref=f7e20]:
+            - link "Home" [ref=f7e21] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f7e26]:
+          - generic [ref=f7e27]: Scanning Utilities
+          - list [ref=f7e29]:
+            - listitem [ref=f7e30]:
+              - link "SAST" [ref=f7e31] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f7e36]:
+              - link "SCA + SBOM" [ref=f7e37] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f7e43]:
+              - link "CBOM" [ref=f7e44] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f7e49]:
+              - link "AI BOM" [ref=f7e50] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f7e55]:
+              - link "MCP" [ref=f7e56] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f7e61]:
+              - link "LLM" [ref=f7e62] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f7e67]:
+              - link "IAC" [ref=f7e68] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f7e73]:
+              - link "DAST" [ref=f7e74] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f7e79]:
+          - generic [ref=f7e80]: Integrations
+          - list [ref=f7e82]:
+            - listitem [ref=f7e83]:
+              - link "CI / CD" [ref=f7e84] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f7e89]:
+        - list [ref=f7e90]:
+          - listitem [ref=f7e91]:
+            - link "Teams" [ref=f7e92] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f7e99]:
+            - link "Settings" [ref=f7e100] [cursor=pointer]:
+              - /url: /1/settings
+        - paragraph [ref=f7e111]: Loading...
+    - main [ref=f7e112]
+  - region "Notifications alt+T"
+  - alert [ref=f7e116]

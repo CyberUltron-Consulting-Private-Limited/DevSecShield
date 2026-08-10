@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-07-28T15:00:30.061Z",
-  "projectRoot": "/Users/anshsinghal/Desktop/DevSecShield",
+  "timestamp": "2026-08-10T05:07:17.544Z",
+  "projectRoot": "/home/contact_cyberultron_com/DevSecShield",
   "structure": {
     "hasPackageJson": false,
     "hasTsConfig": false,
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1785250830061
+  "scannedAt": 1786338437544
 }

@@ -1,0 +1,13 @@
+- generic [active] [ref=f15e1]:
+  - main [ref=f15e3]:
+    - main [ref=f15e5]:
+      - generic [ref=f15e6]:
+        - heading [level=2] [ref=f15e7]
+        - paragraph [ref=f15e14]: Utilization and credit balance across all teams you belong to.
+      - generic [ref=f15e20]:
+        - generic [ref=f15e21]: Teams
+        - generic [ref=f15e22]: Click a row to open the team
+  - button "Open Tanstack query devtools" [ref=f15e78] [cursor=pointer]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f15e132] [cursor=pointer]
+  - alert [ref=f15e136]

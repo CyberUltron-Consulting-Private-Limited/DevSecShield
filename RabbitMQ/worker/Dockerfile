@@ -65,8 +65,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install grype (SBOM scanning — runtime binary)
-RUN curl -sSfL https://get.anchore.io/grype | sh -s -- -b /usr/local/bin
+# Install grype + syft (SBOM vuln + inventory — runtime binaries)
+RUN curl -sSfL https://get.anchore.io/grype | sh -s -- -b /usr/local/bin \
+    && curl -sSfL https://get.anchore.io/syft | sh -s -- -b /usr/local/bin
 
 # Install cbomkit-theia (CBOM binary/directory scanning)
 COPY --from=cbomkit-builder /usr/local/bin/cbomkit-theia /usr/local/bin/cbomkit-theia
