@@ -18,10 +18,12 @@ from backend.utilities.pdf.report_branding import (
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
+    count_label,
     escape_html,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
+    mapping_rows,
 )
 
 
@@ -65,18 +67,9 @@ def _owasp_compliance_entries(val: Any) -> List[Tuple[Any, Any]]:
 
 def _standards_rows(vuln: Dict[str, Any]) -> List[List[str]]:
     rows: List[List[str]] = []
-    for k, v in _owasp_compliance_entries(vuln.get("owasp_top_10")):
-        rows.append(["OWASP Top 10", f"{k}: {v}"])
-    for k, v in _owasp_compliance_entries(vuln.get("compliance_controls")):
-        rows.append(["Compliance", f"{k}: {v}"])
-    cves = vuln.get("cves")
-    if isinstance(cves, dict):
-        for cve_id, desc in list(cves.items())[:5]:
-            d = desc if isinstance(desc, str) else str(desc)
-            rows.append(["CVE", f"{cve_id}: {d[:160]}"])
-    elif isinstance(cves, list):
-        for c in cves[:5]:
-            rows.append(["CVE", str(c)])
+    rows.extend(mapping_rows(vuln.get("owasp_top_10"), label="OWASP Top 10"))
+    rows.extend(mapping_rows(vuln.get("compliance_controls"), label="Compliance"))
+    rows.extend(mapping_rows(vuln.get("cves"), label="CVE", limit=5))
     return rows
 
 
@@ -91,7 +84,7 @@ def _build_agent_pdf_story(story: List[Any], components: List[Dict[str, Any]]) -
     total = len(flat_vulns)
     by_impact: Dict[str, int] = {}
     for _, v in flat_vulns:
-        imp = (v.get("impact") or "").strip() or "Unknown"
+        imp = count_label(v.get("impact") or "Unknown")
         by_impact[imp] = by_impact.get(imp, 0) + 1
 
     overview = [

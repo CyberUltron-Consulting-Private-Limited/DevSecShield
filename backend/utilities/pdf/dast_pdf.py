@@ -18,12 +18,13 @@ from backend.utilities.pdf.report_branding import (
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
+    count_label,
     escape_html,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
+    mapping_rows,
     severity_color,
-    styled_data_table,
 )
 
 
@@ -60,9 +61,9 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
     by_confidence: Dict[str, int] = {}
     by_category: Dict[str, int] = {}
     for r in results:
-        impact = (r.get("impact") or "Unknown").strip() or "Unknown"
+        impact = count_label(r.get("impact") or "Unknown")
         by_impact[impact] = by_impact.get(impact, 0) + 1
-        conf = (r.get("confidence") or "Unknown").strip() or "Unknown"
+        conf = count_label(r.get("confidence") or "Unknown")
         by_confidence[conf] = by_confidence.get(conf, 0) + 1
         cat = (r.get("category") or "Other").strip().replace("_", " ") or "Other"
         by_category[cat] = by_category.get(cat, 0) + 1
@@ -172,10 +173,8 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
             suggested_fix = (r.get("suggested_fix") or "").strip()
 
             standards: List[List[str]] = []
-            for row in _format_owasp_compliance_dict(r.get("owasp_top_10")):
-                standards.append(["OWASP Top 10", f"{row[0]}: {row[1]}"])
-            for row in _format_owasp_compliance_dict(r.get("compliance_controls")):
-                standards.append(["Compliance", f"{row[0]}: {row[1]}"])
+            standards.extend(mapping_rows(r.get("owasp_top_10"), label="OWASP Top 10"))
+            standards.extend(mapping_rows(r.get("compliance_controls"), label="Compliance"))
 
             story.append(
                 build_finding_section(

@@ -12,12 +12,16 @@ Visual language (mirrors Enterprise_Security_Report_Sample.html):
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+logger = logging.getLogger(__name__)
+
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
+from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch, mm
 from reportlab.lib.utils import ImageReader
@@ -80,6 +84,76 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         "how_to_read": (
             "Filter priority by severity in the catalog, then review URL-level "
             "detail cards for description and recommended fixes."
+        ),
+    },
+    "iac": {
+        "title": "IAC Findings",
+        "subtitle": "Infrastructure as Code Security Testing",
+        "footer_label": "IAC Report",
+        "kicker": "Security Assessment",
+        "intro": (
+            "Infrastructure-as-code findings for this scan. KPI summary first; "
+            "catalog and per-finding detail follow."
+        ),
+        "how_to_read": (
+            "Scan the catalog for priority misconfigurations, then open matching "
+            "detail cards for location, evidence, and remediation guidance."
+        ),
+    },
+    "mcp": {
+        "title": "MCP Findings",
+        "subtitle": "Model Context Protocol Security Testing",
+        "footer_label": "MCP Report",
+        "kicker": "Security Assessment",
+        "intro": (
+            "MCP tool, prompt, and resource findings for this scan. KPI summary first; "
+            "catalog and per-finding detail follow."
+        ),
+        "how_to_read": (
+            "Use the catalog to identify affected MCP resources, then review each "
+            "detail card for description and recommended fixes."
+        ),
+    },
+    "llm": {
+        "title": "LLM Findings",
+        "subtitle": "Large Language Model Security Benchmark",
+        "footer_label": "LLM Report",
+        "kicker": "Security Assessment",
+        "intro": (
+            "LLM benchmark findings for this scan. KPI summary first; "
+            "catalog and per-finding detail follow."
+        ),
+        "how_to_read": (
+            "Filter priority by severity in the catalog, then review each detail card "
+            "for OWASP LLM mappings and remediation guidance."
+        ),
+    },
+    "cbom": {
+        "title": "CBOM Findings",
+        "subtitle": "Cryptographic Bill of Materials",
+        "footer_label": "CBOM Report",
+        "kicker": "Security Assessment",
+        "intro": (
+            "Cryptographic inventory findings for this scan. KPI summary first; "
+            "catalog and per-finding detail follow."
+        ),
+        "how_to_read": (
+            "Use the catalog to identify weak or quantum-vulnerable algorithms, "
+            "then review each detail card for location and upgrade guidance."
+        ),
+    },
+    "ai_bom": {
+        "title": "AI BOM Findings",
+        "subtitle": "AI Bill of Materials",
+        "footer_label": "AI BOM Report",
+        "kicker": "Security Assessment",
+        "intro": (
+            "AI asset inventory findings for this scan. KPI summary first; "
+            "catalog and per-finding detail follow."
+        ),
+        "how_to_read": (
+            "Use the catalog to identify high-risk AI assets, then review each "
+            "detail card for provider, license, and remediation guidance."
         ),
     },
 }
@@ -202,6 +276,93 @@ def severity_label(severity: str) -> str:
     }
     upper = val.upper()
     return mapping.get(upper, upper or "UNKNOWN")
+
+
+def count_label(severity: str) -> str:
+    """Canonical title-case label for KPI / breakdown counts (High, Medium, ...)."""
+    return severity_label(severity).title()
+
+
+def mapping_entries(val: Any) -> List[Tuple[str, str]]:
+    """Normalize OWASP / compliance / CVE blobs to (key, value) pairs."""
+    if val is None:
+        return []
+    out: List[Tuple[str, str]] = []
+    if isinstance(val, dict) and not isinstance(val, list):
+        for k, v in val.items():
+            if v is None or (isinstance(v, str) and not str(v).strip()):
+                continue
+            out.append((str(k), str(v)))
+        return out
+    if isinstance(val, list):
+        for item in val:
+            if isinstance(item, dict) and item:
+                k, v = next(iter(item.items()))
+                if v is None or (isinstance(v, str) and not str(v).strip()):
+                    continue
+                out.append((str(k), str(v)))
+            elif item is not None and str(item).strip():
+                out.append(("", str(item)))
+        return out
+    if str(val).strip():
+        return [("", str(val))]
+    return []
+
+
+def mapping_rows(val: Any, *, label: str, limit: int = 6) -> List[List[str]]:
+    """Format mapping blobs as [label, 'key: value'] rows for finding cards."""
+    rows: List[List[str]] = []
+    for k, v in mapping_entries(val)[:limit]:
+        text = f"{k}: {v}" if k else v
+        rows.append([label, text])
+    return rows
+
+
+def make_enterprise_document(output_path: str) -> SimpleDocTemplate:
+    return SimpleDocTemplate(
+        output_path,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=56,
+        bottomMargin=52,
+    )
+
+
+def append_bom_compliance_sections(
+    story: List[Any],
+    scan_results: Any,
+    styles: Optional[Dict[str, ParagraphStyle]] = None,
+) -> None:
+    """Append RBI + CERT-In appendix when the scan payload is a dict.
+
+    Failures are logged and swallowed so a missing appendix cannot break export.
+    """
+    if not isinstance(scan_results, dict):
+        return
+    styles = styles or get_report_styles()
+    try:
+        from backend.utilities.pdf.rbi_compliance_pdf import append_rbi_compliance_pdf_section
+        from backend.utilities.pdf.certin_compliance_pdf import (
+            append_certin_compliance_pdf_section,
+        )
+
+        append_rbi_compliance_pdf_section(
+            story,
+            scan_results,
+            styles["heading"],
+            styles["body"],
+            styles["table_cell"],
+        )
+        append_certin_compliance_pdf_section(
+            story,
+            scan_results,
+            styles["heading"],
+            styles["body"],
+            styles["table_cell"],
+        )
+    except Exception:
+        logger.warning("BOM compliance appendix failed; continuing PDF export", exc_info=True)
 
 
 def escape_html(text: Any) -> str:
@@ -1343,14 +1504,8 @@ def append_executive_summary(
         for title, headers, rows, widths in extra_tables:
             if not rows:
                 continue
-            story.append(
-                KeepTogether(
-                    [
-                        Paragraph(title, styles["heading"]),
-                        styled_data_table(headers, rows, styles=styles, col_widths=widths),
-                    ]
-                )
-            )
+            story.append(Paragraph(title, styles["heading"]))
+            story.append(styled_data_table(headers, rows, styles=styles, col_widths=widths))
 
 
 def append_findings_catalog(

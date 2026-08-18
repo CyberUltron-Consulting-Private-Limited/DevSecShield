@@ -15,13 +15,16 @@ from reportlab.lib.units import inch
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 from backend.utilities.pdf.report_branding import (
+    append_bom_compliance_sections,
     append_executive_summary,
     append_findings_catalog,
     build_finding_section,
+    count_label,
     escape_html,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
+    mapping_rows,
     severity_color,
 )
 
@@ -104,7 +107,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     risk_sum = 0.0
 
     for v in vulnerabilities:
-        impact = (v.get("impact") or "Unknown").strip()
+        impact = count_label(v.get("impact") or "Unknown")
         by_severity[impact] = by_severity.get(impact, 0) + 1
         risk_sum += _impact_to_risk(impact)
         for dep in v.get("dependencies") or []:
@@ -199,18 +202,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 detail_rows.append(("CVE IDs", ", ".join(list(cves.keys())[:8])))
 
             standards: List[List[str]] = []
-            owasp = v.get("owasp_top_10") or {}
-            if isinstance(owasp, dict):
-                for k, val in list(owasp.items())[:6]:
-                    standards.append(["OWASP Top 10", f"{k}: {val}"])
-            compliance = v.get("compliance_controls") or {}
-            if isinstance(compliance, dict):
-                for k, val in list(compliance.items())[:6]:
-                    standards.append(["Compliance", f"{k}: {val}"])
-            if isinstance(cves, dict):
-                for cve_id, cve_desc in list(cves.items())[:5]:
-                    desc_str = cve_desc if isinstance(cve_desc, str) else str(cve_desc)
-                    standards.append(["CVE detail", f"{cve_id}: {desc_str[:180]}"])
+            standards.extend(mapping_rows(v.get("owasp_top_10"), label="OWASP Top 10"))
+            standards.extend(mapping_rows(v.get("compliance_controls"), label="Compliance"))
+            standards.extend(mapping_rows(cves, label="CVE detail", limit=5))
 
             story.append(
                 build_finding_section(
@@ -226,26 +220,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 )
             )
 
-    if isinstance(scan_results, dict):
-        from backend.utilities.pdf.rbi_compliance_pdf import append_rbi_compliance_pdf_section
-        from backend.utilities.pdf.certin_compliance_pdf import (
-            append_certin_compliance_pdf_section,
-        )
-
-        append_rbi_compliance_pdf_section(
-            story,
-            scan_results,
-            styles["heading"],
-            styles["body"],
-            styles["table_cell"],
-        )
-        append_certin_compliance_pdf_section(
-            story,
-            scan_results,
-            styles["heading"],
-            styles["body"],
-            styles["table_cell"],
-        )
+    append_bom_compliance_sections(story, scan_results, styles)
 
     doc.build(
         story,
