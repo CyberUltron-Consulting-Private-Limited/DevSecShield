@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getTeamDashboard } from "@/utils/backend_api";
+import { formatChartDateIst } from "@/utils/datetime";
 import {
   ChartContainer,
   ChartTooltip,
@@ -24,6 +25,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { LayoutDashboard, LineChart, Link2, Shield, Bug, PlayCircle, CheckCircle, Circle, Wrench, Percent } from "lucide-react";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CertInRollup, type CertInRollupData } from "@/components/certin/CertInRollup";
 
 const SCAN_TYPE_LABELS: Record<string, string> = {
   sast: "SAST",
@@ -62,16 +64,6 @@ function aggregateByDate(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function formatDateLabel(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-  catch (error) {
-    console.error("Error formatting date label:", error);
-    return dateStr;
-  }
-}
 
 export default function TeamPage() {
   const params = useParams();
@@ -150,8 +142,8 @@ export default function TeamPage() {
     count: { label: "Scans", color: BLUE_SHADES.blue5 },
   } satisfies ChartConfig;
 
+  // Guardrails series removed from user-facing chart (deprecated product UI).
   const integrationsChartConfig = {
-    Guardrails: { label: "Guardrails", color: "#dc2626" }, // red-600 for stroke + gradient
     cicd: { label: "CI/CD", color: BLUE_SHADES.blue6 },
   } satisfies ChartConfig;
 
@@ -213,7 +205,7 @@ export default function TeamPage() {
   const remediationsAreaData = Object.entries(remediationsDist)
     .map(([date, v]) => ({
       date,
-      label: formatDateLabel(date),
+      label: formatChartDateIst(date),
       not_started: v.not_started ?? 0,
       in_progress: v.in_progress ?? 0,
       fixed: v.fixed ?? 0,
@@ -344,6 +336,12 @@ export default function TeamPage() {
           {dashboard.rbi_csf_rollup && (
             <div className="mt-9">
               <RbiCsfRollup rollup={dashboard.rbi_csf_rollup as RbiCsfRollupData} />
+            </div>
+          )}
+
+          {dashboard.certin_posture && (
+            <div className="mt-9">
+              <CertInRollup rollup={dashboard.certin_posture as CertInRollupData} />
             </div>
           )}
 
@@ -487,12 +485,12 @@ export default function TeamPage() {
                         axisLine={false}
                         tickMargin={8}
                         minTickGap={20}
-                        tickFormatter={(value) => formatDateLabel(value)}
+                        tickFormatter={(value) => formatChartDateIst(value)}
                         tick={({ payload, x, y }) => (
                           <g transform={`translate(${x},${y})`}>
                             <foreignObject x={-24} y={0} width={48} height={28} className="overflow-visible">
                               <div className="text-[10px] text-center text-zinc-600 dark:text-zinc-400 wrap-break-word leading-tight w-full">
-                                {payload.value ? formatDateLabel(String(payload.value)) : ""}
+                                {payload.value ? formatChartDateIst(String(payload.value)) : ""}
                               </div>
                             </foreignObject>
                           </g>
@@ -503,7 +501,7 @@ export default function TeamPage() {
                         cursor={false}
                         content={
                           <ChartTooltipContent
-                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            labelFormatter={(value) => formatChartDateIst(String(value))}
                             formatter={(value) => [value, "Scans"]}
                             indicator="dot"
                           />
@@ -640,14 +638,14 @@ export default function TeamPage() {
                         axisLine={false}
                         tickMargin={8}
                         minTickGap={20}
-                        tickFormatter={(value) => formatDateLabel(String(value))}
+                        tickFormatter={(value) => formatChartDateIst(String(value))}
                       />
                       <YAxis hide domain={[0, "auto"]} />
                       <ChartTooltip
                         cursor={false}
                         content={
                           <ChartTooltipContent
-                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            labelFormatter={(value) => formatChartDateIst(String(value))}
                             indicator="dot"
                           />
                         }
@@ -690,14 +688,14 @@ export default function TeamPage() {
                         axisLine={false}
                         tickMargin={8}
                         minTickGap={20}
-                        tickFormatter={(value) => formatDateLabel(String(value))}
+                        tickFormatter={(value) => formatChartDateIst(String(value))}
                       />
                       <YAxis hide domain={[0, "auto"]} />
                       <ChartTooltip
                         cursor={false}
                         content={
                           <ChartTooltipContent
-                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            labelFormatter={(value) => formatChartDateIst(String(value))}
                             formatter={(value) => [value, "Findings"]}
                             indicator="dot"
                           />
@@ -738,14 +736,14 @@ export default function TeamPage() {
                         axisLine={false}
                         tickMargin={8}
                         minTickGap={20}
-                        tickFormatter={(value) => formatDateLabel(String(value))}
+                        tickFormatter={(value) => formatChartDateIst(String(value))}
                       />
                       <YAxis hide domain={[0, "auto"]} />
                       <ChartTooltip
                         cursor={false}
                         content={
                           <ChartTooltipContent
-                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            labelFormatter={(value) => formatChartDateIst(String(value))}
                             formatter={(value) => [value, "Fixes"]}
                             indicator="dot"
                           />
@@ -786,14 +784,14 @@ export default function TeamPage() {
                         axisLine={false}
                         tickMargin={8}
                         minTickGap={20}
-                        tickFormatter={(value) => formatDateLabel(String(value))}
+                        tickFormatter={(value) => formatChartDateIst(String(value))}
                       />
                       <YAxis hide domain={[0, "auto"]} />
                       <ChartTooltip
                         cursor={false}
                         content={
                           <ChartTooltipContent
-                            labelFormatter={(value) => formatDateLabel(String(value))}
+                            labelFormatter={(value) => formatChartDateIst(String(value))}
                             formatter={(value) => [value, "Ignored"]}
                             indicator="dot"
                           />
@@ -816,31 +814,18 @@ export default function TeamPage() {
             </div>
             Your Team's Integrations
           </h2>
-          <p className="text-sm text-muted-foreground mb-4 mt-1">Guardrails and CI/CD integrations created by date</p>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">CI/CD integrations created by date</p>
           <div className="min-h-[220px] mt-9">
             {(() => {
-              const guardrailsByDate = aggregateByDate(
-                dashboard.guardrails_integrations_created_at_data ?? []
-              );
               const cicdByDate = aggregateByDate(
                 dashboard.cicd_integrations_created_at_data ?? []
               );
-              const allDates = new Set([
-                ...guardrailsByDate.map((d) => d.date),
-                ...cicdByDate.map((d) => d.date),
-              ]);
-              const integrationsBarData = Array.from(allDates)
-                .sort()
-                .map((date) => {
-                  const g = guardrailsByDate.find((x) => x.date === date)?.count ?? 0;
-                  const c = cicdByDate.find((x) => x.date === date)?.count ?? 0;
-                  return {
-                    label: formatDateLabel(date),
-                    Guardrails: g,
-                    cicd: c,
-                    total: g + c,
-                  };
-                })
+              const integrationsBarData = cicdByDate
+                .map((d) => ({
+                  label: formatChartDateIst(d.date),
+                  cicd: d.count,
+                  total: d.count,
+                }))
                 .filter((d) => d.total > 0);
               if (integrationsBarData.length === 0) {
                 return (
@@ -856,11 +841,6 @@ export default function TeamPage() {
                 >
                   <AreaChart data={integrationsBarData} margin={{ bottom: 28 }}>
                     <defs>
-                      <linearGradient id="fillIntegrationsGuardrails" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f87171" stopOpacity={0.9} />
-                        <stop offset="50%" stopColor="#dc2626" stopOpacity={0.5} />
-                        <stop offset="100%" stopColor="#991b1b" stopOpacity={0.15} />
-                      </linearGradient>
                       <linearGradient id="fillIntegrationsCicd" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="var(--color-cicd)" stopOpacity={0.8} />
                         <stop offset="95%" stopColor="var(--color-cicd)" stopOpacity={0.1} />
@@ -879,13 +859,6 @@ export default function TeamPage() {
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}
-                    />
-                    <Area
-                      dataKey="Guardrails"
-                      type="monotone"
-                      fill="url(#fillIntegrationsGuardrails)"
-                      stroke="var(--color-Guardrails)"
-                      strokeWidth={2}
                     />
                     <Area
                       dataKey="cicd"

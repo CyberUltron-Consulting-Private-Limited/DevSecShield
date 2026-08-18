@@ -53,7 +53,7 @@ class ActiveContextLog(TypedDict, total=False):
     sender: SenderType
 
 class GuardrailLogs(TypedDict, total=False):
-
+    # DEPRECATED: Guardrails product UI removed; collection retained for legacy worker/API.
     _id: str  # MongoDB ObjectId as string (auto-generated, always present when reading)
     integration_id: str  
     task_id: str # celery task id ( has to be created when the task is initiated or log created )

@@ -1,3 +1,10 @@
+"""DEPRECATED: Guardrails public API router.
+
+The Guardrails product UI has been removed from the user-facing frontend.
+Public scan endpoints remain for legacy API-key integrations. Prefer not to
+expand this surface; mark any new callers as transitional.
+"""
+
 from datetime import datetime , timezone
 from bson import ObjectId
 from celery.result import AsyncResult
@@ -20,7 +27,7 @@ class StartScanData(BaseModel):
 
 console = Console()
 
-router = APIRouter(tags=["Guardrails Public API"])
+router = APIRouter(tags=["Guardrails Public API (deprecated)"])
 
 
 limiter = RateLimiter(times=2, seconds=10) # 2 requests per 60 seconds

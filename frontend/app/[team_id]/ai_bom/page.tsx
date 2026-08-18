@@ -42,6 +42,7 @@ import type { AiBomScanDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -533,11 +534,6 @@ export default function AIBOMPage() {
     },
     onError: (error) => { showErrorToast(error); },
   });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {

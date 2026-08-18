@@ -53,9 +53,22 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import {
+  buildRefAliasMap,
+  findingMatchesRelatedRefs,
+} from "@/utils/relatedFindingMatch";
 import { OWASP_KEY_TO_LABEL, COMPLIANCE_KEY_TO_LABEL, OWASP_COLORS } from "@/lib/owasp-compliance-labels";
+import { FRAMEWORK_LABELS } from "@/components/compliance/frameworkLabels";
+
+/** Resolve a compliance-controls chart key to a short display label. */
+function complianceChartLabel(key: string): string {
+  const full =
+    COMPLIANCE_KEY_TO_LABEL[key] ?? FRAMEWORK_LABELS[key] ?? key;
+  // Keep Y-axis ticks single-line so they never wrap into neighboring rows.
+  return full.length > 32 ? `${full.slice(0, 30)}…` : full;
+}
 import {
   ChartContainer,
   ChartTooltip,
@@ -88,6 +101,8 @@ import {
   type CbomCompliance,
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
+import { type CertInRollupData } from "@/components/certin/certinShared";
 
 interface CbomResultsProps {
   data: unknown;
@@ -239,7 +254,6 @@ function CbomDashboardCharts({
     return [
       { name: "Safe", count: dashboard.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
       { name: "Vulnerable", count: dashboard.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-      { name: "Unknown", count: dashboard.quantum_readiness.unknown, fill: "hsl(220 9% 46%)" },
     ].filter((d) => d.count > 0);
   }, [dashboard]);
 
@@ -268,9 +282,15 @@ function CbomDashboardCharts({
   const complianceMetrics = dashboard.compliance_controls ?? {};
   const complianceBarData = useMemo(() => {
     return Object.entries(complianceMetrics)
-      .map(([key, count]) => ({ name: COMPLIANCE_KEY_TO_LABEL[key] ?? key, count }))
+      .map(([key, count]) => ({
+        name: complianceChartLabel(key),
+        fullName: COMPLIANCE_KEY_TO_LABEL[key] ?? FRAMEWORK_LABELS[key] ?? key,
+        count,
+      }))
       .sort((a, b) => b.count - a.count);
   }, [complianceMetrics]);
+  const complianceChartRows = complianceBarData.slice(0, 10);
+  const complianceChartHeight = Math.max(280, complianceChartRows.length * 36);
   const hasComplianceData = complianceBarData.length > 0;
 
   // Risk scores per finding
@@ -445,12 +465,41 @@ function CbomDashboardCharts({
             {!hasComplianceData ? (
               <div className="flex items-center justify-center min-h-[280px] text-zinc-500 dark:text-zinc-400 text-sm">No compliance data available</div>
             ) : (
-              <ChartContainer config={complianceBarChartConfig} className="aspect-auto h-[280px] w-full cursor-pointer">
-                <BarChart data={complianceBarData.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+              <ChartContainer
+                config={complianceBarChartConfig}
+                className="aspect-auto w-full cursor-pointer"
+                style={{ height: complianceChartHeight }}
+              >
+                <BarChart
+                  data={complianceChartRows}
+                  layout="vertical"
+                  margin={{ top: 4, right: 12, bottom: 4, left: 4 }}
+                  barCategoryGap={10}
+                >
                   <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
                   <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" width={140} tickLine={false} axisLine={false} className="text-xs" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    width={168}
+                    interval={0}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11 }}
+                    className="text-xs"
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(_, payload) =>
+                          String(
+                            (payload?.[0]?.payload as { fullName?: string } | undefined)
+                              ?.fullName ?? "",
+                          )
+                        }
+                      />
+                    }
+                  />
                   <Bar dataKey="count" fill="hsl(217 91% 60%)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ChartContainer>
@@ -716,6 +765,7 @@ export default function CbomResults({
 
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
   const [searchQuery, setSearchQuery] = useState("");
+  const [relatedFindingRefs, setRelatedFindingRefs] = useState<string[]>([]);
   const [strengthFilter, setStrengthFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [quantumFilter, setQuantumFilter] = useState("all");
@@ -736,15 +786,38 @@ export default function CbomResults({
     setJiraProjectId(initialJiraProjectId);
   }, [initialJiraProjectId]);
 
+  const relatedRefAliases = useMemo(() => {
+    const fromData = (data as Record<string, unknown> | null)?.cbom_graph as
+      | { nodes?: { id?: string; label?: string }[] }
+      | undefined;
+    const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph as
+      | { nodes?: { id?: string; label?: string }[] }
+      | undefined;
+    const nodes =
+      fromData?.nodes && fromData.nodes.length > 0
+        ? fromData.nodes
+        : fromMeta?.nodes;
+    return buildRefAliasMap(nodes);
+  }, [data, scanMetadata]);
+
   const filteredFindings = useMemo(() => {
     if (!findingsList) return [];
-    return findingsList.filter((f) => {
+    return findingsList.filter((f, i) => {
       const q = searchQuery.toLowerCase();
+      const name = (f.algorithm_name || f.title || "").toLowerCase();
+      const desc = (f.description || "").toLowerCase();
+      const loc = (f.location || "").toLowerCase();
+      const id = (f.id || "").toLowerCase();
       const matchSearch =
         !q ||
-        (f.algorithm_name || f.title || "").toLowerCase().includes(q) ||
-        (f.description || "").toLowerCase().includes(q) ||
-        (f.location || "").toLowerCase().includes(q);
+        name.includes(q) ||
+        desc.includes(q) ||
+        loc.includes(q) ||
+        id.includes(q);
+      const matchRefs = findingMatchesRelatedRefs(f, relatedFindingRefs, {
+        aliases: relatedRefAliases,
+        findingIndex: i,
+      });
       const matchStrength = strengthFilter === "all" || f.crypto_strength === strengthFilter;
       const matchType = typeFilter === "all" || f.algorithm_type === typeFilter;
       const matchQuantum =
@@ -753,9 +826,17 @@ export default function CbomResults({
         (quantumFilter === "vulnerable" && f.quantum_safe === false);
       const matchImpact = filterImpact === "all" || (f.impact || "").toLowerCase() === filterImpact.toLowerCase();
       const matchRisk = matchesRiskScoreFilter(f.risk_score, filterRiskScore);
-      return matchSearch && matchStrength && matchType && matchQuantum && matchImpact && matchRisk;
+      return matchSearch && matchRefs && matchStrength && matchType && matchQuantum && matchImpact && matchRisk;
     });
-  }, [findingsList, searchQuery, strengthFilter, typeFilter, quantumFilter, filterImpact, filterRiskScore]);
+  }, [findingsList, searchQuery, relatedFindingRefs, relatedRefAliases, strengthFilter, typeFilter, quantumFilter, filterImpact, filterRiskScore]);
+
+  const handleViewRelatedFindings = (refs: string[]) => {
+    setRelatedFindingRefs(refs);
+    setSearchQuery("");
+    requestAnimationFrame(() => {
+      document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const uniqueTypes = useMemo(() => {
     if (!findingsList) return [];
@@ -918,6 +999,71 @@ export default function CbomResults({
     }
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCertInAttest = async (
+    frameworkKey: string,
+    requirementId: string,
+    file: File,
+  ) => {
+    if (Number.isNaN(tid) || Number.isNaN(sid) || !tid || !sid) {
+      throw new Error("Missing team or scan id");
+    }
+    await postCertInAttestation(tid, "cbom", sid, frameworkKey, requirementId, file);
+    queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
+  };
+
+  const handleDownloadVex = async () => {
+    try {
+      const cached = (scanMetadata as CbomScanMetadata | null)?.vex_json;
+      const vex = cached ?? (await getCertInVex(tid, "cbom", sid));
+      downloadBlob(
+        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
+        `cbom-vex-${scan_id}.json`,
+      );
+      toast.success("VEX downloaded");
+      queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
+    } catch (err) {
+      showErrorToast(err, "Failed to download VEX");
+    }
+  };
+
+  const handleDownloadSignature = async () => {
+    try {
+      let sig = (scanMetadata as CbomScanMetadata | null)?.bom_signature;
+      if (!sig) {
+        const res = await postCertInSign(tid, "cbom", sid);
+        sig = res.bom_signature;
+        queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(sig, null, 2)], { type: "application/json" }),
+        `cbom-signature-${scan_id}.json`,
+      );
+      toast.success("BOM signature downloaded");
+    } catch (err) {
+      showErrorToast(err, "Failed to download BOM signature");
+    }
+  };
+
+  const handleDownloadEvidencePack = async () => {
+    try {
+      const blob = await getCertInEvidencePack(tid, "cbom", sid);
+      downloadBlob(blob, `certin-evidence-pack-cbom-${scan_id}.zip`);
+      toast.success("Evidence pack downloaded");
+      queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data"] });
+    } catch (err) {
+      showErrorToast(err, "Failed to download evidence pack");
+    }
+  };
+
   const cardData = dashboard?.card_data;
   const meta = scanMetadata as CbomScanMetadata | null;
 
@@ -941,6 +1087,20 @@ export default function CbomResults({
     return g && Array.isArray(g.nodes) ? g : null;
   }, [data, scanMetadata]);
 
+  const cryptoGraphCompact = useMemo<CbomGraph | null>(() => {
+    const fromData = (data as Record<string, unknown> | null)?.cbom_graph_compact;
+    const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph_compact;
+    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
+    return g && Array.isArray(g.nodes) ? g : null;
+  }, [data, scanMetadata]);
+
+  const cryptoGraphExpanded = useMemo<CbomGraph | null>(() => {
+    const fromData = (data as Record<string, unknown> | null)?.cbom_graph_expanded;
+    const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph_expanded;
+    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
+    return g && Array.isArray(g.nodes) ? g : null;
+  }, [data, scanMetadata]);
+
   // Tri-state compliance matrix (F3). Same source precedence as the
   // distributions/graph — present only on reconciled aibom-lane scans; the
   // matrix renders only when it carries ≥1 framework object.
@@ -956,6 +1116,7 @@ export default function CbomResults({
 
   const hasActiveFindingsFilters =
     searchQuery.trim() !== "" ||
+    relatedFindingRefs.length > 0 ||
     filterImpact !== "all" ||
     filterRiskScore !== "all" ||
     strengthFilter !== "all" ||
@@ -1012,7 +1173,7 @@ export default function CbomResults({
           </div>
         </div>
         {team_id && scan_id != null && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <Button
               variant="outline"
               className="cursor-pointer"
@@ -1020,6 +1181,30 @@ export default function CbomResults({
             >
               <Download className="h-4 w-4 mr-2" />
               CycloneDX JSON
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void handleDownloadVex()}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              VEX
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void handleDownloadSignature()}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Signature
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void handleDownloadEvidencePack()}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Evidence pack
             </Button>
             <Button
               variant="outline"
@@ -1137,8 +1322,33 @@ export default function CbomResults({
           )}
 
           {/* Crypto-asset charts (aibom CBOM lane) */}
-          {cryptoDistributions && <CbomCryptoCharts distributions={cryptoDistributions} graph={cryptoGraph} compliance={cryptoCompliance} />}
-          <RbiCsfRollup rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined} />
+          {cryptoDistributions && (
+            <CbomCryptoCharts
+              distributions={cryptoDistributions}
+              graph={cryptoGraph}
+              graphCompact={cryptoGraphCompact}
+              graphExpanded={cryptoGraphExpanded}
+              compliance={cryptoCompliance}
+              onAttest={handleCertInAttest}
+              findings={findingsList ?? []}
+              onOpenFinding={(f) => setSelectedFinding(f)}
+            />
+          )}
+          <RbiCsfRollup
+            rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
+            onAttest={handleCertInAttest}
+            onViewFindings={handleViewRelatedFindings}
+            findings={findingsList ?? []}
+            refAliases={relatedRefAliases}
+          />
+          <CertInLanePosture
+            lane="cbom"
+            rollup={meta?.certin_posture as CertInRollupData | undefined}
+            onAttest={handleCertInAttest}
+            onViewFindings={handleViewRelatedFindings}
+            findings={findingsList ?? []}
+            refAliases={relatedRefAliases}
+          />
 
           {/* Dashboard */}
           {dashboard && cardData && (
@@ -1146,7 +1356,7 @@ export default function CbomResults({
           )}
 
           {/* Findings */}
-          <Card>
+          <Card id="bom-findings">
             <CardHeader>
               <CardTitle>Cryptographic findings</CardTitle>
               <CardDescription>
@@ -1162,7 +1372,10 @@ export default function CbomResults({
                       type="search"
                       placeholder="Search by algorithm, description, location..."
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setRelatedFindingRefs([]);
+                        setSearchQuery(e.target.value);
+                      }}
                       className="pl-9 h-9 cursor-text"
                       aria-label="Search findings table"
                     />
@@ -1270,7 +1483,9 @@ export default function CbomResults({
                     {filteredFindings.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={10} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                          No findings match your filters.
+                          {relatedFindingRefs.length > 0
+                            ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
+                            : "No findings match your filters."}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1312,7 +1527,7 @@ export default function CbomResults({
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className={getStrengthBadgeClass(finding.crypto_strength)}>
-                                {finding.crypto_strength ?? "unknown"}
+                                {finding.crypto_strength ?? "—"}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -1440,7 +1655,7 @@ export default function CbomResults({
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Crypto strength</div>
-                      <Badge variant="outline" className={getStrengthBadgeClass(selectedFinding.crypto_strength)}>{selectedFinding.crypto_strength ?? "unknown"}</Badge>
+                      <Badge variant="outline" className={getStrengthBadgeClass(selectedFinding.crypto_strength)}>{selectedFinding.crypto_strength ?? "—"}</Badge>
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Key size</div>

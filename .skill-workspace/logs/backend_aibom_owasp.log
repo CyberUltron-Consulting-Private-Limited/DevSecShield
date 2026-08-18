@@ -1,0 +1,405 @@
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+INFO:     Started server process [89334]
+INFO:     Waiting for application startup.
+✓ Threadpool tokens increased to 100
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49248 - "GET /docs HTTP/1.1" 200 OK
+Traceback (most recent call last):
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/bin/uvicorn", line 10, in <module>
+    sys.exit(main())
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/click/core.py", line 1485, in __call__
+    return self.main(*args, **kwargs)
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/click/core.py", line 1406, in main
+    rv = self.invoke(ctx)
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/click/core.py", line 1269, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/click/core.py", line 824, in invoke
+    return callback(*args, **kwargs)
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/main.py", line 423, in main
+    run(
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/main.py", line 593, in run
+    server.run()
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/server.py", line 67, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/_compat.py", line 60, in asyncio_run
+    return loop.run_until_complete(main)
+  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/server.py", line 71, in serve
+    await self._serve(sockets)
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/server.py", line 78, in _serve
+    config.load()
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/config.py", line 439, in load
+    self.loaded_app = import_from_string(self.app)
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/importer.py", line 22, in import_from_string
+    raise exc from None
+  File "/Users/anshsinghal/Desktop/DevSecShield/backend/.venv/lib/python3.10/site-packages/uvicorn/importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "/Users/anshsinghal/.local/share/uv/python/cpython-3.10-macos-aarch64-none/lib/python3.10/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 992, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1004, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'backend'
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+INFO:     Started server process [89905]
+INFO:     Waiting for application startup.
+✓ Threadpool tokens increased to 100
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49261 - "GET /docs HTTP/1.1" 200 OK
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+INFO:     Started server process [90254]
+INFO:     Waiting for application startup.
+✓ Threadpool tokens increased to 100
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:19:08.000983 🟩
+SCAN_STATUS: success TASK_ID: 7730a524-7da9-4c7e-9801-d244e9eff0f1
+Scan id: 95 found in main database
+0 messages found for scan: 95
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49275 - "GET /1/ai_bom/scan/95 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49308 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /1/cbom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:20:20.163323 🟩
+22 cbom scans found for team: 1
+INFO:     127.0.0.1:49342 - "GET /1/cbom/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49342 - "OPTIONS /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:20:25.157826 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49342 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49354 - "GET /docs HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:20:42.641826 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49356 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:20:42.724649 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 92 found in main database
+0 messages found for scan: 92
+INFO:     127.0.0.1:49357 - "GET /1/cbom/scan/92 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:20:42.740055 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 93 found in main database
+0 messages found for scan: 93
+INFO:     127.0.0.1:49358 - "GET /1/cbom/scan/93 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:21:11.139046 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49368 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49470 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49471 - "OPTIONS /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:22:29.962227 🟩
+INFO:     127.0.0.1:49470 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:22:29.986249 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49472 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:22:30.075356 🟩
+INFO:     127.0.0.1:49471 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:22:50.966893 🟩
+INFO:     127.0.0.1:49534 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:22:51.006712 🟩
+INFO:     127.0.0.1:49535 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:22:51.024493 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49536 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:23:12.437468 🟩
+INFO:     127.0.0.1:49596 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:23:12.466724 🟩
+INFO:     127.0.0.1:49597 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:23:12.484196 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49598 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.354739 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49658 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.428169 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 93 found in main database
+0 messages found for scan: 93
+INFO:     127.0.0.1:49659 - "GET /1/cbom/scan/93 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.444396 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 92 found in main database
+0 messages found for scan: 92
+INFO:     127.0.0.1:49660 - "GET /1/cbom/scan/92 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.457192 🟩
+INFO:     127.0.0.1:49661 - "GET /1/cbom/scan/91 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.465920 🟩
+INFO:     127.0.0.1:49662 - "GET /1/cbom/scan/90 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.474761 🟩
+INFO:     127.0.0.1:49663 - "GET /1/cbom/scan/89 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.483463 🟩
+INFO:     127.0.0.1:49664 - "GET /1/cbom/scan/88 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.491402 🟩
+INFO:     127.0.0.1:49665 - "GET /1/cbom/scan/87 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.499100 🟩
+INFO:     127.0.0.1:49666 - "GET /1/cbom/scan/86 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.507039 🟩
+INFO:     127.0.0.1:49667 - "GET /1/cbom/scan/85 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.514441 🟩
+INFO:     127.0.0.1:49668 - "GET /1/cbom/scan/84 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.521466 🟩
+INFO:     127.0.0.1:49669 - "GET /1/cbom/scan/83 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.531907 🟩
+INFO:     127.0.0.1:49670 - "GET /1/cbom/scan/82 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.542920 🟩
+SCAN_STATUS: success TASK_ID: b76c4757-90ec-4bcf-bfe6-e71a4b712aef
+Scan id: 81 found in main database
+0 messages found for scan: 81
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49671 - "GET /1/cbom/scan/81 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.637836 🟩
+SCAN_STATUS: success TASK_ID: 4d249405-5728-4b7f-9084-adf0c2b84096
+Scan id: 80 found in main database
+0 messages found for scan: 80
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49672 - "GET /1/cbom/scan/80 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:44.708583 🟩
+SCAN_STATUS: success TASK_ID: 7f26ff9a-a2c5-464f-a375-d83e9922dab1
+Scan id: 79 found in main database
+0 messages found for scan: 79
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49673 - "GET /1/cbom/scan/79 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.155262 🟩
+SCAN_STATUS: success TASK_ID: 48f96fcf-3a6b-4f09-9ded-027923b34351
+Scan id: 78 found in main database
+0 messages found for scan: 78
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49674 - "GET /1/cbom/scan/78 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.198142 🟩
+SCAN_STATUS: success TASK_ID: 6484fe0e-305c-4728-8f47-2447585f68ee
+Scan id: 77 found in main database
+0 messages found for scan: 77
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49675 - "GET /1/cbom/scan/77 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.264938 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 76 found in main database
+0 messages found for scan: 76
+INFO:     127.0.0.1:49676 - "GET /1/cbom/scan/76 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.279208 🟩
+INFO:     127.0.0.1:49677 - "GET /1/cbom/scan/75 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.288284 🟩
+INFO:     127.0.0.1:49678 - "GET /1/cbom/scan/74 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.298299 🟩
+INFO:     127.0.0.1:49679 - "GET /1/cbom/scan/73 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.340213 🟩
+INFO:     127.0.0.1:49680 - "GET /1/cbom/scan/72 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:24:45.431888 🟩
+INFO:     127.0.0.1:49681 - "GET /1/cbom/scan/71 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:25:07.602934 🟩
+SCAN_STATUS: success TASK_ID: 48f96fcf-3a6b-4f09-9ded-027923b34351
+Scan id: 78 found in main database
+0 messages found for scan: 78
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49687 - "GET /1/cbom/scan/78 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:25:07.659186 🟩
+SCAN_STATUS: success TASK_ID: b76c4757-90ec-4bcf-bfe6-e71a4b712aef
+Scan id: 81 found in main database
+0 messages found for scan: 81
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49688 - "GET /1/cbom/scan/81 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:25:07.750522 🟩
+SCAN_STATUS: success TASK_ID: 4d249405-5728-4b7f-9084-adf0c2b84096
+Scan id: 80 found in main database
+0 messages found for scan: 80
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49689 - "GET /1/cbom/scan/80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49861 - "OPTIONS /1/sbom_sca/scans HTTP/1.1" 200 OK
+Error: Signature has expired. 🔴
+INFO:     127.0.0.1:49861 - "GET /1/sbom_sca/scans HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:49861 - "OPTIONS /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49861 - "POST /refresh HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:31:32.778682 🟩
+41 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:49861 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49868 - "OPTIONS /1/sbom_sca/scan/91 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:31:41.766583 🟩
+SCAN_STATUS: success TASK_ID: 890b49cb-12ae-4f53-8be8-6fdee6d72f5e
+Scan id: 91 found in main database
+0 messages found for scan: 91
+INFO:     127.0.0.1:49868 - "GET /1/sbom_sca/scan/91 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49896 - "OPTIONS /1/cbom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:32:36.295911 🟩
+22 cbom scans found for team: 1
+INFO:     127.0.0.1:49896 - "GET /1/cbom/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49921 - "OPTIONS /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:32:48.963283 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:49921 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50053 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50054 - "OPTIONS /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:34:25.052405 🟩
+INFO:     127.0.0.1:50053 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50055 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:34:25.073446 🟩
+INFO:     127.0.0.1:50054 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:34:25.085137 🟩
+6494 findings found
+INFO:     127.0.0.1:50055 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:39:23.774338 🟩
+INFO:     127.0.0.1:50175 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:39:23.803010 🟩
+INFO:     127.0.0.1:50176 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:39:23.839894 🟩
+6494 findings found
+INFO:     127.0.0.1:50177 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:39:31.671970 🟩
+22 cbom scans found for team: 1
+INFO:     127.0.0.1:50190 - "GET /1/cbom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:39:36.400254 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:50190 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:40:56.542646 🟩
+INFO:     127.0.0.1:50239 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:40:56.667354 🟩
+INFO:     127.0.0.1:50240 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:40:56.707150 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:50241 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:40:57.865497 🟩
+INFO:     127.0.0.1:50241 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:40:57.945020 🟩
+INFO:     127.0.0.1:50240 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:40:57.974118 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:50239 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:41:34.941326 🟩
+SCAN_STATUS: success TASK_ID: 4e56a48a-cfdb-4e31-8784-171628a8c945
+Scan id: 94 found in main database
+0 messages found for scan: 94
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:50265 - "GET /1/cbom/scan/94 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:41:35.017942 🟩
+SCAN_STATUS: success TASK_ID: 7730a524-7da9-4c7e-9801-d244e9eff0f1
+Scan id: 95 found in main database
+0 messages found for scan: 95
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:50266 - "GET /1/ai_bom/scan/95 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 11:41:35.104761 🟩
+41 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:50267 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50268 - "GET /1/dashboard HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50269 - "GET /1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50270 - "GET /docs HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+Shutting down...
+INFO:     Application shutdown complete.
+INFO:     Finished server process [90254]

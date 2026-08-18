@@ -1,3 +1,8 @@
+"""DEPRECATED: Guardrails scanner runner used by the Celery worker.
+
+Retained for legacy Guardrails scans. Product UI no longer exposes Guardrails.
+"""
+
 from typing import Literal
 from llm_guard.input_scanners import BanTopics
 from llm_guard import scan_prompt

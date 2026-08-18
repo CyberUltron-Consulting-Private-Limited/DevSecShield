@@ -26,9 +26,11 @@ Design (mirrors the AIBOM adapter; lanes intact):
   branch (``backend/utilities/dashboard/scan.py``) already read —
   ``algorithm_name`` / ``algorithm_type`` / ``crypto_strength`` / ``quantum_safe``
   / ``suggested_fix`` / ``compliance_controls`` / ``owasp_top_10`` / ``snippet`` —
-  so the pre-existing CBOM dashboard + findings pages stay populated. The
-  enrichment is purely derived from the normalized row's own fields (no engine
-  re-walk), keeping the adapter deterministic and decoupled from the host.
+  so the pre-existing CBOM dashboard + findings pages stay populated. Flagged
+  rows (weak / quantum-vulnerable / finding_codes) get deterministic OWASP A02
+  + ISO 27001 A.10 / NIST SC maps; clean inventory stays ``{}``. The enrichment
+  is purely derived from the normalized row's own fields (no engine re-walk /
+  LLM), keeping the adapter deterministic and decoupled from the host.
 """
 
 from __future__ import annotations
@@ -53,8 +55,9 @@ _ASSET_TYPE_TO_LEGACY = {
     "protocol": "protocol",
 }
 
-# algorithm_type values that have NO quantum-readiness meaning — the dashboard
-# buckets their ``quantum_safe`` (None) as "unknown" rather than safe/vulnerable.
+# algorithm_type values that have NO quantum-readiness meaning — adapter sets
+# ``quantum_safe`` to None (N/A). The dashboard EXCLUDES those rows from the
+# quantum_readiness Safe/Vulnerable buckets (never counts them as "unknown").
 _QUANTUM_NA_TYPES = frozenset({"certificate", "protocol", "key"})
 
 
@@ -65,7 +68,7 @@ def _legacy_algorithm_type(row: dict[str, Any]) -> str:
         return _ASSET_TYPE_TO_LEGACY[asset_type]
     if asset_type == "algorithm":
         return row.get("primitive") or "algorithm"
-    return "unknown"
+    return "other"
 
 
 def _legacy_strength(row: dict[str, Any]) -> str:
@@ -109,6 +112,39 @@ def _suggested_fix(row: dict[str, Any]) -> str:
     )
 
 
+def _is_flagged_crypto(row: dict[str, Any]) -> bool:
+    """True when the row carries a weakness, quantum, or finding-code signal."""
+    if row.get("weak") or row.get("quantum_vulnerable"):
+        return True
+    codes = row.get("finding_codes") or []
+    return bool(codes)
+
+
+# Display labels must match frontend/lib/owasp-compliance-labels.ts so the
+# dashboard aggregation key (the map VALUE) renders correctly on CbomResults.
+_OWASP_A02 = {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures",
+}
+_COMPLIANCE_CRYPTO = {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection",
+}
+
+
+def _legacy_owasp(row: dict[str, Any]) -> dict[str, str]:
+    """Map flagged crypto rows to OWASP A02; leave clean inventory empty."""
+    if not _is_flagged_crypto(row):
+        return {}
+    return dict(_OWASP_A02)
+
+
+def _legacy_compliance(row: dict[str, Any]) -> dict[str, str]:
+    """Map flagged crypto rows to ISO 27001 A.10 + NIST SC; clean rows empty."""
+    if not _is_flagged_crypto(row):
+        return {}
+    return dict(_COMPLIANCE_CRYPTO)
+
+
 def _enrich(row: dict[str, Any]) -> dict[str, Any]:
     """Add the legacy host-dashboard / findings keys to a normalized row.
 
@@ -125,11 +161,11 @@ def _enrich(row: dict[str, Any]) -> dict[str, Any]:
             "crypto_strength": _legacy_strength(row),
             "quantum_safe": quantum_safe,
             "suggested_fix": _suggested_fix(out),
-            # CBOM surfaces compliance via ``cbom_compliance`` + the dedicated
-            # charts, not per-row legacy maps; keep these present-but-empty so the
-            # dashboard's per-row aggregation loops are no-ops rather than KeyErrors.
-            "compliance_controls": {},
-            "owasp_top_10": {},
+            # Per-row maps feed the legacy CbomResults OWASP / Compliance cards
+            # (backend dashboard aggregates the VALUES). Flagged rows get
+            # deterministic A02 + crypto controls; clean inventory stays {}.
+            "compliance_controls": _legacy_compliance(row),
+            "owasp_top_10": _legacy_owasp(row),
             "snippet": "",
         }
     )

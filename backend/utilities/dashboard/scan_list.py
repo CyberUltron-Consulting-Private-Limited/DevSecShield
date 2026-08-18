@@ -6,6 +6,11 @@ from fastapi import HTTPException , status
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics, get_mttr_per_day
+from backend.utilities.dashboard.sbom_license import (
+    LICENSE_CATEGORIES,
+    resolve_sbom_license_category,
+    resolve_sbom_reachability,
+)
 
 console = Console()
 
@@ -921,7 +926,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         - total license risks ( total high and medium risk licenses )
         - total high risk licenses 
         note : Risk level splitup for licenses : 
-                Low risk ---> permissive , public_domain , unknown
+                Low risk ---> permissive , public_domain , not_declared
                 Medium risk ---> weak_copyleft , creative_commons , commercial
                 High risk ---> strong_copyleft , network_copyleft , source_available
         - average risk score ( based on weighted average of impact class of all vulnerabilities )
@@ -933,7 +938,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
             "reachable" : average_risk_score_reachable,
             "potentially_reachable" : average_risk_score_potentially_reachable,
             "not_reachable" : average_risk_score_not_reachable,
-            "unknown" : average_risk_score_unknown,
+            "not_assessed" : average_risk_score_not_assessed,
         }
     9. Policy Compliance Data : ( Card with a list of progress bars and icons )
         {
@@ -968,10 +973,7 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     license_high_risk = {"strong_copyleft", "network_copyleft", "source_available"}
     license_medium_risk = {"weak_copyleft", "creative_commons", "commercial"}
     # All license categories for distribution (all shown with default 0)
-    license_all_categories = [
-        "permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial",
-        "strong_copyleft", "network_copyleft", "source_available", "unknown",
-    ]
+    license_all_categories = list(LICENSE_CATEGORIES)
 
     for scan in sbom_scans:
         if scan.scan_status != "success":
@@ -992,11 +994,11 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
             elif imp == "low":
                 temp_sev["low"] += 1
             severity_counts[imp] = severity_counts.get(imp, 0) + 1
-            reach = (item.get("reachability") or "unknown").lower().strip().replace(" ", "_")
+            reach = resolve_sbom_reachability(item)
             reachability_counts[reach] += 1
             if reach == "reachable":
                 total_reachable += 1
-            lic = (item.get("license_type") or "unknown").lower().strip()
+            lic = resolve_sbom_license_category(item)
             license_counts[lic] += 1
             cc = item.get("compliance_controls")
             if isinstance(cc, dict):
@@ -1037,12 +1039,18 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "medium": severity_counts["medium"],
         "low": severity_counts["low"],
     }
-    other_reach = sum(v for k, v in reachability_counts.items() if k not in ("not_reachable", "potentially_reachable", "reachable", "unknown"))
+    other_reach = sum(
+        v
+        for k, v in reachability_counts.items()
+        if k not in ("not_reachable", "potentially_reachable", "reachable", "not_assessed", "unknown")
+    )
     reachability_distribution = {
         "not_reachable": reachability_counts.get("not_reachable", 0),
         "potentially_reachable": reachability_counts.get("potentially_reachable", 0),
         "reachable": reachability_counts.get("reachable", 0),
-        "unknown": reachability_counts.get("unknown", 0) + other_reach,
+        "not_assessed": reachability_counts.get("not_assessed", 0)
+        + reachability_counts.get("unknown", 0)
+        + other_reach,
     }
     vulnerability_trends_over_time = dict(sorted(vulnerability_trends_over_time.items()))
     licenses_distribution = {k: license_counts.get(k, 0) for k in license_all_categories}
@@ -1051,9 +1059,9 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
     for item in all_results:
         top_vulnerabilities_by_risk_score.append({
             "dependency": item.get("dependency") or item.get("title") or "—",
-            "reachability": item.get("reachability") or "unknown",
+            "reachability": resolve_sbom_reachability(item),
             "dependency_type": item.get("dependency_type") or "—",
-            "license_type": item.get("license_type") or "unknown",
+            "license_type": resolve_sbom_license_category(item),
             "impact": item.get("impact") or "low",
         })
     top_vulnerabilities_by_risk_score.sort(
@@ -1075,10 +1083,14 @@ def generate_sbom_sca_dashboard_data(scans: list[Scan]) -> dict:
         "total_reachable_issues": total_reachable,
     }
     average_risk_score_per_reachability_level = {}
-    for r in ["reachable", "potentially_reachable", "not_reachable", "unknown"]:
+    for r in ["reachable", "potentially_reachable", "not_reachable", "not_assessed"]:
         cnt = reachability_risk_count.get(r, 0)
+        total = reachability_risk_sum.get(r, 0.0)
+        if r == "not_assessed":
+            cnt += reachability_risk_count.get("unknown", 0)
+            total += reachability_risk_sum.get("unknown", 0.0)
         if cnt > 0:
-            average_risk_score_per_reachability_level[r] = round(reachability_risk_sum[r] / cnt, 1)
+            average_risk_score_per_reachability_level[r] = round(total / cnt, 1)
         else:
             average_risk_score_per_reachability_level[r] = 0.0
 
@@ -1666,8 +1678,14 @@ def generate_llm_dashboard_data(scans: list[Scan]) -> dict:
     }
 
 
-# CBOM uses the app-wide 0-10 risk scale, consistent across every CBOM surface
-# (findings, single-scan dashboard, list-item). Unknown/missing impact maps to 0.
+from backend.utilities.dashboard.aibom_license import (
+    is_governance_license,
+    is_unlicensed_library_gap,
+    resolve_aibom_license,
+)
+from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
+
 CBOM_RISK_SCORE_FOR_IMPACT = {"critical": 9, "high": 7, "medium": 5, "low": 2}
 
 
@@ -1683,7 +1701,7 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
     severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     algorithm_type_distribution: dict[str, int] = defaultdict(int)
     strength_distribution = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
-    quantum_readiness = {"quantum_safe": 0, "quantum_vulnerable": 0, "unknown": 0}
+    quantum_readiness = {"quantum_safe": 0, "quantum_vulnerable": 0}
     owasp_top_10_metrics: dict[str, int] = defaultdict(int)
     compliance_controls_metrics: dict[str, int] = defaultdict(int)
     top_risks_entries: list[dict] = []
@@ -1709,21 +1727,24 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
             if impact_lower in severity_distribution:
                 severity_distribution[impact_lower] += 1
 
-            algo_type = vuln.get("algorithm_type", "unknown")
+            algo_type = vuln.get("algorithm_type") or "other"
+            if str(algo_type).lower() in ("unknown", "none", "null", ""):
+                algo_type = "other"
             algorithm_type_distribution[algo_type] += 1
 
-            strength = vuln.get("crypto_strength", "unknown")
+            strength = vuln.get("crypto_strength") or "not-applicable"
+            if str(strength).lower() in ("unknown", "none", "null", ""):
+                strength = "not-applicable"
             if strength in strength_distribution:
                 strength_distribution[strength] += 1
 
+            # Algorithm-only: boolean quantum_safe; N/A (null) rows excluded.
             qs = vuln.get("quantum_safe")
             if qs is True:
                 quantum_readiness["quantum_safe"] += 1
             elif qs is False:
                 quantum_readiness["quantum_vulnerable"] += 1
                 total_quantum_vulnerable += 1
-            else:
-                quantum_readiness["unknown"] += 1
 
             if strength == "weak":
                 total_weak += 1
@@ -1741,7 +1762,7 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
             for _key, value in (vuln.get("compliance_controls") or {}).items():
                 compliance_controls_metrics[value] += 1
 
-            risk_score = CBOM_RISK_SCORE_FOR_IMPACT.get(impact_lower, 0)
+            risk_score = cbom_finding_risk_score(vuln)
             top_risks_entries.append({
                 "algorithm_name": vuln.get("algorithm_name", vuln.get("title", "Unknown")),
                 "algorithm_type": algo_type,
@@ -1751,9 +1772,30 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
                 "risk_score": risk_score,
             })
 
+        # Framework FAIL counts from cbom_compliance (mirrors single-scan CBOM dashboard)
+        _cbom_compliance = (
+            scan.scan_data.get("cbom_compliance")
+            if isinstance(scan.scan_data, dict)
+            else None
+        )
+        if isinstance(_cbom_compliance, dict):
+            for _fw_key, _fw in _cbom_compliance.items():
+                if _fw_key == "disclaimer" or not isinstance(_fw, dict):
+                    continue
+                _fail = _fw.get("fail") or 0
+                if _fail:
+                    _label = _fw.get("title") or _fw_key
+                    compliance_controls_metrics[_label] += int(_fail)
+
+    quantum_readiness_denominator = (
+        quantum_readiness["quantum_safe"] + quantum_readiness["quantum_vulnerable"]
+    )
     quantum_readiness_score = 0.0
-    if total_crypto_assets > 0:
-        quantum_readiness_score = round((quantum_readiness["quantum_safe"] / total_crypto_assets) * 100, 1)
+    if quantum_readiness_denominator > 0:
+        quantum_readiness_score = round(
+            (quantum_readiness["quantum_safe"] / quantum_readiness_denominator) * 100,
+            1,
+        )
 
     total_findings = sum(severity_distribution.values())
     if total_findings > 0:
@@ -1864,10 +1906,10 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             component_type = (asset.get("component_type") or "unknown").lower()
             asset_type_distribution[component_type] += 1
 
-            provider = asset.get("source") or "unknown"
+            provider = resolve_aibom_provider(asset)
             provider_distribution[provider] += 1
 
-            license_type = asset.get("license") or "unknown"
+            license_type = resolve_aibom_license(asset)
             license_distribution[license_type] += 1
 
             risk_category = asset.get("risk_category") or "unknown"
@@ -1891,22 +1933,25 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             if impact_lower in ("critical", "high"):
                 total_high_risk_assets += 1
 
-            # unlicensed assets (license missing / unknown)
-            lic = (asset.get("license") or "").lower().strip()
-            if not lic or lic == "unknown":
+            # unlicensed assets = libraries still lacking a usable SPDX license
+            if (
+                component_type not in AI_BOM_MODEL_COMPONENT_TYPES
+                and component_type != "external_provider"
+                and is_unlicensed_library_gap(license_type)
+            ):
                 total_unlicensed_assets += 1
 
-            # governance readiness: assets with both license and model card
-            has_license = bool(lic) and lic != "unknown"
+            # governance readiness: assets with both declared license and model card
+            has_license = is_governance_license(license_type)
             has_card = bool(asset.get("model_card") or asset.get("card"))
             if has_license and has_card:
                 assets_with_license_and_card += 1
 
-            # owasp top 10 llm
+            # owasp top 10 llm — aggregate by short LLM0x code (key)
             owasp_llm = asset.get("owasp_top_10_llm") or {}
             if isinstance(owasp_llm, dict):
-                for _k, value in owasp_llm.items():
-                    owasp_top_10_llm_issues[value] += 1
+                for key in owasp_llm:
+                    owasp_top_10_llm_issues[str(key)] += 1
             elif isinstance(owasp_llm, list):
                 for value in owasp_llm:
                     owasp_top_10_llm_issues[str(value)] += 1
@@ -1927,6 +1972,21 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
                 "license_type": license_type,
                 "impact": impact,
             })
+
+        # Framework FAIL counts from ai_bom_compliance (mirrors single-scan dashboard)
+        _ai_bom_compliance = (
+            scan.scan_data.get("ai_bom_compliance")
+            if isinstance(scan.scan_data, dict)
+            else None
+        )
+        if isinstance(_ai_bom_compliance, dict):
+            for _fw_key, _fw in _ai_bom_compliance.items():
+                if _fw_key == "disclaimer" or not isinstance(_fw, dict):
+                    continue
+                _fail = _fw.get("fail") or 0
+                if _fail:
+                    _label = _fw.get("title") or _fw_key
+                    compliance_controls[_label] += int(_fail)
 
     impact_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 

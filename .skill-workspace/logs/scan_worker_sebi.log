@@ -1,0 +1,848 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- sebicscrf@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 16:01:48
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x11475be60
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 16:01:48,341: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 16:01:48,351: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 16:01:49,397: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 16:01:49,398: INFO/MainProcess] mingle: sync complete
+[2026-08-09 16:01:49,424: INFO/MainProcess] sebicscrf@Anshs-MacBook-Pro.local ready.
+[2026-08-09 16:01:49,425: INFO/MainProcess] Task scan_worker.cbom_estimation[eb0f13ad-0f48-407e-a517-c9a76201e40c] received
+[2026-08-09 16:01:49,471: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_doa1c5lw Branch:master
+[2026-08-09 16:01:50,693: WARNING/MainProcess] CBOM estimation: 26 files, 0.29 MB across 22 extension types
+[2026-08-09 16:01:50,694: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:01:50,694: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:01:50,694: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:01:50,704: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:01:50,706: INFO/MainProcess] Task scan_worker.cbom_estimation[eb0f13ad-0f48-407e-a517-c9a76201e40c] succeeded in 1.281235166999977s: 0.6179495816025438
+[2026-08-09 16:01:51,987: INFO/MainProcess] Events of group {task} enabled by remote.
+[2026-08-09 16:11:48,929: INFO/MainProcess] Task scan_worker.cbom_estimation[180edf45-a130-48eb-ba99-fcecf459d2a1] received
+[2026-08-09 16:11:48,940: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_27r62_b_ Branch:master
+[2026-08-09 16:11:50,158: WARNING/MainProcess] CBOM estimation: 26 files, 0.29 MB across 22 extension types
+[2026-08-09 16:11:50,158: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:11:50,158: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:11:50,158: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:11:50,167: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:11:50,170: INFO/MainProcess] Task scan_worker.cbom_estimation[180edf45-a130-48eb-ba99-fcecf459d2a1] succeeded in 1.2394326670037117s: 0.6179495816025438
+[2026-08-09 16:11:51,020: INFO/MainProcess] Task scan_worker.cbom[6484fe0e-305c-4728-8f47-2447585f68ee] received
+[2026-08-09 16:11:51,195: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_cf77mm2t Branch:master
+[2026-08-09 16:11:52,937: INFO/MainProcess] Task scan_worker.cbom[6484fe0e-305c-4728-8f47-2447585f68ee] succeeded in 1.9164342910225969s: {'results': [{'title': 'SSH', 'impact': 'High', 'asset_type': 'protocol', 'primitive': None, 'key_size': None, 'security_strength_bits': None, 'mode': None, 'curve': None, 'protocol_version': None, 'not_valid_after': None, 'quantum_vulnerable': False, 'nist_quantum_security_level': None, 'pqc_migration_target': None, 'pqc_migration_roadmap': None, 'parameter_set': None, 'hybrid': False, 'weak': True, 'finding_codes': [...], 'description': 'Weak cryptographic suite(s) on SSH: ssh-dss (ssh-dss host key — 1024-bit DSA, weak); ssh-rsa (ssh-rsa host key — SHA-1 signature; use rsa-sha2-256/512). Disable these and offer only AEAD suites (TLS 1.2+ ECDHE + AES-GCM/ChaCha20-Poly1305; SSH curve25519 + aes-gcm + hmac-sha2; IKEv2 aes-gcm + modp2048+/ECP) per PCI-DSS 4.0 / NIST SP 800-52r2.', 'location': 'jwt/utils.py', 'algorithm_name': 'SSH', 'algorithm_type': 'protocol', 'crypto_strength': 'weak', 'quantum_safe': None, 'suggested_fix': 'Replace this weak cryptographic asset with a current, standards-approved algorithm...', ...}]}
+[2026-08-09 16:11:56,286: INFO/MainProcess] Task scan_worker.cbom_estimation[4e685d44-eaf5-44de-8e73-1fa427cbe7bd] received
+[2026-08-09 16:11:56,289: WARNING/MainProcess] 📦 Cloning https://github.com/pyca/pyopenssl → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_aa30p458 Branch:main
+[2026-08-09 16:11:57,503: WARNING/MainProcess] CBOM estimation: 18 files, 0.49 MB across 22 extension types
+[2026-08-09 16:11:57,503: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:11:57,503: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:11:57,503: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:11:57,510: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:11:57,513: INFO/MainProcess] Task scan_worker.cbom_estimation[4e685d44-eaf5-44de-8e73-1fa427cbe7bd] succeeded in 1.2264589999977034s: 1.0357695584091844
+[2026-08-09 16:11:58,349: INFO/MainProcess] Task scan_worker.cbom[48f96fcf-3a6b-4f09-9ded-027923b34351] received
+[2026-08-09 16:11:58,353: WARNING/MainProcess] 📦 Cloning https://github.com/pyca/pyopenssl → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_noclajno Branch:main
+[2026-08-09 16:12:00,386: INFO/MainProcess] Task scan_worker.cbom[48f96fcf-3a6b-4f09-9ded-027923b34351] succeeded in 2.036097709002206s: {'results': [{'title': 'DSA', 'impact': 'Medium', 'asset_type': 'algorithm', 'primitive': 'signature', 'key_size': None, 'security_strength_bits': None, 'mode': None, 'curve': None, 'protocol_version': None, 'not_valid_after': None, 'quantum_vulnerable': True, 'nist_quantum_security_level': 0, 'pqc_migration_target': 'ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)', 'pqc_migration_roadmap': 'ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)', 'parameter_set': None, 'hybrid': False, 'weak': False, 'finding_codes': [...], 'description': 'Quantum-vulnerable algorithm DSA: broken by Shor\'s algorithm on a cryptographically-relevant quantum computer (nistQuantumSecurityLevel 0). NIST deprecates RSA/ECC/DH after 2030 and disallows them from 2035 (NIST SP 1800-38 / IR 8547); CNSA 2.0 NSS milestones: software/firmware signing 2025, networking 2030, all NSS by 2033-2035; migrate to ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204) (target family ML-DSA (FIPS 204) / SLH-DSA (FIPS 205)).', 'location': 'src/OpenSSL/crypto.py', 'algorithm_n...', ...}]}
+[2026-08-09 16:12:03,598: INFO/MainProcess] Task scan_worker.cbom_estimation[b02cb141-e70e-4ec9-9024-05689ac159e8] received
+[2026-08-09 16:12:03,602: WARNING/MainProcess] 📦 Cloning https://github.com/pyca/cryptography → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_k9cas0mx Branch:main
+[2026-08-09 16:12:09,001: WARNING/MainProcess] CBOM estimation: 357 files, 3.81 MB across 22 extension types
+[2026-08-09 16:12:09,002: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:12:09,002: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:12:09,002: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:12:09,180: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:12:09,183: INFO/MainProcess] Task scan_worker.cbom_estimation[b02cb141-e70e-4ec9-9024-05689ac159e8] succeeded in 5.583719417016255s: 7.676400280455082
+[2026-08-09 16:12:09,692: INFO/MainProcess] Task scan_worker.cbom[7f26ff9a-a2c5-464f-a375-d83e9922dab1] received
+[2026-08-09 16:12:09,695: WARNING/MainProcess] 📦 Cloning https://github.com/pyca/cryptography → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_siv3v5qd Branch:main
+[2026-08-09 16:12:23,481: INFO/MainProcess] Task scan_worker.cbom[7f26ff9a-a2c5-464f-a375-d83e9922dab1] succeeded in 13.788660083984723s: {'results': [{'title': 'aia_ca_issuers.pem', 'impact': 'Critical', 'asset_type': 'certificate', 'primitive': None, 'key_size': '2048', 'security_strength_bits': None, 'mode': None, 'curve': None, 'protocol_version': None, 'not_valid_after': '2016-05-03T16:01:35Z', 'quantum_vulnerable': False, 'nist_quantum_security_level': None, 'pqc_migration_target': None, 'pqc_migration_roadmap': None, 'parameter_set': None, 'hybrid': False, 'weak': True, 'finding_codes': [...], 'description': 'Expired X.509 certificate aia_ca_issuers.pem: notValidAfter 2016-05-03 is in the past; rotate/reissue and re-pin trust anchors before relying on it.; Certificate aia_ca_issuers.pem is signed with sha1WithRSAEncryption: MD5/SHA-1 digests are collision-broken (chosen-prefix), so the certificate can be forged; reissue with a SHA-256+ signature.', 'location': 'vectors/cryptography_vectors/x509/custom/aia_ca_issuers.pem', 'algorithm_name': 'aia_ca_issuers.pem', 'algorithm_type': 'certificate', 'crypto_strength': 'weak', 'quantum_safe': N..., ...}]}
+[2026-08-09 16:12:25,621: INFO/MainProcess] Task scan_worker.cbom_estimation[3b41edfd-c9b6-4e8c-be8c-d3cd4f464596] received
+[2026-08-09 16:12:25,625: WARNING/MainProcess] 📦 Cloning https://github.com/mitmproxy/mitmproxy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_5xfccbmv Branch:main
+[2026-08-09 16:12:28,219: WARNING/MainProcess] CBOM estimation: 808 files, 5.06 MB across 22 extension types
+[2026-08-09 16:12:28,220: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:12:28,220: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:12:28,220: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:12:28,361: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:12:28,362: INFO/MainProcess] Task scan_worker.cbom_estimation[3b41edfd-c9b6-4e8c-be8c-d3cd4f464596] succeeded in 2.7407352500013076s: 10.172318554380864
+[2026-08-09 16:12:29,711: INFO/MainProcess] Task scan_worker.cbom[4d249405-5728-4b7f-9084-adf0c2b84096] received
+[2026-08-09 16:12:29,715: WARNING/MainProcess] 📦 Cloning https://github.com/mitmproxy/mitmproxy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_0zua_omd Branch:main
+[2026-08-09 16:12:40,933: INFO/MainProcess] Task scan_worker.cbom[4d249405-5728-4b7f-9084-adf0c2b84096] succeeded in 11.221957166999346s: {'results': [{'title': '127.0.0.1.pem', 'impact': 'Critical', 'asset_type': 'certificate', 'primitive': None, 'key_size': '2048', 'security_strength_bits': None, 'mode': None, 'curve': None, 'protocol_version': None, 'not_valid_after': '2015-10-17T08:50:10Z', 'quantum_vulnerable': False, 'nist_quantum_security_level': None, 'pqc_migration_target': None, 'pqc_migration_roadmap': None, 'parameter_set': None, 'hybrid': False, 'weak': True, 'finding_codes': [...], 'description': 'Expired X.509 certificate 127.0.0.1.pem: notValidAfter 2015-10-17 is in the past; rotate/reissue and re-pin trust anchors before relying on it.; Certificate 127.0.0.1.pem is signed with sha1WithRSAEncryption: MD5/SHA-1 digests are collision-broken (chosen-prefix), so the certificate can be forged; reissue with a SHA-256+ signature.', 'location': 'test/mitmproxy/data/clientcert/127.0.0.1.pem', 'algorithm_name': '127.0.0.1.pem', 'algorithm_type': 'certificate', 'crypto_strength': 'weak', 'quantum_safe': None, 'suggested_fix': 'Replace this...', ...}]}
+[2026-08-09 16:12:45,087: INFO/MainProcess] Task scan_worker.cbom_estimation[3f94dd51-ad49-4a7c-879c-cd461f0a32d8] received
+[2026-08-09 16:12:45,089: WARNING/MainProcess] 📦 Cloning https://github.com/paramiko/paramiko → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_qepn_1ma Branch:main
+[2026-08-09 16:12:46,352: WARNING/MainProcess] CBOM estimation: 69 files, 0.95 MB across 22 extension types
+[2026-08-09 16:12:46,352: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:12:46,352: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:12:46,352: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:12:46,366: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:12:46,369: INFO/MainProcess] Task scan_worker.cbom_estimation[3f94dd51-ad49-4a7c-879c-cd461f0a32d8] succeeded in 1.2819640829984564s: 1.9578028683457078
+[2026-08-09 16:12:47,174: INFO/MainProcess] Task scan_worker.cbom[b76c4757-90ec-4bcf-bfe6-e71a4b712aef] received
+[2026-08-09 16:12:47,178: WARNING/MainProcess] 📦 Cloning https://github.com/paramiko/paramiko → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_uk2obg9e Branch:main
+[2026-08-09 16:12:50,129: INFO/MainProcess] Task scan_worker.cbom[b76c4757-90ec-4bcf-bfe6-e71a4b712aef] succeeded in 2.9535940829955507s: {'results': [{'title': '3DES', 'impact': 'High', 'asset_type': 'algorithm', 'primitive': 'block-cipher', 'key_size': '168', 'security_strength_bits': 112, 'mode': None, 'curve': None, 'protocol_version': None, 'not_valid_after': None, 'quantum_vulnerable': False, 'nist_quantum_security_level': None, 'pqc_migration_target': None, 'pqc_migration_roadmap': None, 'parameter_set': None, 'hybrid': False, 'weak': True, 'finding_codes': [...], 'description': 'Broken or deprecated algorithm 3DES: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.', 'location': 'paramiko/pkey.py', 'algorithm_name': '3DES', 'algorithm_type': 'block-cipher', 'crypto_strength': 'weak', 'quantum_safe': True, 'suggested_fix': 'Replace this weak cryptographic asset with a current, standards-approved algorithm and parameterization.', 'compliance_controls': {...}, 'owasp_top_10': {...}, 'snippet': ''}, {'title': '3DES', 'impact': 'High', 'asset_type': 'algorithm', 'primitive': 'block-cipher', 'key_...', ...}]}
+[2026-08-09 16:12:52,428: INFO/MainProcess] Task scan_worker.ai_bom_estimation[75248e2e-6713-4a7b-9ae6-2c50db26ef39] received
+[2026-08-09 16:12:52,431: WARNING/MainProcess] 📦 Cloning https://github.com/karpathy/nanoGPT → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_8c0d19n0 Branch:master
+[2026-08-09 16:12:53,626: WARNING/MainProcess] AI-BOM estimation: 19 files, 0.06 MB across 28 extension types
+[2026-08-09 16:12:53,627: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:12:53,627: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:12:53,627: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:12:53,631: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:12:53,633: INFO/MainProcess] Task scan_worker.ai_bom_estimation[75248e2e-6713-4a7b-9ae6-2c50db26ef39] succeeded in 1.2044469169923104s: 0.17445478484961405
+[2026-08-09 16:12:54,498: INFO/MainProcess] Task scan_worker.ai_bom[73a2cf64-46e6-4980-99d3-f769c5bec7bc] received
+[2026-08-09 16:12:54,527: WARNING/MainProcess] 📦 Cloning https://github.com/karpathy/nanoGPT → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_n83u635l Branch:master
+[2026-08-09 16:12:55,945: INFO/MainProcess] Task scan_worker.ai_bom[73a2cf64-46e6-4980-99d3-f769c5bec7bc] succeeded in 1.4466252500133123s: {'results': [{'title': 'OpenAI', 'description': 'Inventoried AI component (service).', 'impact': 'Low', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'OpenAI', 'component_type': 'external_provider', 'model_card': None, 'framework': None, 'version': None, 'source': 'openai', 'license': None, 'location': '', 'snippet': '', 'risk_category': 'missing_model_card_lineage', 'owasp_top_10_llm': {...}}, {'title': 'datasets', 'description': 'Inventoried AI component (framework).', 'impact': 'Low', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'datasets', 'component_type': 'ml_framework', 'model_card': None, 'framework': 'datasets', 'version': None, 'source': 'unknown', 'license': 'Apache-2.0', 'location': '', 'snippet': '', 'risk_category': 'missing_model_card_lineage', 'owasp_top_10_llm': {...}}, {'title': 't...', ...}]}
+[2026-08-09 16:12:59,679: INFO/MainProcess] Task scan_worker.ai_bom_estimation[650ba619-29fa-4994-8d2b-1da7082adb90] received
+[2026-08-09 16:12:59,684: WARNING/MainProcess] 📦 Cloning https://github.com/langchain-ai/langchain → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_7evvfpqj Branch:master
+[2026-08-09 16:13:02,850: WARNING/MainProcess] AI-BOM estimation: 2711 files, 13.62 MB across 28 extension types
+[2026-08-09 16:13:02,850: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:13:02,851: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:13:02,851: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:13:03,050: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:13:03,052: INFO/MainProcess] Task scan_worker.ai_bom_estimation[650ba619-29fa-4994-8d2b-1da7082adb90] succeeded in 3.372456582990708s: 27.284506893614264
+[2026-08-09 16:13:03,773: INFO/MainProcess] Task scan_worker.ai_bom[fd9cbef4-a35d-4fb5-a13b-0bffc0c60ce2] received
+[2026-08-09 16:13:03,777: WARNING/MainProcess] 📦 Cloning https://github.com/langchain-ai/langchain → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_7y2qnja8 Branch:master
+[2026-08-09 16:13:41,041: INFO/MainProcess] Task scan_worker.ai_bom[fd9cbef4-a35d-4fb5-a13b-0bffc0c60ce2] succeeded in 37.26755674998276s: {'results': [{'title': 'generic_credential', 'description': 'Hardcoded generic_credential detected in libs/core/langchain_core/messages/block_translators/openai.py (__open…(28 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'generic_credential', 'component_type': 'external_provider', 'model_card': None, 'framework': None, 'version': None, 'source': 'unknown', 'license': None, 'location': 'libs/core/langchain_core/messages/block_translators/openai.py', 'snippet': '', 'risk_category': 'model_theft_exposure', 'owasp_top_10_llm': {...}}, {'title': 'generic_credential', 'description': 'Hardcoded generic_credential detected in libs/partners/openai/langchain_openai/chatgpt_oauth.py (https:…(35 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review...', ...}]}
+[2026-08-09 16:13:44,647: INFO/MainProcess] Task scan_worker.ai_bom_estimation[2f7a7c75-53bc-4cd1-96f4-0b3fff7ed1a8] received
+[2026-08-09 16:13:44,651: WARNING/MainProcess] 📦 Cloning https://github.com/microsoft/autogen → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_60yo18kd Branch:main
+[2026-08-09 16:13:47,911: WARNING/MainProcess] AI-BOM estimation: 998 files, 6.04 MB across 28 extension types
+[2026-08-09 16:13:47,912: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:13:47,912: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:13:47,912: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:13:48,052: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:13:48,056: INFO/MainProcess] Task scan_worker.ai_bom_estimation[2f7a7c75-53bc-4cd1-96f4-0b3fff7ed1a8] succeeded in 3.40897849999601s: 12.131444073179692
+[2026-08-09 16:13:48,733: INFO/MainProcess] Task scan_worker.ai_bom[284c2868-19f2-43c9-9b6e-489fd5a05984] received
+[2026-08-09 16:13:48,737: WARNING/MainProcess] 📦 Cloning https://github.com/microsoft/autogen → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_o5fayzh1 Branch:main
+[2026-08-09 16:14:08,966: INFO/MainProcess] Task scan_worker.ai_bom[284c2868-19f2-43c9-9b6e-489fd5a05984] succeeded in 20.232317042013165s: {'results': [{'title': 'openai_api_key', 'description': 'Hardcoded openai_api_key detected in python/packages/agbench/src/agbench/linter/coders/oai_coder.py (sk-com…(18 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'openai_api_key', 'component_type': 'external_provider', 'model_card': None, 'framework': None, 'version': None, 'source': 'openai', 'license': None, 'location': 'python/packages/agbench/src/agbench/linter/coders/oai_coder.py', 'snippet': '', 'risk_category': 'model_theft_exposure', 'owasp_top_10_llm': {...}}, {'title': 'openai_api_key', 'description': 'Hardcoded openai_api_key detected in python/packages/autogen-ext/pyproject.toml (sk-cen…(17 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring...', ...}]}
+[2026-08-09 16:14:09,211: INFO/MainProcess] Task scan_worker.ai_bom_estimation[5679a302-76e9-4557-803c-3a1e8efd33c9] received
+[2026-08-09 16:14:09,214: WARNING/MainProcess] 📦 Cloning https://github.com/openai/openai-python → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_ry81dlq1 Branch:main
+[2026-08-09 16:14:10,968: WARNING/MainProcess] AI-BOM estimation: 1758 files, 10.93 MB across 28 extension types
+[2026-08-09 16:14:10,968: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:14:10,968: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:14:10,968: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:14:11,076: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:14:11,079: INFO/MainProcess] Task scan_worker.ai_bom_estimation[5679a302-76e9-4557-803c-3a1e8efd33c9] succeeded in 1.8676620839978568s: 21.904978847959967
+[2026-08-09 16:14:11,274: INFO/MainProcess] Task scan_worker.ai_bom[d6977fc8-7cd5-4935-9fd1-9da7a247c6aa] received
+[2026-08-09 16:14:11,277: WARNING/MainProcess] 📦 Cloning https://github.com/openai/openai-python → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_6_72uqt6 Branch:main
+[2026-08-09 16:14:32,003: INFO/MainProcess] Task scan_worker.ai_bom[d6977fc8-7cd5-4935-9fd1-9da7a247c6aa] succeeded in 20.729082584002754s: {'results': [{'title': 'generic_credential', 'description': 'Hardcoded generic_credential detected in scripts/utils/validate-bedrock-wheel.py (fixtur…(21 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'generic_credential', 'component_type': 'external_provider', 'model_card': None, 'framework': None, 'version': None, 'source': 'unknown', 'license': None, 'location': 'scripts/utils/validate-bedrock-wheel.py', 'snippet': '', 'risk_category': 'model_theft_exposure', 'owasp_top_10_llm': {...}}, {'title': 'generic_credential', 'description': 'Hardcoded generic_credential detected in src/openai/_client.py (worklo…(22 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'gen...', ...}]}
+[2026-08-09 16:14:36,857: INFO/MainProcess] Task scan_worker.ai_bom_estimation[5f01dbda-7b05-4b66-9f38-03453578d239] received
+[2026-08-09 16:14:36,862: WARNING/MainProcess] 📦 Cloning https://github.com/modelcontextprotocol/servers → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_c1oofp08 Branch:main
+[2026-08-09 16:14:38,070: WARNING/MainProcess] AI-BOM estimation: 123 files, 0.81 MB across 28 extension types
+[2026-08-09 16:14:38,070: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:14:38,070: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:14:38,070: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:14:38,083: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:14:38,085: INFO/MainProcess] Task scan_worker.ai_bom_estimation[5f01dbda-7b05-4b66-9f38-03453578d239] succeeded in 1.2274314590031281s: 1.6613818173203172
+[2026-08-09 16:14:38,934: INFO/MainProcess] Task scan_worker.ai_bom[60c5faba-b194-4f95-8fcc-2d740334102d] received
+[2026-08-09 16:14:38,937: WARNING/MainProcess] 📦 Cloning https://github.com/modelcontextprotocol/servers → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_i13b0nbq Branch:main
+[2026-08-09 16:14:41,469: INFO/MainProcess] Task scan_worker.ai_bom[60c5faba-b194-4f95-8fcc-2d740334102d] succeeded in 2.534837499988498s: {'results': [{'title': 'gitpython', 'description': 'No concluded license for \'gitpython\'; could not resolve from the SPDX manifest. Add a declared license (SBOM minimum element / governance signal).', 'impact': 'Medium', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'gitpython', 'component_type': 'ml_framework', 'model_card': None, 'framework': 'gitpython', 'version': None, 'source': 'unknown', 'license': None, 'location': '', 'snippet': '', 'risk_category': 'license_compliance_gap', 'owasp_top_10_llm': {...}}, {'title': 'markdownify', 'description': 'No concluded license for \'markdownify\'; could not resolve from the SPDX manifest. Add a declared license (SBOM minimum element / governance signal).', 'impact': 'Medium', 'owasp_top_10': [...], 'compliance_controls': [...], 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'markdownify', 'component_type', ...}]}
+[2026-08-09 16:14:44,146: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[febba1ac-c955-4f23-942c-633e146705ff] received
+[2026-08-09 16:14:44,151: WARNING/MainProcess] 📦 Cloning https://github.com/psf/requests → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_i530tg20 Branch:main
+[2026-08-09 16:14:45,704: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:14:45,704: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:14:45,704: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:14:45,715: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:14:45,716: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:14:45,718: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[febba1ac-c955-4f23-942c-633e146705ff] succeeded in 1.5710338749922812s: 0.011961722488038277
+[2026-08-09 16:14:46,232: INFO/MainProcess] Task scan_worker.sbom_sca[060999a1-4eca-4191-8120-73d3a189c165] received
+[2026-08-09 16:14:46,235: WARNING/MainProcess] 📦 Cloning https://github.com/psf/requests → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_yg6zt87x Branch:main
+[2026-08-09 16:14:48,352: WARNING/MainProcess] Populating open source context ...
+[2026-08-09 16:14:49,906: WARNING/MainProcess] Syft CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmpp6_hn83v.syft.cdx.json
+[2026-08-09 16:14:55,616: WARNING/MainProcess] cdxgen CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmpgyut2wng.cdxgen.cdx.json
+[2026-08-09 16:14:55,618: WARNING/MainProcess] Running open source tool: _grype_tool
+[2026-08-09 16:14:58,041: WARNING/MainProcess] Scan completed 🟩 ✅ Vulnerabilities found: 1
+[2026-08-09 16:14:58,042: WARNING/MainProcess] Results found !
+[2026-08-09 16:14:58,042: WARNING/MainProcess] Inventory components: 28 (tools=['syft', 'cdxgen'])
+[2026-08-09 16:14:58,042: WARNING/MainProcess] Getting Dependency Output Model ....
+[2026-08-09 16:14:58,043: WARNING/MainProcess] Getting Output Model ....
+[2026-08-09 16:14:58,059: WARNING/MainProcess] ✅ CVE cache HIT from MongoDB, count: 60
+[2026-08-09 16:14:58,062: WARNING/MainProcess] CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+[2026-08-09 16:14:58,063: WARNING/MainProcess] Creating Output Model ....
+[2026-08-09 16:14:58,083: WARNING/MainProcess] Final Vulnerability Model created successfully
+[2026-08-09 16:14:58,084: WARNING/MainProcess] Response Model created successfully
+[2026-08-09 16:14:58,084: WARNING/MainProcess] Output Model generated successfully
+[2026-08-09 16:14:58,084: WARNING/MainProcess] Dependency Output Model generated successfully
+[2026-08-09 16:14:58,188: WARNING/MainProcess] ✅ Map-reduce cache HIT for hash b688cacb9ec4861f...
+[2026-08-09 16:14:58,189: WARNING/MainProcess] Vulnerabilities length : 1
+[2026-08-09 16:14:58,189: WARNING/MainProcess]  🔧 Vulnerability # 1 : Vulnerable temporary directory handling in pytest
+[2026-08-09 16:14:58,192: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:14:58,192: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:14:58,192: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:14:58,203: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:14:58,204: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:14:58,209: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:14:58,209: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:14:58,209: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:14:58,209: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:14:58,209: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:14:58,210: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:14:58,216: INFO/MainProcess] Task scan_worker.sbom_sca[060999a1-4eca-4191-8120-73d3a189c165] succeeded in 11.983315040997695s: {'results': [{'dependency': 'actions/checkout==9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0', 'title': 'Inventory: actions/checkout', 'description': 'Inventoried component actions/checkout==9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0'}, {'dependency': 'actions/checkout==v7.0.0', 'title': 'Inventory: actions/checkout', 'description': 'Inventoried component actions/checkout==v7.0.0', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/checkout@v7.0.0', ...]}
+[2026-08-09 16:15:01,625: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[6f41fd55-1808-4378-a4d6-76ef02fc7382] received
+[2026-08-09 16:15:01,628: WARNING/MainProcess] 📦 Cloning https://github.com/pallets/flask → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_7ekeodf5 Branch:main
+[2026-08-09 16:15:03,037: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:03,037: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:03,037: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:03,056: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:03,056: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:03,059: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[6f41fd55-1808-4378-a4d6-76ef02fc7382] succeeded in 1.4335468749923166s: 0.011961722488038277
+[2026-08-09 16:15:03,717: INFO/MainProcess] Task scan_worker.sbom_sca[02a8ab97-2dcc-4f9e-8a0f-f1f779d2fbcc] received
+[2026-08-09 16:15:03,720: WARNING/MainProcess] 📦 Cloning https://github.com/pallets/flask → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo__cnpkrh_ Branch:main
+[2026-08-09 16:15:05,091: WARNING/MainProcess] Populating open source context ...
+[2026-08-09 16:15:06,350: WARNING/MainProcess] Syft CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmp7_mrqllc.syft.cdx.json
+[2026-08-09 16:15:09,007: WARNING/MainProcess] cdxgen CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmplip8il_5.cdxgen.cdx.json
+[2026-08-09 16:15:09,011: WARNING/MainProcess] Running open source tool: _grype_tool
+[2026-08-09 16:15:10,319: WARNING/MainProcess] Scan completed 🟩 ✅ Vulnerabilities found: 1
+[2026-08-09 16:15:10,319: WARNING/MainProcess] Results found !
+[2026-08-09 16:15:10,320: WARNING/MainProcess] Inventory components: 121 (tools=['syft', 'cdxgen'])
+[2026-08-09 16:15:10,321: WARNING/MainProcess] Getting Dependency Output Model ....
+[2026-08-09 16:15:10,321: WARNING/MainProcess] Getting Output Model ....
+[2026-08-09 16:15:10,321: WARNING/MainProcess] Using in-memory CVE cache, count: 60
+[2026-08-09 16:15:10,322: WARNING/MainProcess] CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+[2026-08-09 16:15:10,323: WARNING/MainProcess] Creating Output Model ....
+[2026-08-09 16:15:10,335: WARNING/MainProcess] Final Vulnerability Model created successfully
+[2026-08-09 16:15:10,336: WARNING/MainProcess] Response Model created successfully
+[2026-08-09 16:15:10,336: WARNING/MainProcess] Output Model generated successfully
+[2026-08-09 16:15:10,336: WARNING/MainProcess] Dependency Output Model generated successfully
+[2026-08-09 16:15:10,355: WARNING/MainProcess] ✅ Map-reduce cache HIT for hash 937fa74ff1f3621f...
+[2026-08-09 16:15:10,357: WARNING/MainProcess] Vulnerabilities length : 1
+[2026-08-09 16:15:10,357: WARNING/MainProcess]  🔧 Vulnerability # 1 : Bleichenbacher oracle vulnerability in cryptography 
+package
+[2026-08-09 16:15:10,361: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:10,361: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:10,361: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:10,381: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:10,382: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:10,383: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:10,384: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:10,385: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:10,385: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:10,385: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:10,385: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:10,385: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:10,385: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:10,397: INFO/MainProcess] Task scan_worker.sbom_sca[02a8ab97-2dcc-4f9e-8a0f-f1f779d2fbcc] succeeded in 6.678986165992683s: {'results': [{'dependency': 'actions/cache==v6.1.0', 'title': 'Inventory: actions/cache', 'description': 'Inventoried component actions/cache==v6.1.0', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/cache@v6.1.0'}, {'dependency': 'actions/checkout==v7.0.1', 'title': 'Inventory: actions/checkout', 'description': 'Inventoried component actions/checkout==v7.0.1', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/checkout@v7.0.1'}, {'dependency': 'actions/download-artifact==v8.0.1', 'title': 'Inventory: actions/download-artifact', 'descriptio...', ...}]}
+[2026-08-09 16:15:14,014: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[58f5d9a5-0113-4a1f-a898-4188e2397262] received
+[2026-08-09 16:15:14,017: WARNING/MainProcess] 📦 Cloning https://github.com/urllib3/urllib3 → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_cc1yfmpu Branch:main
+[2026-08-09 16:15:15,311: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:15,311: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:15,311: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:15,325: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:15,325: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:15,327: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[58f5d9a5-0113-4a1f-a898-4188e2397262] succeeded in 1.3129029580159113s: 0.011961722488038277
+[2026-08-09 16:15:16,101: INFO/MainProcess] Task scan_worker.sbom_sca[0c014db7-e8e1-4b21-8abf-1360538fb597] received
+[2026-08-09 16:15:16,103: WARNING/MainProcess] 📦 Cloning https://github.com/urllib3/urllib3 → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_uziq5tbr Branch:main
+[2026-08-09 16:15:17,479: WARNING/MainProcess] Populating open source context ...
+[2026-08-09 16:15:19,393: WARNING/MainProcess] Syft CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmpynaa_zhd.syft.cdx.json
+[2026-08-09 16:15:21,849: WARNING/MainProcess] cdxgen CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmp_tfgvad_.cdxgen.cdx.json
+[2026-08-09 16:15:21,853: WARNING/MainProcess] Running open source tool: _grype_tool
+[2026-08-09 16:15:23,401: WARNING/MainProcess] Scan completed 🟩 ✅ Vulnerabilities found: 38
+[2026-08-09 16:15:23,401: WARNING/MainProcess] Results found !
+[2026-08-09 16:15:23,402: WARNING/MainProcess] Inventory components: 147 (tools=['syft', 'cdxgen'])
+[2026-08-09 16:15:23,403: WARNING/MainProcess] Getting Dependency Output Model ....
+[2026-08-09 16:15:23,403: WARNING/MainProcess] Getting Output Model ....
+[2026-08-09 16:15:23,403: WARNING/MainProcess] Using in-memory CVE cache, count: 60
+[2026-08-09 16:15:23,404: WARNING/MainProcess] CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+[2026-08-09 16:15:23,405: WARNING/MainProcess] Creating Output Model ....
+[2026-08-09 16:15:23,412: WARNING/MainProcess] Final Vulnerability Model created successfully
+[2026-08-09 16:15:23,412: WARNING/MainProcess] Response Model created successfully
+[2026-08-09 16:15:23,413: WARNING/MainProcess] Output Model generated successfully
+[2026-08-09 16:15:23,413: WARNING/MainProcess] Dependency Output Model generated successfully
+[2026-08-09 16:15:23,432: WARNING/MainProcess] ✅ Map-reduce cache HIT for hash 1ff6e8d2ce535ee0...
+[2026-08-09 16:15:23,433: WARNING/MainProcess] Vulnerabilities length : 14
+[2026-08-09 16:15:23,434: WARNING/MainProcess]  🔧 Vulnerability # 1 : Vulnerable OpenSSL included in cryptography wheels
+[2026-08-09 16:15:23,434: WARNING/MainProcess]  🔧 Vulnerability # 2 : Exposure of Sensitive Information to an Unauthorized 
+Actor in urllib3
+[2026-08-09 16:15:23,434: WARNING/MainProcess]  🔧 Vulnerability # 3 : Uncontrolled Resource Consumption in urllib3
+[2026-08-09 16:15:23,435: WARNING/MainProcess]  🔧 Vulnerability # 4 : Catastrophic backtracking in urllib3 URL authority 
+parser
+[2026-08-09 16:15:23,435: WARNING/MainProcess]  🔧 Vulnerability # 5 : Improper Certificate Validation in urllib3
+[2026-08-09 16:15:23,435: WARNING/MainProcess]  🔧 Vulnerability # 6 : RSA decryption vulnerable to Bleichenbacher timing 
+attack
+[2026-08-09 16:15:23,435: WARNING/MainProcess]  🔧 Vulnerability # 7 : Python cryptography vulnerable to Bleichenbacher timing 
+oracle attack
+[2026-08-09 16:15:23,435: WARNING/MainProcess]  🔧 Vulnerability # 8 : urllib3 streaming API improperly handles highly 
+compressed data
+[2026-08-09 16:15:23,436: WARNING/MainProcess]  🔧 Vulnerability # 9 : urllib3 decompression-bomb safeguards bypassed in 
+streaming API
+[2026-08-09 16:15:23,436: WARNING/MainProcess]  🔧 Vulnerability # 10 : Soup Sieve memory exhaustion via large selector lists
+[2026-08-09 16:15:23,436: WARNING/MainProcess]  🔧 Vulnerability # 11 : Soup Sieve Regular Expression Denial of Service via 
+selector parser
+[2026-08-09 16:15:23,436: WARNING/MainProcess]  🔧 Vulnerability # 12 : cryptography vulnerable to subgroup attack due to 
+missing validation
+[2026-08-09 16:15:23,436: WARNING/MainProcess]  🔧 Vulnerability # 13 : Duplicate self-signed intermediates cause exponential 
+path-building
+[2026-08-09 16:15:23,437: WARNING/MainProcess]  🔧 Vulnerability # 14 : PKCS#7 EnvelopedData decryption exposes Bleichenbacher 
+oracle
+[2026-08-09 16:15:23,440: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:23,441: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:23,441: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:23,455: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:23,455: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:23,457: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,457: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,457: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,457: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,458: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,459: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,460: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,461: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,462: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,463: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,464: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,465: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,465: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,465: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,465: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,465: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,465: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,466: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,467: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,468: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,469: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,470: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,471: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,472: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,473: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,474: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,475: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,476: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,477: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:23,478: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:23,479: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:23,495: INFO/MainProcess] Task scan_worker.sbom_sca[0c014db7-e8e1-4b21-8abf-1360538fb597] succeeded in 7.394329583999934s: {'results': [{'dependency': 'accessible-pygments==0.0.5', 'title': 'Inventory: accessible-pygments', 'description': 'Inventoried component accessible-pygments==0.0.5', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:pypi/accessible-pygments@0.0.5'}, {'dependency': 'actions/cache==v6.1.0', 'title': 'Inventory: actions/cache', 'description': 'Inventoried component actions/cache==v6.1.0', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/cache@v6.1.0'}, {'dependency': 'actions/checkout==v7.0.0', 'title': 'Inventory: actions/checkout', 'description': 'Invent...', ...}]}
+[2026-08-09 16:15:26,476: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[f56880c2-5fcc-4dd8-a4e7-c6fb33bd0ebd] received
+[2026-08-09 16:15:26,479: WARNING/MainProcess] 📦 Cloning https://github.com/sqlalchemy/sqlalchemy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_93x1ba6v Branch:main
+[2026-08-09 16:15:29,117: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:29,117: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:29,118: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:29,176: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:29,176: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:29,180: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[f56880c2-5fcc-4dd8-a4e7-c6fb33bd0ebd] succeeded in 2.703960332990391s: 0.011961722488038277
+[2026-08-09 16:15:30,585: INFO/MainProcess] Task scan_worker.sbom_sca[71695166-964d-44ff-a27e-69ad3f697e08] received
+[2026-08-09 16:15:30,588: WARNING/MainProcess] 📦 Cloning https://github.com/sqlalchemy/sqlalchemy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_ue7go05z Branch:main
+[2026-08-09 16:15:33,310: WARNING/MainProcess] Populating open source context ...
+[2026-08-09 16:15:34,782: WARNING/MainProcess] Syft CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmpemdcu3cc.syft.cdx.json
+[2026-08-09 16:15:38,735: WARNING/MainProcess] cdxgen CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmp82hdu6ne.cdxgen.cdx.json
+[2026-08-09 16:15:38,736: WARNING/MainProcess] Running open source tool: _grype_tool
+[2026-08-09 16:15:40,475: WARNING/MainProcess] Scan completed 🟩 ✅ Vulnerabilities found: 0
+[2026-08-09 16:15:40,475: WARNING/MainProcess] Results found !
+[2026-08-09 16:15:40,476: WARNING/MainProcess] Inventory components: 14 (tools=['syft', 'cdxgen'])
+[2026-08-09 16:15:40,476: WARNING/MainProcess] No SBOM/SCA matches found, skipping map-reduce
+[2026-08-09 16:15:40,479: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:40,479: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:40,479: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:40,537: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:40,537: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:40,545: INFO/MainProcess] Task scan_worker.sbom_sca[71695166-964d-44ff-a27e-69ad3f697e08] succeeded in 9.959723624982871s: {'results': [{'dependency': 'actions/checkout==v7', 'title': 'Inventory: actions/checkout', 'description': 'Inventoried component actions/checkout==v7', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/checkout@v7'}, {'dependency': 'actions/setup-python==v7', 'title': 'Inventory: actions/setup-python', 'description': 'Inventoried component actions/setup-python==v7', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/setup-python@v7'}, {'dependency': 'docker/setup-qemu-action==v4', 'title': 'Inventory: docker/setup-qemu-action', 'description', ...}]}
+[2026-08-09 16:15:40,879: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[bb9d8832-3b89-4190-9bb5-af6255b76a2a] received
+[2026-08-09 16:15:40,883: WARNING/MainProcess] 📦 Cloning https://github.com/pallets/click → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_ksp7s5lc Branch:main
+[2026-08-09 16:15:42,244: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:42,244: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:42,244: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:42,257: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:42,258: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:42,260: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[bb9d8832-3b89-4190-9bb5-af6255b76a2a] succeeded in 1.3806190000032075s: 0.011961722488038277
+[2026-08-09 16:15:42,974: INFO/MainProcess] Task scan_worker.sbom_sca[890b49cb-12ae-4f53-8be8-6fdee6d72f5e] received
+[2026-08-09 16:15:42,977: WARNING/MainProcess] 📦 Cloning https://github.com/pallets/click → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_a3cf57ez Branch:main
+[2026-08-09 16:15:44,420: WARNING/MainProcess] Populating open source context ...
+[2026-08-09 16:15:45,525: WARNING/MainProcess] Syft CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmpx0_7ba1g.syft.cdx.json
+[2026-08-09 16:15:48,731: WARNING/MainProcess] cdxgen CycloneDX written → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/tmptu3fkt0m.cdxgen.cdx.json
+[2026-08-09 16:15:48,735: WARNING/MainProcess] Running open source tool: _grype_tool
+[2026-08-09 16:15:50,047: WARNING/MainProcess] Scan completed 🟩 ✅ Vulnerabilities found: 11
+[2026-08-09 16:15:50,047: WARNING/MainProcess] Results found !
+[2026-08-09 16:15:50,047: WARNING/MainProcess] Inventory components: 97 (tools=['syft', 'cdxgen'])
+[2026-08-09 16:15:50,048: WARNING/MainProcess] Getting Dependency Output Model ....
+[2026-08-09 16:15:50,048: WARNING/MainProcess] Getting Output Model ....
+[2026-08-09 16:15:50,048: WARNING/MainProcess] Using in-memory CVE cache, count: 60
+[2026-08-09 16:15:50,050: WARNING/MainProcess] CVE Enum Members: ['CVE-2025-21609', 'CVE-2025-0203', 'CVE-2025-0204', 
+'CVE-2025-0205', 'CVE-2025-0207', 'CVE-2025-0208', 'CVE-2025-0210', 
+'CVE-2025-0211', 'CVE-2025-0212', 'CVE-2025-0213', 'CVE-2025-0229', 
+'CVE-2025-0230', 'CVE-2025-0233', 'CVE-2025-0296', 'CVE-2025-0298', 
+'CVE-2025-21622', 'CVE-2025-0299', 'CVE-2025-22133', 'CVE-2025-0282', 
+'CVE-2025-0335', 'CVE-2025-0336', 'CVE-2025-0340', 'CVE-2025-0341', 
+'CVE-2025-0347', 'CVE-2025-0349', 'CVE-2025-0105', 'CVE-2025-0107', 
+'CVE-2025-22777', 'CVE-2025-22144', 'CVE-2025-0061', 'CVE-2026-0544', 
+'CVE-2026-0546', 'CVE-2026-0565', 'CVE-2026-0566', 'CVE-2026-0567', 
+'CVE-2026-0568', 'CVE-2026-0569', 'CVE-2026-0570', 'CVE-2026-21430', 
+'CVE-2026-21445', 'CVE-2026-21446', 'CVE-2026-21448', 'CVE-2026-21450', 
+'CVE-2026-0575', 'CVE-2026-0576', 'CVE-2026-0577', 'CVE-2026-0578', 
+'CVE-2026-0579', 'CVE-2026-0581', 'CVE-2026-0582', 'CVE-2026-0583', 
+'CVE-2026-0584', 'CVE-2026-0585', 'CVE-2026-0590', 'CVE-2026-0591', 
+'CVE-2026-0592', 'CVE-2026-0597', 'CVE-2026-0605', 'CVE-2026-0606', 
+'CVE-2026-0607']
+[2026-08-09 16:15:50,050: WARNING/MainProcess] Creating Output Model ....
+[2026-08-09 16:15:50,056: WARNING/MainProcess] Final Vulnerability Model created successfully
+[2026-08-09 16:15:50,056: WARNING/MainProcess] Response Model created successfully
+[2026-08-09 16:15:50,056: WARNING/MainProcess] Output Model generated successfully
+[2026-08-09 16:15:50,056: WARNING/MainProcess] Dependency Output Model generated successfully
+[2026-08-09 16:15:50,071: WARNING/MainProcess] ✅ Map-reduce cache HIT for hash dde3ba084c20b174...
+[2026-08-09 16:15:50,073: WARNING/MainProcess] Vulnerabilities length : 9
+[2026-08-09 16:15:50,073: WARNING/MainProcess]  🔧 Vulnerability # 1 : Missing Host header validation in starlette 1.0.0
+[2026-08-09 16:15:50,073: WARNING/MainProcess]  🔧 Vulnerability # 2 : Decompression-bomb safeguards bypass in urllib3 2.6.3
+[2026-08-09 16:15:50,073: WARNING/MainProcess]  🔧 Vulnerability # 3 : DoS via request.form() limits ignored in starlette 1.0.0
+[2026-08-09 16:15:50,074: WARNING/MainProcess]  🔧 Vulnerability # 4 : SSRF and NTLM credential theft via UNC paths in 
+starlette 1.0.0
+[2026-08-09 16:15:50,075: WARNING/MainProcess]  🔧 Vulnerability # 5 : Sensitive headers forwarded across origins in urllib3 
+2.6.3
+[2026-08-09 16:15:50,075: WARNING/MainProcess]  🔧 Vulnerability # 6 : IDNA encode bypass in idna 3.11
+[2026-08-09 16:15:50,075: WARNING/MainProcess]  🔧 Vulnerability # 7 : Arbitrary HTTP method dispatch via getattr in starlette 
+1.0.0
+[2026-08-09 16:15:50,075: WARNING/MainProcess]  🔧 Vulnerability # 8 : Vulnerable tmpdir handling in pytest 9.0.2
+[2026-08-09 16:15:50,075: WARNING/MainProcess]  🔧 Vulnerability # 9 : Arbitrary file write through entry point names in uv 
+0.11.3
+[2026-08-09 16:15:50,078: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:15:50,078: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:15:50,078: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:15:50,092: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:15:50,092: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 16:15:50,094: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,094: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,094: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,094: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,094: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,094: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,095: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,096: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,097: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,098: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,099: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,099: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,099: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,099: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,100: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,101: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,102: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,103: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,104: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,105: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,106: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,107: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,107: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,107: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,107: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ⚠️ Owasp top 10 found in dumped,parsing it...
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ✅ Owasp top 10 parsed successfully
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ⚠️ Compliance controls found in dumped,parsing it...
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ✅ Compliance controls parsed successfully
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ⚠️ CVE's found in dumped,parsing it...
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ✅ CVE's parsed successfully
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ⚠️ Impact found in dumped,parsing it...
+[2026-08-09 16:15:50,108: WARNING/MainProcess] ✅ Impact parsed successfully
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ⚠️ License type found in dumped,parsing it...
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ✅ License type parsed successfully
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ⚠️ Dependency type found in dumped,parsing it...
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ✅ Dependency type parsed successfully
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ⚠️ Reachability found in dumped,parsing it...
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ✅ Reachability parsed successfully
+[2026-08-09 16:15:50,109: WARNING/MainProcess] ✅ Vulnerability parsed successfully
+[2026-08-09 16:15:50,120: INFO/MainProcess] Task scan_worker.sbom_sca[890b49cb-12ae-4f53-8be8-6fdee6d72f5e] succeeded in 7.1457871250167955s: {'results': [{'dependency': 'actions/cache==v6.1.0', 'title': 'Inventory: actions/cache', 'description': 'Inventoried component actions/cache==v6.1.0', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/cache@v6.1.0'}, {'dependency': 'actions/checkout==v7.0.1', 'title': 'Inventory: actions/checkout', 'description': 'Inventoried component actions/checkout==v7.0.1', 'impact': 'Low', 'reachability': 'not_reachable', 'license_type': 'unknown', 'cves': {...}, 'owasp_top_10': {...}, 'compliance_controls': {...}, 'suggested_fix': 'n/a — inventory row', 'dependency_type': 'direct', 'inventory_only': True, 'vuln_assessed': True, 'purl': 'pkg:github/actions/checkout@v7.0.1'}, {'dependency': 'actions/download-artifact==v8.0.1', 'title': 'Inventory: actions/download-artifact', 'descriptio...', ...}]}

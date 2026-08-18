@@ -41,6 +41,7 @@ import {
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";
 import { toast } from "sonner";
 import { useRouter, useParams } from "next/navigation";
 
@@ -165,17 +166,6 @@ export default function CicdPage() {
     if (selectedIntegration) {
       deleteCicdIntegrationMutation.mutate(selectedIntegration.id);
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   };
 
 
@@ -453,8 +443,7 @@ export default function CicdPage() {
                             minTickGap={24}
                             height={40}
                             tickFormatter={(v) => {
-                              const d = new Date(v);
-                              return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+                              return formatDateOnlyIst(v);
                             }}
                           />
                           <YAxis hide domain={[0, "auto"]} />
@@ -462,7 +451,7 @@ export default function CicdPage() {
                             cursor={false}
                             content={
                               <ChartTooltipContent
-                                labelFormatter={(v) => new Date(v).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                                labelFormatter={(v) => formatMediumDateIst(v)}
                               />
                             }
                           />

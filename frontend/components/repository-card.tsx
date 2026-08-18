@@ -109,7 +109,7 @@ export function RepositoryCard({
                     <Input
                       type="password"
                       value={pat}
-                      placeholder="Personal Access Token"
+                      placeholder="PAT (optional for public repos)"
                       className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 text-sm"
                       onChange={(e) => setPat(e.target.value)}
                     />

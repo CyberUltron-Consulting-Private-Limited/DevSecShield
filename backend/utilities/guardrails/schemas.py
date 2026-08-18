@@ -1,3 +1,8 @@
+"""DEPRECATED: Guardrails request/response schemas.
+
+Retained for legacy Guardrails routers. Product UI no longer exposes Guardrails.
+"""
+
 from typing import Literal
 from pydantic import BaseModel, Field
 

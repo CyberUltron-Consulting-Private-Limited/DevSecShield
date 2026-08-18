@@ -34,8 +34,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _DIMENSIONS = {
     "severity_distribution": lambda f: (f.get("impact") or "Low"),
     "asset_type_distribution": lambda f: (f.get("component_type") or "unknown"),
-    "provider_distribution": lambda f: (f.get("source") or "unknown"),
-    "license_distribution": lambda f: (f.get("license") or "unknown"),
+    "provider_distribution": lambda f: (f.get("source") or "local"),
+    "license_distribution": lambda f: (f.get("license") or "LicenseRef-not-declared"),
     "risk_category_distribution": lambda f: (f.get("risk_category") or "unknown"),
 }
 
@@ -70,7 +70,7 @@ def test_all_trusera_dimensions_present_and_non_empty(fixture: str) -> None:
 def test_we_exceed_trusera_with_owasp_and_license_dimensions() -> None:
     # The two dimensions Trusera's HTML does NOT surface, proving parity-or-more.
     findings = _findings("synthetic")
-    licenses = {(f.get("license") or "unknown") for f in findings}
+    licenses = {(f.get("license") or "LicenseRef-not-declared") for f in findings}
     assert len(licenses) >= 1
     owasp = {
         label

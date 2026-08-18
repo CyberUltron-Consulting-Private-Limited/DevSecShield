@@ -1,67 +1,75 @@
 {
-  "running": false,
-  "startedAt": "2026-07-10T07:17:00.218Z",
+  "running": true,
+  "startedAt": "2026-08-10T02:37:17.443Z",
   "workers": {
     "map": {
-      "runCount": 2,
-      "successCount": 2,
+      "runCount": 40,
+      "successCount": 40,
       "failureCount": 0,
-      "averageDurationMs": 10,
-      "lastRun": "2026-07-06T16:47:29.545Z",
-      "lastStartedAt": "2026-07-06T16:47:29.544Z",
-      "nextRun": "2026-07-10T19:23:06.122Z",
+      "averageDurationMs": 171.275,
+      "lastRun": "2026-08-10T05:07:17.545Z",
+      "lastStartedAt": "2026-08-10T05:07:17.541Z",
+      "nextRun": "2026-08-10T05:07:17.539Z",
       "isRunning": false
     },
     "audit": {
-      "runCount": 2,
-      "successCount": 2,
+      "runCount": 57,
+      "successCount": 57,
       "failureCount": 0,
-      "averageDurationMs": 203818.5,
-      "lastRun": "2026-07-06T17:06:47.278Z",
-      "lastStartedAt": "2026-07-06T17:01:43.110Z",
-      "nextRun": "2026-07-10T19:18:06.122Z",
+      "averageDurationMs": 7329.894736842109,
+      "lastRun": "2026-08-10T04:59:17.574Z",
+      "lastStartedAt": "2026-08-10T04:59:17.571Z",
+      "nextRun": "2026-08-10T05:09:17.576Z",
       "isRunning": false
     },
     "optimize": {
-      "runCount": 0,
-      "successCount": 0,
+      "runCount": 36,
+      "successCount": 36,
       "failureCount": 0,
-      "averageDurationMs": 0,
-      "nextRun": "2026-07-10T19:23:06.122Z",
+      "averageDurationMs": 189.02777777777774,
+      "lastRun": "2026-08-10T04:56:17.539Z",
+      "lastStartedAt": "2026-08-10T04:56:17.534Z",
+      "nextRun": "2026-08-10T05:11:17.543Z",
       "isRunning": false
     },
     "consolidate": {
-      "runCount": 1,
-      "successCount": 1,
+      "runCount": 19,
+      "successCount": 19,
       "failureCount": 0,
-      "averageDurationMs": 7,
-      "lastRun": "2026-07-06T17:01:43.109Z",
-      "lastStartedAt": "2026-07-06T17:01:43.102Z",
-      "nextRun": "2026-07-10T19:22:05.100Z",
+      "averageDurationMs": 184.68421052631578,
+      "lastRun": "2026-08-10T04:43:17.572Z",
+      "lastStartedAt": "2026-08-10T04:43:17.566Z",
+      "nextRun": "2026-08-10T05:13:17.574Z",
       "isRunning": false
     },
     "testgaps": {
-      "runCount": 0,
-      "successCount": 0,
+      "runCount": 28,
+      "successCount": 28,
       "failureCount": 0,
-      "averageDurationMs": 0,
-      "nextRun": "2026-07-10T19:28:06.122Z",
+      "averageDurationMs": 183.71428571428572,
+      "lastRun": "2026-08-10T05:05:17.522Z",
+      "lastStartedAt": "2026-08-10T05:05:17.517Z",
+      "nextRun": "2026-08-10T05:25:17.526Z",
       "isRunning": false
     },
     "backup": {
-      "runCount": 0,
-      "successCount": 0,
+      "runCount": 2,
+      "successCount": 2,
       "failureCount": 0,
-      "averageDurationMs": 0,
-      "nextRun": "2026-07-11T07:27:00.210Z",
+      "averageDurationMs": 36.5,
+      "lastRun": "2026-08-10T02:47:17.457Z",
+      "lastStartedAt": "2026-08-10T02:47:17.445Z",
+      "nextRun": "2026-08-11T02:47:17.460Z",
       "isRunning": false
     },
     "harness": {
-      "runCount": 0,
-      "successCount": 0,
+      "runCount": 3,
+      "successCount": 3,
       "failureCount": 0,
-      "averageDurationMs": 0,
-      "nextRun": "2026-07-10T19:38:58.987Z",
+      "averageDurationMs": 176.66666666666666,
+      "lastRun": "2026-08-10T02:49:17.450Z",
+      "lastStartedAt": "2026-08-10T02:49:17.445Z",
+      "nextRun": "2026-08-10T08:49:17.454Z",
       "isRunning": false
     },
     "predict": {
@@ -81,8 +89,8 @@
   },
   "config": {
     "autoStart": false,
-    "logDir": "/Users/anshsinghal/Desktop/DevSecShield/.claude-flow/logs",
-    "stateFile": "/Users/anshsinghal/Desktop/DevSecShield/.claude-flow/daemon-state.json",
+    "logDir": "/home/contact_cyberultron_com/DevSecShield/.claude-flow/logs",
+    "stateFile": "/home/contact_cyberultron_com/DevSecShield/.claude-flow/daemon-state.json",
     "maxConcurrent": 2,
     "workerTimeoutMs": 960000,
     "resourceThresholds": {
@@ -90,7 +98,8 @@
       "minFreeMemoryPercent": 5
     },
     "ttlMs": 43200000,
-    "idleShutdownMs": 0,
+    "idleShutdownMs": 1800000,
+    "aiWorkersEnabled": false,
     "workers": [
       {
         "type": "map",
@@ -166,5 +175,5 @@
       }
     ]
   },
-  "savedAt": "2026-07-10T19:24:51.830Z"
+  "savedAt": "2026-08-10T05:07:17.545Z"
 }

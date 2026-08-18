@@ -1,0 +1,19 @@
+# Prod/runtime overlay — keep backend on infra network + mount rollup YAMLs.
+# Backend image build context is `backend/` only, so /aibom/config is not in the
+# image; rbi_posture / cert-in rollups resolve at /aibom/config/*.yaml.
+services:
+  devsecshield-backend:
+    env_file: .env
+    networks:
+      - default
+      - infra
+    volumes:
+      - ../aibom-config-overlay:/aibom/config:ro
+  devsecshield-frontend:
+    networks:
+      - default
+      - infra
+networks:
+  infra:
+    name: devsecshield-infra-services_default
+    external: true

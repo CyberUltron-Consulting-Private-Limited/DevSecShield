@@ -56,8 +56,9 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSBOMExportResults, updateScan, createTicket, toggleFindingState, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
+import { getSBOMExportResults, updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
 import {
   ChartContainer,
   ChartTooltip,
@@ -83,7 +84,10 @@ import { toast } from "sonner";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { ComplianceCoverage, type Compliance } from "@/components/ai-bom/AiBomVisualizations";
+import { FRAMEWORK_GROUPS_SBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
+import { type CertInRollupData } from "@/components/certin/certinShared";
 
 // SBOM agent output format (from worker_sbom_agent_results_testing.json): array of flat vulnerability objects
 type OwaspOrCompliance = Record<string, string> | null | undefined;
@@ -148,19 +152,20 @@ function countFindingField(val: unknown): number {
 
 const RISK_ORDER = ["Critical", "High", "Medium", "Low"] as const;
 const SEVERITY_KEYS = ["critical", "high", "medium", "low"] as const;
-const REACHABILITY_KEYS = ["reachable", "potentially_reachable", "not_reachable", "unknown"] as const;
+const REACHABILITY_KEYS = ["reachable", "potentially_reachable", "not_reachable", "not_assessed"] as const;
 
 /** Reachability level → icon, label, box color for dashboard and table */
 const REACHABILITY_DISPLAY: Record<string, { icon: typeof CheckCircle; label: string; boxClass: string }> = {
   reachable: { icon: CheckCircle, label: "Reachable", boxClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" },
   potentially_reachable: { icon: AlertCircle, label: "Potentially reachable", boxClass: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" },
   not_reachable: { icon: XCircle, label: "Not reachable", boxClass: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200" },
-  unknown: { icon: HelpCircle, label: "Unknown", boxClass: "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200" },
+  not_assessed: { icon: HelpCircle, label: "Not assessed", boxClass: "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200" },
 };
 
 function getReachabilityBoxClass(reachability: string | null | undefined): string {
-  const key = (reachability ?? "unknown").toLowerCase().replace(/\s/g, "_");
-  return REACHABILITY_DISPLAY[key]?.boxClass ?? REACHABILITY_DISPLAY.unknown.boxClass;
+  const key = (reachability ?? "not_assessed").toLowerCase().replace(/\s/g, "_");
+  const normalized = key === "unknown" ? "not_assessed" : key;
+  return REACHABILITY_DISPLAY[normalized]?.boxClass ?? REACHABILITY_DISPLAY.not_assessed.boxClass;
 }
 
 function getRiskScoreBoxClass(score: number | null | undefined): string {
@@ -172,7 +177,7 @@ function getRiskScoreBoxClass(score: number | null | undefined): string {
 }
 
 const LICENSE_CHART_COLORS = ["hsl(142 71% 45%)", "hsl(217 91% 60%)", "hsl(48 96% 53%)", "hsl(25 95% 53%)", "hsl(0 84% 60%)"];
-const LICENSE_CATEGORIES = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial", "strong_copyleft", "network_copyleft", "source_available", "unknown"] as const;
+const LICENSE_CATEGORIES = ["permissive", "public_domain", "weak_copyleft", "creative_commons", "commercial", "strong_copyleft", "network_copyleft", "source_available", "not_declared"] as const;
 const LICENSE_LABELS: Record<string, string> = {
   permissive: "Permissive",
   public_domain: "Public Domain",
@@ -182,7 +187,7 @@ const LICENSE_LABELS: Record<string, string> = {
   strong_copyleft: "Strong Copyleft",
   network_copyleft: "Network Copyleft",
   source_available: "Source Available",
-  unknown: "Unknown",
+  not_declared: "Not declared",
 };
 
 const riskRadarChartConfig = {
@@ -408,18 +413,18 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
         </Card>
       </div>
 
-      {/* 5. Vulnerability remediation trends */}
+      {/* 5. Vulnerability trends over time */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <TrendingUp className="w-4 h-4" />
-            Vulnerability remediation trends
+            Vulnerability trends over time
           </CardTitle>
-          <CardDescription>Fixed/ignored over time by severity</CardDescription>
+          <CardDescription>Findings by severity (by discovery date)</CardDescription>
         </CardHeader>
         <CardContent>
           {!hasTrendsData ? (
-            <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No data</div>
+            <div className="flex items-center justify-center min-h-[260px] text-zinc-500 dark:text-zinc-400 text-sm">No findings yet</div>
           ) : (
             <ChartContainer config={trendsChartConfig} className="aspect-auto h-[260px] w-full">
               <AreaChart data={trendsEntries} margin={{ top: 8, right: 8, bottom: 28, left: 0 }}>
@@ -571,6 +576,7 @@ function SbomResultsView({
   const useFindings = Boolean(findings && findings.length > 0);
 
   const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
+  const [relatedFindingRefs, setRelatedFindingRefs] = useState<string[]>([]);
   const [filterImpact, setFilterImpact] = useState<string>("all");
   type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
   const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
@@ -601,21 +607,43 @@ function SbomResultsView({
         const description = ((f.description ?? "") + "").toLowerCase();
         const impact = ((f.impact ?? "") + "").toLowerCase();
         const dependency = ((f.dependency ?? "") + "").toLowerCase();
-        return title.includes(q) || description.includes(q) || impact.includes(q) || dependency.includes(q);
+        const id = ((f.id ?? "") + "").toLowerCase();
+        return (
+          title.includes(q) ||
+          description.includes(q) ||
+          impact.includes(q) ||
+          dependency.includes(q) ||
+          id.includes(q)
+        );
       });
+    }
+    if (relatedFindingRefs.length > 0) {
+      list = filterFindingsByRelatedRefs(list, relatedFindingRefs);
     }
     if (filterImpact && filterImpact !== "all") {
       list = list.filter((f) => (f.impact ?? "").trim().toLowerCase() === filterImpact.toLowerCase());
     }
     list = list.filter((f) => matchesRiskScoreFilter(f.risk_score ?? null, filterRiskScore));
     return list;
-  }, [findingsList, useFindings, findingsSearchQuery, filterImpact, filterRiskScore]);
+  }, [findingsList, useFindings, findingsSearchQuery, relatedFindingRefs, filterImpact, filterRiskScore]);
   const hasActiveFindingsFilters =
-    findingsSearchQuery.trim() !== "" || filterImpact !== "all" || filterRiskScore !== "all";
+    findingsSearchQuery.trim() !== "" ||
+    relatedFindingRefs.length > 0 ||
+    filterImpact !== "all" ||
+    filterRiskScore !== "all";
   const clearFindingsFilters = () => {
     setFindingsSearchQuery("");
+    setRelatedFindingRefs([]);
     setFilterImpact("all");
     setFilterRiskScore("all");
+  };
+
+  const handleViewRelatedFindings = (refs: string[]) => {
+    setRelatedFindingRefs(refs);
+    setFindingsSearchQuery("");
+    requestAnimationFrame(() => {
+      document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const jiraFromSettings =
@@ -668,12 +696,97 @@ function SbomResultsView({
     },
   });
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCertInAttest = async (
+    frameworkKey: string,
+    requirementId: string,
+    file: File,
+  ) => {
+    const tid = parseInt(teamId ?? "0", 10);
+    if (!conversationId || Number.isNaN(tid)) throw new Error("Missing team or scan");
+    await postCertInAttestation(
+      tid,
+      "sbom_sca",
+      conversationId,
+      frameworkKey,
+      requirementId,
+      file,
+    );
+    queryClient.invalidateQueries({
+      queryKey: ["sbom_sca-conversation-data", tid, conversationId],
+    });
+  };
+
+  const handleDownloadVex = async () => {
+    const tid = parseInt(teamId ?? "0", 10);
+    if (!conversationId || Number.isNaN(tid)) return;
+    try {
+      const cached = (scanMetadata as SbomScanMetadata | null)?.vex_json;
+      const vex = cached ?? (await getCertInVex(tid, "sbom_sca", conversationId));
+      downloadBlob(
+        new Blob([JSON.stringify(vex, null, 2)], { type: "application/json" }),
+        `sbom-vex-${conversationId}.json`,
+      );
+      toast.success("VEX downloaded");
+      queryClient.invalidateQueries({
+        queryKey: ["sbom_sca-conversation-data", tid, conversationId],
+      });
+    } catch (err) {
+      showErrorToast(err, "Failed to download VEX");
+    }
+  };
+
+  const handleDownloadSignature = async () => {
+    const tid = parseInt(teamId ?? "0", 10);
+    if (!conversationId || Number.isNaN(tid)) return;
+    try {
+      let sig = (scanMetadata as SbomScanMetadata | null)?.bom_signature;
+      if (!sig) {
+        const res = await postCertInSign(tid, "sbom_sca", conversationId);
+        sig = res.bom_signature;
+        queryClient.invalidateQueries({
+          queryKey: ["sbom_sca-conversation-data", tid, conversationId],
+        });
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(sig, null, 2)], { type: "application/json" }),
+        `sbom-signature-${conversationId}.json`,
+      );
+      toast.success("BOM signature downloaded");
+    } catch (err) {
+      showErrorToast(err, "Failed to download BOM signature");
+    }
+  };
+
+  const handleDownloadEvidencePack = async () => {
+    const tid = parseInt(teamId ?? "0", 10);
+    if (!conversationId || Number.isNaN(tid)) return;
+    try {
+      const blob = await getCertInEvidencePack(tid, "sbom_sca", conversationId);
+      downloadBlob(blob, `certin-evidence-pack-sbom_sca-${conversationId}.zip`);
+      toast.success("Evidence pack downloaded");
+      queryClient.invalidateQueries({
+        queryKey: ["sbom_sca-conversation-data", tid, conversationId],
+      });
+    } catch (err) {
+      showErrorToast(err, "Failed to download evidence pack");
+    }
+  };
+
   const showTabs = teamId && conversationId != null;
   const hasTicketingTab = showTabs && onIntegrationSettingsUpdated != null;
 
   const totalFindings = useFindings ? (findings?.length ?? 0) : vulnerabilities.length;
   const byImpact = vulnerabilities.reduce((acc, v) => {
-    const impact = (v.impact ?? "Unknown").trim() || "Unknown";
+    const impact = (v.impact ?? "Low").trim() || "Low";
     acc[impact] = (acc[impact] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -717,7 +830,7 @@ function SbomResultsView({
 
       const impactCounts: Record<string, number> = {};
       for (const f of selectedFindingsList) {
-        const impact = (f.impact ?? "Unknown").trim() || "Unknown";
+        const impact = (f.impact ?? "Low").trim() || "Low";
         impactCounts[impact] = (impactCounts[impact] ?? 0) + 1;
       }
       let summary = Object.entries(impactCounts)
@@ -804,7 +917,31 @@ function SbomResultsView({
           </div>
         </div>
         {teamId && conversationId != null && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void handleDownloadVex()}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              VEX
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void handleDownloadSignature()}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Signature
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => void handleDownloadEvidencePack()}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Evidence pack
+            </Button>
             {onDownloadReport && (
               <Button
                 variant="outline"
@@ -928,15 +1065,35 @@ function SbomResultsView({
         scanMetadata.sbom_compliance != null && (
           <ComplianceCoverage
             compliance={scanMetadata.sbom_compliance as Compliance}
+            groups={FRAMEWORK_GROUPS_SBOM_WITH_INDIA}
+            defaultGroup="all"
+            onAttest={handleCertInAttest}
           />
         )}
       {scanMetadata &&
         typeof scanMetadata === "object" &&
         "rbi_csf_rollup" in scanMetadata && (
-          <RbiCsfRollup rollup={scanMetadata.rbi_csf_rollup as RbiCsfRollupData | undefined} />
+          <RbiCsfRollup
+            rollup={scanMetadata.rbi_csf_rollup as RbiCsfRollupData | undefined}
+            onAttest={handleCertInAttest}
+            onViewFindings={handleViewRelatedFindings}
+            findings={findingsList ?? []}
+          />
+        )}
+      {scanMetadata &&
+        typeof scanMetadata === "object" &&
+        "certin_posture" in scanMetadata &&
+        scanMetadata.certin_posture != null && (
+          <CertInLanePosture
+            lane="sbom"
+            rollup={scanMetadata.certin_posture as CertInRollupData}
+            onAttest={handleCertInAttest}
+            onViewFindings={handleViewRelatedFindings}
+            findings={findingsList ?? []}
+          />
         )}
 
-      <Card>
+      <Card id="bom-findings">
         <CardHeader>
           <CardTitle>Findings</CardTitle>
           <CardDescription>
@@ -955,7 +1112,10 @@ function SbomResultsView({
                     type="search"
                     placeholder="Search by title, description..."
                     value={findingsSearchQuery}
-                    onChange={(e) => setFindingsSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setRelatedFindingRefs([]);
+                      setFindingsSearchQuery(e.target.value);
+                    }}
                     className="pl-9 h-9 cursor-text"
                     aria-label="Search findings table"
                   />
@@ -1066,7 +1226,16 @@ function SbomResultsView({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredFindingsList.map((f) => {
+                  {filteredFindingsList.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={11} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                        {relatedFindingRefs.length > 0
+                          ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
+                          : "No findings match your filters."}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                  filteredFindingsList.map((f) => {
                     const impact = (f.impact ?? "").trim() || "—";
                     const statusLabel = (f.status ?? "not_started").replace(/_/g, " ");
                     return (
@@ -1162,7 +1331,8 @@ function SbomResultsView({
                         </TableCell>
                       </TableRow>
                     );
-                  })}
+                  })
+                  )}
                 </TableBody>
               </Table>
             ) : (

@@ -26,6 +26,7 @@ import {
 import { RadialBarChart, RadialBar } from "recharts";
 import { Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDateOnlyIst } from "@/utils/datetime";
 import {
   getTeamsDashboard,
   getTeams,
@@ -70,22 +71,21 @@ export default function HomePage() {
     ? Object.entries(teamsDashboard.credit_balance_data)
     : [];
 
+  // Guardrails integrations intentionally omitted from user-facing utilization (deprecated UI).
   const agg = utilEntries.reduce(
     (acc, [, v]) => ({
       sast: acc.sast + (v?.sast_scans ?? 0),
       iac: acc.iac + (v?.iac_scans ?? 0),
       sbom_sca: acc.sbom_sca + (v?.sbom_sca_scans ?? 0),
-      guardrails: acc.guardrails + (v?.guardrails_integrations ?? 0),
       cicd: acc.cicd + (v?.cicd_integrations ?? 0),
     }),
-    { sast: 0, iac: 0, sbom_sca: 0, guardrails: 0, cicd: 0 }
+    { sast: 0, iac: 0, sbom_sca: 0, cicd: 0 }
   );
 
   const utilLabels = [
     { key: "sast", label: "SAST", value: agg.sast },
     { key: "iac", label: "IAC", value: agg.iac },
     { key: "sbom_sca", label: "SBOM/SCA", value: agg.sbom_sca },
-    { key: "guardrails", label: "Guardrails", value: agg.guardrails },
     { key: "cicd", label: "CI/CD", value: agg.cicd },
   ];
 
@@ -155,7 +155,7 @@ export default function HomePage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Utilization across all teams</CardTitle>
                   <CardDescription>
-                    Total scans (SAST, IAC, SBOM/SCA) and integrations (Guardrails, CI/CD) aggregated across all your teams. Segment size reflects relative proportion.
+                    Total scans (SAST, IAC, SBOM/SCA) and integrations (CI/CD) aggregated across all your teams. Segment size reflects relative proportion.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col items-center">
@@ -311,11 +311,7 @@ export default function HomePage() {
                         <TableCell className="font-mono tabular-nums">{t.team_credit_balance}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {t.team_created_at
-                            ? new Date(t.team_created_at).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })
+                            ? formatDateOnlyIst(t.team_created_at)
                             : "—"}
                         </TableCell>
                       </TableRow>

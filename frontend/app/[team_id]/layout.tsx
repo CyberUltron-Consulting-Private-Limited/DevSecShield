@@ -17,7 +17,6 @@ import {
   Database,
   Box,
   Server,
-  Shield,
   Infinity,
   ShieldCheck,
   Settings,
@@ -159,7 +158,7 @@ const toolsItems = [
 
 const workflowItems = [
   { name: "CI / CD", path: "ci_cd", icon: Link2 },
-  { name: "Guardrails", path: "guardrails", icon: Shield },
+  // Guardrails removed from user-facing nav (deprecated — routes retained for soft notice).
 ];
 
 function UserFooter() {

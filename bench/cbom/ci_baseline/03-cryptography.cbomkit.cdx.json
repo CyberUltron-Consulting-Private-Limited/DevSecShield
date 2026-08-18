@@ -1,0 +1,73 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "key"
+        }
+      },
+      "description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 76,
+            "location": "cryptography/hazmat/bindings/_rust/openssl/hpke.pyi"
+          }
+        ]
+      },
+      "name": "generic-api-key",
+      "type": "cryptographic-asset"
+    },
+    {
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "key"
+        }
+      },
+      "description": "Detected a Generic API Key, potentially exposing access to various services and sensitive operations.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 100,
+            "location": "cryptography/hazmat/bindings/_rust/openssl/hpke.pyi"
+          }
+        ]
+      },
+      "name": "generic-api-key",
+      "type": "cryptographic-asset"
+    }
+  ],
+  "metadata": {
+    "tools": {
+      "services": [
+        {
+          "name": "cbomkit-theia",
+          "provider": {
+            "name": "PQCA"
+          },
+          "services": [
+            {
+              "name": "Certificate File Plugin"
+            },
+            {
+              "name": "Secret Detection Plugin"
+            },
+            {
+              "name": "OpenSSL Config Plugin"
+            },
+            {
+              "name": "Problematic CA Detection Plugin"
+            }
+          ],
+          "version": "edge"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6",
+  "version": 1
+}

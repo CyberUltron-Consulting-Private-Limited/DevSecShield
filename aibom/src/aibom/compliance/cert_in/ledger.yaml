@@ -1,0 +1,917 @@
+guideline:
+  title: CERT-In Technical Guidelines on SBOM, QBOM & CBOM, AIBOM and HBOM
+  version: '2.0'
+  dated: '2025-07-09'
+  disclaimer: Advisory alignment to CERT-In Technical Guidelines Version 2.0 dated 09.07.2025. Does not
+    constitute CERT-In certification.
+frameworks:
+  cert_in_cbom:
+    label: CERT-In CBOM (Guidelines v2.0)
+    lane: cbom
+  cert_in_aibom:
+    label: CERT-In AIBOM (Guidelines v2.0)
+    lane: aibom
+  cert_in_sbom:
+    label: CERT-In SBOM (Guidelines v2.0)
+    lane: sbom
+scope_exclusions:
+  qbom_table_8: Table 8 QBOM minimum elements are out of product scope (no QBOM scan type).
+  hbom_table_11: Table 11 HBOM minimum elements are deferred.
+requirements:
+- id: T5-Component-Name
+  pdf: 'Table 5 / §4.2 #1'
+  title: Component Name
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: component.name
+- id: T5-Component-Version
+  pdf: 'Table 5 / §4.2 #2'
+  title: Component Version
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: component.version
+- id: T5-Component-Description
+  pdf: 'Table 5 / §4.2 #3'
+  title: Component Description
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: description property
+- id: T5-Component-Supplier
+  pdf: 'Table 5 / §4.2 #4'
+  title: Component Supplier
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: supplier / purl
+- id: T5-Component-License
+  pdf: 'Table 5 / §4.2 #5'
+  title: Component License
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: license field
+- id: T5-Component-Origin
+  pdf: 'Table 5 / §4.2 #6'
+  title: Component Origin
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: origin classification
+- id: T5-Component-Dependencies
+  pdf: 'Table 5 / §4.2 #7'
+  title: Component Dependencies
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: dependency graph
+- id: T5-Vulnerabilities
+  pdf: 'Table 5 / §4.2 #8'
+  title: Vulnerabilities
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: CVE / advisory linkage
+- id: T5-Patch-Status
+  pdf: 'Table 5 / §4.2 #9'
+  title: Patch Status
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: fix/upgrade metadata
+- id: T5-Release-Date
+  pdf: 'Table 5 / §4.2 #10'
+  title: Release Date
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: published date
+- id: T5-EOL-Date
+  pdf: 'Table 5 / §4.2 #11'
+  title: End-of-Life (EOL) Date
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: EOL metadata
+- id: T5-Criticality
+  pdf: 'Table 5 / §4.2 #12'
+  title: Criticality
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: org criticality judgment
+- id: T5-Usage-Restrictions
+  pdf: 'Table 5 / §4.2 #13'
+  title: Usage Restrictions
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: export/IP restrictions
+- id: T5-Checksums-or-Hashes
+  pdf: 'Table 5 / §4.2 #14'
+  title: Checksums or Hashes
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: component hash
+- id: T5-Comments-or-Notes
+  pdf: 'Table 5 / §4.2 #15'
+  title: Comments or Notes
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: annotations
+- id: T5-Author-of-SBOM-Data
+  pdf: 'Table 5 / §4.2 #16'
+  title: Author of SBOM Data
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: BOM metadata author
+- id: T5-Timestamp
+  pdf: 'Table 5 / §4.2 #17'
+  title: Timestamp
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: BOM timestamp
+- id: T5-Executable-Property
+  pdf: 'Table 5 / §4.2 #18'
+  title: Executable Property
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: CycloneDX executable prop
+- id: T5-Archive-Property
+  pdf: 'Table 5 / §4.2 #19'
+  title: Archive Property
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: CycloneDX archive prop
+- id: T5-Structured-Property
+  pdf: 'Table 5 / §4.2 #20'
+  title: Structured Property
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: structured data descriptors
+- id: T5-Unique-Identifier
+  pdf: 'Table 5 / §4.2 #21'
+  title: Unique Identifier (PURL-style)
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: purl / bom-ref
+- id: T5-Automation-SPDX
+  pdf: Table 5 / Automation Support
+  title: SBOM emit in SPDX
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: SPDX reporter available
+- id: T5-Automation-CycloneDX
+  pdf: Table 5 / Automation Support
+  title: SBOM emit in CycloneDX
+  lane: sbom
+  mode: auto
+  missing: fail
+  evidence_hint: CycloneDX reporter available
+- id: T5-Inventory-Tools
+  pdf: Table 5 / multi-tool provenance
+  title: Inventory tooling provenance
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: Syft and/or cdxgen ran (BOM props)
+- id: T5-Vuln-Scanner
+  pdf: Table 5 / multi-tool provenance
+  title: Vulnerability scanner provenance
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: Grype ran (BOM props)
+- id: T5-Multi-Format-Emit
+  pdf: Table 5 / multi-tool provenance
+  title: Machine-readable SBOM artifact
+  lane: sbom
+  mode: auto
+  missing: nbe
+  evidence_hint: CycloneDX/SPDX emit evidence
+- id: 7.1.1
+  pdf: §7.1.1
+  title: Require SBOM in procurements
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that SBOM requirements are included in software
+    procurements for government/public/essential-services contexts.
+  description: Attest that SBOM requirements are included in software procurements for government/public/essential-services
+    contexts.
+- id: 7.1.2
+  pdf: §7.1.2
+  title: Supplier must provide complete SBOM
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that software suppliers deliver a complete
+    SBOM with each delivery.
+  description: Attest that software suppliers deliver a complete SBOM with each delivery.
+- id: 7.1.3
+  pdf: §7.1.3
+  title: Maintain SBOM for in-use software
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that the organization maintains SBOMs for
+    software used, procured, and developed.
+  description: Attest that the organization maintains SBOMs for software used, procured, and developed.
+- id: 7.1.4
+  pdf: §7.1.4
+  title: Include §4.2 minimum data fields
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that supplier SBOMs include the Chapter 4
+    §4.2 minimum elements.
+  description: Attest that supplier SBOMs include the Chapter 4 §4.2 minimum elements.
+- id: 7.1.5
+  pdf: §7.1.5
+  title: Emit SBOM in SPDX or CycloneDX
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that SBOMs are produced in SPDX or CycloneDX
+    formats.
+  description: Attest that SBOMs are produced in SPDX or CycloneDX formats.
+- id: 7.1.6
+  pdf: §7.1.6
+  title: Issue VEX on vulnerability discovery
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that developers/integrators issue VEX documents
+    when vulnerabilities are discovered.
+  description: Attest that developers/integrators issue VEX documents when vulnerabilities are discovered.
+- id: 7.1.7
+  pdf: §7.1.7
+  title: Integrate SBOM with vuln intel feeds
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that SBOM data is integrated with vulnerability
+    databases and CERT-In advisories.
+  description: Attest that SBOM data is integrated with vulnerability databases and CERT-In advisories.
+- id: 7.1.8
+  pdf: §7.1.8
+  title: Update SBOM for patches/mitigations
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that consumer SBOMs are updated to reflect
+    applied patches or mitigations.
+  description: Attest that consumer SBOMs are updated to reflect applied patches or mitigations.
+- id: 7.1.9
+  pdf: §7.1.9
+  title: Maintain per-version SBOM
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that each software version has a separate
+    SBOM, updated only for new component info or corrections.
+  description: Attest that each software version has a separate SBOM, updated only for new component info
+    or corrections.
+- id: 7.1.10
+  pdf: §7.1.10
+  title: Map supplier SBOM to internal inventory
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that consumers map supplier SBOMs into an
+    internal SBOM inventory.
+  description: Attest that consumers map supplier SBOMs into an internal SBOM inventory.
+- id: 7.1.11
+  pdf: §7.1.11
+  title: Include SBOM in vuln management workflow
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that security teams include SBOM inventory
+    in vulnerability-management workflows.
+  description: Attest that security teams include SBOM inventory in vulnerability-management workflows.
+- id: 7.1.12
+  pdf: §7.1.12
+  title: Audit SBOM process accuracy
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that regular audits verify SBOM process accuracy
+    and completeness.
+  description: Attest that regular audits verify SBOM process accuracy and completeness.
+- id: 7.1.13
+  pdf: §7.1.13
+  title: Correlate SBOM with VEX status
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that component data from SBOMs is combined
+    with VEX vulnerability status.
+  description: Attest that component data from SBOMs is combined with VEX vulnerability status.
+- id: 7.1.14
+  pdf: §7.1.14
+  title: Protect SBOM data in storage/transit
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that SBOM data is stored and transmitted
+    with encryption and access controls.
+  description: Attest that SBOM data is stored and transmitted with encryption and access controls.
+- id: 7.1.15
+  pdf: §7.1.15
+  title: Keep SBOM current as components change
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that workflows regularly update the SBOM
+    when components are introduced or changed.
+  description: Attest that workflows regularly update the SBOM when components are introduced or changed.
+- id: T9-Algorithms-Name
+  pdf: Table 9 / Algorithms / Name
+  title: Algorithm Name
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto asset name
+- id: T9-Algorithms-AssetType
+  pdf: Table 9 / Algorithms / Asset Type
+  title: Algorithm Asset Type
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:assetType=algorithm
+- id: T9-Algorithms-Primitive
+  pdf: Table 9 / Algorithms / Primitive
+  title: Algorithm Primitive
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:primitive
+- id: T9-Algorithms-Mode
+  pdf: Table 9 / Algorithms / Mode
+  title: Algorithm Mode
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: crypto:mode
+- id: T9-Algorithms-Crypto-Functions
+  pdf: Table 9 / Algorithms / Crypto Functions
+  title: Algorithm Crypto Functions
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: supported crypto functions
+- id: T9-Algorithms-Classical-Security-Level
+  pdf: Table 9 / Algorithms / Classical security level
+  title: Algorithm Classical security level
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:securityStrengthBits
+- id: T9-Algorithms-OID
+  pdf: Table 9 / Algorithms / OID
+  title: Algorithm OID
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: algorithm OID if known else NBE
+- id: T9-Algorithms-List
+  pdf: Table 9 / Algorithms / List
+  title: Algorithm List
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: algorithm list on quantum/device context
+- id: T9-Keys-Name
+  pdf: Table 9 / Keys / Name
+  title: Key Name
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: key material name
+- id: T9-Keys-AssetType
+  pdf: Table 9 / Keys / Asset Type
+  title: Key Asset Type
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:assetType related-crypto-material
+- id: T9-Keys-Id
+  pdf: Table 9 / Keys / id
+  title: Key id
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: key id
+- id: T9-Keys-State
+  pdf: Table 9 / Keys / state
+  title: Key state
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: active/revoked/expired
+- id: T9-Keys-Size
+  pdf: Table 9 / Keys / size
+  title: Key size
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: key size bits
+- id: T9-Keys-Creation-Date
+  pdf: Table 9 / Keys / Creation Date
+  title: Key Creation Date
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: key creation date
+- id: T9-Keys-Activation-Date
+  pdf: Table 9 / Keys / Activation Date
+  title: Key Activation Date
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: key activation date
+- id: T9-Protocols-Name
+  pdf: Table 9 / Protocols / Name
+  title: Protocol Name
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: protocol name
+- id: T9-Protocols-AssetType
+  pdf: Table 9 / Protocols / Asset Type
+  title: Protocol Asset Type
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:assetType=protocol
+- id: T9-Protocols-Version
+  pdf: Table 9 / Protocols / Version
+  title: Protocol Version
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: crypto:protocolVersion
+- id: T9-Protocols-Cipher-Suites
+  pdf: Table 9 / Protocols / Cipher Suites
+  title: Protocol Cipher Suites
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: crypto:cipherSuite
+- id: T9-Protocols-OID
+  pdf: Table 9 / Protocols / OID
+  title: Protocol OID
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: protocol OID
+- id: T9-Certificates-Name
+  pdf: Table 9 / Certificates / Name
+  title: Certificate Name
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: certificate name/subject
+- id: T9-Certificates-AssetType
+  pdf: Table 9 / Certificates / Asset Type
+  title: Certificate Asset Type
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:assetType=certificate
+- id: T9-Certificates-Subject-Name
+  pdf: Table 9 / Certificates / Subject Name
+  title: Certificate Subject Name
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:subjectName
+- id: T9-Certificates-Issuer-Name
+  pdf: Table 9 / Certificates / Issuer Name
+  title: Certificate Issuer Name
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:issuerName
+- id: T9-Certificates-Not-Valid-Before
+  pdf: Table 9 / Certificates / Not Valid Before
+  title: Certificate Not Valid Before
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:notValidBefore
+- id: T9-Certificates-Not-Valid-After
+  pdf: Table 9 / Certificates / Not Valid After
+  title: Certificate Not Valid After
+  lane: cbom
+  mode: auto
+  missing: fail
+  evidence_hint: crypto:notValidAfter
+- id: T9-Certificates-Signature-Algorithm-Reference
+  pdf: Table 9 / Certificates / Signature Algorithm Reference
+  title: Certificate Signature Algorithm Reference
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: signatureAlgorithmRef
+- id: T9-Certificates-Subject-Public-Key-Reference
+  pdf: Table 9 / Certificates / Subject Public Key Reference
+  title: Certificate Subject Public Key Reference
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: subjectPublicKeyRef
+- id: T9-Certificates-Certificate-Format
+  pdf: Table 9 / Certificates / Certificate Format
+  title: Certificate Certificate Format
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: X.509 format
+- id: T9-Certificates-Certificate-Extension
+  pdf: Table 9 / Certificates / Certificate Extension
+  title: Certificate Certificate Extension
+  lane: cbom
+  mode: auto
+  missing: nbe
+  evidence_hint: file extension
+- id: 8.4.1.1
+  pdf: §8.4.1.1
+  title: Require CBOM in procurements
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that CBOM is required in crypto/quantum-related
+    procurements.
+  description: Attest that CBOM is required in cryptography-related procurements.
+- id: 8.4.1.2
+  pdf: §8.4.1.2
+  title: Supplier must provide complete CBOM
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that suppliers of crypto/quantum solutions
+    deliver a complete CBOM.
+  description: Attest that suppliers of cryptographic solutions deliver a complete CBOM.
+- id: 8.4.1.3
+  pdf: §8.4.1.3
+  title: Maintain CBOM for crypto systems
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that an accurate, current CBOM is maintained
+    for crypto/quantum systems in use.
+  description: Attest that an accurate, current CBOM is maintained for cryptographic systems in use.
+- id: 8.4.1.4
+  pdf: §8.4.1.4
+  title: Disclose crypto implementation detail
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that CBOMs provide transparency into crypto
+    implementations (HW/SW/algorithms/protocols).
+  description: Attest that CBOMs provide transparency into crypto implementations (HW/SW/algorithms/protocols).
+- id: 8.4.1.5
+  pdf: §8.4.1.5
+  title: Emit CBOM in SPDX or CycloneDX
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that CBOMs are generated in SPDX or CycloneDX
+    formats.
+  description: Attest that CBOMs are generated in SPDX or CycloneDX formats.
+- id: 8.4.1.6
+  pdf: §8.4.1.6
+  title: Issue VEX for crypto vulnerabilities
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that VEX documents are issued when crypto/quantum
+    component vulnerabilities are discovered.
+  description: Attest that VEX documents are issued when cryptographic component vulnerabilities are discovered.
+- id: 8.4.1.7
+  pdf: §8.4.1.7
+  title: Integrate CBOM with vuln intel feeds
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that CBOM data is integrated with vulnerability
+    databases and CERT-In advisories.
+  description: Attest that CBOM data is integrated with vulnerability databases and CERT-In advisories.
+- id: 8.4.1.8
+  pdf: §8.4.1.8
+  title: Align internal CBOM with supplier data
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that consumers maintain an internal CBOM
+    aligned with supplier data.
+  description: Attest that consumers maintain an internal CBOM aligned with supplier data.
+- id: 8.4.1.9
+  pdf: §8.4.1.9
+  title: Include CBOM in vuln management
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that security teams incorporate CBOM inventories
+    into vulnerability-management workflows.
+  description: Attest that security teams incorporate CBOM inventories into vulnerability-management workflows.
+- id: 8.4.1.10
+  pdf: §8.4.1.10
+  title: Audit CBOM completeness
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that periodic audits verify CBOM completeness,
+    accuracy, and policy compliance.
+  description: Attest that periodic audits verify CBOM completeness, accuracy, and policy compliance.
+- id: 8.4.1.11
+  pdf: §8.4.1.11
+  title: Cross-reference CBOM with VEX
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that CBOM component data is cross-referenced
+    with VEX status for prioritization.
+  description: Attest that CBOM component data is cross-referenced with VEX status for prioritization.
+- id: 8.4.1.12
+  pdf: §8.4.1.12
+  title: Protect CBOM data in storage/transit
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that CBOM data is stored and transmitted
+    with encryption, access control, and integrity controls.
+  description: Attest that CBOM data is stored and transmitted with encryption, access control, and integrity
+    controls.
+- id: 8.4.1.13
+  pdf: §8.4.1.13
+  title: Update CBOM as crypto components change
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that workflows update the CBOM when crypto/quantum
+    components or algorithms change.
+  description: Attest that workflows update the CBOM when cryptographic components or algorithms change.
+- id: T10-Model-Name
+  pdf: Table 10 / Model Name
+  title: Model Name
+  lane: aibom
+  mode: auto
+  missing: fail
+  evidence_hint: ModelComponent.name
+- id: T10-Model-Version
+  pdf: Table 10 / Model Version
+  title: Model Version
+  lane: aibom
+  mode: auto
+  missing: fail
+  evidence_hint: ModelComponent.version
+- id: T10-Model-Type
+  pdf: Table 10 / Model Type
+  title: Model Type
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: model type/task
+- id: T10-Model-Developer
+  pdf: Table 10 / Model Developer
+  title: Model Developer
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: developer/org
+- id: T10-Model-Licensing-Information
+  pdf: Table 10 / Model Licensing Information
+  title: Model Licensing Information
+  lane: aibom
+  mode: auto
+  missing: fail
+  evidence_hint: license
+- id: T10-Software-Dependencies
+  pdf: Table 10 / Software Dependencies
+  title: Software Dependencies
+  lane: aibom
+  mode: auto
+  missing: fail
+  evidence_hint: framework depends_on edges
+- id: T10-ML-Models-and-Algorithms
+  pdf: Table 10 / ML Models and Algorithms
+  title: ML Models and Algorithms
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: algorithm inventory
+- id: T10-Model-Performance-Metrics
+  pdf: Table 10 / Model Performance Metrics
+  title: Model Performance Metrics
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: metrics properties
+- id: T10-Data-Source
+  pdf: Table 10 / Data Source
+  title: Data Source
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: dataset origin
+- id: T10-Data-Sets
+  pdf: Table 10 / Data Sets
+  title: Data Sets
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: trained_on datasets
+- id: T10-Hardware
+  pdf: Table 10 / Hardware
+  title: Hardware
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: infra/hardware props
+- id: T10-Security-Requirements
+  pdf: Table 10 / Security Requirements
+  title: Security Requirements
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: encryption/access controls
+- id: T10-Input
+  pdf: Table 10 / Input
+  title: Input
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: model input modality
+- id: T10-Output
+  pdf: Table 10 / Output
+  title: Output
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: model output modality
+- id: T10-Intended-Usage
+  pdf: Table 10 / Intended Usage
+  title: Intended Usage
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: intended use
+- id: T10-Out-of-Scope-Usage
+  pdf: Table 10 / Out of Scope Usage
+  title: Out of Scope Usage
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: prohibited uses
+- id: T10-Environmental-Impact
+  pdf: Table 10 / Environmental Impact
+  title: Environmental Impact
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: energy/carbon
+- id: T10-Vulnerabilities
+  pdf: Table 10 / Vulnerabilities
+  title: Vulnerabilities
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: AI component vulns
+- id: T10-Attestations
+  pdf: Table 10 / Attestations
+  title: Attestations
+  lane: aibom
+  mode: auto
+  missing: nbe
+  evidence_hint: digital signature / attestation
+- id: 9.4.1.1
+  pdf: §9.4.1.1
+  title: Require AIBOM in AI procurements
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AIBOM requirements are included in AI-related
+    procurements and solutions.
+  description: Attest that AIBOM requirements are included in AI-related procurements and solutions.
+- id: 9.4.1.2
+  pdf: §9.4.1.2
+  title: Supplier must provide complete AIBOM
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AI solutions supplied include an AIBOM
+    of components and dependencies.
+  description: Attest that AI solutions supplied include an AIBOM of components and dependencies.
+- id: 9.4.1.3
+  pdf: §9.4.1.3
+  title: Maintain AIBOM for AI systems
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that an AIBOM is maintained for AI systems
+    used, procured, and developed.
+  description: Attest that an AIBOM is maintained for AI systems used, procured, and developed.
+- id: 9.4.1.4
+  pdf: §9.4.1.4
+  title: Include required AIBOM elements
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that supplier AIBOMs include the guideline-specified
+    transparency elements.
+  description: Attest that supplier AIBOMs include the guideline-specified transparency elements.
+- id: 9.4.1.5
+  pdf: §9.4.1.5
+  title: Emit AIBOM in SPDX or CycloneDX
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AIBOMs are generated in SPDX or CycloneDX
+    formats.
+  description: Attest that AIBOMs are generated in SPDX or CycloneDX formats.
+- id: 9.4.1.6
+  pdf: §9.4.1.6
+  title: Issue VEX for AI model vulnerabilities
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AI suppliers issue VEX documents when
+    AI-model vulnerabilities are discovered.
+  description: Attest that AI suppliers issue VEX documents when AI-model vulnerabilities are discovered.
+- id: 9.4.1.7
+  pdf: §9.4.1.7
+  title: Integrate AIBOM with vuln intel feeds
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AIBOM data is integrated with vulnerability
+    databases and CERT-In advisories.
+  description: Attest that AIBOM data is integrated with vulnerability databases and CERT-In advisories.
+- id: 9.4.1.8
+  pdf: §9.4.1.8
+  title: Align internal AIBOM with supplier data
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that consumers maintain an internal AIBOM
+    aligned with the supplier AIBOM.
+  description: Attest that consumers maintain an internal AIBOM aligned with the supplier AIBOM.
+- id: 9.4.1.9
+  pdf: §9.4.1.9
+  title: Include AIBOM in vuln management
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that security teams incorporate AIBOM inventory
+    into vulnerability-management workflows.
+  description: Attest that security teams incorporate AIBOM inventory into vulnerability-management workflows.
+- id: 9.4.1.10
+  pdf: §9.4.1.10
+  title: Audit AIBOM process accuracy
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that regular audits verify AIBOM process
+    accuracy, completeness, and compliance.
+  description: Attest that regular audits verify AIBOM process accuracy, completeness, and compliance.
+- id: 9.4.1.11
+  pdf: §9.4.1.11
+  title: Correlate AIBOM with VEX status
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AIBOM component data is combined with
+    VEX vulnerability status.
+  description: Attest that AIBOM component data is combined with VEX vulnerability status.
+- id: 9.4.1.12
+  pdf: §9.4.1.12
+  title: Protect AIBOM data in storage/transit
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that AIBOM data is stored and transmitted
+    with encryption and access controls.
+  description: Attest that AIBOM data is stored and transmitted with encryption and access controls.
+- id: 9.4.1.13
+  pdf: §9.4.1.13
+  title: Keep AIBOM current as AI components change
+  lane: process
+  mode: manual
+  missing: nbe
+  evidence_hint: organizational process attestation — Attest that workflows regularly update the AIBOM
+    when AI components or models change.
+  description: Attest that workflows regularly update the AIBOM when AI components or models change.

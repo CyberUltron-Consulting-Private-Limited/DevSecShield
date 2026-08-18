@@ -1,0 +1,72 @@
+{
+  "annotations": [
+    {
+      "annotator": {
+        "component": {
+          "authors": [
+            {
+              "name": "OWASP Foundation"
+            }
+          ],
+          "bom-ref": "pkg:npm/@cyclonedx/cdxgen@11.11.0",
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "publisher": "OWASP Foundation",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@11.11.0",
+          "type": "application",
+          "version": "11.11.0"
+        }
+      },
+      "bom-ref": "metadata-annotations",
+      "subjects": [
+        "pkg:pypi/src@latest"
+      ],
+      "text": "This Software Bill-of-Materials (SBOM) document was created on Sunday, August 9, 2026 with cdxgen. The data was captured during the build lifecycle phase. The document describes an application named 'src'. BOM file is empty without components.",
+      "timestamp": "2026-08-09T07:53:07Z"
+    }
+  ],
+  "bomFormat": "CycloneDX",
+  "components": [],
+  "dependencies": [],
+  "metadata": {
+    "authors": [
+      {
+        "name": "OWASP Foundation"
+      }
+    ],
+    "component": {
+      "bom-ref": "pkg:pypi/src@latest",
+      "group": "",
+      "name": "src",
+      "purl": "pkg:pypi/src@latest",
+      "type": "application",
+      "version": "latest"
+    },
+    "lifecycles": [
+      {
+        "phase": "build"
+      }
+    ],
+    "properties": [],
+    "tools": {
+      "components": [
+        {
+          "authors": [
+            {
+              "name": "OWASP Foundation"
+            }
+          ],
+          "bom-ref": "pkg:npm/@cyclonedx/cdxgen@11.11.0",
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "publisher": "OWASP Foundation",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@11.11.0",
+          "type": "application",
+          "version": "11.11.0"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6",
+  "version": 2
+}

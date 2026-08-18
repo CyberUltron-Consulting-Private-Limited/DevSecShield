@@ -1,0 +1,19 @@
+{
+  "url": "http://127.0.0.1:3000/shadow-ai-verify",
+  "ok": true,
+  "shadowCardFound": true,
+  "rowCount": 43,
+  "longBinRows": 12,
+  "badgesInsideCard": true,
+  "badgeOverflowDetails": [],
+  "hoverOpened": true,
+  "hoverHasWhy": true,
+  "hoverHasDescription": true,
+  "hoverHasFix": true,
+  "hoverHasLocation": true,
+  "viewFullOpensDialog": true,
+  "dialogTitle": "173417d553406f034f643e5db3f8d591fb691ebac56f5ae39a22cc7d455c5353.bin",
+  "consoleErrors": [],
+  "notes": [],
+  "screenshot": "/Users/anshsinghal/Desktop/DevSecShield/.skill-workspace/shadow-ai-overflow-hover-shot.png"
+}

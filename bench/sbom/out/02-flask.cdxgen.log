@@ -1,0 +1,46 @@
+Error while parsing the pyproject file /Users/anshsinghal/Desktop/DevSecShield/bench/sbom/repos/02-flask/pyproject.toml. TomlError: Inline lists must be a single type, not a mix of string and inline-table at row 193, col 55, pos 3937:
+192:     "pytest", "-v", "--tb=short", "--basetemp={env_tmp_dir}",
+193>     {replace = "posargs", default = [], extend = true},
+                                                           ^
+194: ]]
+
+
+    at TOMLParser.recordInlineListValue (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/toml-parser.js:1305:28)
+    at TOMLParser.runOne (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:64:30)
+    at TOMLParser.returnNow (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:107:17)
+    at TOMLParser.recordValue (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/toml-parser.js:523:19)
+    at TOMLParser.runOne (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:64:30)
+    at TOMLParser.parse (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:45:22)
+    at Object.parseString [as parse] (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/parse-string.js:13:12)
+    at parsePyProjectTomlFile (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/helpers/utils.js:5668:21)
+    at createPythonBom (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/cli/index.js:3792:23)
+    at createBom (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/cli/index.js:8543:18) {
+  fromTOML: true,
+  wrapped: null,
+  line: 192,
+  col: 54,
+  pos: 3937
+}
+Error while parsing the pyproject file /Users/anshsinghal/Desktop/DevSecShield/bench/sbom/repos/02-flask/pyproject.toml. TomlError: Inline lists must be a single type, not a mix of string and inline-table at row 193, col 55, pos 3937:
+192:     "pytest", "-v", "--tb=short", "--basetemp={env_tmp_dir}",
+193>     {replace = "posargs", default = [], extend = true},
+                                                           ^
+194: ]]
+
+
+    at TOMLParser.recordInlineListValue (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/toml-parser.js:1305:28)
+    at TOMLParser.runOne (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:64:30)
+    at TOMLParser.returnNow (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:107:17)
+    at TOMLParser.recordValue (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/toml-parser.js:523:19)
+    at TOMLParser.runOne (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:64:30)
+    at TOMLParser.parse (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:45:22)
+    at Object.parseString [as parse] (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/parse-string.js:13:12)
+    at parsePyProjectTomlFile (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/helpers/utils.js:5668:21)
+    at parsePyLockData (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/helpers/utils.js:5831:23)
+    at createPythonBom (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/cli/index.js:3838:26) {
+  fromTOML: true,
+  wrapped: null,
+  line: 192,
+  col: 54,
+  pos: 3937
+}

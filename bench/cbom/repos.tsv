@@ -4,3 +4,4 @@
 02-pyopenssl	pyca/pyopenssl	https://github.com/pyca/pyopenssl	.	OpenSSL wrapper: TLS/SSL methods + test certs/keys under tests/
 03-cryptography	pyca/cryptography	https://github.com/pyca/cryptography	src	pyca/cryptography users' baseline: AEAD/hashes/x509; scoped to src
 04-mitmproxy	mitmproxy/mitmproxy	https://github.com/mitmproxy/mitmproxy	mitmproxy	TLS proxy server: ssl/TLS protocol config + bundled cert material
+05-paramiko	paramiko/paramiko	https://github.com/paramiko/paramiko	.	SSH protocol library: paramiko/SSHClient + host keys in tests

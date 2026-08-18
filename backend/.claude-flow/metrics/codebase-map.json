@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-28T09:20:16.488Z",
+  "projectRoot": "/Users/anshsinghal/Desktop/DevSecShield/backend",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": false,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1785230416488
+}

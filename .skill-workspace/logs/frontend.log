@@ -1,0 +1,16 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.5:3000
+- Environments: .env.local
+✓ Ready in 332ms
+
+api base url :  http://127.0.0.1:8081
+ GET /login 200 in 455ms (next.js: 190ms, application-code: 264ms)
+ GET /login 200 in 92ms (next.js: 1926µs, application-code: 90ms)
+ GET /1/cbom/94/results 200 in 564ms (next.js: 437ms, application-code: 127ms)
+ GET / 200 in 233ms (next.js: 110ms, application-code: 123ms)
+ GET /sw.js 200 in 1303ms (next.js: 1225ms, application-code: 78ms)

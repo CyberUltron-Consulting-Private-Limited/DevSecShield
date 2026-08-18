@@ -1,0 +1,1000 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "bom-ref": "09d06916-1bc7-41ea-b42e-5df8f566d452",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-521;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "1450a003-914e-4dcc-849e-60cd5edfb7f4",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElI9mbdlaS+T9nHxY/59lFnn80EEecZDBHq4gLpccY8Mge5ZTMiMDADRvOqQ5R98Sxst765CAqXmRtz8vwoD96g=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "158e602d-b258-4646-b618-5507749ee5d6",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-384;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "211da810-bc14-4770-95ae-dd08f6c19430",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFsaJtAtb0ABmIY3aERDFZhigVpYrA3c8pJoMlIyqYifVn2yBFS7Dxj/DnTY4a9cv/AWTSLbPnSXelZmMPuB8wfuBflNSILPCtCRL4efVTZL1oXlYmnQ1wjNjFfDavgzY"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "27102434-563b-497d-8779-203fe6080433",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-384;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/test_ecdsa_384.key"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "2cdffa48-9ad8-4dd9-a034-3184cb58513f",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-256;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/_support/ecdsa-256.key"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "3b5429f1-e70e-4af0-9402-204c8ef9ac33",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQAmjmhS2RrsWuQFteqo+lS8qRWy6xFq7fQGVJaAjHn8TvGzS4yvzuYNKwFWrGq9U58hxPao+DcMwDWQElo0DW3ODABvL86nsxcCyJ/5DcjU7FzX6hJKPToB2ZJ5Y9me/XcEyXEQC+EC3E+WjQ9BB2SwdnwFA14liG9o+K4NZsD5QTIgVw="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "51bdb19f-689d-4247-9668-3dd767eea5eb",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-256;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "525773f5-3e23-4389-bf23-ff066cb6f169",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElI9mbdlaS+T9nHxY/59lFnn80EEecZDBHq4gLpccY8Mge5ZTMiMDADRvOqQ5R98Sxst765CAqXmRtz8vwoD96g=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "5acf6467-e5a8-4289-8628-a9703d1c7a8d",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFsaJtAtb0ABmIY3aERDFZhigVpYrA3c8pJoMlIyqYifVn2yBFS7Dxj/DnTY4a9cv/AWTSLbPnSXelZmMPuB8wfuBflNSILPCtCRL4efVTZL1oXlYmnQ1wjNjFfDavgzY"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "64fe72eb-13b4-47fb-b581-42658aaa687f",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQAmjmhS2RrsWuQFteqo+lS8qRWy6xFq7fQGVJaAjHn8TvGzS4yvzuYNKwFWrGq9U58hxPao+DcMwDWQElo0DW3ODABvL86nsxcCyJ/5DcjU7FzX6hJKPToB2ZJ5Y9me/XcEyXEQC+EC3E+WjQ9BB2SwdnwFA14liG9o+K4NZsD5QTIgVw="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "70c1b7ef-599b-4fb2-9ba9-5da554d7a7d3",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQAmjmhS2RrsWuQFteqo+lS8qRWy6xFq7fQGVJaAjHn8TvGzS4yvzuYNKwFWrGq9U58hxPao+DcMwDWQElo0DW3ODABvL86nsxcCyJ/5DcjU7FzX6hJKPToB2ZJ5Y9me/XcEyXEQC+EC3E+WjQ9BB2SwdnwFA14liG9o+K4NZsD5QTIgVw="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "71d6c34f-223d-4048-b97d-20800c03cce0",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-384;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "74c9caa9-4ae7-48c7-ba4e-3fe2db60c53d",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-384;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "7b32b6b1-f788-4176-82aa-960ea98dd111",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFsaJtAtb0ABmIY3aERDFZhigVpYrA3c8pJoMlIyqYifVn2yBFS7Dxj/DnTY4a9cv/AWTSLbPnSXelZmMPuB8wfuBflNSILPCtCRL4efVTZL1oXlYmnQ1wjNjFfDavgzY"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "7fc7fa85-c3c1-4fc1-ba1e-8b87870fa5dc",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-256;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "86b8476c-42f7-47b8-bc03-222ae566a88a",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElI9mbdlaS+T9nHxY/59lFnn80EEecZDBHq4gLpccY8Mge5ZTMiMDADRvOqQ5R98Sxst765CAqXmRtz8vwoD96g=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "8fcac654-867a-4363-8986-1cf2dd66cd6f",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQAmjmhS2RrsWuQFteqo+lS8qRWy6xFq7fQGVJaAjHn8TvGzS4yvzuYNKwFWrGq9U58hxPao+DcMwDWQElo0DW3ODABvL86nsxcCyJ/5DcjU7FzX6hJKPToB2ZJ5Y9me/XcEyXEQC+EC3E+WjQ9BB2SwdnwFA14liG9o+K4NZsD5QTIgVw="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "a1193e15-4f9e-4dff-b102-a02a74570df0",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElI9mbdlaS+T9nHxY/59lFnn80EEecZDBHq4gLpccY8Mge5ZTMiMDADRvOqQ5R98Sxst765CAqXmRtz8vwoD96g=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/_support/ecdsa-256.key"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "a7b99fa9-7d94-43b6-ab5a-431f81470747",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFsaJtAtb0ABmIY3aERDFZhigVpYrA3c8pJoMlIyqYifVn2yBFS7Dxj/DnTY4a9cv/AWTSLbPnSXelZmMPuB8wfuBflNSILPCtCRL4efVTZL1oXlYmnQ1wjNjFfDavgzY"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/test_ecdsa_384.key"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "b7487bf0-1e1e-49d9-a908-9892d8898886",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-256;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "be2364b7-8ebf-4e71-ba03-8453b201641c",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQAmjmhS2RrsWuQFteqo+lS8qRWy6xFq7fQGVJaAjHn8TvGzS4yvzuYNKwFWrGq9U58hxPao+DcMwDWQElo0DW3ODABvL86nsxcCyJ/5DcjU7FzX6hJKPToB2ZJ5Y9me/XcEyXEQC+EC3E+WjQ9BB2SwdnwFA14liG9o+K4NZsD5QTIgVw="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/test_ecdsa_521.key"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "d171c3eb-c143-4922-a9fa-e0555f9644e7",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-521;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "da9a1295-c3b7-4523-870e-9b5125462951",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEFsaJtAtb0ABmIY3aERDFZhigVpYrA3c8pJoMlIyqYifVn2yBFS7Dxj/DnTY4a9cv/AWTSLbPnSXelZmMPuB8wfuBflNSILPCtCRL4efVTZL1oXlYmnQ1wjNjFfDavgzY"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "e2248a00-3637-4c4a-bf6a-3c0e9b08a73e",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-521;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/test_ecdsa_521.key"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "e9e941cd-3108-4212-8eb9-64b2b08ea8e8",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.10045.2.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "public-key",
+          "value": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAElI9mbdlaS+T9nHxY/59lFnn80EEecZDBHq4gLpccY8Mge5ZTMiMDADRvOqQ5R98Sxst765CAqXmRtz8vwoD96g=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "ec708ef7-14fc-43eb-ac55-0474ff3af75a",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-521;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "edddf646-6cea-4fdf-916d-91dcb7c0b249",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-384;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "f2afbbcc-7f30-4b43-99a0-a2dad555e7e0",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-256;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "f7f985e4-ad85-4f91-9698-d179bd3a8e56",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "type": "private-key"
+        }
+      },
+      "description": "Curve: P-521;Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "ECDSA",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "004780b1-0202-4588-a168-9f66607beca8",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "0fc9d8e6-e718-442a-a2cf-cf258d5edcf4",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "1c1b39d2-70a2-4341-abdc-7c6dc3edda40",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "public-key",
+          "value": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDTj1bqB4WmayWNPB+8jVSYpZYk80Ujvj680pOTh2bORBjbIAyzoWGW+GUjzKxTiiPvVmxFgx5wdsFvF03v34lEVVhMpouqPAYQ15N37K/ir5XY+9m/d8ufMCkjeXsQkKqFbAlQcnWMCRnOoPHS3I4vi6hmnDDeeYTSRvfLbW0fhwIBIw=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "1e63a97e-f0ca-4069-bf80-c0099309ad2c",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "public-key",
+          "value": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDTj1bqB4WmayWNPB+8jVSYpZYk80Ujvj680pOTh2bORBjbIAyzoWGW+GUjzKxTiiPvVmxFgx5wdsFvF03v34lEVVhMpouqPAYQ15N37K/ir5XY+9m/d8ufMCkjeXsQkKqFbAlQcnWMCRnOoPHS3I4vi6hmnDDeeYTSRvfLbW0fhwIBIw=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 104,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "2478f0ca-ff5a-418b-afe6-4c583877f26b",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "public-key",
+          "value": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDTj1bqB4WmayWNPB+8jVSYpZYk80Ujvj680pOTh2bORBjbIAyzoWGW+GUjzKxTiiPvVmxFgx5wdsFvF03v34lEVVhMpouqPAYQ15N37K/ir5XY+9m/d8ufMCkjeXsQkKqFbAlQcnWMCRnOoPHS3I4vi6hmnDDeeYTSRvfLbW0fhwIBIw=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/_support/rsa.key"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "2cc04f99-90c1-4c0f-830f-cc23cd7180b7",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "54686132-973b-44f2-8b2d-4dc13abdc393",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "public-key",
+          "value": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDTj1bqB4WmayWNPB+8jVSYpZYk80Ujvj680pOTh2bORBjbIAyzoWGW+GUjzKxTiiPvVmxFgx5wdsFvF03v34lEVVhMpouqPAYQ15N37K/ir5XY+9m/d8ufMCkjeXsQkKqFbAlQcnWMCRnOoPHS3I4vi6hmnDDeeYTSRvfLbW0fhwIBIw=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 87,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "8fef9ae1-1972-45ef-8652-230f4e92ac1a",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/_support/rsa.key"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "a2d36e97-620b-4f45-a418-2d0ac89f92e5",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "public-key",
+          "value": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDTj1bqB4WmayWNPB+8jVSYpZYk80Ujvj680pOTh2bORBjbIAyzoWGW+GUjzKxTiiPvVmxFgx5wdsFvF03v34lEVVhMpouqPAYQ15N37K/ir5XY+9m/d8ufMCkjeXsQkKqFbAlQcnWMCRnOoPHS3I4vi6hmnDDeeYTSRvfLbW0fhwIBIw=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 69,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "d4d6607b-def9-4385-86b2-fa6401466ba1",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 95,
+            "location": "tests/test_pkey.py"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "db712884-55e7-44aa-9753-28a4040a70e0",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/_support/rsa-lonely.key"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "fe919353-4f4a-48eb-a9cb-27bbbccebd17",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 1024,
+          "type": "public-key",
+          "value": "MIGdMA0GCSqGSIb3DQEBAQUAA4GLADCBhwKBgQDTj1bqB4WmayWNPB+8jVSYpZYk80Ujvj680pOTh2bORBjbIAyzoWGW+GUjzKxTiiPvVmxFgx5wdsFvF03v34lEVVhMpouqPAYQ15N37K/ir5XY+9m/d8ufMCkjeXsQkKqFbAlQcnWMCRnOoPHS3I4vi6hmnDDeeYTSRvfLbW0fhwIBIw=="
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/_support/rsa-lonely.key"
+          }
+        ]
+      },
+      "name": "RSA-1024",
+      "type": "cryptographic-asset"
+    },
+    {
+      "bom-ref": "6fd020e3-ad33-4281-b3e2-a048625838fa",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "oid": "1.2.840.113549.1.1.1",
+        "relatedCryptoMaterialProperties": {
+          "format": "PEM",
+          "size": 2048,
+          "type": "private-key"
+        }
+      },
+      "description": "Identified a Private Key, which may compromise cryptographic security and sensitive data encryption.",
+      "evidence": {
+        "occurrences": [
+          {
+            "line": 0,
+            "location": "tests/test_rsa_openssh_nopad.key"
+          }
+        ]
+      },
+      "name": "RSA-2048",
+      "type": "cryptographic-asset"
+    }
+  ],
+  "metadata": {
+    "tools": {
+      "services": [
+        {
+          "name": "cbomkit-theia",
+          "provider": {
+            "name": "PQCA"
+          },
+          "services": [
+            {
+              "name": "Secret Detection Plugin"
+            },
+            {
+              "name": "OpenSSL Config Plugin"
+            },
+            {
+              "name": "Certificate File Plugin"
+            },
+            {
+              "name": "Problematic CA Detection Plugin"
+            }
+          ],
+          "version": "edge"
+        }
+      ]
+    }
+  },
+  "specVersion": "1.6",
+  "version": 1
+}
