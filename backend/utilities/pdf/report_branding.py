@@ -237,6 +237,7 @@ def _draw_logo(canvas_obj: canvas.Canvas, x: float, y: float, *, max_height: flo
         canvas_obj.drawImage(path, x, y, width=w, height=h, mask="auto", preserveAspectRatio=True)
         return float(w)
     except Exception:
+        logger.warning("Enterprise report logo failed to draw; continuing without it", exc_info=True)
         return 0.0
 
 
