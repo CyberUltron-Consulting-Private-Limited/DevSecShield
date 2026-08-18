@@ -4,7 +4,7 @@
  * EnterpriseSecurityReport — premium static SAST / SBOM report UI.
  * Presentation only. Mock data built-in for CTO-ready demos.
  *
- * Preview: /enterprise-security-report-preview
+ * Local preview only: /enterprise-security-report-preview (404 in production).
  */
 
 import { useMemo, useState } from "react";

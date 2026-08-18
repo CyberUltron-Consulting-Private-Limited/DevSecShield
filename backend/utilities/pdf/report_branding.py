@@ -1343,8 +1343,14 @@ def append_executive_summary(
         for title, headers, rows, widths in extra_tables:
             if not rows:
                 continue
-            story.append(Paragraph(title, styles["heading"]))
-            story.append(styled_data_table(headers, rows, styles=styles, col_widths=widths))
+            story.append(
+                KeepTogether(
+                    [
+                        Paragraph(title, styles["heading"]),
+                        styled_data_table(headers, rows, styles=styles, col_widths=widths),
+                    ]
+                )
+            )
 
 
 def append_findings_catalog(

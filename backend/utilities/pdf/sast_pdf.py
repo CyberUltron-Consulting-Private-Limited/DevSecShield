@@ -66,7 +66,7 @@ def _owasp_compliance_entries(val: Any) -> List[Tuple[Any, Any]]:
 def _standards_rows(vuln: Dict[str, Any]) -> List[List[str]]:
     rows: List[List[str]] = []
     for k, v in _owasp_compliance_entries(vuln.get("owasp_top_10")):
-        rows.append(["OWASP Top 10", str(v)])
+        rows.append(["OWASP Top 10", f"{k}: {v}"])
     for k, v in _owasp_compliance_entries(vuln.get("compliance_controls")):
         rows.append(["Compliance", f"{k}: {v}"])
     cves = vuln.get("cves")

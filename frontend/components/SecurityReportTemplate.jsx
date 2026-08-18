@@ -4,7 +4,7 @@
  * SecurityReportTemplate — premium Refined Light AppSec report.
  * Mock data built-in. Wire real props later; no data-fetching here.
  *
- * Preview: /security-report-preview
+ * Local preview only: /security-report-preview (404 in production).
  */
 
 import { useMemo, useState } from "react";
