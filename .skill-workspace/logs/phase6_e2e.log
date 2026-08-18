@@ -1,0 +1,37 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_phase6_fifteen_repo_matrix_and_deep_paths ________________
+tests/test_certin_phase6_e2e.py:419: in test_phase6_fifteen_repo_matrix_and_deep_paths
+    assert not failed, (
+E   AssertionError: 2 matrix cells failed — see /tmp/certin_phase6_matrix.json: [
+E       {
+E         "id": "s1",
+E         "lane": "sbom_sca",
+E         "slug": "psf/requests",
+E         "url": "https://github.com/psf/requests",
+E         "status": "failure",
+E         "scan_id": 32,
+E         "duration_s": 82.6,
+E         "cert_in_ok": false,
+E         "posture_ok": false,
+E         "req_count": 0,
+E         "error": "Error occured while running agent : Error in populating open source context: Error in generating map reduce summary of codebase: Documents are not set"
+E       },
+E       {
+E         "id": "s4",
+E         "lane": "sbom_sca",
+E         "slug": "sqlalchemy/sqlalchemy",
+E         "url": "https://github.com/sqlalchemy/sqlalchemy",
+E         "status": "failure",
+E         "scan_id": 35,
+E         "duration_s": 15.2,
+E         "cert_in_ok": false,
+E         "posture_ok": false,
+E         "req_count": 0,
+E         "error": "Error occured while running agent : Error in populating open source context: Error in generating map reduce summary of codebase: Documents are not set"
+E       }
+E     ]
+E   assert not [{'id': 's1', 'lane': 'sbom_sca', 'slug': 'psf/requests', 'url': 'https://github.com/psf/requests', ...}, {'id': 's4', 'lane': 'sbom_sca', 'slug': 'sqlalchemy/sqlalchemy', 'url': 'https://github.com/sqlalchemy/sqlalchemy', ...}]
+=========================== short test summary info ============================
+FAILED tests/test_certin_phase6_e2e.py::test_phase6_fifteen_repo_matrix_and_deep_paths
+1 failed in 405.38s (0:06:45)

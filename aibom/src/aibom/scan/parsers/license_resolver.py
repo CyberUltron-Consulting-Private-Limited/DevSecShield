@@ -119,6 +119,9 @@ _LICENSE_MAP: dict[str, str] = {
     "click": "BSD-3-Clause",
     "anyio": "MIT",
     "certifi": "MPL-2.0",
+    "distro": "Apache-2.0",
+    "jiter": "MIT",
+    "sniffio": "MIT",
 }
 
 # OSI-classifier substrings -> SPDX, for the importlib.metadata path.

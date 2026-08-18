@@ -1,0 +1,398 @@
+guideline:
+  title: SEBI Cybersecurity and Cyber Resilience Framework (CSCRF)
+  circular: SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113
+  dated: '2024-08-20'
+  version: '1.0'
+  disclaimer: >-
+    Advisory alignment to SEBI CSCRF Circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113
+    dated 20.08.2024. Does not constitute SEBI certification, audit opinion, or
+    satisfaction of SEBI / stock-exchange obligations. BOM evidence supports
+    readiness assessment only.
+frameworks:
+  sebi_cscrf_cbom:
+    label: SEBI CSCRF (CBOM)
+    lane: cbom
+  sebi_cscrf_aibom:
+    label: SEBI CSCRF (AIBOM)
+    lane: aibom
+  sebi_cscrf_sbom:
+    label: SEBI CSCRF (SBOM)
+    lane: sbom
+scope_exclusions:
+  full_soc: Market SOC / C-SOC continuous monitoring is process evidence (manual/NBE).
+  full_cci: Cyber Capability Index dashboards are out of BOM auto scope.
+  ai_specific: CIR has no AI/ML/AIBOM controls; AIBOM lane is software-inventory reading only.
+  qbom: No QBOM product scan type.
+requirements:
+# ── CBOM auto ───────────────────────────────────────────────────────────────
+- id: CSCRF-QC-1
+  pdf: 'Box Item 7 #1'
+  title: Cryptographic asset inventory present
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-QC-2
+  pdf: 'Box Item 7 #1/#2'
+  title: Quantum-vulnerable assets have PQC migration targets
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-QC-9
+  pdf: 'Box Item 7 #4'
+  title: PQC readiness grading present on quantum-vulnerable assets
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-DS-1
+  pdf: 'PR.DS.S1'
+  title: No weak transport protocols
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-DS-2
+  pdf: 'PR.DS.S1–S3'
+  title: Asymmetric keys meet 2048-bit floor
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-DS-6
+  pdf: 'PR.DS strong algorithms'
+  title: No broken or deprecated algorithms
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-DS-7
+  pdf: 'PR.DS strong algorithms'
+  title: Classical security strength at least 112 bits
+  lane: cbom
+  mode: auto
+  missing: fail
+- id: CSCRF-SC-1
+  pdf: 'GV.SC.S5(d)'
+  title: Encryption used evidenced in crypto BOM
+  lane: cbom
+  mode: auto
+  missing: fail
+# ── CBOM manuals ────────────────────────────────────────────────────────────
+- id: CSCRF-QC-3
+  pdf: 'Box Item 7 #1c'
+  title: IT infrastructure assessed for quantum risk
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-QC-5
+  pdf: 'Box Item 7 #2b'
+  title: Strategies for assets that cannot migrate to PQC
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-QC-6
+  pdf: 'Box Item 7 #3a'
+  title: Workforce skills upgraded for PQC/QKD
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-QC-7
+  pdf: 'Box Item 7 #3b'
+  title: Policies revised for post-quantum era
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-QC-8
+  pdf: 'Box Item 7 #3c'
+  title: PoC trials of PQC solutions
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-QC-10
+  pdf: 'Box Item 7 #4b'
+  title: QKD feasibility explored
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-DS-3
+  pdf: 'PR.DS.S2 / FDE+FBE'
+  title: FDE and FBE layered at-rest encryption deployed
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-DS-4
+  pdf: 'PR.DS.S3'
+  title: Encryption in-use (TEE / confidential compute)
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-DS-5
+  pdf: 'PR.DS DLP'
+  title: DLP controls for sensitive data
+  lane: cbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-RA-1
+  pdf: 'p15 / ID.RA'
+  title: Post-quantum risks included in formal risk assessment
+  lane: cbom
+  mode: manual
+  missing: nbe
+# ── AIBOM auto ──────────────────────────────────────────────────────────────
+- id: CSCRF-ID.AM.S1-inv
+  pdf: 'ID.AM.S1'
+  title: Model software inventory name
+  lane: aibom
+  mode: auto
+  missing: fail
+- id: CSCRF-ID.AM.S1-ver
+  pdf: 'ID.AM.S1 / GV.SC.S5'
+  title: Model software inventory version
+  lane: aibom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-dep
+  pdf: 'GV.SC.S5'
+  title: Framework dependencies named when edged
+  lane: aibom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-lic
+  pdf: 'GV.SC.S5(a)'
+  title: Model license declared when inventoriable
+  lane: aibom
+  mode: auto
+  missing: nbe
+- id: CSCRF-GV.SC.S5-hash
+  pdf: 'GV.SC.S5(e)'
+  title: Model integrity hash when inventoriable
+  lane: aibom
+  mode: auto
+  missing: nbe
+# ── AIBOM manuals ───────────────────────────────────────────────────────────
+- id: CSCRF-ID.AM.S1-proc
+  pdf: 'ID.AM.S1'
+  title: Org-wide IT/software asset inventory maintained
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-ID.AM.S4-proc
+  pdf: 'ID.AM.S4'
+  title: Board approves critical systems list
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-ID.RA.S1-proc
+  pdf: 'ID.RA.S1'
+  title: Asset vulnerabilities identified and documented
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-ID.RA.S2-proc
+  pdf: 'ID.RA.S2'
+  title: Periodic IT environment risk assessment
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S2-proc
+  pdf: 'GV.SC.S2'
+  title: Suppliers and third parties identified and assessed
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S4-proc
+  pdf: 'GV.SC.S4'
+  title: Periodic third-party cybersecurity compliance monitoring
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-proc
+  pdf: 'GV.SC.S5'
+  title: SBOM program for core/critical software procurements
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-legacy
+  pdf: 'GV.SC.S5 p57'
+  title: Board approval when SBOM cannot be obtained for legacy
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-PR.IP.S4-proc
+  pdf: 'PR.IP SSDLC'
+  title: SSDLC regression and security testing
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-PR.IP.S4-vapt
+  pdf: 'PR.IP SSDLC VAPT'
+  title: VA/VAPT before production and major releases
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-PR.IP.S6-proc
+  pdf: 'PR.IP SSDLC design'
+  title: Security requirements and threat modelling in SSDLC
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-PR.DS.S5-proc
+  pdf: 'PR.DS.S5'
+  title: Separate production and non-production environments
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-DE.CM.S5-scope
+  pdf: 'VAPT Annexure-L'
+  title: VAPT scope covers critical assets including AI-serving apps
+  lane: aibom
+  mode: manual
+  missing: nbe
+- id: CSCRF-PR.AT.GenAI-proc
+  pdf: 'PR.AT GenAI awareness'
+  title: Generative AI awareness SOP (MIIs and Qualified REs)
+  lane: aibom
+  mode: manual
+  missing: nbe
+# ── SBOM auto ───────────────────────────────────────────────────────────────
+- id: CSCRF-GV.SC.S5-name
+  pdf: 'GV.SC.S5.2 / S5.4'
+  title: Component names present
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-ver
+  pdf: 'GV.SC.S5.2 / S5.4'
+  title: Component versions present
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-sup
+  pdf: 'GV.SC.S5.4.b'
+  title: Supplier name or purl present
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-uid
+  pdf: 'Box Item 6'
+  title: Unique component identifiers
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-lic
+  pdf: 'GV.SC.S5.4.a'
+  title: License information inventoriable
+  lane: sbom
+  mode: auto
+  missing: nbe
+- id: CSCRF-GV.SC.S5-lic-risk
+  pdf: 'GV.SC.S5.2 license risk'
+  title: No untriaged high-risk licenses
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-deps
+  pdf: 'GV.SC.S5.4.c'
+  title: Dependency relationship set present
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-hash
+  pdf: 'GV.SC.S5.4.e'
+  title: Cryptographic hashes of components
+  lane: sbom
+  mode: auto
+  missing: nbe
+- id: CSCRF-GV.SC.S5-patch
+  pdf: 'GV.SC.S5.2 patch status'
+  title: Patch or fix status recorded
+  lane: sbom
+  mode: auto
+  missing: nbe
+- id: CSCRF-GV.SC.S5-enc
+  pdf: 'GV.SC.S5.4.d'
+  title: Encryption used recorded on SBOM
+  lane: sbom
+  mode: auto
+  missing: nbe
+- id: CSCRF-GV.SC.S5-known-unknown
+  pdf: 'GV.SC.S5.4.g'
+  title: Known-unknown / incomplete graph disclosed
+  lane: sbom
+  mode: auto
+  missing: nbe
+- id: CSCRF-ID.AM-inv
+  pdf: 'ID.AM.S1 / S4'
+  title: Software dependency inventory maintained
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-ID.RA-vuln-track
+  pdf: 'ID.RA / Box Item 6'
+  title: Vulnerability tracking linkage
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-ID.RA-high
+  pdf: 'ID.RA posture'
+  title: No critical or high severity vulnerabilities
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-author
+  pdf: 'SBOM provenance'
+  title: Author of SBOM data
+  lane: sbom
+  mode: auto
+  missing: fail
+- id: CSCRF-GV.SC.S5-ts
+  pdf: 'SBOM provenance'
+  title: SBOM timestamp
+  lane: sbom
+  mode: auto
+  missing: fail
+# ── SBOM manuals ────────────────────────────────────────────────────────────
+- id: CSCRF-GV.SC.S5-legacy-critical
+  pdf: 'GV.SC.S5.1'
+  title: SBOM obtained for existing critical systems (6-month clock)
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-procurement
+  pdf: 'GV.SC.S5.2'
+  title: SBOM obtained at procurement for new critical software
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-mii
+  pdf: 'GV.SC.S5.3'
+  title: MIIs include SBOM in vendor empanelment criteria
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-board-legacy
+  pdf: 'GV.SC.S5 p57'
+  title: Board approval where SBOM cannot be obtained for legacy
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-update-freq
+  pdf: 'GV.SC.S5.4.f'
+  title: Frequency of updates
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-access
+  pdf: 'GV.SC.S5.4.h'
+  title: Access control for SBOM artifacts
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-errors
+  pdf: 'GV.SC.S5.4.i'
+  title: Methods for accommodating incidental SBOM errors
+  lane: sbom
+  mode: manual
+  missing: nbe
+- id: CSCRF-GV.SC.S5-mitigate
+  pdf: 'Box Item 6'
+  title: Supply-chain risk mitigation outcome
+  lane: sbom
+  mode: manual
+  missing: nbe

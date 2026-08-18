@@ -1,6 +1,17 @@
 from backend.get_db import get_mongo_client_db
 from backend.mongo_models import ScanFindings
 from backend.new_models import scan_types
+from backend.utilities.dashboard.aibom_license import resolve_aibom_license
+from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.sbom_license import (
+    resolve_sbom_license_category,
+    resolve_sbom_reachability,
+)
+from backend.utilities.dashboard.bom_risk_score import (
+    aibom_finding_risk_score,
+    cbom_finding_risk_score,
+    sbom_finding_risk_score,
+)
 
 
 
@@ -24,8 +35,8 @@ risk_score_map = {
     "critical": 4,
 }
 
-# CBOM uses the app-wide 0-10 risk scale (consistent with SBOM/SAST dashboards),
-# NOT the 0-4 risk_score_map above. Unknown/missing impact maps to 0.
+# Kept for callers/tests that still reference the flat impact maps. Prefer
+# bom_risk_score.*_finding_risk_score for differentiated 0–10 scores.
 CBOM_RISK_SCORE_MAP = {
     "critical": 9,
     "high": 7,
@@ -38,9 +49,6 @@ def _cbom_risk_score(impact) -> float:
     return CBOM_RISK_SCORE_MAP.get((impact or "").lower(), 0)
 
 
-# AI-BOM uses the app-wide 0-10 risk scale (consistent with the single-scan
-# AI-BOM dashboard in scan.py), NOT the 0-4 risk_score_map above. Unknown/missing
-# impact maps to 0. None-safe to avoid KeyError/AttributeError on bad impact.
 AI_BOM_RISK_SCORE_MAP = {
     "critical": 9,
     "high": 7,
@@ -98,21 +106,25 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
     elif scan_type == "sbom_sca":
         findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
         for finding in findings_fetched:
+            fd = finding.get("finding_data") or {}
+            impact = (fd.get("impact") or "low")
+            dep = str(fd.get("dependency") or "").strip()
+            title = str(fd.get("title") or "").strip() or dep or "Untitled finding"
             findings.append({
                 "id": str(finding["_id"]),
-                "title": finding["finding_data"]["title"],
-                "description": finding["finding_data"]["description"],
-                "impact": finding["finding_data"]["impact"],
-                "risk_score": risk_score_map[finding["finding_data"]["impact"].lower()],
-                "status": finding["finding_status"],
-                "compliance_controls": finding["finding_data"]["compliance_controls"],
-                "owasp_top_10": finding["finding_data"]["owasp_top_10"],
-                "suggested_fix": finding["finding_data"]["suggested_fix"],
-                "cves": finding["finding_data"]["cves"],
-                "dependency": finding["finding_data"]["dependency"],
-                "reachability": finding["finding_data"]["reachability"],
-                "dependency_type": finding["finding_data"]["dependency_type"],
-                "license_type": finding["finding_data"]["license_type"],
+                "title": title,
+                "description": fd.get("description") or "",
+                "impact": impact,
+                "risk_score": sbom_finding_risk_score(fd),
+                "status": finding.get("finding_status") or "not_started",
+                "compliance_controls": fd.get("compliance_controls") or [],
+                "owasp_top_10": fd.get("owasp_top_10") or [],
+                "suggested_fix": fd.get("suggested_fix") or "",
+                "cves": fd.get("cves") or [],
+                "dependency": fd.get("dependency"),
+                "reachability": resolve_sbom_reachability(fd),
+                "dependency_type": fd.get("dependency_type"),
+                "license_type": resolve_sbom_license_category(fd),
                 "remediation": finding.get("remediation", None),
             })
     
@@ -175,10 +187,13 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
             fd = finding.get("finding_data", {})
             findings.append({
                 "id": str(finding["_id"]),
+                # Inventory bom_ref (additive; present on reconciled aibom rows)
+                # — charts join "View finding" via bom_ref, not Mongo id.
+                "bom_ref": fd.get("bom_ref") or None,
                 "title": fd.get("title", ""),
                 "description": fd.get("description", ""),
                 "impact": fd.get("impact") or "low",
-                "risk_score": _cbom_risk_score(fd.get("impact")),
+                "risk_score": cbom_finding_risk_score(fd),
                 "status": finding.get("finding_status", "open"),
                 "compliance_controls": fd.get("compliance_controls") or [],
                 "owasp_top_10": fd.get("owasp_top_10") or [],
@@ -202,7 +217,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "title": fd.get("title", ""),
                 "description": fd.get("description", ""),
                 "impact": fd.get("impact") or "low",
-                "risk_score": _ai_bom_risk_score(fd.get("impact")),
+                "risk_score": aibom_finding_risk_score(fd),
                 "status": finding.get("finding_status", "open"),
                 "compliance_controls": fd.get("compliance_controls", []),
                 "owasp_top_10": fd.get("owasp_top_10", []),
@@ -210,10 +225,10 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "suggested_fix": fd.get("suggested_fix", ""),
                 "asset_name": fd.get("component_name", ""),
                 "asset_type": fd.get("component_type", ""),
-                "provider": fd.get("source", ""),
+                "provider": resolve_aibom_provider(fd),
                 "framework": fd.get("framework", ""),
                 "version": fd.get("version", ""),
-                "license_type": fd.get("license", ""),
+                "license_type": resolve_aibom_license(fd),
                 "risk_category": fd.get("risk_category", ""),
                 "location": fd.get("location", ""),
                 "snippet": fd.get("snippet", ""),

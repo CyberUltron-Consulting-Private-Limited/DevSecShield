@@ -1,0 +1,67 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- aibomowasp@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 16:46:50
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x117007a10
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 16:46:50,431: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 16:46:50,435: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 16:46:51,461: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 16:46:51,461: INFO/MainProcess] mingle: sync complete
+[2026-08-09 16:46:51,480: INFO/MainProcess] aibomowasp@Anshs-MacBook-Pro.local ready.
+[2026-08-09 16:46:51,990: INFO/MainProcess] Events of group {task} enabled by remote.
+[2026-08-09 16:47:10,316: INFO/MainProcess] Task scan_worker.ai_bom_estimation[36575fe6-76ac-4d1d-8474-27ef3c6ba01b] received
+[2026-08-09 16:47:10,370: WARNING/MainProcess] 📦 Cloning https://github.com/openai/openai-python → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_zqzupbeq Branch:main
+[2026-08-09 16:47:12,271: WARNING/MainProcess] AI-BOM estimation: 1758 files, 10.93 MB across 28 extension types
+[2026-08-09 16:47:12,271: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:47:12,271: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:47:12,271: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:47:12,381: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:47:12,385: INFO/MainProcess] Task scan_worker.ai_bom_estimation[36575fe6-76ac-4d1d-8474-27ef3c6ba01b] succeeded in 2.066086125007132s: 21.904978847959967
+[2026-08-09 16:47:14,412: INFO/MainProcess] Task scan_worker.ai_bom[7730a524-7da9-4c7e-9801-d244e9eff0f1] received
+[2026-08-09 16:47:14,560: WARNING/MainProcess] 📦 Cloning https://github.com/openai/openai-python → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_eo4gtg8k Branch:main
+[2026-08-09 16:47:35,404: INFO/MainProcess] Task scan_worker.ai_bom[7730a524-7da9-4c7e-9801-d244e9eff0f1] succeeded in 20.99184962498839s: {'results': [{'title': 'generic_credential', 'description': 'Hardcoded generic_credential detected in src/openai/auth/_workload.py (https:…(35 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': {...}, 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'generic_credential', 'component_type': 'external_provider', 'model_card': None, 'framework': None, 'version': None, 'source': 'unknown', 'license': None, 'location': 'src/openai/auth/_workload.py', 'snippet': '', 'risk_category': 'model_theft_exposure', 'owasp_top_10_llm': {...}}, {'title': 'generic_credential', 'description': 'Hardcoded generic_credential detected in src/openai/_client.py (worklo…(22 chars)); move it to a secret manager / env var.', 'impact': 'Critical', 'owasp_top_10': [...], 'compliance_controls': {...}, 'suggested_fix': 'Review this AI/ML component and bring it under AI governance.', 'component_name': 'generic_credential', 'com...', ...}]}

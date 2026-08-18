@@ -1,9 +1,16 @@
 "use client";
+/* eslint-disable -- @deprecated Guardrails UI retained; pre-existing lint debt */
 
+/**
+ * @deprecated Guardrails product UI is removed from user-facing surfaces.
+ * Kept for internal reference / DeprecatedGuardrailsIntegrationPage only.
+ * Do not add new user-facing call sites.
+ */
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen } from "lucide-react";
 
+/** @deprecated Prefer GuardrailsDeprecatedNotice for user-facing deep links. */
 export default function GuardrailsApiDocs() {
   return (
     <div className="space-y-6">

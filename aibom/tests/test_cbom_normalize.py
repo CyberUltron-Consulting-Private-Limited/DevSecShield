@@ -140,6 +140,22 @@ def test_pqc_readiness_non_empty() -> None:
     assert pqc["readiness_pct"] is not None
 
 
+def test_pqc_migration_rows_carry_location_and_bom_ref() -> None:
+    """Grouped PQC UX enrichment: every migration instance has location + bom_ref."""
+    run = _run()
+    migration = run["cbom_distributions"]["pqc"]["migration"]
+    assert len(migration) == 2
+    for row in migration:
+        assert row["bom_ref"].startswith("crypto-algo-")
+        assert row["location"]
+        assert row["description"]
+        assert "post-quantum" in row["suggested_fix"].lower()
+        assert "QUANTUM_VULNERABLE" in row["finding_codes"]
+    # Finding rows carry the same bom_ref for Dialog join.
+    refs = {r["bom_ref"] for r in run["results"]}
+    assert {m["bom_ref"] for m in migration} <= refs
+
+
 def test_certificate_expiry_non_empty() -> None:
     certs = _run()["cbom_distributions"]["certificates"]
     assert certs  # at least the fixture cert.pem

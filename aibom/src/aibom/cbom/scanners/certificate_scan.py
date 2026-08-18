@@ -3,14 +3,18 @@
 The second of the four CycloneDX 1.6 crypto-asset lanes (after C1's *algorithm*
 lane). It inventories:
 
-* **certificates** — ``.pem`` / ``.crt`` / ``.cer`` / ``.der`` files (and inline
-  ``-----BEGIN CERTIFICATE-----`` blocks), parsed with the dependency-free
-  :mod:`aibom.cbom.x509` reader to capture validity (notBefore / **notAfter** —
-  the expiry the story requires), subject, issuer, self-signed status, signature
-  algorithm and public-key size;
+* **certificates** — ``.pem`` / ``.crt`` / ``.cer`` / ``.cert`` / ``.der`` /
+  ``.ca-bundle`` files (and inline ``-----BEGIN CERTIFICATE-----`` blocks in
+  source), parsed with the dependency-free :mod:`aibom.cbom.x509` reader to
+  capture validity (notBefore / **notAfter** — the expiry the story requires),
+  subject, issuer, self-signed status, signature algorithm and public-key size;
+  non-PEM DER bodies on those extensions are also parsed;
 * **related crypto material** — private / public keys (``.key`` files and
   inline PEM key blocks, including a hardcoded private key embedded in source),
-  plus conservatively-detected hardcoded IV / salt / secret-key literals.
+  conservatively-detected hardcoded IV / salt / secret-key literals, and
+  **opaque keystore containers** (``.jks`` / ``.p12`` / ``.pfx``) inventoried as
+  ``credential`` material without password decryption (industry parity with
+  cbomkit-theia — never invent passwords).
 
 All crypto detail lives in ``crypto:`` namespaced ``properties`` (assetType,
 materialKind, notValidBefore/After, subjectName, selfSigned, signatureAlgorithm,
@@ -41,8 +45,33 @@ _IGNORE_DIRS = frozenset(
 _MAX_BYTES = 2_000_000
 
 # Certificate / key container file extensions.
-_CERT_EXTS = frozenset({".pem", ".crt", ".cer", ".der", ".key", ".pub", ".p7b", ".p7c"})
-_BINARY_CERT_EXTS = frozenset({".der", ".cer"})
+# ``.ca-bundle`` matches cbomkit-theia certificate-plugin enumeration (v1.1.2).
+_CERT_EXTS = frozenset(
+    {
+        ".pem",
+        ".crt",
+        ".cer",
+        ".cert",
+        ".der",
+        ".ca-bundle",
+        ".key",
+        ".pub",
+        ".p7b",
+        ".p7c",
+    }
+)
+# When a container has no PEM armor, try DER parse on these (not .key/.pub —
+# those are material-only and may contain non-cert DER).
+_BINARY_CERT_EXTS = frozenset(
+    {".der", ".cer", ".crt", ".cert", ".pem", ".ca-bundle"}
+)
+
+# Encrypted / opaque keystore containers. Inventoried as related-crypto-material
+# (CycloneDX ``credential``) — NEVER password-parsed. Magic checks reduce FPs
+# on randomly renamed binaries.
+_KEYSTORE_EXTS = frozenset({".jks", ".p12", ".pfx"})
+_JKS_MAGIC = bytes.fromhex("FEEDFEED")
+_PKCS12_ASN1_SEQ = 0x30
 
 # A PEM armored block: ``-----BEGIN <label>----- <b64> -----END <label>-----``.
 _PEM_BLOCK = re.compile(
@@ -114,7 +143,8 @@ class CertificateMaterialScanner(Scanner):
         # so the chain lane can link a leaf to a co-located issuer certificate.
         chain: list[tuple[str, str | None, str | None, bool]] = []
         self._scan_cert_files(ctx, seen, chain)
-        self._scan_embedded_material(ctx, seen)
+        self._scan_keystores(ctx, seen)
+        self._scan_embedded_material(ctx, seen, chain)
         self._emit_chain_edges(ctx, chain)
 
     # --- certificate / key container files -------------------------------- #
@@ -133,9 +163,58 @@ class CertificateMaterialScanner(Scanner):
                 for label, body in _PEM_BLOCK.findall(text):
                     self._emit_pem(ctx, seen, chain, label.strip().upper(), body, rel)
             elif path.suffix.lower() in _BINARY_CERT_EXTS:
+                # DER / raw X.509 without PEM armor (common for .crt/.cer/.der;
+                # also rare DER-as-.pem). TOTAL — parse_certificate returns None
+                # on garbage so a non-cert .pem body cannot crash the scan.
                 cert = parse_certificate(raw)
                 if cert is not None:
                     self._emit_certificate(ctx, seen, chain, cert, rel)
+
+    # --- opaque keystore containers (no password parse) ------------------- #
+
+    def _scan_keystores(self, ctx: ScanContext, seen: set[str]) -> None:
+        """Inventory ``.jks`` / ``.p12`` / ``.pfx`` as opaque credentials.
+
+        Research decision (see fixture ``SOURCE.md`` + LEDGER): cbomkit-theia's
+        certificates plugin does **not** decrypt PKCS#12/JKS; OpenSSL
+        ``PKCS12_parse`` requires a password. We never invent passwords — emit
+        related-crypto-material with ``materialKind=credential`` + container
+        format props so the chart can show keystore presence without fake
+        ``notValidAfter`` claims.
+        """
+        for path in _iter_files(ctx.root, _KEYSTORE_EXTS):
+            rel = path.relative_to(ctx.root).as_posix()
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                continue
+            if not raw:
+                continue
+            ext = path.suffix.lower()
+            if ext == ".jks":
+                if not raw.startswith(_JKS_MAGIC):
+                    continue
+                fmt = "jks"
+            else:
+                # PKCS#12 / PFX are ASN.1 DER; require SEQUENCE tag + length.
+                if raw[0] != _PKCS12_ASN1_SEQ:
+                    continue
+                fmt = "pkcs12"
+            self._emit_material(
+                ctx,
+                seen,
+                "credential",
+                rel,
+                None,
+                extra={
+                    "crypto:containerFormat": fmt,
+                    "crypto:parseStatus": "opaque",
+                    "crypto:parseNote": (
+                        "keystore inventoried without password; "
+                        "contents not decrypted"
+                    ),
+                },
+            )
 
     def _emit_pem(
         self,
@@ -157,7 +236,9 @@ class CertificateMaterialScanner(Scanner):
 
     # --- embedded key material in source ---------------------------------- #
 
-    def _scan_embedded_material(self, ctx: ScanContext, seen: set[str]) -> None:
+    def _scan_embedded_material(
+        self, ctx: ScanContext, seen: set[str], chain: list
+    ) -> None:
         for path in _iter_files(ctx.root, None):
             if path.suffix.lower() in _CERT_EXTS:
                 continue  # already handled as a cert/key file
@@ -168,10 +249,14 @@ class CertificateMaterialScanner(Scanner):
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            # Inline PEM key blocks (e.g. a hardcoded private key string literal).
-            for label, _body in _PEM_BLOCK.findall(text):
+            # Inline PEM blocks (hardcoded private key OR embedded certificate).
+            for label, body in _PEM_BLOCK.findall(text):
                 up = label.strip().upper()
-                if _PRIVATE_KEY_RE.search(up):
+                if "CERTIFICATE" in up and "REQUEST" not in up:
+                    cert = _decode_cert(body)
+                    if cert is not None:
+                        self._emit_certificate(ctx, seen, chain, cert, rel)
+                elif _PRIVATE_KEY_RE.search(up):
                     self._emit_material(ctx, seen, "private-key", rel, _label_alg(up))
                 elif _PUBLIC_KEY_RE.search(up):
                     self._emit_material(ctx, seen, "public-key", rel, _label_alg(up))
@@ -245,6 +330,7 @@ class CertificateMaterialScanner(Scanner):
         material_kind: str,
         rel: str,
         algorithm: str | None,
+        extra: dict[str, str] | None = None,
     ) -> None:
         ref = f"crypto-material-{material_kind}-{_slug(rel)}"
         if ref in seen:
@@ -257,6 +343,8 @@ class CertificateMaterialScanner(Scanner):
         }
         if algorithm:
             props["crypto:algorithm"] = algorithm
+        if extra:
+            props.update(extra)
         name = f"{material_kind} ({Path(rel).name})"
         ctx.add_component(
             CryptoAssetComponent(bom_ref=ref, name=name, properties=props)

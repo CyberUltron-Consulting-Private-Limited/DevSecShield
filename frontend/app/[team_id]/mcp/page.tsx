@@ -36,6 +36,7 @@ import type { MCPListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -343,7 +344,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
               <ChartContainer config={areaConfig} className="h-[220px] w-full">
                 <AreaChart data={risksOverTimeData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
@@ -572,7 +573,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
               <ChartContainer config={{ totalMinutes: { label: "Minutes", color: "#7c3aed" } }} className="h-[220px] w-full">
                 <AreaChart data={mttrData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Area type="monotone" dataKey="totalMinutes" fill="#7c3aed" stroke="#7c3aed" fillOpacity={0.4} />
@@ -599,7 +600,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
               >
                 <BarChart data={effectivenessData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
@@ -628,7 +629,7 @@ function MCPScanListDashboard({ dashboardData }: { dashboardData: MCPListDashboa
               >
                 <AreaChart data={complianceScoreData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} domain={[0, 100]} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
@@ -749,17 +750,6 @@ export default function MCPPage() {
       showErrorToast(error);
     }
   });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {

@@ -16,21 +16,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
 import { ShieldCheck } from "lucide-react";
+import type { AttestHandler } from "@/components/compliance/ComplianceMatrix";
+import {
+  RbiCsfRequirementDrilldown,
+  type RbiCsfRequirement,
+} from "@/components/rbi/RbiCsfRequirementDrilldown";
+import type { RelatedFindingFields } from "@/utils/relatedFindingMatch";
 
 const C = {
   pass: "#10b981",
@@ -57,13 +54,7 @@ type PillarRollup = {
   not_bom_evidenceable?: number;
   na?: number;
   coverage?: number | null;
-  requirements?: Array<{
-    id: string;
-    framework: string;
-    verdict: string;
-    title: string;
-    _scanner?: string;
-  }>;
+  requirements?: RbiCsfRequirement[];
 };
 
 export type RbiCsfRollupData = {
@@ -71,23 +62,19 @@ export type RbiCsfRollupData = {
   disclaimer?: string;
 };
 
-function verdictBadge(v: string) {
-  const map: Record<string, string> = {
-    pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
-    pass_with_evidence: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
-    fail: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-    out_of_scope: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-    not_bom_evidenceable: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
-    na: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  };
-  return (
-    <Badge variant="outline" className={map[v] ?? ""}>
-      {v.replace(/_/g, " ")}
-    </Badge>
-  );
-}
-
-export function RbiCsfRollup({ rollup }: { rollup?: RbiCsfRollupData | null }) {
+export function RbiCsfRollup({
+  rollup,
+  onAttest,
+  onViewFindings,
+  findings,
+  refAliases,
+}: {
+  rollup?: RbiCsfRollupData | null;
+  onAttest?: AttestHandler;
+  onViewFindings?: (refs: string[]) => void;
+  findings?: RelatedFindingFields[] | null;
+  refAliases?: Record<string, string>;
+}) {
   const pillars = useMemo(() => {
     const raw = rollup?.rbi_csf_rollup;
     if (!raw || typeof raw !== "object") return [];
@@ -109,6 +96,24 @@ export function RbiCsfRollup({ rollup }: { rollup?: RbiCsfRollupData | null }) {
     na: p.na ?? 0,
     coverage: p.coverage == null ? "n/a" : `${Math.round((p.coverage ?? 0) * 100)}%`,
   }));
+
+  // The API always returns all five pillar keys, so `pillars.length` is non-zero
+  // whenever any BOM scan exists — the guard above never fires for a scan whose
+  // stored compliance predates the FREE-AI frameworks. That case yields all-zero
+  // counts, which Recharts draws as zero-length bars: axis labels and gridlines
+  // with no visible data. Detect "no verdicts at all" and show an empty state
+  // instead, matching the sibling dashboard panels.
+  const totalVerdicts = chartData.reduce(
+    (sum, d) =>
+      sum +
+      d.pass +
+      d.pass_with_evidence +
+      d.fail +
+      d.out_of_scope +
+      d.not_bom_evidenceable +
+      d.na,
+    0,
+  );
 
   const cfg: ChartConfig = {
     pass: { label: "Pass", color: C.pass },
@@ -134,6 +139,11 @@ export function RbiCsfRollup({ rollup }: { rollup?: RbiCsfRollupData | null }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {totalVerdicts === 0 ? (
+          <p className="text-sm text-muted-foreground flex items-center justify-center h-[220px]">
+            No FREE-AI verdicts yet — run an AI BOM, CBOM, or SBOM scan
+          </p>
+        ) : (
         <ChartContainer config={cfg} className="aspect-auto h-[220px] w-full">
           <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
             <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
@@ -155,33 +165,19 @@ export function RbiCsfRollup({ rollup }: { rollup?: RbiCsfRollupData | null }) {
             )}
           </BarChart>
         </ChartContainer>
+        )}
 
         {active && activeReqs.length > 0 && (
-          <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <div className="px-3 py-2 text-sm font-medium border-b border-zinc-200 dark:border-zinc-800">
-              {PILLAR_LABELS[active] ?? active} — contributing requirements
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Verdict</TableHead>
-                  <TableHead className="w-28">ID</TableHead>
-                  <TableHead>Requirement</TableHead>
-                  <TableHead className="w-24">Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {activeReqs.map((r) => (
-                  <TableRow key={`${r.framework}-${r.id}`}>
-                    <TableCell>{verdictBadge(r.verdict)}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.id}</TableCell>
-                    <TableCell className="text-sm">{r.title}</TableCell>
-                    <TableCell className="text-xs text-zinc-500">{r.framework}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <RbiCsfRequirementDrilldown
+            pillarKey={active}
+            pillarLabel={PILLAR_LABELS[active] ?? active}
+            requirements={activeReqs}
+            onClose={() => setActive(null)}
+            onAttest={onAttest}
+            onViewFindings={onViewFindings}
+            findings={findings}
+            refAliases={refAliases}
+          />
         )}
       </CardContent>
     </Card>

@@ -42,6 +42,7 @@ import type { CBOMDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -173,11 +174,10 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
 
   const strengthConfig = { count: { label: "Assets", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
 
-  // Quantum readiness for vertical bar chart
+  // Quantum readiness for vertical bar chart (algorithm-only; no Unknown)
   const quantumData = useMemo(() => [
     { name: "Safe", count: dashboardData.quantum_readiness.quantum_safe, fill: "hsl(142 71% 45%)" },
     { name: "Vulnerable", count: dashboardData.quantum_readiness.quantum_vulnerable, fill: "hsl(0 72% 51%)" },
-    { name: "Unknown", count: dashboardData.quantum_readiness.unknown, fill: "hsl(220 9% 46%)" },
   ].filter((d) => d.count > 0), [dashboardData.quantum_readiness]);
 
   const quantumConfig = { count: { label: "Assets", color: "hsl(220 70% 50%)" } } satisfies ChartConfig;
@@ -546,11 +546,6 @@ export default function CBOMPage() {
     },
     onError: (error) => { showErrorToast(error); },
   });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {

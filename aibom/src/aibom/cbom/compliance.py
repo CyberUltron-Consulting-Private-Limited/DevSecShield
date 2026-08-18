@@ -64,6 +64,8 @@ CBOM_FRAMEWORKS = [
     "nist_1800_38c",
     "cnsa_2_0",
     "rbi_free_ai_protection",
+    "cert_in_cbom",
+    "sebi_cscrf_cbom",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -413,6 +415,12 @@ def _has_crypto(r: ScanResult) -> bool:
 
 for _fw in CBOM_FRAMEWORKS:
     register_applicability(_fw, _has_crypto, _NO_CRYPTO)
+
+# CERT-In CBOM Table 9 + §8.4.1 (side-effect register_check / register_manual).
+# Keep out of aibom.compliance.__init__ — CBOM runner owns the import.
+from aibom.compliance.cert_in import crypto as _cert_in_crypto  # noqa: E402,F401
+# SEBI CSCRF CBOM Box Item 7 + PR.DS (side-effect registration).
+from aibom.compliance.sebi_cscrf import crypto as _sebi_cscrf_crypto  # noqa: E402,F401
 
 
 def _req(rid: str, framework: str, title: str, source: str) -> Requirement:

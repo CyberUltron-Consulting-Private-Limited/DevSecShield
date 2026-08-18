@@ -34,9 +34,9 @@ class MCPResourceCategory(str, Enum):
 
 class LicenseCategory(Enum):
     """
-    Risk level splitup : 
+    Risk level splitup :
 
-    Low risk ---> permissive , public_domain , unknown
+    Low risk ---> permissive , public_domain , not_declared
 
     Medium risk ---> weak_copyleft , creative_commons , commercial
 
@@ -51,7 +51,7 @@ class LicenseCategory(Enum):
     COMMERCIAL = "commercial"
     PUBLIC_DOMAIN = "public_domain"
     CREATIVE_COMMONS = "creative_commons"
-    UNKNOWN = "unknown"
+    NOT_DECLARED = "not_declared"
 
 class DependencyType(Enum):
     DIRECT = "direct"
@@ -61,7 +61,7 @@ class Reachability(Enum):
     REACHABLE = "reachable"
     POTENTIALLY_REACHABLE = "potentially_reachable"
     NOT_REACHABLE = "not_reachable"
-    UNKNOWN = "unknown"
+    NOT_ASSESSED = "not_assessed"
 
 
 class IACVulnerabilityCategory(Enum):
@@ -321,5 +321,10 @@ class ModelProvider(str, Enum):
     COHERE = "cohere"
     MISTRAL = "mistral"
     HUGGINGFACE = "huggingface"
+    AZURE = "azure"
+    OLLAMA = "ollama"
+    PYPI = "pypi"
+    CREDENTIAL = "credential"
     LOCAL = "local"
+    # Legacy payloads only — emitters/resolvers must never return this.
     UNKNOWN = "unknown"

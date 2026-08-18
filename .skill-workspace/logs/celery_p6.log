@@ -1,0 +1,108 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- p6b@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 13:50:16
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x11217f530
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 13:50:16,758: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 13:50:16,761: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 13:50:17,795: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 13:50:17,796: INFO/MainProcess] mingle: sync complete
+[2026-08-09 13:50:17,828: INFO/MainProcess] p6b@Anshs-MacBook-Pro.local ready.
+[2026-08-09 13:50:17,828: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[1b791761-dac6-42f9-8ad4-8d16cd1af8e0] received
+[2026-08-09 13:50:17,829: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[e6432974-b71f-45c1-8d31-65f7ece689b0] received
+[2026-08-09 13:50:17,830: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[0e1f71c3-1921-4523-aed1-5f5e1df03ab7] received
+[2026-08-09 13:50:17,832: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[4f753b79-0a58-4538-bafd-c0f35a966397] received
+[2026-08-09 13:50:17,904: WARNING/MainProcess] 📦 Cloning https://github.com/sqlalchemy/sqlalchemy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_6vr2rsgf Branch:main
+[2026-08-09 13:50:17,919: WARNING/MainProcess] 📦 Cloning https://github.com/psf/requests → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_1wpgjlgl Branch:main
+[2026-08-09 13:50:17,937: WARNING/MainProcess] 📦 Cloning https://github.com/psf/requests → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_2f788fce Branch:main
+[2026-08-09 13:50:17,954: WARNING/MainProcess] 📦 Cloning https://github.com/psf/requests → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_5upykdwz Branch:main
+[2026-08-09 13:50:19,331: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 13:50:19,331: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 13:50:19,332: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 13:50:19,339: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 13:50:19,339: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 13:50:19,339: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 13:50:19,345: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 13:50:19,345: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 13:50:19,348: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[e6432974-b71f-45c1-8d31-65f7ece689b0] succeeded in 1.5188334590056911s: 0.011961722488038277
+[2026-08-09 13:50:19,353: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 13:50:19,353: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 13:50:19,355: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[0e1f71c3-1921-4523-aed1-5f5e1df03ab7] succeeded in 1.5242109579849057s: 0.011961722488038277
+[2026-08-09 13:50:19,578: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[6992fe87-8605-45f7-805b-0d32604b98ba] received
+[2026-08-09 13:50:19,578: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[d10edf7c-3a80-459d-8a8e-96d7b6bff16b] received
+[2026-08-09 13:50:19,581: WARNING/MainProcess] 📦 Cloning https://github.com/sqlalchemy/sqlalchemy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_bjinz57t Branch:main
+[2026-08-09 13:50:19,581: WARNING/MainProcess] 📦 Cloning https://github.com/sqlalchemy/sqlalchemy → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_thcspo4c Branch:main
+[2026-08-09 13:50:19,680: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 13:50:19,680: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 13:50:19,680: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 13:50:19,690: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 13:50:19,690: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 13:50:19,693: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[1b791761-dac6-42f9-8ad4-8d16cd1af8e0] succeeded in 1.8641731670068111s: 0.011961722488038277
+[2026-08-09 13:50:20,473: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 13:50:20,473: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 13:50:20,473: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 13:50:20,528: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 13:50:20,528: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 13:50:20,531: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[4f753b79-0a58-4538-bafd-c0f35a966397] succeeded in 2.697504999989178s: 0.011961722488038277
+[2026-08-09 13:50:21,987: INFO/MainProcess] Events of group {task} enabled by remote.
+[2026-08-09 13:50:22,230: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 13:50:22,230: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 13:50:22,230: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 13:50:22,239: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 13:50:22,239: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 13:50:22,239: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 13:50:22,298: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 13:50:22,298: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 13:50:22,300: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[6992fe87-8605-45f7-805b-0d32604b98ba] succeeded in 2.722295084007783s: 0.011961722488038277
+[2026-08-09 13:50:22,305: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 13:50:22,305: WARNING/MainProcess] Temp Dir does NOT Exist
+[2026-08-09 13:50:22,307: INFO/MainProcess] Task scan_worker.sbom_sca_estimation[d10edf7c-3a80-459d-8a8e-96d7b6bff16b] succeeded in 2.728960000007646s: 0.011961722488038277

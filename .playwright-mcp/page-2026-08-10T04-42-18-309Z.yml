@@ -1,0 +1,26 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e3]:
+    - generic [ref=f4e4]:
+      - generic [ref=f4e5]: DevSec Shield
+      - generic [ref=f4e10]:
+        - text: Don't have an account yet?
+        - link "Sign up" [ref=f4e11] [cursor=pointer]:
+          - /url: /register
+    - generic [ref=f4e13]:
+      - generic [ref=f4e14]:
+        - generic [ref=f4e15]: Email address
+        - textbox "Email address" [ref=f4e20]:
+          - /placeholder: email address
+      - generic [ref=f4e21]:
+        - generic [ref=f4e22]: Password
+        - textbox "Password" [ref=f4e27]
+      - generic [ref=f4e28]:
+        - generic [ref=f4e29]:
+          - generic [ref=f4e30]: Verification Code
+          - textbox "Verification Code" [ref=f4e31]
+        - button "Send Verification Code" [ref=f4e33] [cursor=pointer]
+      - button "Login" [ref=f4e37] [cursor=pointer]
+      - link "Forgot Password?" [ref=f4e39] [cursor=pointer]:
+        - /url: /password_reset
+  - region "Notifications alt+T"
+  - alert [ref=f4e40]

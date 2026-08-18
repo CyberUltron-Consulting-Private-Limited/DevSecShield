@@ -385,7 +385,7 @@ class CryptoAlgorithmScanner(Scanner):
                 continue
             props: dict[str, str] = {
                 "crypto:assetType": "algorithm",
-                "crypto:primitive": asset.info.get("primitive", "unknown"),
+                "crypto:primitive": asset.info.get("primitive") or "other",
                 "crypto:strength": asset.info.get("strength", "unknown"),
                 "crypto:quantumVulnerable": str(
                     bool(asset.info.get("quantum_vulnerable", False))

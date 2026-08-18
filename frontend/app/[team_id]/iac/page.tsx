@@ -36,6 +36,7 @@ import type { IACListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -369,7 +370,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
               <ChartContainer config={areaConfig} className="h-[280px] w-full">
                 <AreaChart data={issuesOverTimeData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <ChartLegend content={<ChartLegendContent />} />
@@ -554,7 +555,7 @@ function IACDashboard({ dashboardData }: { dashboardData: IACListDashboardData }
               <ChartContainer config={mttrConfig} className="h-[280px] w-full">
                 <LineChart data={mttrPerDayData}>
                   <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => formatChartDateIst(v)} />
                   <YAxis tickLine={false} axisLine={false} allowDecimals={true} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Line type="monotone" dataKey="days" stroke="var(--color-days)" strokeWidth={2} dot={{ r: 3 }} />
@@ -654,11 +655,6 @@ export default function IACPage() {
     },
     onError: (error) => { showErrorToast(error); },
   });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {

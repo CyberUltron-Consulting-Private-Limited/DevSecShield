@@ -11,18 +11,8 @@
 
 import { useMemo, useState } from "react";
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  type Node,
-  type Edge,
-  MarkerType,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
   XAxis,
   YAxis,
@@ -43,20 +33,48 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from "@/components/ui/chart";
 import {
-  ShieldCheck,
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Network,
   Activity,
   EyeOff,
   MapPin,
   FileText,
 } from "lucide-react";
+import {
+  ComplianceMatrix,
+  type AttestHandler,
+  type Compliance,
+  type FrameworkGroup,
+} from "@/components/compliance/ComplianceMatrix";
+import { FRAMEWORK_GROUPS_AIBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
+import {
+  buildModelCandidates,
+  fillModelCardRows,
+  pickDefaultModel,
+} from "@/components/ai-bom/modelCardDisplay";
+import { BomGraphCard } from "@/components/bom/BomGraphCard";
+import { pickBomGraph } from "@/components/bom/layout";
+import type { BomGraph } from "@/components/bom/types";
+
+export type { AttestHandler, Compliance } from "@/components/compliance/ComplianceMatrix";
 
 // ── shared tokens (mirror getImpactBadgeClass + the locked risk bands) ──────
 const C = {
@@ -71,66 +89,21 @@ const C = {
   high: "#f97316", // orange-500
   critical: "#dc2626", // red-600
 };
-const FRAMEWORK_LABELS: Record<string, string> = {
-  fda_524b: "FDA §524B",
-  eu_ai_act_annexIV: "EU AI Act (Annex IV)",
-  gmlp: "GMLP (IMDRF)",
-  hipaa: "HIPAA",
-  nist_rmf: "NIST AI RMF",
-  rbi_free_ai: "RBI FREE-AI",
-  rbi_free_ai_supply: "RBI FREE-AI (Supply Chain)",
-};
-const VERDICT_BADGE: Record<string, string> = {
-  pass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
-  pass_with_evidence: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200",
-  fail: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
-  out_of_scope: "bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200",
-  not_bom_evidenceable: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200",
-  na: "bg-zinc-100 text-zinc-700 dark:bg-zinc-700/50 dark:text-zinc-200",
-};
-const VERDICT_LABEL: Record<string, string> = {
-  pass: "Pass",
-  pass_with_evidence: "Pass (evidence)",
-  fail: "Fail",
-  out_of_scope: "Out of scope",
-  not_bom_evidenceable: "Not BOM-evidenceable",
-  na: "N/A",
-};
 // 0-100 normalized -> band (the LOCKED scale: low<=33, medium<=66, else high)
 const bandColor = (band?: string) =>
   band === "high" ? C.high : band === "medium" ? C.medium : C.low;
 
 // ── types (the FE-exposed run-object shapes) ────────────────────────────────
-type VerdictState =
-  | "pass"
-  | "pass_with_evidence"
-  | "fail"
-  | "out_of_scope"
-  | "not_bom_evidenceable"
-  | "na";
-interface Requirement {
-  id: string;
-  title: string;
-  verdict: VerdictState;
-  evidence?: string;
-  attestable?: boolean;
-}
-interface FrameworkCoverage {
-  pass: number;
-  pass_with_evidence?: number;
-  fail: number;
-  out_of_scope?: number;
-  not_bom_evidenceable?: number;
-  na: number;
-  coverage: number | null;
-  requirements?: Requirement[];
-}
-export type Compliance = Record<string, FrameworkCoverage | string>;
 interface GNode {
   id: string;
   label: string;
   kind: string;
   type?: string;
+  cluster?: boolean;
+  is_cluster?: boolean;
+  cluster_count?: number;
+  clustered_count?: number;
+  member_ids?: string[];
 }
 interface GEdge {
   source: string;
@@ -140,6 +113,12 @@ interface GEdge {
 export interface Graph {
   nodes: GNode[];
   edges: GEdge[];
+  meta?: {
+    raw_node_count?: number;
+    view_node_count?: number;
+    clustered_members?: number;
+    max_nodes?: number;
+  };
 }
 export interface Scores {
   risk_normalized?: number;
@@ -149,254 +128,78 @@ export interface Scores {
 type Json = Record<string, unknown>;
 
 // ════════════════════════════════════════════════════════════════════════════
-// 1. Compliance coverage per framework — pass / fail / NA kept DISTINCT.
+// 1. Compliance coverage — thin wrapper over shared ComplianceMatrix (Phase 0).
+// Keeps local attestation file picker affordance for AIBOM/SBOM.
 // ════════════════════════════════════════════════════════════════════════════
-export function ComplianceCoverage({ compliance }: { compliance?: Compliance }) {
-  const frameworks = useMemo(
-    () =>
-      Object.entries(compliance ?? {})
-        .filter(([k, v]) => k !== "disclaimer" && typeof v === "object")
-        .map(([k, v]) => ({ key: k, ...(v as FrameworkCoverage) })),
-    [compliance]
-  );
-  const [active, setActive] = useState<string | null>(null);
-  // Minimal evidence-attachment affordance: a captured attestation marks the
-  // requirement locally; the backend flips not_bom_evidenceable -> pass_with_evidence
-  // when run_all() is re-run with this evidence (aibom.compliance.engine evidence=).
-  const [attested, setAttested] = useState<Record<string, string>>({});
-
-  if (frameworks.length === 0) return null;
-  const data = frameworks.map((f) => ({
-    name: FRAMEWORK_LABELS[f.key] ?? f.key,
-    key: f.key,
-    pass: f.pass,
-    pass_with_evidence: f.pass_with_evidence ?? 0,
-    fail: f.fail,
-    out_of_scope: f.out_of_scope ?? 0,
-    not_bom_evidenceable: f.not_bom_evidenceable ?? 0,
-    na: f.na,
-    coverage: f.coverage == null ? "n/a" : `${Math.round(f.coverage * 100)}%`,
-  }));
-  const cfg: ChartConfig = {
-    pass: { label: "Pass", color: C.pass },
-    pass_with_evidence: { label: "Pass (evidence)", color: C.pass_with_evidence },
-    fail: { label: "Fail", color: C.fail },
-    out_of_scope: { label: "Out of scope", color: C.out_of_scope },
-    not_bom_evidenceable: { label: "Not BOM-evidenceable", color: C.not_bom_evidenceable },
-    na: { label: "N/A", color: C.na },
-  };
-  const reqs = frameworks.find((f) => f.key === active)?.requirements ?? [];
-
+export function ComplianceCoverage({
+  compliance,
+  groups = FRAMEWORK_GROUPS_AIBOM_WITH_INDIA,
+  defaultGroup = "all",
+  onAttest,
+}: {
+  compliance?: Compliance;
+  groups?: FrameworkGroup[];
+  defaultGroup?: string;
+  onAttest?: AttestHandler;
+}) {
   return (
-    <Card className="col-span-full">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" /> Regulatory
-          Compliance Readiness
-        </CardTitle>
-        <CardDescription>
-          Per-framework verdicts (advisory). Coverage = pass / (pass + fail).
-          <span className="font-medium"> Out of scope</span> (framework doesn&apos;t
-          apply) and <span className="font-medium">Not BOM-evidenceable</span>
-          (process evidence) are reported separately — never folded into pass or
-          fail. Click a bar for per-requirement detail.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={cfg} className="aspect-auto h-[260px] w-full">
-          <BarChart
-            data={data}
-            layout="vertical"
-            margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
-          >
-            <CartesianGrid horizontal={false} className="stroke-zinc-200 dark:stroke-zinc-800" />
-            <XAxis type="number" hide />
-            <YAxis
-              dataKey="name"
-              type="category"
-              width={150}
-              tickLine={false}
-              axisLine={false}
-              className="text-xs"
-            />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="pass" stackId="a" fill={C.pass} radius={[3, 0, 0, 3]} cursor="pointer"
-              onClick={(_, i) => setActive(data[i].key)} />
-            <Bar dataKey="pass_with_evidence" stackId="a" fill={C.pass_with_evidence} cursor="pointer"
-              onClick={(_, i) => setActive(data[i].key)} />
-            <Bar dataKey="fail" stackId="a" fill={C.fail} cursor="pointer"
-              onClick={(_, i) => setActive(data[i].key)} />
-            <Bar dataKey="out_of_scope" stackId="a" fill={C.out_of_scope} cursor="pointer"
-              onClick={(_, i) => setActive(data[i].key)} />
-            <Bar dataKey="not_bom_evidenceable" stackId="a" fill={C.not_bom_evidenceable} cursor="pointer"
-              onClick={(_, i) => setActive(data[i].key)} />
-            <Bar dataKey="na" stackId="a" fill={C.na} radius={[0, 3, 3, 0]} cursor="pointer"
-              onClick={(_, i) => setActive(data[i].key)} />
-          </BarChart>
-        </ChartContainer>
-
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: C.pass }} /> Pass</span>
-          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: C.pass_with_evidence }} /> Pass (evidence)</span>
-          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: C.fail }} /> Fail</span>
-          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: C.out_of_scope }} /> Out of scope</span>
-          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: C.not_bom_evidenceable }} /> Not BOM-evidenceable</span>
-          <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: C.na }} /> N/A</span>
-        </div>
-
-        {active && reqs.length > 0 && (
-          <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <div className="px-3 py-2 text-sm font-medium border-b border-zinc-200 dark:border-zinc-800">
-              {FRAMEWORK_LABELS[active] ?? active} — requirements
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-24">Verdict</TableHead>
-                  <TableHead className="w-28">ID</TableHead>
-                  <TableHead>Requirement</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reqs.map((r) => {
-                  const att = attested[r.id];
-                  const v = att ? "pass_with_evidence" : r.verdict;
-                  return (
-                  <TableRow key={r.id}>
-                    <TableCell>
-                      <Badge className={VERDICT_BADGE[v] ?? VERDICT_BADGE.na}>
-                        {VERDICT_LABEL[v] ?? v}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-zinc-600 dark:text-zinc-400">{r.id}</TableCell>
-                    <TableCell className="text-sm">
-                      {r.title}
-                      {r.evidence && !att && (
-                        <div className="text-xs text-zinc-500">{r.evidence}</div>
-                      )}
-                      {att && (
-                        <div className="text-xs text-teal-600 dark:text-teal-400">
-                          attested: {att} (pending re-evaluation)
-                        </div>
-                      )}
-                      {(r.verdict === "not_bom_evidenceable" || r.attestable) && !att && (
-                        <label className="mt-1 inline-flex cursor-pointer items-center gap-1 text-xs text-violet-600 dark:text-violet-400 hover:underline">
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) setAttested((s) => ({ ...s, [r.id]: f.name }));
-                            }}
-                          />
-                          + Attach attestation
-                        </label>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <ComplianceMatrix
+      compliance={compliance}
+      title="Regulatory Compliance Readiness"
+      icon="shield"
+      enableAttestation
+      onAttest={onAttest}
+      groups={groups}
+      defaultGroup={defaultGroup}
+      className="col-span-full"
+    />
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // 2. Typed-edge dependency graph (trained_on / depends_on / served_by / deployed_at).
 // ════════════════════════════════════════════════════════════════════════════
-const KIND_COLOR: Record<string, string> = {
-  model: "#6366f1", // indigo-500
-  dataset: "#0ea5e9", // sky-500
-  framework: "#a855f7", // purple-500
-  service: "#14b8a6", // teal-500
-  infra: "#f59e0b", // amber-500 (deployment site)
-};
-const REL_LABEL: Record<string, string> = {
-  trained_on: "trained on",
-  depends_on: "depends on",
-  served_by: "served by",
-  deployed_at: "deployed at",
-};
-
-export function DependencyGraph({ graph }: { graph?: Graph }) {
-  const { nodes, edges } = useMemo(() => {
-    const gn = graph?.nodes ?? [];
-    const ge = graph?.edges ?? [];
-    // simple layered layout: models left, their neighbours fanned right.
-    const models = gn.filter((n) => n.kind === "model");
-    const others = gn.filter((n) => n.kind !== "model");
-    const nodes: Node[] = [
-      ...models.map((n, i) => ({
-        id: n.id,
-        position: { x: 40, y: 60 + i * 120 },
-        data: { label: n.label },
-        style: nodeStyle(n.kind),
-      })),
-      ...others.map((n, i) => ({
-        id: n.id,
-        position: { x: 360, y: 20 + i * 70 },
-        data: { label: `${n.label}` },
-        style: nodeStyle(n.kind),
-      })),
-    ];
-    const edges: Edge[] = ge.map((e, i) => ({
-      id: `e${i}`,
-      source: e.source,
-      target: e.target,
-      label: REL_LABEL[e.rel] ?? e.rel,
-      animated: e.rel === "deployed_at",
-      markerEnd: { type: MarkerType.ArrowClosed },
-      labelStyle: { fontSize: 10, fill: "#71717a" },
-      style: { stroke: "#a1a1aa" },
-    }));
-    return { nodes, edges };
-  }, [graph]);
-
-  if (nodes.length === 0) return null;
-  return (
-    <Card className="col-span-full">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Network className="w-4 h-4 text-indigo-500" /> AI Supply-Chain Graph
-        </CardTitle>
-        <CardDescription>
-          Typed lineage — model → training data, libraries, serving vendor, and
-          deployment sites.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="h-[340px] w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40">
-          <ReactFlow nodes={nodes} edges={edges} fitView proOptions={{ hideAttribution: true }}>
-            <Background gap={16} className="text-zinc-200 dark:text-zinc-800" />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-600 dark:text-zinc-400">
-          {Object.entries(KIND_COLOR).map(([k, c]) => (
-            <span key={k} className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full" style={{ background: c }} /> {k}
-            </span>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+export function DependencyGraph({
+  graph,
+  graphCompact,
+  graphExpanded,
+}: {
+  graph?: Graph | BomGraph | null;
+  graphCompact?: Graph | BomGraph | null;
+  graphExpanded?: Graph | BomGraph | null;
+}) {
+  const compact = useMemo(
+    () =>
+      pickBomGraph({
+        mode: "compact",
+        full: graph as BomGraph | null | undefined,
+        compact: graphCompact as BomGraph | null | undefined,
+        expanded: graphExpanded as BomGraph | null | undefined,
+      }),
+    [graph, graphCompact, graphExpanded]
   );
-}
-function nodeStyle(kind: string): React.CSSProperties {
-  return {
-    background: KIND_COLOR[kind] ?? "#71717a",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 11,
-    fontWeight: 600,
-    padding: "6px 10px",
-    width: 160,
-  };
+  const expanded = useMemo(
+    () =>
+      pickBomGraph({
+        mode: "expanded",
+        full: graph as BomGraph | null | undefined,
+        compact: graphCompact as BomGraph | null | undefined,
+        expanded: graphExpanded as BomGraph | null | undefined,
+      }),
+    [graph, graphCompact, graphExpanded]
+  );
+  if (!compact || (compact.nodes?.length ?? 0) === 0) return null;
+  return (
+    <BomGraphCard
+      lane="aibom"
+      graph={compact}
+      expandedGraph={expanded}
+      title="AI Supply-Chain Graph"
+      description="Typed lineage — model → training data, libraries, serving vendor, and deployment sites."
+      icon={<Network className="w-4 h-4 text-indigo-500" />}
+      heightClass="h-[340px]"
+    />
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -457,17 +260,53 @@ export function RiskHeatmap({ scores }: { scores?: Scores }) {
 // ════════════════════════════════════════════════════════════════════════════
 // 4. Shadow AI — unsanctioned / ungoverned components (existing severity styling).
 // ════════════════════════════════════════════════════════════════════════════
-export function ShadowAI({ findings }: { findings?: Json[] }) {
+function humanizeRisk(raw: unknown): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "Ungoverned / third-party AI surface";
+  return s.replace(/_/g, " ");
+}
+
+function transparencyLines(f: Json): string[] {
+  const lines: string[] = [];
+  const compliance = f.compliance_controls;
+  if (compliance && typeof compliance === "object" && !Array.isArray(compliance)) {
+    for (const [k, v] of Object.entries(compliance as Record<string, unknown>)) {
+      if (k && v != null && String(v).trim()) lines.push(`${k}: ${String(v)}`);
+    }
+  }
+  const owasp = f.owasp_top_10_llm;
+  if (owasp && typeof owasp === "object" && !Array.isArray(owasp)) {
+    for (const [k, v] of Object.entries(owasp as Record<string, unknown>)) {
+      if (k && v != null && String(v).trim()) lines.push(String(v));
+      else if (k) lines.push(k);
+    }
+  }
+  const license = String(f.license_type ?? "").trim();
+  if (license) lines.push(`License: ${license}`);
+  return lines;
+}
+
+export function ShadowAI({
+  findings,
+  onOpenFinding,
+}: {
+  findings?: Json[];
+  onOpenFinding?: (finding: Json) => void;
+}) {
   const shadow = (findings ?? []).filter(
     (f) =>
       String(f.risk_category ?? "").includes("missing_model_card_lineage") ||
       String(f.asset_type ?? "") === "external_provider"
   );
+  const [openKey, setOpenKey] = useState<string | null>(null);
   return (
-    <Card>
+    <Card data-testid="shadow-ai-card">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <EyeOff className="w-4 h-4 text-amber-500" /> Shadow AI
+          {shadow.length > 0 && (
+            <span className="text-xs font-normal text-zinc-500">({shadow.length})</span>
+          )}
         </CardTitle>
         <CardDescription>
           Ungoverned / third-party AI surfaces (no model-card lineage or external
@@ -480,26 +319,152 @@ export function ShadowAI({ findings }: { findings?: Json[] }) {
             No shadow-AI components detected.
           </p>
         ) : (
-          <ul className="space-y-2">
-            {shadow.slice(0, 8).map((f, i) => (
-              <li
-                key={i}
-                className="flex items-center justify-between rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-900/10 px-3 py-2"
-              >
-                <div>
-                  <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                    {String(f.asset_name ?? f.title ?? "—")}
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    {String(f.asset_type ?? "")}
-                    {f.provider ? ` · ${f.provider}` : ""}
-                  </div>
-                </div>
-                <Badge className="bg-amber-500 hover:bg-amber-600 text-white">
-                  {String(f.impact ?? "review")}
-                </Badge>
-              </li>
-            ))}
+          <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+            {shadow.map((f, i) => {
+              const key = String(f.id ?? i);
+              const name = String(f.asset_name ?? f.title ?? "—");
+              const typeLine = `${String(f.asset_type ?? "")}${
+                f.provider ? ` · ${f.provider}` : ""
+              }`;
+              const location = String(f.location ?? "").trim();
+              const description = String(f.description ?? "").trim() || "—";
+              const fix = String(f.suggested_fix ?? "").trim() || "—";
+              const transparency = transparencyLines(f);
+              const snippet = String(f.snippet ?? "").trim();
+              return (
+                <li
+                  key={key}
+                  onMouseEnter={() => setOpenKey(key)}
+                  onFocusCapture={() => setOpenKey(key)}
+                  onClick={() => setOpenKey(key)}
+                  onMouseLeave={(e) => {
+                    const to = e.relatedTarget as HTMLElement | null;
+                    if (to?.closest?.('[data-slot="hover-card-content"]')) return;
+                    // Portal gap: relatedTarget can be null while moving to content
+                    if (!to) return;
+                    setOpenKey((cur) => (cur === key ? null : cur));
+                  }}
+                >
+                  <HoverCard
+                    open={openKey === key}
+                    onOpenChange={(next) => {
+                      if (next) setOpenKey(key);
+                    }}
+                    openDelay={0}
+                    closeDelay={200}
+                  >
+                    <HoverCardTrigger asChild>
+                      <div
+                        data-testid="shadow-ai-row"
+                        data-shadow-open={openKey === key ? "true" : "false"}
+                        className="flex w-full items-start justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-900/10 px-3 py-2 cursor-default"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100 break-all whitespace-normal">
+                            {name}
+                          </div>
+                          <div className="text-xs text-zinc-500 break-words whitespace-normal">
+                            {typeLine}
+                          </div>
+                        </div>
+                        <Badge
+                          data-testid="shadow-ai-impact"
+                          className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
+                        >
+                          {String(f.impact ?? "review")}
+                        </Badge>
+                      </div>
+                    </HoverCardTrigger>
+                    <HoverCardContent
+                      align="start"
+                      side="bottom"
+                      className="w-80 max-w-sm space-y-3 text-xs z-[100]"
+                      onMouseEnter={() => setOpenKey(key)}
+                      onMouseLeave={() =>
+                        setOpenKey((cur) => (cur === key ? null : cur))
+                      }
+                    >
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Asset
+                        </p>
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 break-all">
+                          {name}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Why
+                        </p>
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                          {humanizeRisk(f.risk_category)}
+                          {f.impact ? ` · ${String(f.impact)}` : ""}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Description
+                        </p>
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words">
+                          {description}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          How to fix
+                        </p>
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words">
+                          {fix}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Location
+                        </p>
+                        <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300 break-all">
+                          {location || "Location not recorded"}
+                        </p>
+                        {snippet ? (
+                          <pre className="mt-1 max-h-24 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-[10px] dark:border-zinc-700 dark:bg-zinc-900 whitespace-pre-wrap break-all">
+                            {snippet}
+                          </pre>
+                        ) : null}
+                      </div>
+                      {transparency.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                            Transparency
+                          </p>
+                          <ul className="mt-1 space-y-0.5 text-sm text-zinc-700 dark:text-zinc-300">
+                            {transparency.map((line, idx) => (
+                              <li key={idx} className="break-words">
+                                {line}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {onOpenFinding && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 w-full cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setOpenKey(null);
+                            onOpenFinding(f);
+                          }}
+                        >
+                          View full finding
+                        </Button>
+                      )}
+                    </HoverCardContent>
+                  </HoverCard>
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>
@@ -566,7 +531,7 @@ export function MultiSiteDrift({ aiBomJson }: { aiBomJson?: Json }) {
                           : "bg-blue-500 hover:bg-blue-600 text-white"
                       }
                     >
-                      {s.drift_status ?? "unknown"}
+                      {s.drift_status ?? "not-assessed"}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -581,41 +546,85 @@ export function MultiSiteDrift({ aiBomJson }: { aiBomJson?: Json }) {
 
 // ════════════════════════════════════════════════════════════════════════════
 // 6. Model-card detail panel (architecture / metrics / considerations).
+// Never shows empty blanks; multi-model Select when inventory has >1 model.
 // ════════════════════════════════════════════════════════════════════════════
-export function ModelCardPanel({ aiBomJson }: { aiBomJson?: Json }) {
-  const model = useMemo(() => {
-    const comps = (aiBomJson?.components as Json[] | undefined) ?? [];
-    return comps.find((c) => c.type === "machine-learning-model");
-  }, [aiBomJson]);
-  if (!model) return null;
-  const mc = (model.modelCard as Json | undefined) ?? {};
-  const mp = (mc.modelParameters as Json | undefined) ?? {};
-  // CycloneDX `modelParameters.approach` is an object ({type: "supervised"}),
-  // not a string — read its `.type` so it doesn't render as "[object Object]".
-  const approach = mp.approach as Json | string | undefined;
-  const approachStr =
-    approach && typeof approach === "object"
-      ? String((approach as Json).type ?? "—")
-      : String(approach ?? "—");
-  const rows: [string, string][] = [
-    ["Name", String(model.name ?? "—")],
-    ["Version", String(model.version ?? "—")],
-    ["Approach", approachStr],
-    ["Task", String(mp.task ?? "—")],
-    ["Architecture family", String(mp.architectureFamily ?? "—")],
-    ["Model architecture", String(mp.modelArchitecture ?? "—")],
+export function ModelCardPanel({
+  aiBomJson,
+  findings,
+}: {
+  aiBomJson?: Json;
+  findings?: Json[];
+}) {
+  const candidates = useMemo(
+    () => buildModelCandidates(aiBomJson, findings),
+    [aiBomJson, findings],
+  );
+  const defaultPick = useMemo(() => pickDefaultModel(candidates), [candidates]);
+  // User override only — stale ids fall back to the computed default (no effect).
+  const [userSelectedId, setUserSelectedId] = useState<string | null>(null);
+  const selectedId =
+    userSelectedId && candidates.some((c) => c.id === userSelectedId)
+      ? userSelectedId
+      : (defaultPick?.candidate.id ?? "");
+
+  if (!defaultPick || candidates.length === 0) return null;
+
+  const selected =
+    candidates.find((c) => c.id === selectedId) ?? defaultPick.candidate;
+  const reason =
+    selected.id === defaultPick.candidate.id
+      ? defaultPick.reason
+      : "selected manually from inventoried models";
+  const rows = fillModelCardRows(selected.component);
+  const displayRows: [string, string][] = [
+    ["Name", rows.name],
+    ["Version", rows.version],
+    ["Approach", rows.approach],
+    ["Task", rows.task],
+    ["Architecture family", rows.architectureFamily],
+    ["Model architecture", rows.modelArchitecture],
+    ["Card source", rows.cardSource],
   ];
+
   return (
-    <Card>
+    <Card data-testid="aibom-model-card-panel">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <FileText className="w-4 h-4 text-violet-500" /> Model Card
         </CardTitle>
         <CardDescription>Architecture, task, and lineage metadata.</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {candidates.length > 1 && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Model
+            </label>
+            <Select value={selected.id} onValueChange={setUserSelectedId}>
+              <SelectTrigger className="h-9 w-full cursor-pointer" data-testid="aibom-model-card-select">
+                <SelectValue placeholder="Select a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {candidates.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                    {c.hasCard ? "" : " (inferred)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <p
+          className="text-xs text-zinc-600 dark:text-zinc-400 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 px-3 py-2"
+          data-testid="aibom-model-card-banner"
+        >
+          Showing <span className="font-medium text-zinc-900 dark:text-zinc-100">{rows.name}</span>
+          {" — "}
+          {reason}
+        </p>
         <dl className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {rows.map(([k, v]) => (
+          {displayRows.map(([k, v]) => (
             <div key={k} className="flex items-start justify-between gap-4 py-2">
               <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">{k}</dt>
               <dd className="text-sm text-right text-zinc-800 dark:text-zinc-200">{v}</dd>
@@ -631,18 +640,31 @@ export function ModelCardPanel({ aiBomJson }: { aiBomJson?: Json }) {
 export function AiBomVisualizations({
   compliance,
   graph,
+  graphCompact,
+  graphExpanded,
   scores,
   aiBomJson,
   findings,
+  onAttest,
+  onOpenFinding,
 }: {
   compliance?: Compliance;
-  graph?: Graph;
+  graph?: Graph | BomGraph | null;
+  graphCompact?: Graph | BomGraph | null;
+  graphExpanded?: Graph | BomGraph | null;
   scores?: Scores;
   aiBomJson?: Json;
   findings?: Json[];
+  onAttest?: AttestHandler;
+  onOpenFinding?: (finding: Json) => void;
 }) {
   const has =
-    compliance || graph || scores || aiBomJson || (findings && findings.length);
+    compliance ||
+    graph ||
+    graphCompact ||
+    scores ||
+    aiBomJson ||
+    (findings && findings.length);
   if (!has) return null;
   return (
     <section className="space-y-6">
@@ -656,12 +678,16 @@ export function AiBomVisualizations({
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplianceCoverage compliance={compliance} />
-        <DependencyGraph graph={graph} />
+        <ComplianceCoverage compliance={compliance} onAttest={onAttest} />
+        <DependencyGraph
+          graph={graph}
+          graphCompact={graphCompact}
+          graphExpanded={graphExpanded}
+        />
         <MultiSiteDrift aiBomJson={aiBomJson} />
-        <ModelCardPanel aiBomJson={aiBomJson} />
+        <ModelCardPanel aiBomJson={aiBomJson} findings={findings} />
         <RiskHeatmap scores={scores} />
-        <ShadowAI findings={findings} />
+        <ShadowAI findings={findings} onOpenFinding={onOpenFinding} />
       </div>
     </section>
   );

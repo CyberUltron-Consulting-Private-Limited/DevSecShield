@@ -1,0 +1,23 @@
+Error while parsing the pyproject file /Users/anshsinghal/Desktop/DevSecShield/bench/sbom/repos/04-sqlalchemy/pyproject.toml. TomlError: Inline lists must be a single type, not a mix of inline-table and string at row 120, col 28, pos 3662:
+119:     {include-group = "tests-sqlite"},
+120>     "sqlalchemy[aiosqlite]"
+                                ^
+121: ]
+
+
+    at TOMLParser.recordInlineListValue (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/toml-parser.js:1305:28)
+    at TOMLParser.runOne (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:64:30)
+    at TOMLParser.parse (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/lib/parser.js:45:22)
+    at Object.parseString [as parse] (/Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@iarna/toml/parse-string.js:13:12)
+    at parsePyProjectTomlFile (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/helpers/utils.js:5668:21)
+    at createPythonBom (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/cli/index.js:3792:23)
+    at createBom (file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/lib/cli/index.js:8543:18)
+    at file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/bin/cdxgen.js:830:26
+    at file:///Users/anshsinghal/.npm/_npx/97cfe991f01acece/node_modules/@cyclonedx/cdxgen/bin/cdxgen.js:1123:3
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  fromTOML: true,
+  wrapped: null,
+  line: 119,
+  col: 27,
+  pos: 3662
+}

@@ -15,6 +15,11 @@ from aibom.compliance import (  # noqa: F401
     nist_rmf,
     rbi_free_ai,
 )
+# CERT-In AIBOM Table 10 + §9.4.1 (Phase 2). Do not import CBOM/SBOM lane modules here.
+from aibom.compliance.cert_in import ai as _cert_in_ai  # noqa: F401
+# SEBI CSCRF AIBOM honest software-inventory reading.
+# Lane isolation: do not pull CBOM or SBOM SEBI modules into this package init.
+from aibom.compliance.sebi_cscrf import ai as _sebi_cscrf_ai  # noqa: F401
 from aibom.compliance.base import ADVISORY_DISCLAIMER, Requirement
 from aibom.compliance.engine import ALIASES, FRAMEWORKS, resolve_framework, run_all
 

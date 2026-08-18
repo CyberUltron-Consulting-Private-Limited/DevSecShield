@@ -229,6 +229,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     if isinstance(scan_results, dict):
         try:
             from backend.utilities.pdf.rbi_compliance_pdf import append_rbi_compliance_pdf_section
+            from backend.utilities.pdf.certin_compliance_pdf import (
+                  append_certin_compliance_pdf_section,
+            ) 
 
             append_rbi_compliance_pdf_section(
                 story,
@@ -236,6 +239,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 styles["heading"],
                 styles["body"],
                 styles["table_cell"],
+            )
+          
+            append_certin_compliance_pdf_section(
+              story, scan_results, heading_style, normal_style, small_style
             )
         except Exception:
             pass

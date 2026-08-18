@@ -72,6 +72,30 @@ def test_certificate_expiry_rows_non_empty() -> None:
         assert "name" in row and "expired" in row and "self_signed" in row
 
 
+def test_key_material_rows_present_with_private_key() -> None:
+    """Certificate expiry UI sibling series: private-key related-crypto-material."""
+    km = _distributions()["cbom_distributions"].get("key_material") or []
+    assert km, "key_material[] EMPTY -> key/keystore section starves on fixture"
+    kinds = {r.get("material_kind") for r in km}
+    assert "private-key" in kinds
+
+
+def test_certificate_join_fallback_fields_on_findings() -> None:
+    """FE join fallback reads asset_type / not_valid_after / material_kind off findings."""
+    run = _distributions()
+    cert_rows = [
+        r for r in run["results"] if r.get("asset_type") == "certificate"
+    ]
+    assert cert_rows and cert_rows[0].get("not_valid_after")
+    mat_rows = [
+        r
+        for r in run["results"]
+        if r.get("asset_type") == "related-crypto-material"
+        and r.get("material_kind") == "private-key"
+    ]
+    assert mat_rows
+
+
 def test_protocol_distribution_non_empty() -> None:
     """ProtocolTls renders rows from ``Object.entries(protocols)``."""
     dist = _distributions()["cbom_distributions"]["protocols"]
@@ -187,15 +211,39 @@ def test_pqc_migration_rows_present_for_every_vulnerable_algorithm() -> None:
         assert row.get("migration_target"), "migration row missing target family"
         assert row.get("migration_roadmap"), "migration row missing sized roadmap"
         assert row.get("impact"), "migration row missing impact"
+        # Grouped UX enrichment (location + bom_ref join + HoverCard detail)
+        assert row.get("bom_ref"), "migration row missing bom_ref for finding join"
+        assert isinstance(row.get("location"), str) and row["location"], (
+            "migration row missing non-empty location"
+        )
+        assert row.get("description"), "migration row missing description"
+        assert row.get("suggested_fix"), "migration row missing suggested_fix"
+        assert isinstance(row.get("finding_codes"), list)
+        assert "QUANTUM_VULNERABLE" in row["finding_codes"]
 
 
 def test_pqc_migration_rows_are_deterministically_ordered() -> None:
-    """The list renders in a stable order (impact rank, then name) so identical
-    input yields identical output (no React key churn / flaky snapshots)."""
+    """The list renders in a stable order (impact rank, then name, then bom_ref)
+    so identical input yields identical output (no React key churn)."""
     migration = _distributions()["cbom_distributions"]["pqc"]["migration"]
     rank = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-    keys = [(rank.get(r["impact"], 9), str(r["name"])) for r in migration]
+    keys = [
+        (rank.get(r["impact"], 9), str(r["name"]), str(r.get("bom_ref") or ""))
+        for r in migration
+    ]
     assert keys == sorted(keys), "migration rows not deterministically ordered"
+
+
+def test_pqc_migration_bom_ref_matches_finding_row() -> None:
+    """View-finding join: every migration bom_ref appears on a finding row."""
+    run = _distributions()
+    migration = run["cbom_distributions"]["pqc"]["migration"]
+    finding_refs = {r.get("bom_ref") for r in run["results"] if r.get("bom_ref")}
+    assert finding_refs, "finding rows must carry bom_ref"
+    for row in migration:
+        assert row["bom_ref"] in finding_refs, (
+            f"migration bom_ref {row['bom_ref']!r} missing from findings"
+        )
 
 
 # ── F3: expanded compliance tri-state matrix ─────────────────────────────────
@@ -221,6 +269,8 @@ _EXPECTED_FRAMEWORKS = {
     "nist_1800_38c",
     "cnsa_2_0",
     "rbi_free_ai_protection",
+    "cert_in_cbom",
+    "sebi_cscrf_cbom",
 }
 _VERDICTS = {
     "pass",

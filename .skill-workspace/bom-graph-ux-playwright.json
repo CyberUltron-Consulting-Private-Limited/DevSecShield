@@ -1,0 +1,20 @@
+{
+  "cbom94": {
+    "url": "http://localhost:3000/1/cbom/94/results",
+    "bodySnippet": "cbom-demo 999337.69 credits Home Scanning Utilities SAST SCA + SBOM CBOM AI BOM MCP LLM IAC DAST Integrations CI / CD Gu",
+    "compactNodes": 9,
+    "expandVisible": true,
+    "dialogOpen": true,
+    "dialogNodes": 26,
+    "consoleErrors": []
+  },
+  "aibom95": {
+    "url": "http://localhost:3000/1/ai_bom/95/results",
+    "bodySnippet": "cbom-demo 999337.69 credits Home Scanning Utilities SAST SCA + SBOM CBOM AI BOM MCP LLM IAC DAST Integrations CI / CD Gu",
+    "compactNodes": 27,
+    "expandVisible": true,
+    "dialogOpen": true,
+    "dialogNodes": 49,
+    "consoleErrors": []
+  }
+}

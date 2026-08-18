@@ -30,6 +30,12 @@ from reportlab.platypus import (
 )
 
 
+from backend.utilities.dashboard.aibom_license import (
+    is_unlicensed_library_gap,
+    resolve_aibom_license,
+)
+from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -74,13 +80,13 @@ def _asset_type(v: dict) -> str:
 
 
 def _provider(v: dict) -> str:
-    """Tolerate both frontend (provider) and stored (source) field names."""
-    return v.get("provider") or v.get("source") or ""
+    """Concrete ModelProvider label (never unknown)."""
+    return resolve_aibom_provider(v)
 
 
 def _license_type(v: dict) -> str:
-    """Tolerate both frontend (license_type) and stored (license) field names."""
-    return v.get("license_type") or v.get("license") or ""
+    """Concrete SPDX / LicenseRef label (never unknown)."""
+    return resolve_aibom_license(v)
 
 
 def _normalize_results(scan_results: Union[list, dict]) -> List[dict]:
@@ -128,7 +134,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         by_impact[impact] = by_impact.get(impact, 0) + 1
         risk_sum += IMPACT_TO_RISK.get(impact, 2.0)
 
-        provider = (_provider(v) or "unknown").strip().lower()
+        provider = _provider(v).strip().lower()
         by_provider[provider] = by_provider.get(provider, 0) + 1
 
         asset_type = (_asset_type(v) or "unknown").strip().lower()
@@ -137,8 +143,11 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         risk_cat = (v.get("risk_category") or "unknown").strip().lower()
         by_risk_category[risk_cat] = by_risk_category.get(risk_cat, 0) + 1
 
-        lic = (_license_type(v) or "").strip().lower()
-        if not lic or lic == "unknown":
+        lic = _license_type(v)
+        if (
+            asset_type not in ("local_model_file", "huggingface_model", "embedding_model", "external_provider")
+            and is_unlicensed_library_gap(lic)
+        ):
             unlicensed += 1
 
     avg_risk = risk_sum / total if total > 0 else 0.0
@@ -428,8 +437,14 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
 
     if isinstance(scan_results, dict):
         from backend.utilities.pdf.rbi_compliance_pdf import append_rbi_compliance_pdf_section
+        from backend.utilities.pdf.certin_compliance_pdf import (
+            append_certin_compliance_pdf_section,
+        )
 
         append_rbi_compliance_pdf_section(
+            story, scan_results, heading_style, normal_style, small_style
+        )
+        append_certin_compliance_pdf_section(
             story, scan_results, heading_style, normal_style, small_style
         )
 

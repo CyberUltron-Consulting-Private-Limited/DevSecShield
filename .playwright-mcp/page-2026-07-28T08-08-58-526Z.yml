@@ -1,0 +1,28 @@
+- generic [active] [ref=f14e1]:
+  - generic [ref=f14e3]:
+    - generic [ref=f14e4]:
+      - generic [ref=f14e5]: DevSec Shield
+      - generic [ref=f14e10]:
+        - text: Don't have an account yet?
+        - link "Sign up" [ref=f14e11] [cursor=pointer]:
+          - /url: /register
+    - generic [ref=f14e13]:
+      - generic [ref=f14e14]:
+        - generic [ref=f14e15]: Email address
+        - textbox "Email address" [ref=f14e20]:
+          - /placeholder: email address
+          - text: aibom-demo@local.test
+      - generic [ref=f14e21]:
+        - generic [ref=f14e22]: Password
+        - textbox "Password" [ref=f14e27]: DemoPass123!
+      - generic [ref=f14e28]:
+        - generic [ref=f14e29]:
+          - generic [ref=f14e30]: Verification Code
+          - textbox "Verification Code" [ref=f14e31]
+        - button "Send Verification Code" [ref=f14e33] [cursor=pointer]
+      - button "Login" [ref=f14e37] [cursor=pointer]
+      - link "Forgot Password?" [ref=f14e39] [cursor=pointer]:
+        - /url: /password_reset
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f14e45] [cursor=pointer]
+  - alert [ref=f14e49]

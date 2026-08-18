@@ -68,12 +68,22 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
 
         sbom_compliance = None
         rbi_csf_rollup = None
+        certin_posture = None
+        attestations = None
+        bom_signature = None
+        vex_json = None
         if scan.scan_data and isinstance(scan.scan_data, dict):
             if "sbom_compliance" in scan.scan_data:
                 sbom_compliance = scan.scan_data["sbom_compliance"]
+            attestations = scan.scan_data.get("attestations")
+            bom_signature = scan.scan_data.get("bom_signature")
+            vex_json = scan.scan_data.get("vex_json")
         if sbom_compliance:
             from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
+            from backend.utilities.dashboard.certin_posture import build_certin_posture
+
             rbi_csf_rollup = build_rbi_csf_rollup(sbom_compliance=sbom_compliance)
+            certin_posture = build_certin_posture(sbom_compliance=sbom_compliance)
 
         return {
             "repo_url": repo_url,
@@ -81,6 +91,10 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "zip_file_used": zip_file_used,
             "sbom_compliance": sbom_compliance,
             "rbi_csf_rollup": rbi_csf_rollup,
+            "certin_posture": certin_posture,
+            "attestations": attestations,
+            "bom_signature": bom_signature,
+            "vex_json": vex_json,
         }
     
     elif scan_type == "mcp":
@@ -146,6 +160,8 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         # also embedded in ``cbom_json``, but the results-page dependency-graph
         # (F1) reads this pre-joined payload rather than re-walking CycloneDX.
         cbom_graph = None
+        cbom_graph_compact = None
+        cbom_graph_expanded = None
         if scan.scan_data and isinstance(scan.scan_data, dict):
             if "cbom_json" in scan.scan_data:
                 cbom_json = scan.scan_data["cbom_json"]
@@ -157,11 +173,51 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
                 cbom_scores = scan.scan_data["cbom_scores"]
             if "cbom_graph" in scan.scan_data:
                 cbom_graph = scan.scan_data["cbom_graph"]
+            if "cbom_graph_compact" in scan.scan_data:
+                cbom_graph_compact = scan.scan_data["cbom_graph_compact"]
+            if "cbom_graph_expanded" in scan.scan_data:
+                cbom_graph_expanded = scan.scan_data["cbom_graph_expanded"]
+            if cbom_graph is not None and (
+                cbom_graph_compact is None or cbom_graph_expanded is None
+            ):
+                # Legacy scans: project compact/expanded on read (no worker restart).
+                try:
+                    from backend.utilities.dashboard.bom_graph_view import (
+                        COMPACT_MAX_NODES,
+                        EXPANDED_MAX_NODES,
+                        compact_cbom_graph,
+                    )
+
+                    if cbom_graph_compact is None:
+                        cbom_graph_compact = compact_cbom_graph(
+                            cbom_graph, max_nodes=COMPACT_MAX_NODES
+                        )
+                    if cbom_graph_expanded is None:
+                        cbom_graph_expanded = compact_cbom_graph(
+                            cbom_graph,
+                            max_nodes=EXPANDED_MAX_NODES,
+                            collapse_orphans=False,
+                            collapse_duplicate_labels=True,
+                        )
+                except Exception:
+                    pass
 
         rbi_csf_rollup = None
+        certin_posture = None
         if cbom_compliance:
             from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
+            from backend.utilities.dashboard.certin_posture import build_certin_posture
+
             rbi_csf_rollup = build_rbi_csf_rollup(cbom_compliance=cbom_compliance)
+            certin_posture = build_certin_posture(cbom_compliance=cbom_compliance)
+
+        attestations = None
+        bom_signature = None
+        vex_json = None
+        if scan.scan_data and isinstance(scan.scan_data, dict):
+            attestations = scan.scan_data.get("attestations")
+            bom_signature = scan.scan_data.get("bom_signature")
+            vex_json = scan.scan_data.get("vex_json")
 
         return {
             "repo_url": repo_url,
@@ -174,7 +230,13 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "cbom_compliance": cbom_compliance,
             "cbom_scores": cbom_scores,
             "cbom_graph": cbom_graph,
+            "cbom_graph_compact": cbom_graph_compact,
+            "cbom_graph_expanded": cbom_graph_expanded,
             "rbi_csf_rollup": rbi_csf_rollup,
+            "certin_posture": certin_posture,
+            "attestations": attestations,
+            "bom_signature": bom_signature,
+            "vex_json": vex_json,
         }
 
     elif scan_type == "ai_bom":
@@ -189,6 +251,8 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         ai_bom_json = None
         ai_bom_compliance = None
         ai_bom_graph = None
+        ai_bom_graph_compact = None
+        ai_bom_graph_expanded = None
         ai_bom_scores = None
         ai_bom_spdx = None
         ai_bom_sarif = None
@@ -210,13 +274,51 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             # dependency-graph, multi-site drift, and risk-heatmap visualizations.
             if "ai_bom_graph" in scan.scan_data:
                 ai_bom_graph = scan.scan_data["ai_bom_graph"]
+            if "ai_bom_graph_compact" in scan.scan_data:
+                ai_bom_graph_compact = scan.scan_data["ai_bom_graph_compact"]
+            if "ai_bom_graph_expanded" in scan.scan_data:
+                ai_bom_graph_expanded = scan.scan_data["ai_bom_graph_expanded"]
+            if ai_bom_graph is not None and (
+                ai_bom_graph_compact is None or ai_bom_graph_expanded is None
+            ):
+                try:
+                    from backend.utilities.dashboard.bom_graph_view import (
+                        COMPACT_MAX_NODES,
+                        EXPANDED_MAX_NODES,
+                        compact_aibom_graph,
+                    )
+
+                    if ai_bom_graph_compact is None:
+                        ai_bom_graph_compact = compact_aibom_graph(
+                            ai_bom_graph, max_nodes=COMPACT_MAX_NODES
+                        )
+                    if ai_bom_graph_expanded is None:
+                        ai_bom_graph_expanded = compact_aibom_graph(
+                            ai_bom_graph,
+                            max_nodes=EXPANDED_MAX_NODES,
+                            collapse_orphans=False,
+                        )
+                except Exception:
+                    pass
             if "ai_bom_scores" in scan.scan_data:
                 ai_bom_scores = scan.scan_data["ai_bom_scores"]
 
         rbi_csf_rollup = None
+        certin_posture = None
         if ai_bom_compliance:
             from backend.utilities.dashboard.rbi_posture import build_rbi_csf_rollup
+            from backend.utilities.dashboard.certin_posture import build_certin_posture
+
             rbi_csf_rollup = build_rbi_csf_rollup(ai_bom_compliance=ai_bom_compliance)
+            certin_posture = build_certin_posture(ai_bom_compliance=ai_bom_compliance)
+
+        attestations = None
+        bom_signature = None
+        vex_json = None
+        if scan.scan_data and isinstance(scan.scan_data, dict):
+            attestations = scan.scan_data.get("attestations")
+            bom_signature = scan.scan_data.get("bom_signature")
+            vex_json = scan.scan_data.get("vex_json")
 
         return {
             "repo_url": repo_url,
@@ -227,8 +329,14 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "ai_bom_json": ai_bom_json,
             "ai_bom_compliance": ai_bom_compliance,
             "ai_bom_graph": ai_bom_graph,
+            "ai_bom_graph_compact": ai_bom_graph_compact,
+            "ai_bom_graph_expanded": ai_bom_graph_expanded,
             "ai_bom_scores": ai_bom_scores,
             "ai_bom_spdx": ai_bom_spdx,
             "ai_bom_sarif": ai_bom_sarif,
             "rbi_csf_rollup": rbi_csf_rollup,
+            "certin_posture": certin_posture,
+            "attestations": attestations,
+            "bom_signature": bom_signature,
+            "vex_json": vex_json,
         }

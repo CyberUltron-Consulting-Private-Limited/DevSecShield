@@ -33,6 +33,7 @@ import { LeakageConversation, deleteLeakageConversation, getLeakageConversations
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate } from "@/utils/datetime";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
 
@@ -93,17 +94,6 @@ export default function LeakagePage() {
       showErrorToast(error);
     }
   })
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
 
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {

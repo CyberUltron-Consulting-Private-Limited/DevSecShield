@@ -1,0 +1,457 @@
+- generic [active] [ref=f7e1]:
+  - generic [ref=f7e2]:
+    - generic [ref=f7e5]:
+      - button "Ansh Singhal's Team 4721.76 credits" [ref=f7e117] [cursor=pointer]:
+        - generic [ref=f7e12]:
+          - text: Ansh Singhal's Team
+          - generic [ref=f7e118]: 4721.76 credits
+      - generic [ref=f7e16]:
+        - list [ref=f7e19]:
+          - listitem [ref=f7e20]:
+            - link "Home" [ref=f7e21] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f7e26]:
+          - generic [ref=f7e27]: Scanning Utilities
+          - list [ref=f7e29]:
+            - listitem [ref=f7e30]:
+              - link "SAST" [ref=f7e31] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f7e36]:
+              - link "SCA + SBOM" [ref=f7e37] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f7e43]:
+              - link "CBOM" [ref=f7e44] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f7e49]:
+              - link "AI BOM" [ref=f7e50] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f7e55]:
+              - link "MCP" [ref=f7e56] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f7e61]:
+              - link "LLM" [ref=f7e62] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f7e67]:
+              - link "IAC" [ref=f7e68] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f7e73]:
+              - link "DAST" [ref=f7e74] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f7e79]:
+          - generic [ref=f7e80]: Integrations
+          - list [ref=f7e82]:
+            - listitem [ref=f7e83]:
+              - link "CI / CD" [ref=f7e84] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f7e89]:
+        - list [ref=f7e90]:
+          - listitem [ref=f7e91]:
+            - link "Teams" [ref=f7e92] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f7e99]:
+            - link "Settings" [ref=f7e100] [cursor=pointer]:
+              - /url: /1/settings
+        - button "KS Krishna Sharma shivam@cyberultron.com" [ref=f7e119] [cursor=pointer]:
+          - generic [ref=f7e120]: KS
+          - generic [ref=f7e121]:
+            - paragraph [ref=f7e122]: Krishna Sharma
+            - paragraph [ref=f7e123]: shivam@cyberultron.com
+    - main [ref=f7e112]:
+      - generic [ref=f7e126]:
+        - generic [ref=f7e127]:
+          - generic [ref=f7e128]:
+            - button [ref=f7e129] [cursor=pointer]
+            - generic [ref=f7e130]:
+              - heading "SCA + SBOM Scan Results" [level=1] [ref=f7e131]
+              - paragraph [ref=f7e132]: Agent analysis of dependency vulnerabilities
+          - generic [ref=f7e133]:
+            - button "VEX" [ref=f7e134] [cursor=pointer]
+            - button "Signature" [ref=f7e135] [cursor=pointer]
+            - button "Evidence pack" [ref=f7e136] [cursor=pointer]
+            - button "Download Scan Report" [ref=f7e137] [cursor=pointer]
+            - button "Chat with the Results" [ref=f7e138] [cursor=pointer]
+        - generic [ref=f7e139]:
+          - button "Results" [ref=f7e140] [cursor=pointer]
+          - button "Ticketing integrations" [ref=f7e144] [cursor=pointer]
+        - generic [ref=f7e148]:
+          - generic [ref=f7e155]:
+            - paragraph [ref=f7e156]: Repository
+            - paragraph [ref=f7e157]: https://github.com/pallets/click
+          - generic [ref=f7e165]:
+            - paragraph [ref=f7e166]: Branch
+            - paragraph [ref=f7e167]: main
+          - generic [ref=f7e174]:
+            - paragraph [ref=f7e175]: Source
+            - paragraph [ref=f7e176]: Repository
+        - generic [ref=f7e177]:
+          - generic [ref=f7e178]:
+            - generic [ref=f7e184]:
+              - paragraph [ref=f7e185]: Total vulnerabilities
+              - paragraph [ref=f7e186]: "5"
+            - generic [ref=f7e192]:
+              - paragraph [ref=f7e193]: Critical
+              - paragraph [ref=f7e194]: "0"
+            - generic [ref=f7e202]:
+              - paragraph [ref=f7e203]: Policy violations
+              - paragraph [ref=f7e204]: "17"
+            - generic [ref=f7e210]:
+              - paragraph [ref=f7e211]: License risks
+              - paragraph [ref=f7e212]: "0"
+            - generic [ref=f7e220]:
+              - paragraph [ref=f7e221]: High-risk licenses
+              - paragraph [ref=f7e222]: "0"
+            - generic [ref=f7e230]:
+              - paragraph [ref=f7e231]: Avg risk score
+              - paragraph [ref=f7e232]: "5.0"
+            - generic [ref=f7e238]:
+              - paragraph [ref=f7e239]: Reachable issues
+              - paragraph [ref=f7e240]: "5"
+          - generic [ref=f7e241]:
+            - generic [ref=f7e242]:
+              - generic [ref=f7e243]: Remediation actions
+              - generic [ref=f7e244]: Finding status breakdown
+            - generic [ref=f7e246]:
+              - generic [ref=f7e251]:
+                - paragraph [ref=f7e252]: Fixed
+                - paragraph [ref=f7e253]: 0 · 0%
+                - progressbar [ref=f7e254]
+              - generic [ref=f7e259]:
+                - paragraph [ref=f7e260]: In progress
+                - paragraph [ref=f7e261]: 0 · 0%
+                - progressbar [ref=f7e262]
+              - generic [ref=f7e267]:
+                - paragraph [ref=f7e268]: Not started
+                - paragraph [ref=f7e269]: 5 · 100%
+                - progressbar [ref=f7e270]
+              - generic [ref=f7e278]:
+                - paragraph [ref=f7e279]: Ignored
+                - paragraph [ref=f7e280]: 0 · 0%
+                - progressbar [ref=f7e281]
+              - generic [ref=f7e283]:
+                - generic [ref=f7e284]: Total findings
+                - generic [ref=f7e285]: "5"
+          - generic [ref=f7e286]:
+            - generic [ref=f7e287]:
+              - generic [ref=f7e288]:
+                - generic [ref=f7e289]: Severity distribution
+                - generic [ref=f7e292]: By impact level
+              - img [ref=f7e297]:
+                - generic [ref=f7e300]:
+                  - generic [ref=f7e301]: Critical
+                  - generic [ref=f7e303]: High
+                  - generic [ref=f7e305]: Medium
+                  - generic [ref=f7e307]: Low
+            - generic [ref=f7e324]:
+              - generic [ref=f7e325]:
+                - generic [ref=f7e326]: Reachability distribution
+                - generic [ref=f7e329]: Reachable vs not reachable
+              - img [ref=f7e334]:
+                - generic [ref=f7e338]:
+                  - generic [ref=f7e339]: reachable
+                  - generic [ref=f7e341]: not reachable
+                  - generic [ref=f7e343]: not assessed
+                - generic [ref=f7e346]:
+                  - generic [ref=f7e347]: "0"
+                  - generic [ref=f7e349]: "2"
+                  - generic [ref=f7e351]: "4"
+                  - generic [ref=f7e353]: "6"
+                  - generic [ref=f7e355]: "8"
+          - generic [ref=f7e362]:
+            - generic [ref=f7e363]:
+              - generic [ref=f7e364]: Vulnerability trends over time
+              - generic [ref=f7e368]: Findings by severity (by discovery date)
+            - img [ref=f7e373]:
+              - generic [ref=f7e376]: 2026-08-10
+              - generic [ref=f7e381]:
+                - generic [ref=f7e382]: "0"
+                - generic [ref=f7e384]: "2"
+                - generic [ref=f7e386]: "4"
+                - generic [ref=f7e388]: "6"
+                - generic [ref=f7e390]: "8"
+          - generic [ref=f7e404]:
+            - generic [ref=f7e405]:
+              - generic [ref=f7e406]:
+                - generic [ref=f7e407]: Licenses Distribution
+                - generic [ref=f7e408]: "Distribution of dependencies by license type. Risk levels: Low (permissive, public domain, unknown), Medium (weak copyleft, creative commons, commercial), High (strong copyleft, network copyleft, source available)."
+              - generic [ref=f7e409]:
+                - generic [ref=f7e410]:
+                  - generic [ref=f7e411]:
+                    - generic [ref=f7e412]: Permissive
+                    - generic [ref=f7e413]: "5"
+                  - progressbar [ref=f7e414]
+                - generic [ref=f7e416]:
+                  - generic [ref=f7e417]:
+                    - generic [ref=f7e418]: Public Domain
+                    - generic [ref=f7e419]: "0"
+                  - progressbar [ref=f7e420]
+                - generic [ref=f7e422]:
+                  - generic [ref=f7e423]:
+                    - generic [ref=f7e424]: Weak Copyleft
+                    - generic [ref=f7e425]: "0"
+                  - progressbar [ref=f7e426]
+                - generic [ref=f7e428]:
+                  - generic [ref=f7e429]:
+                    - generic [ref=f7e430]: Creative Commons
+                    - generic [ref=f7e431]: "0"
+                  - progressbar [ref=f7e432]
+                - generic [ref=f7e434]:
+                  - generic [ref=f7e435]:
+                    - generic [ref=f7e436]: Commercial
+                    - generic [ref=f7e437]: "0"
+                  - progressbar [ref=f7e438]
+                - generic [ref=f7e440]:
+                  - generic [ref=f7e441]:
+                    - generic [ref=f7e442]: Strong Copyleft
+                    - generic [ref=f7e443]: "0"
+                  - progressbar [ref=f7e444]
+                - generic [ref=f7e446]:
+                  - generic [ref=f7e447]:
+                    - generic [ref=f7e448]: Network Copyleft
+                    - generic [ref=f7e449]: "0"
+                  - progressbar [ref=f7e450]
+                - generic [ref=f7e452]:
+                  - generic [ref=f7e453]:
+                    - generic [ref=f7e454]: Source Available
+                    - generic [ref=f7e455]: "0"
+                  - progressbar [ref=f7e456]
+                - generic [ref=f7e458]:
+                  - generic [ref=f7e459]:
+                    - generic [ref=f7e460]: Not declared
+                    - generic [ref=f7e461]: "0"
+                  - progressbar [ref=f7e462]
+            - generic [ref=f7e464]:
+              - generic [ref=f7e465]:
+                - generic [ref=f7e466]: Average risk score per reachability
+                - generic [ref=f7e467]: Weighted average by reachability level
+              - generic [ref=f7e469]:
+                - generic [ref=f7e470]:
+                  - generic [ref=f7e471]: Reachable
+                  - generic "Average risk score" [ref=f7e477]: "5.0"
+                - generic [ref=f7e478]:
+                  - generic [ref=f7e479]: Potentially reachable
+                  - generic "Average risk score" [ref=f7e484]: "0.0"
+                - generic [ref=f7e485]:
+                  - generic [ref=f7e486]: Not reachable
+                  - generic "Average risk score" [ref=f7e493]: "0.0"
+                - generic [ref=f7e494]:
+                  - generic [ref=f7e495]: Not assessed
+                  - generic "Average risk score" [ref=f7e501]: "0.0"
+          - generic [ref=f7e502]:
+            - generic [ref=f7e503]:
+              - generic [ref=f7e504]: Top vulnerabilities by risk score
+              - generic [ref=f7e505]: Sorted by impact (descending)
+            - generic [ref=f7e510]:
+              - generic [ref=f7e511]:
+                - generic [ref=f7e512]:
+                  - paragraph [ref=f7e513]: starlette@1.0.0
+                  - paragraph [ref=f7e514]: reachable · direct · permissive
+                - generic [ref=f7e515]: High
+              - generic [ref=f7e516]:
+                - generic [ref=f7e517]:
+                  - paragraph [ref=f7e518]: urllib3@2.6.3
+                  - paragraph [ref=f7e519]: reachable · direct · permissive
+                - generic [ref=f7e520]: Medium
+              - generic [ref=f7e521]:
+                - generic [ref=f7e522]:
+                  - paragraph [ref=f7e523]: idna@3.11
+                  - paragraph [ref=f7e524]: reachable · direct · permissive
+                - generic [ref=f7e525]: Medium
+              - generic [ref=f7e526]:
+                - generic [ref=f7e527]:
+                  - paragraph [ref=f7e528]: pytest@9.0.2
+                  - paragraph [ref=f7e529]: reachable · direct · permissive
+                - generic [ref=f7e530]: Medium
+              - generic [ref=f7e531]:
+                - generic [ref=f7e532]:
+                  - paragraph [ref=f7e533]: uv@0.11.3
+                  - paragraph [ref=f7e534]: reachable · direct · permissive
+                - generic [ref=f7e535]: Low
+        - generic [ref=f7e536]:
+          - generic [ref=f7e537]:
+            - generic [ref=f7e538]: Regulatory Compliance Readiness
+            - generic [ref=f7e542]: Per-framework verdicts (advisory). Coverage = pass / (pass + fail). Out of scope (framework doesn't apply) and Not BOM-evidenceable (process evidence) are reported separately — never folded into pass or fail. Click a bar for per-requirement detail.
+          - generic [ref=f7e543]:
+            - generic [ref=f7e544]:
+              - generic [ref=f7e545]: Frameworks
+              - button "All" [ref=f7e546] [cursor=pointer]
+              - button "Supply chain" [ref=f7e547] [cursor=pointer]
+              - button "India / CERT-In / SEBI" [ref=f7e548] [cursor=pointer]
+            - img [ref=f7e553]:
+              - generic [ref=f7e555]:
+                - generic [ref=f7e556]: RBI FREE-AI(Supply Chain)
+                - generic [ref=f7e558]: NTIA MinimumElements
+                - generic [ref=f7e560]: NIST SSDF (SP800-218)
+                - generic [ref=f7e562]: CERT-In SBOM(Guidelines v2.0)
+                - generic [ref=f7e564]: SEBI CSCRF(SBOM)
+              - generic [ref=f7e568]:
+                - generic [ref=f7e570] [cursor=pointer]
+                - generic [ref=f7e572] [cursor=pointer]
+                - generic [ref=f7e574] [cursor=pointer]
+                - generic [ref=f7e576] [cursor=pointer]
+                - generic [ref=f7e578] [cursor=pointer]
+              - generic [ref=f7e581]:
+                - generic [ref=f7e583] [cursor=pointer]
+                - generic [ref=f7e585] [cursor=pointer]
+                - generic [ref=f7e587] [cursor=pointer]
+                - generic [ref=f7e589] [cursor=pointer]
+              - generic [ref=f7e592]:
+                - generic [ref=f7e594] [cursor=pointer]
+                - generic [ref=f7e596] [cursor=pointer]
+                - generic [ref=f7e598] [cursor=pointer]
+                - generic [ref=f7e600] [cursor=pointer]
+                - generic [ref=f7e602] [cursor=pointer]
+            - generic [ref=f7e603]:
+              - generic [ref=f7e604]: Pass
+              - generic [ref=f7e606]: Pass (evidence)
+              - generic [ref=f7e608]: Fail
+              - generic [ref=f7e610]: Out of scope
+              - generic [ref=f7e612]: Not BOM-evidenceable
+              - generic [ref=f7e614]: N/A
+        - generic [ref=f7e616]:
+          - generic [ref=f7e617]:
+            - generic [ref=f7e618]: RBI CSF Posture Rollup
+            - generic [ref=f7e622]: FREE-AI requirement verdicts aggregated into the five RBI Cyber Security Framework pillars. Coverage = pass / (pass + fail); process-only controls are reported separately.
+          - img [ref=f7e627]:
+            - generic [ref=f7e631]:
+              - generic [ref=f7e632]: RBI CSF — Governance
+              - generic [ref=f7e634]: RBI CSF — RiskIdentification
+              - generic [ref=f7e636]: RBI CSF — RiskProtection
+              - generic [ref=f7e638]: RBI CSF — ThreatDetection
+              - generic [ref=f7e640]: RBI CSF — Response &Recovery
+            - generic [ref=f7e644]:
+              - generic [ref=f7e646] [cursor=pointer]
+              - generic [ref=f7e648] [cursor=pointer]
+            - generic [ref=f7e653] [cursor=pointer]
+            - generic [ref=f7e658] [cursor=pointer]
+        - generic [ref=f7e659]:
+          - generic [ref=f7e660]:
+            - generic [ref=f7e661]: CERT-In SBOM posture (advisory)
+            - generic [ref=f7e666]: Software component inventory and SBOM process controls for this scan. Does not constitute certification. HBOM deferred — not in product scope.
+          - img [ref=f7e671]:
+            - generic [ref=f7e675]:
+              - generic [ref=f7e676]: Software componentinventory
+              - generic [ref=f7e678]: SBOM process controls
+            - generic [ref=f7e684] [cursor=pointer]
+            - generic [ref=f7e689] [cursor=pointer]
+            - generic [ref=f7e692]:
+              - generic [ref=f7e694] [cursor=pointer]
+              - generic [ref=f7e696] [cursor=pointer]
+        - generic [ref=f7e697]:
+          - generic [ref=f7e698]:
+            - generic [ref=f7e699]: Findings
+            - generic [ref=f7e700]: 5 findings. Select rows to create Jira tickets; use Action to change finding state.
+          - generic [ref=f7e701]:
+            - generic [ref=f7e702]:
+              - searchbox "Search findings table" [ref=f7e707]
+              - combobox [ref=f7e708] [cursor=pointer]:
+                - generic: All impacts
+              - button "Risk score" [ref=f7e709] [cursor=pointer]
+            - table [ref=f7e715]:
+              - rowgroup [ref=f7e716]:
+                - row [ref=f7e717]:
+                  - columnheader [ref=f7e718]:
+                    - checkbox "Select all rows" [ref=f7e719] [cursor=pointer]
+                  - columnheader "Title" [ref=f7e720]
+                  - columnheader "Dependency" [ref=f7e721]
+                  - columnheader "Impact" [ref=f7e722]
+                  - columnheader "Risk score" [ref=f7e723]
+                  - columnheader "Status" [ref=f7e724]
+                  - columnheader "Reachability" [ref=f7e725]
+                  - columnheader "License" [ref=f7e726]
+                  - columnheader "OWASP" [ref=f7e727]
+                  - columnheader "Compliance" [ref=f7e728]
+                  - columnheader "Actions" [ref=f7e729]
+              - rowgroup [ref=f7e730]:
+                - row [ref=f7e731]:
+                  - cell [ref=f7e732]:
+                    - checkbox "Select DoS via request.form() limits ignored in starlette" [ref=f7e733] [cursor=pointer]
+                  - cell [ref=f7e734]:
+                    - button "DoS via request.form() limits ignored in starlette" [ref=f7e735] [cursor=pointer]
+                  - cell "starlette@1.0.0" [ref=f7e736]
+                  - cell "High" [ref=f7e737]
+                  - cell "7.1" [ref=f7e739]:
+                    - generic "Risk score" [ref=f7e740]: "7.1"
+                  - cell "not started" [ref=f7e741]
+                  - cell "reachable" [ref=f7e743]
+                  - cell "Permissive" [ref=f7e745]
+                  - cell "1" [ref=f7e747]:
+                    - generic "OWASP Top 10 count" [ref=f7e748]: "1"
+                  - cell "3" [ref=f7e749]:
+                    - generic "Compliance controls count" [ref=f7e750]: "3"
+                  - cell [ref=f7e751]:
+                    - button "Finding actions" [ref=f7e752] [cursor=pointer]: Action
+                - row [ref=f7e753]:
+                  - cell [ref=f7e754]:
+                    - checkbox "Select Arbitrary file deletion via uv RECORD entries" [ref=f7e755] [cursor=pointer]
+                  - cell [ref=f7e756]:
+                    - button "Arbitrary file deletion via uv RECORD entries" [ref=f7e757] [cursor=pointer]
+                  - cell "uv@0.11.3" [ref=f7e758]
+                  - cell "Low" [ref=f7e759]
+                  - cell "2.8" [ref=f7e761]:
+                    - generic "Risk score" [ref=f7e762]: "2.8"
+                  - cell "not started" [ref=f7e763]
+                  - cell "reachable" [ref=f7e765]
+                  - cell "Permissive" [ref=f7e767]
+                  - cell "1" [ref=f7e769]:
+                    - generic "OWASP Top 10 count" [ref=f7e770]: "1"
+                  - cell "4" [ref=f7e771]:
+                    - generic "Compliance controls count" [ref=f7e772]: "4"
+                  - cell [ref=f7e773]:
+                    - button "Finding actions" [ref=f7e774] [cursor=pointer]: Action
+                - row [ref=f7e775]:
+                  - cell [ref=f7e776]:
+                    - checkbox "Select Sensitive headers forwarded across origins in urllib3 redirects" [ref=f7e777] [cursor=pointer]
+                  - cell [ref=f7e778]:
+                    - button "Sensitive headers forwarded across origins in urllib3 redirects" [ref=f7e779] [cursor=pointer]
+                  - cell "urllib3@2.6.3" [ref=f7e780]
+                  - cell "Medium" [ref=f7e781]
+                  - cell "5.1" [ref=f7e783]:
+                    - generic "Risk score" [ref=f7e784]: "5.1"
+                  - cell "not started" [ref=f7e785]
+                  - cell "reachable" [ref=f7e787]
+                  - cell "Permissive" [ref=f7e789]
+                  - cell "1" [ref=f7e791]:
+                    - generic "OWASP Top 10 count" [ref=f7e792]: "1"
+                  - cell "4" [ref=f7e793]:
+                    - generic "Compliance controls count" [ref=f7e794]: "4"
+                  - cell [ref=f7e795]:
+                    - button "Finding actions" [ref=f7e796] [cursor=pointer]: Action
+                - row [ref=f7e797]:
+                  - cell [ref=f7e798]:
+                    - checkbox "Select IDNA encode bypass of previous fix" [ref=f7e799] [cursor=pointer]
+                  - cell [ref=f7e800]:
+                    - button "IDNA encode bypass of previous fix" [ref=f7e801] [cursor=pointer]
+                  - cell "idna@3.11" [ref=f7e802]
+                  - cell "Medium" [ref=f7e803]
+                  - cell "5.1" [ref=f7e805]:
+                    - generic "Risk score" [ref=f7e806]: "5.1"
+                  - cell "not started" [ref=f7e807]
+                  - cell "reachable" [ref=f7e809]
+                  - cell "Permissive" [ref=f7e811]
+                  - cell "1" [ref=f7e813]:
+                    - generic "OWASP Top 10 count" [ref=f7e814]: "1"
+                  - cell "3" [ref=f7e815]:
+                    - generic "Compliance controls count" [ref=f7e816]: "3"
+                  - cell [ref=f7e817]:
+                    - button "Finding actions" [ref=f7e818] [cursor=pointer]: Action
+                - row [ref=f7e819]:
+                  - cell [ref=f7e820]:
+                    - checkbox "Select Vulnerable temporary directory handling in pytest" [ref=f7e821] [cursor=pointer]
+                  - cell [ref=f7e822]:
+                    - button "Vulnerable temporary directory handling in pytest" [ref=f7e823] [cursor=pointer]
+                  - cell "pytest@9.0.2" [ref=f7e824]
+                  - cell "Medium" [ref=f7e825]
+                  - cell "5.1" [ref=f7e827]:
+                    - generic "Risk score" [ref=f7e828]: "5.1"
+                  - cell "not started" [ref=f7e829]
+                  - cell "reachable" [ref=f7e831]
+                  - cell "Permissive" [ref=f7e833]
+                  - cell "1" [ref=f7e835]:
+                    - generic "OWASP Top 10 count" [ref=f7e836]: "1"
+                  - cell "3" [ref=f7e837]:
+                    - generic "Compliance controls count" [ref=f7e838]: "3"
+                  - cell [ref=f7e839]:
+                    - button "Finding actions" [ref=f7e840] [cursor=pointer]: Action
+  - region "Notifications alt+T"
+  - alert [ref=f7e116]
+  - generic [ref=f7e841]: Software component inventory

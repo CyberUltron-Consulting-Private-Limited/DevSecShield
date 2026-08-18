@@ -1,3 +1,9 @@
+"""DEPRECATED: Guardrails API-key auth helpers.
+
+Retained for legacy Guardrails public API callers. Product UI no longer
+exposes Guardrails management.
+"""
+
 import secrets
 import hashlib
 from fastapi import Security, HTTPException, status

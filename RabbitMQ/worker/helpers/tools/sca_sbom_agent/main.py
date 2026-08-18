@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from langchain_core.documents import Document
@@ -16,6 +17,13 @@ from helpers.context.progress_writer import StateUpdateWriter
 from langchain.text_splitter import CharacterTextSplitter
 from helpers.tools.sca_sbom_agent.parser import parse_sbom_results_to_strings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from helpers.tools.sca_sbom_agent.syft import run_syft
+from helpers.tools.sca_sbom_agent.cdxgen_run import run_cdxgen
+from helpers.tools.sca_sbom_agent.merge_inventory import (
+    inventory_to_finding_rows,
+    load_cdx_json,
+    merge_cdx_components,
+)
 
 
 console = Console()
@@ -51,6 +59,9 @@ class SCASBOMAgent(BaseAgent):
 
             #initializing
             self.vulnerabilities : list[type[DependencyVulnerability]] | None = None
+            self.inventory_rows: list[dict] = []
+            self.bom_properties: dict[str, str] = {}
+            self.sbom_json: dict | None = None
 
         except Exception as e:
             raise ValueError(f"Error in initializing SCASBOMAgent: {e}")
@@ -59,52 +70,102 @@ class SCASBOMAgent(BaseAgent):
     
     def populate_opensource_context(self)->None:
         """
-        Populates the open source context and sets self.vulnerabilities
+        Multi-engine SBOM path: Syft + cdxgen inventory → merge → Grype vulns.
+        Map-reduce runs only over Grype matches; inventory rows are projected separately.
         """
         try:
             console.print(f"Populating open source context ...",style="bold yellow")
             if not self.directory :
                 raise ValueError(f"Directory not found")
-            
+
+            # --- Inventory engines (best-effort; missing binaries degrade) ---
+            syft_path = run_syft(self.directory)
+            cdxgen_path = run_cdxgen(self.directory)
+            tools: list[str] = []
+            if syft_path is not None:
+                tools.append("syft")
+            if cdxgen_path is not None:
+                tools.append("cdxgen")
+
+            merged_comps = merge_cdx_components(syft_path, cdxgen_path)
+            preferred_sbom = cdxgen_path or syft_path
+            self.sbom_json = load_cdx_json(preferred_sbom)
+
+            bom_props: dict[str, str] = {
+                "sbom:author": "DevSecShield",
+                "sbom:vuln_scanner": "grype",
+            }
+            if tools:
+                bom_props["sbom:inventory_tools"] = ",".join(tools)
+            if self.sbom_json is not None:
+                bom_props["sbom:automation_cyclonedx"] = "true"
+                bom_props["sbom:multi_format_emit"] = "true"
+            self.bom_properties = bom_props
+
+            # --- Grype vuln lane (prefer inventory SBOM) ---
+            def _grype_tool(directory):
+                return run_sbom_scan(directory=directory, sbom_file=preferred_sbom)
+
             open_source_context = OpenSourceContext(
-                open_source_tool=run_sbom_scan,
+                open_source_tool=_grype_tool,
                 directory=self.directory,
             )
+            open_source_context.run_open_source_tool()
+            results = open_source_context.results
 
-            open_source_context.run_open_source_tool()  # this step will set self.results ⭐
+            # Inventory rows: Grype ran → mark assessed even when match count is 0.
+            self.inventory_rows = inventory_to_finding_rows(
+                merged_comps, vuln_assessed=True
+            )
+            console.print(
+                f"Inventory components: {len(self.inventory_rows)} "
+                f"(tools={tools or ['none']})",
+                style="bold yellow",
+            )
 
-            results = open_source_context.results # GET results ⭐
-
-
-            # process each finding one by one to get documents for each finding ( to be passed to map reduce summary )
             parsed_results = parse_sbom_results_to_strings(results)
 
-            #combining 10 findings into a single string and append ad document to the docs list
+            # Zero Grype matches → empty docs → base_context raises "Documents are not set".
+            # Mirror AIBOM: skip map-reduce and return empty vuln findings.
+            if not parsed_results:
+                console.print(
+                    "No SBOM/SCA matches found, skipping map-reduce",
+                    style="bold yellow",
+                )
+                self.vulnerabilities = []
+                return
+
             docs = []
-            for i in range(0,len(parsed_results),10):
-                concatenated_strings = " ".join(parsed_results[i:i+10])
+            for i in range(0, len(parsed_results), 10):
+                concatenated_strings = " ".join(parsed_results[i : i + 10])
                 document = Document(page_content=concatenated_strings)
                 docs.append(document)
 
-            # set documents to the open source context
-            open_source_context.documents = docs # SET documents ⭐
-
-            # generate map reduce summary
+            open_source_context.documents = docs
             summary = open_source_context.generate_map_reduce_summary(
                 summary_manager=SBOMSCASummaryManager()
             )
 
-            output : type[FinalDependencyVulnerabilities] = summary 
-            vulnerabilities = output.vulnerabilities # GET vulnerabilities ⭐
-    
-            console.print(f"Vulnerabilities length : {len(vulnerabilities)}",style="bold yellow")
-            for index , vulnerability in enumerate(vulnerabilities):
-                console.print(f" 🔧 Vulnerability # {index + 1} : {vulnerability.title}",style="bold yellow")
+            if hasattr(summary, "vulnerabilities"):
+                vulnerabilities = summary.vulnerabilities
+            else:
+                console.print(
+                    "SBOM map-reduce returned no structured vulnerabilities "
+                    "(raw/empty result); treating as empty",
+                    style="bold yellow",
+                )
+                vulnerabilities = []
 
+            console.print(
+                f"Vulnerabilities length : {len(vulnerabilities)}", style="bold yellow"
+            )
+            for index, vulnerability in enumerate(vulnerabilities):
+                console.print(
+                    f" 🔧 Vulnerability # {index + 1} : {vulnerability.title}",
+                    style="bold yellow",
+                )
 
-
-            self.vulnerabilities = vulnerabilities # SET vulnerabilities ⭐
-
+            self.vulnerabilities = vulnerabilities
 
         except Exception as e:
             raise ValueError(f"Error in populating open source context: {e}")
@@ -121,6 +182,14 @@ class SCASBOMAgent(BaseAgent):
                 raise ValueError(f"SBOM file not found")
             with open(self.sbom_json_file, "r",errors="ignore") as f:
                 sbom_json = json.load(f)
+            self.sbom_json = sbom_json if isinstance(sbom_json, dict) else None
+            self.bom_properties = {
+                "sbom:author": "DevSecShield",
+                "sbom:vuln_scanner": "grype",
+                "sbom:automation_cyclonedx": "true",
+                "sbom:multi_format_emit": "true",
+                "sbom:inventory_tools": "uploaded-sbom",
+            }
             
             # STEP [ 2 ] ================================ Parse SBOM file  to documents =====================================================================
             splitter = RecursiveCharacterTextSplitter(chunk_size=10000)

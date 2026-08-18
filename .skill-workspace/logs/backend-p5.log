@@ -1,0 +1,3133 @@
+WARNING:  Current configuration will not reload as not all conditions are met, please refer to documentation.
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+INFO:     Started server process [49621]
+INFO:     Waiting for application startup.
+✓ Threadpool tokens increased to 100
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:27.020600 🟩
+INFO:     127.0.0.1:57792 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:27.053767 🟩
+INFO:     127.0.0.1:57793 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:27.064330 🟩
+153 findings found
+INFO:     127.0.0.1:57794 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57799 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57800 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57801 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57807 - "GET /health HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.308585 🟩
+3 cbom scans found for team: 1
+INFO:     127.0.0.1:57808 - "GET /1/cbom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.344497 🟩
+SCAN_STATUS: success TASK_ID: f0775814-f073-490c-8bc9-723e39357aa5
+Scan id: 14 found in main database
+0 messages found for scan: 14
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57809 - "GET /1/cbom/scan/14 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.417299 🟩
+SCAN_STATUS: success TASK_ID: f0775814-f073-490c-8bc9-723e39357aa5
+Scan id: 14 found in main database
+0 messages found for scan: 14
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57810 - "GET /1/cbom/scan/14 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.487625 🟩
+7 ai_bom scans found for team: 1
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57811 - "GET /1/ai_bom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.505332 🟩
+SCAN_STATUS: success TASK_ID: 81c38f26-37fa-48ab-91f8-542b15b2f212
+Scan id: 20 found in main database
+0 messages found for scan: 20
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57812 - "GET /1/ai_bom/scan/20 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.537112 🟩
+SCAN_STATUS: success TASK_ID: 81c38f26-37fa-48ab-91f8-542b15b2f212
+Scan id: 20 found in main database
+0 messages found for scan: 20
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57813 - "GET /1/ai_bom/scan/20 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.566282 🟩
+2 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:57814 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.589770 🟩
+SCAN_STATUS: success TASK_ID: 99261339-62d4-4bf2-841d-19542c23f258
+Scan id: 3 found in main database
+0 messages found for scan: 3
+INFO:     127.0.0.1:57815 - "GET /1/sbom_sca/scan/3 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.619501 🟩
+SCAN_STATUS: success TASK_ID: 99261339-62d4-4bf2-841d-19542c23f258
+Scan id: 3 found in main database
+0 messages found for scan: 3
+INFO:     127.0.0.1:57816 - "GET /1/sbom_sca/scan/3 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.645475 🟩
+153 findings found
+INFO:     127.0.0.1:57817 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.684637 🟩
+INFO:     127.0.0.1:57818 - "POST /1/cbom/scan/14/attestations HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:28.729959 🟩
+SCAN_STATUS: success TASK_ID: f0775814-f073-490c-8bc9-723e39357aa5
+Scan id: 14 found in main database
+0 messages found for scan: 14
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57819 - "GET /1/cbom/scan/14 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57820 - "GET /docs HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:29.303548 🟩
+INFO:     127.0.0.1:57794 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:29.338487 🟩
+INFO:     127.0.0.1:57793 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:29.344959 🟩
+153 findings found
+INFO:     127.0.0.1:57792 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57838 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57839 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57840 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:36.198130 🟩
+INFO:     127.0.0.1:57841 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:36.229589 🟩
+INFO:     127.0.0.1:57838 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:36.252636 🟩
+153 findings found
+INFO:     127.0.0.1:57839 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:41.168385 🟩
+INFO:     127.0.0.1:57839 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57838 - "OPTIONS /1/cbom/scan/14 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:41.187376 🟩
+INFO:     127.0.0.1:57841 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:41.196347 🟩
+SCAN_STATUS: success TASK_ID: f0775814-f073-490c-8bc9-723e39357aa5
+Scan id: 14 found in main database
+0 messages found for scan: 14
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57839 - "GET /1/cbom/scan/14 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:47.782142 🟩
+INFO:     127.0.0.1:57850 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:47.801362 🟩
+INFO:     127.0.0.1:57851 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:44:47.810713 🟩
+SCAN_STATUS: success TASK_ID: f0775814-f073-490c-8bc9-723e39357aa5
+Scan id: 14 found in main database
+0 messages found for scan: 14
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:57852 - "GET /1/cbom/scan/14 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57947 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57989 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58085 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58158 - "GET /health HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:53:59.591062 🟩
+New scan id: 22 added to main database
+INFO:     127.0.0.1:58159 - "POST /1/cbom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:53:59.658093 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/jpadilla/pyjwt', PAT='', branch='master'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Estimating credits for cbom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None 
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/jpadilla/pyjwt', PAT='', branch='master'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/jpadilla/pyjwt', 'PAT': '', 'branch': 'master'}, 
+'scan_binaries': False} assembled successfully
+Sent cbom estimation task to celery worker. task id: 
+2f4e260e-e377-43cc-8346-2b98a9b10aa7
+Scan : team_id=1 owner_user_id=1 scan_type='cbom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 53, 59, 
+624166) info=None id=22 credit_consumed=None title='P6 c1 jpadilla/pyjwt' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 53, 59, 624069) 
+scan_data={} integration_settings={}
+Credits required for cbom scan: 0.62 updated in main database
+INFO:     127.0.0.1:58162 - "POST /1/cbom/scan/22/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:09.882973 🟩
+0.62 credits 🪙 deducted from team 1 : 999623.2800 -> 999622.6600
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/jpadilla/pyjwt', 'PAT': '', 'branch': 'master'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58184 - "POST /1/cbom/scan/22/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:10.133595 🟩
+SCAN_STATUS: started TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Getting status and updating db for scan id: 22 and task id: 
+aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 22 found in main database
+0 messages found for scan: 22
+INFO:     127.0.0.1:58189 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:15.273026 🟩
+SCAN_STATUS: started TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Getting status and updating db for scan id: 22 and task id: 
+aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: aaac0717-71e0-4c09-8dbd-c0470a5fd4be status updated to success in 
+main database
+Scan with id: aaac0717-71e0-4c09-8dbd-c0470a5fd4be scan data updated 
+successfully in main database
+Scan id: 22 found in main database
+0 messages found for scan: 22
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58200 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:15.607777 🟩
+New scan id: 23 added to main database
+INFO:     127.0.0.1:58204 - "POST /1/cbom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:15.630503 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pyca/pyopenssl', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Estimating credits for cbom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None 
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pyca/pyopenssl', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pyca/pyopenssl', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+Sent cbom estimation task to celery worker. task id: 
+df9af6e3-ca29-4f2e-9a39-7828898ee139
+Scan : team_id=1 owner_user_id=1 scan_type='cbom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 54, 15, 
+615541) info=None id=23 credit_consumed=None title='P6 c2 pyca/pyopenssl' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 54, 15, 615529) 
+scan_data={} integration_settings={}
+Credits required for cbom scan: 1.04 updated in main database
+INFO:     127.0.0.1:58205 - "POST /1/cbom/scan/23/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:17.730578 🟩
+1.04 credits 🪙 deducted from team 1 : 999622.6600 -> 999621.6200
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pyca/pyopenssl', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58212 - "POST /1/cbom/scan/23/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:18.122456 🟩
+SCAN_STATUS: started TASK_ID: 74e55f7f-2591-48ae-8a1c-fdedfc2a079a
+Getting status and updating db for scan id: 23 and task id: 
+74e55f7f-2591-48ae-8a1c-fdedfc2a079a
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 23 found in main database
+0 messages found for scan: 23
+INFO:     127.0.0.1:58216 - "GET /1/cbom/scan/23 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:23.346065 🟩
+SCAN_STATUS: started TASK_ID: 74e55f7f-2591-48ae-8a1c-fdedfc2a079a
+Getting status and updating db for scan id: 23 and task id: 
+74e55f7f-2591-48ae-8a1c-fdedfc2a079a
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 74e55f7f-2591-48ae-8a1c-fdedfc2a079a status updated to success in 
+main database
+Scan with id: 74e55f7f-2591-48ae-8a1c-fdedfc2a079a scan data updated 
+successfully in main database
+Scan id: 23 found in main database
+0 messages found for scan: 23
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58232 - "GET /1/cbom/scan/23 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:23.641316 🟩
+New scan id: 24 added to main database
+INFO:     127.0.0.1:58236 - "POST /1/cbom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:23.671663 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pyca/cryptography', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Estimating credits for cbom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None 
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pyca/cryptography', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pyca/cryptography', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+Sent cbom estimation task to celery worker. task id: 
+5119383e-bf2d-417d-97e2-cc88c72f415e
+Scan : team_id=1 owner_user_id=1 scan_type='cbom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 54, 23, 
+654792) info=None id=24 credit_consumed=None title='P6 c3 pyca/cryptography' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 54, 23, 654779) 
+scan_data={} integration_settings={}
+Credits required for cbom scan: 7.68 updated in main database
+INFO:     127.0.0.1:58237 - "POST /1/cbom/scan/24/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:31.825550 🟩
+7.68 credits 🪙 deducted from team 1 : 999621.6200 -> 999613.9400
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pyca/cryptography', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58248 - "POST /1/cbom/scan/24/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:31.957474 🟩
+SCAN_STATUS: started TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Getting status and updating db for scan id: 24 and task id: 
+e8a4f414-4670-4b27-9115-56f191e370a9
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 24 found in main database
+0 messages found for scan: 24
+INFO:     127.0.0.1:58252 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:37.086560 🟩
+SCAN_STATUS: started TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Getting status and updating db for scan id: 24 and task id: 
+e8a4f414-4670-4b27-9115-56f191e370a9
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 24 found in main database
+0 messages found for scan: 24
+INFO:     127.0.0.1:58262 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:42.426199 🟩
+SCAN_STATUS: started TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Getting status and updating db for scan id: 24 and task id: 
+e8a4f414-4670-4b27-9115-56f191e370a9
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e8a4f414-4670-4b27-9115-56f191e370a9 progress updated to 10 in 
+main database
+Scan id: 24 found in main database
+0 messages found for scan: 24
+INFO:     127.0.0.1:58268 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:47.872301 🟩
+SCAN_STATUS: started TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Getting status and updating db for scan id: 24 and task id: 
+e8a4f414-4670-4b27-9115-56f191e370a9
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e8a4f414-4670-4b27-9115-56f191e370a9 progress updated to 10 in 
+main database
+Scan id: 24 found in main database
+0 messages found for scan: 24
+INFO:     127.0.0.1:58274 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:53.118440 🟩
+SCAN_STATUS: started TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Getting status and updating db for scan id: 24 and task id: 
+e8a4f414-4670-4b27-9115-56f191e370a9
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e8a4f414-4670-4b27-9115-56f191e370a9 status updated to success in 
+main database
+Scan with id: e8a4f414-4670-4b27-9115-56f191e370a9 scan data updated 
+successfully in main database
+Scan id: 24 found in main database
+0 messages found for scan: 24
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58280 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:55.337692 🟩
+New scan id: 25 added to main database
+INFO:     127.0.0.1:58284 - "POST /1/cbom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:55.385661 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/mitmproxy/mitmproxy', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Estimating credits for cbom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None 
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/mitmproxy/mitmproxy', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/mitmproxy/mitmproxy', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+Sent cbom estimation task to celery worker. task id: 
+564e0f17-7dfc-482d-a1ec-c60f469f173b
+Scan : team_id=1 owner_user_id=1 scan_type='cbom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 54, 55, 
+357562) info=None id=25 credit_consumed=None title='P6 c4 mitmproxy/mitmproxy' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 54, 55, 357549) 
+scan_data={} integration_settings={}
+Credits required for cbom scan: 10.17 updated in main database
+INFO:     127.0.0.1:58285 - "POST /1/cbom/scan/25/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:59.525228 🟩
+10.17 credits 🪙 deducted from team 1 : 999613.9400 -> 999603.7700
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/mitmproxy/mitmproxy', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58290 - "POST /1/cbom/scan/25/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:54:59.672677 🟩
+SCAN_STATUS: started TASK_ID: a87f9a01-2553-42b8-a38e-270eb127e710
+Getting status and updating db for scan id: 25 and task id: 
+a87f9a01-2553-42b8-a38e-270eb127e710
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 25 found in main database
+0 messages found for scan: 25
+INFO:     127.0.0.1:58296 - "GET /1/cbom/scan/25 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:04.843900 🟩
+SCAN_STATUS: started TASK_ID: a87f9a01-2553-42b8-a38e-270eb127e710
+Getting status and updating db for scan id: 25 and task id: 
+a87f9a01-2553-42b8-a38e-270eb127e710
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a87f9a01-2553-42b8-a38e-270eb127e710 progress updated to 10 in 
+main database
+Scan id: 25 found in main database
+0 messages found for scan: 25
+INFO:     127.0.0.1:58305 - "GET /1/cbom/scan/25 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:10.087966 🟩
+SCAN_STATUS: started TASK_ID: a87f9a01-2553-42b8-a38e-270eb127e710
+Getting status and updating db for scan id: 25 and task id: 
+a87f9a01-2553-42b8-a38e-270eb127e710
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a87f9a01-2553-42b8-a38e-270eb127e710 progress updated to 10 in 
+main database
+Scan id: 25 found in main database
+0 messages found for scan: 25
+INFO:     127.0.0.1:58310 - "GET /1/cbom/scan/25 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:15.331830 🟩
+SCAN_STATUS: started TASK_ID: a87f9a01-2553-42b8-a38e-270eb127e710
+Getting status and updating db for scan id: 25 and task id: 
+a87f9a01-2553-42b8-a38e-270eb127e710
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a87f9a01-2553-42b8-a38e-270eb127e710 progress updated to 10 in 
+main database
+Scan id: 25 found in main database
+0 messages found for scan: 25
+INFO:     127.0.0.1:58316 - "GET /1/cbom/scan/25 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:20.644403 🟩
+SCAN_STATUS: started TASK_ID: a87f9a01-2553-42b8-a38e-270eb127e710
+Getting status and updating db for scan id: 25 and task id: 
+a87f9a01-2553-42b8-a38e-270eb127e710
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a87f9a01-2553-42b8-a38e-270eb127e710 status updated to success in 
+main database
+Scan with id: a87f9a01-2553-42b8-a38e-270eb127e710 scan data updated 
+successfully in main database
+Scan id: 25 found in main database
+0 messages found for scan: 25
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58332 - "GET /1/cbom/scan/25 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:21.150558 🟩
+New scan id: 26 added to main database
+INFO:     127.0.0.1:58337 - "POST /1/cbom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:21.235263 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/paramiko/paramiko', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Estimating credits for cbom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None 
+cbom=StartCBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/paramiko/paramiko', PAT='', branch='main'), 
+zip_file_used=False, cbom_file_used=False, scan_binaries=False) ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/paramiko/paramiko', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+Sent cbom estimation task to celery worker. task id: 
+077a5388-a743-45e0-977d-5a9d4bfd6f3e
+Scan : team_id=1 owner_user_id=1 scan_type='cbom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 55, 21, 
+169905) info=None id=26 credit_consumed=None title='P6 c5 paramiko/paramiko' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 55, 21, 169892) 
+scan_data={} integration_settings={}
+Credits required for cbom scan: 1.96 updated in main database
+INFO:     127.0.0.1:58341 - "POST /1/cbom/scan/26/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:23.429189 🟩
+1.96 credits 🪙 deducted from team 1 : 999603.7700 -> 999601.8100
+Getting celery app in Local environment
+Celery app instantiated
+CBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/paramiko/paramiko', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58353 - "POST /1/cbom/scan/26/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:23.505343 🟩
+SCAN_STATUS: started TASK_ID: a057e7fc-5881-4e52-a35e-7ebe585ffccd
+Getting status and updating db for scan id: 26 and task id: 
+a057e7fc-5881-4e52-a35e-7ebe585ffccd
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 26 found in main database
+0 messages found for scan: 26
+INFO:     127.0.0.1:58357 - "GET /1/cbom/scan/26 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58363 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58364 - "OPTIONS /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:27.121640 🟩
+INFO:     127.0.0.1:58363 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58365 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:27.200552 🟩
+INFO:     127.0.0.1:58364 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:27.220180 🟩
+1407 findings found
+INFO:     127.0.0.1:58365 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:28.595444 🟩
+SCAN_STATUS: started TASK_ID: a057e7fc-5881-4e52-a35e-7ebe585ffccd
+Getting status and updating db for scan id: 26 and task id: 
+a057e7fc-5881-4e52-a35e-7ebe585ffccd
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a057e7fc-5881-4e52-a35e-7ebe585ffccd status updated to success in 
+main database
+Scan with id: a057e7fc-5881-4e52-a35e-7ebe585ffccd scan data updated 
+successfully in main database
+Scan id: 26 found in main database
+0 messages found for scan: 26
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58367 - "GET /1/cbom/scan/26 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:29.072741 🟩
+New scan id: 27 added to main database
+INFO:     127.0.0.1:58372 - "POST /1/ai_bom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:29.170354 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/karpathy/nanoGPT', PAT='', branch='master'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Estimating credits for ai_bom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/karpathy/nanoGPT', PAT='', branch='master'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/karpathy/nanoGPT', 'PAT': '', 'branch': 'master'}, 
+'scan_binaries': False} assembled successfully
+Sent ai_bom estimation task to celery worker. task id: 
+f086f517-85a2-4971-9e04-33c66e768afb
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:29.627577 🟩
+INFO:     127.0.0.1:58365 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:29.705407 🟩
+INFO:     127.0.0.1:58364 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:29.750554 🟩
+1559 findings found
+INFO:     127.0.0.1:58363 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+Scan : team_id=1 owner_user_id=1 scan_type='ai_bom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 55, 29, 
+106342) info=None id=27 credit_consumed=None title='P6 a1 karpathy/nanoGPT' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 55, 29, 106328) 
+scan_data={} integration_settings={}
+Credits required for ai_bom scan: 0.17 updated in main database
+INFO:     127.0.0.1:58373 - "POST /1/ai_bom/scan/27/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:31.477271 🟩
+0.17 credits 🪙 deducted from team 1 : 999601.8100 -> 999601.6400
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/karpathy/nanoGPT', 'PAT': '', 'branch': 'master'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58386 - "POST /1/ai_bom/scan/27/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:31.639267 🟩
+SCAN_STATUS: started TASK_ID: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Getting status and updating db for scan id: 27 and task id: 
+1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 27 found in main database
+0 messages found for scan: 27
+INFO:     127.0.0.1:58390 - "GET /1/ai_bom/scan/27 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:36.793796 🟩
+SCAN_STATUS: started TASK_ID: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Getting status and updating db for scan id: 27 and task id: 
+1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191 status updated to success in 
+main database
+Scan with id: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191 scan data updated 
+successfully in main database
+Scan id: 27 found in main database
+0 messages found for scan: 27
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58396 - "GET /1/ai_bom/scan/27 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:36.927329 🟩
+New scan id: 28 added to main database
+INFO:     127.0.0.1:58400 - "POST /1/ai_bom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:36.959442 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/langchain-ai/langchain', PAT='', branch='master'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Estimating credits for ai_bom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/langchain-ai/langchain', PAT='', branch='master'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/langchain-ai/langchain', 'PAT': '', 'branch': 'master'}, 
+'scan_binaries': False} assembled successfully
+Sent ai_bom estimation task to celery worker. task id: 
+6afcd7d9-042a-41c5-acdc-28c125bd92ae
+INFO:     127.0.0.1:58412 - "OPTIONS /1/cbom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:42.875593 🟩
+8 cbom scans found for team: 1
+INFO:     127.0.0.1:58412 - "GET /1/cbom/scans HTTP/1.1" 200 OK
+Scan : team_id=1 owner_user_id=1 scan_type='ai_bom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 55, 36, 
+939064) info=None id=28 credit_consumed=None title='P6 a2 
+langchain-ai/langchain' scan_metadata={} created_at=datetime.datetime(2026, 8, 
+9, 7, 55, 36, 938935) scan_data={} integration_settings={}
+Credits required for ai_bom scan: 27.28 updated in main database
+INFO:     127.0.0.1:58401 - "POST /1/ai_bom/scan/28/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:43.596428 🟩
+27.28 credits 🪙 deducted from team 1 : 999601.6400 -> 999574.3600
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/langchain-ai/langchain', 'PAT': '', 'branch': 'master'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58413 - "POST /1/ai_bom/scan/28/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:43.717597 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58417 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:48.822625 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58422 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58432 - "OPTIONS /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:50.035316 🟩
+SCAN_STATUS: success TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Scan id: 24 found in main database
+0 messages found for scan: 24
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58432 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:54.230034 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58436 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:55:59.936144 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58442 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:05.419709 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58446 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:10.953738 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58450 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:16.778431 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58455 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:22.007438 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 10 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58472 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:27.319618 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 95 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58477 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:32.734933 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 95 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58486 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:38.198746 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 95 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58490 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:43.334532 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 progress updated to 95 in 
+main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+INFO:     127.0.0.1:58494 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:48.503416 🟩
+SCAN_STATUS: started TASK_ID: c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting status and updating db for scan id: 28 and task id: 
+c87fc63f-44de-4e97-8d54-3c588ff5d0d0
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 status updated to success in 
+main database
+Scan with id: c87fc63f-44de-4e97-8d54-3c588ff5d0d0 scan data updated 
+successfully in main database
+Scan id: 28 found in main database
+0 messages found for scan: 28
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58499 - "GET /1/ai_bom/scan/28 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:49.113126 🟩
+New scan id: 29 added to main database
+INFO:     127.0.0.1:58503 - "POST /1/ai_bom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:49.142692 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/microsoft/autogen', PAT='', branch='main'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Estimating credits for ai_bom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/microsoft/autogen', PAT='', branch='main'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/microsoft/autogen', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+Sent ai_bom estimation task to celery worker. task id: 
+654209f2-107a-4f05-8fda-4e2747887e9b
+Scan : team_id=1 owner_user_id=1 scan_type='ai_bom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 56, 49, 
+123386) info=None id=29 credit_consumed=None title='P6 a3 microsoft/autogen' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 56, 49, 123375) 
+scan_data={} integration_settings={}
+Credits required for ai_bom scan: 12.13 updated in main database
+INFO:     127.0.0.1:58504 - "POST /1/ai_bom/scan/29/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:55.250425 🟩
+12.13 credits 🪙 deducted from team 1 : 999574.3600 -> 999562.2300
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/microsoft/autogen', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58509 - "POST /1/ai_bom/scan/29/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:56:55.376189 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 29 found in main database
+0 messages found for scan: 29
+INFO:     127.0.0.1:58513 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:00.475996 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 progress updated to 10 in 
+main database
+Scan id: 29 found in main database
+0 messages found for scan: 29
+INFO:     127.0.0.1:58521 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:05.589780 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 progress updated to 10 in 
+main database
+Scan id: 29 found in main database
+0 messages found for scan: 29
+INFO:     127.0.0.1:58525 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:10.696467 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 progress updated to 10 in 
+main database
+Scan id: 29 found in main database
+0 messages found for scan: 29
+INFO:     127.0.0.1:58529 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:15.849749 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 progress updated to 95 in 
+main database
+Scan id: 29 found in main database
+0 messages found for scan: 29
+INFO:     127.0.0.1:58534 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:20.988319 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 progress updated to 95 in 
+main database
+Scan id: 29 found in main database
+0 messages found for scan: 29
+INFO:     127.0.0.1:58542 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:26.104350 🟩
+SCAN_STATUS: started TASK_ID: 0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting status and updating db for scan id: 29 and task id: 
+0108157c-6239-4ebb-9cd4-c2e6825651a1
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 status updated to success in 
+main database
+Scan with id: 0108157c-6239-4ebb-9cd4-c2e6825651a1 scan data updated 
+successfully in main database
+Scan id: 29 found in main database
+0 messages found for scan: 29
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58549 - "GET /1/ai_bom/scan/29 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:26.380838 🟩
+New scan id: 30 added to main database
+INFO:     127.0.0.1:58553 - "POST /1/ai_bom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:26.409227 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/openai/openai-python', PAT='', branch='main'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Estimating credits for ai_bom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/openai/openai-python', PAT='', branch='main'), 
+zip_file_used=False, ai_bom_file_used=False, scan_binaries=False)
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/openai/openai-python', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+Sent ai_bom estimation task to celery worker. task id: 
+65b1261f-dbca-40b5-b49e-2a10251f1af3
+Scan : team_id=1 owner_user_id=1 scan_type='ai_bom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 57, 26, 
+387842) info=None id=30 credit_consumed=None title='P6 a4 openai/openai-python' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 57, 26, 387819) 
+scan_data={} integration_settings={}
+Credits required for ai_bom scan: 21.9 updated in main database
+INFO:     127.0.0.1:58554 - "POST /1/ai_bom/scan/30/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:28.491977 🟩
+21.9 credits 🪙 deducted from team 1 : 999562.2300 -> 999540.3300
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/openai/openai-python', 'PAT': '', 'branch': 'main'}, 
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58559 - "POST /1/ai_bom/scan/30/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:28.573377 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 30 found in main database
+0 messages found for scan: 30
+INFO:     127.0.0.1:58563 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:33.689215 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b progress updated to 10 in 
+main database
+Scan id: 30 found in main database
+0 messages found for scan: 30
+INFO:     127.0.0.1:58570 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:38.813366 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b progress updated to 10 in 
+main database
+Scan id: 30 found in main database
+0 messages found for scan: 30
+INFO:     127.0.0.1:58576 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:43.946415 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b progress updated to 10 in 
+main database
+Scan id: 30 found in main database
+0 messages found for scan: 30
+INFO:     127.0.0.1:58580 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:49.064826 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b progress updated to 95 in 
+main database
+Scan id: 30 found in main database
+0 messages found for scan: 30
+INFO:     127.0.0.1:58585 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:54.182751 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b progress updated to 95 in 
+main database
+Scan id: 30 found in main database
+0 messages found for scan: 30
+INFO:     127.0.0.1:58589 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:57:59.390423 🟩
+SCAN_STATUS: started TASK_ID: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting status and updating db for scan id: 30 and task id: 
+5d134e86-2ba3-4a6f-8b17-b4b99472c31b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b status updated to success in 
+main database
+Scan with id: 5d134e86-2ba3-4a6f-8b17-b4b99472c31b scan data updated 
+successfully in main database
+Scan id: 30 found in main database
+0 messages found for scan: 30
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58593 - "GET /1/ai_bom/scan/30 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:00.075013 🟩
+New scan id: 31 added to main database
+INFO:     127.0.0.1:58599 - "POST /1/ai_bom/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:00.095711 🟩
+Start scan payload: sast=None iac=None sbom_sca=None mcp=None llm=None dast=None
+cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/modelcontextprotocol/servers', PAT='', 
+branch='main'), zip_file_used=False, ai_bom_file_used=False, 
+scan_binaries=False)
+Estimating credits for ai_bom scan. start scan payload: sast=None iac=None 
+sbom_sca=None mcp=None llm=None dast=None cbom=None 
+ai_bom=StartAIBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/modelcontextprotocol/servers', PAT='', 
+branch='main'), zip_file_used=False, ai_bom_file_used=False, 
+scan_binaries=False)
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/modelcontextprotocol/servers', 'PAT': '', 'branch': 'main'},
+'scan_binaries': False} assembled successfully
+Sent ai_bom estimation task to celery worker. task id: 
+766fd40c-0e58-4e4c-9b6f-442a972484ef
+Scan : team_id=1 owner_user_id=1 scan_type='ai_bom' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 58, 0, 
+82905) info=None id=31 credit_consumed=None title='P6 a5 
+modelcontextprotocol/servers' scan_metadata={} 
+created_at=datetime.datetime(2026, 8, 9, 7, 58, 0, 82892) scan_data={} 
+integration_settings={}
+Credits required for ai_bom scan: 1.66 updated in main database
+INFO:     127.0.0.1:58600 - "POST /1/ai_bom/scan/31/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:02.152281 🟩
+1.66 credits 🪙 deducted from team 1 : 999540.3300 -> 999538.6700
+Getting celery app in Local environment
+Celery app instantiated
+AI-BOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/modelcontextprotocol/servers', 'PAT': '', 'branch': 'main'},
+'scan_binaries': False} assembled successfully
+INFO:     127.0.0.1:58605 - "POST /1/ai_bom/scan/31/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:02.216084 🟩
+SCAN_STATUS: started TASK_ID: fbfa54a9-af0c-4853-854b-bdd0f2a92115
+Getting status and updating db for scan id: 31 and task id: 
+fbfa54a9-af0c-4853-854b-bdd0f2a92115
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 31 found in main database
+0 messages found for scan: 31
+INFO:     127.0.0.1:58609 - "GET /1/ai_bom/scan/31 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:07.296962 🟩
+SCAN_STATUS: started TASK_ID: fbfa54a9-af0c-4853-854b-bdd0f2a92115
+Getting status and updating db for scan id: 31 and task id: 
+fbfa54a9-af0c-4853-854b-bdd0f2a92115
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: fbfa54a9-af0c-4853-854b-bdd0f2a92115 status updated to success in 
+main database
+Scan with id: fbfa54a9-af0c-4853-854b-bdd0f2a92115 scan data updated 
+successfully in main database
+Scan id: 31 found in main database
+0 messages found for scan: 31
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58614 - "GET /1/ai_bom/scan/31 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:07.471140 🟩
+New scan id: 32 added to main database
+INFO:     127.0.0.1:58618 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:07.498254 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+5e443ce0-1003-4376-b9ef-39c4fd8e0dab
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 58, 7, 
+482449) info=None id=32 credit_consumed=None title='P6 s1 psf/requests' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 58, 7, 482437) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:58619 - "POST /1/sbom_sca/scan/32/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:09.554227 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6700 -> 999538.6600
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:58624 - "POST /1/sbom_sca/scan/32/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:09.620799 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58628 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:14.781829 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58638 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:19.965876 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58644 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:25.223952 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58649 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:30.623256 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58655 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:35.914261 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58660 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:41.160566 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58664 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:46.281348 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58671 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:51.697924 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58675 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:58:57.118129 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58679 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:02.763798 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58687 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:08.009920 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58691 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:13.275022 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58699 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:18.768112 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58703 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:24.682814 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 progress updated to 20 in 
+main database
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58717 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:29.939815 🟩
+SCAN_STATUS: started TASK_ID: a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting status and updating db for scan id: 32 and task id: 
+a47faa73-13eb-42a1-bafb-50982fcc72f3
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 status updated to failure in 
+main database
+Scan with id: a47faa73-13eb-42a1-bafb-50982fcc72f3 failed. Captured sanitized 
+error summary in scan.info.
+0.01 credits 🪙 REFUNDED to team 1 : 999538.6600 -> 999538.6700
+Refunded 0.01 credits to team 1 for failed scan 32
+Scan id: 32 found in main database
+0 messages found for scan: 32
+INFO:     127.0.0.1:58725 - "GET /1/sbom_sca/scan/32 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:30.109812 🟩
+New scan id: 33 added to main database
+INFO:     127.0.0.1:58729 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:30.161903 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/flask', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/flask', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/flask', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+3f2da695-fe6d-43d6-943b-edb41da28ab6
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 59, 30, 
+129331) info=None id=33 credit_consumed=None title='P6 s2 pallets/flask' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 59, 30, 129310) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:58730 - "POST /1/sbom_sca/scan/33/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:32.267274 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6700 -> 999538.6600
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/flask', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:58737 - "POST /1/sbom_sca/scan/33/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:32.341454 🟩
+SCAN_STATUS: started TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting status and updating db for scan id: 33 and task id: 
+3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:58741 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:37.440283 🟩
+SCAN_STATUS: started TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting status and updating db for scan id: 33 and task id: 
+3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 3021480d-fe97-4782-b64c-a5104dff9ba5 progress updated to 20 in 
+main database
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:58750 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:42.586005 🟩
+SCAN_STATUS: started TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting status and updating db for scan id: 33 and task id: 
+3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 3021480d-fe97-4782-b64c-a5104dff9ba5 progress updated to 20 in 
+main database
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:58758 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:52.697988 🟩
+SCAN_STATUS: started TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting status and updating db for scan id: 33 and task id: 
+3021480d-fe97-4782-b64c-a5104dff9ba5
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 3021480d-fe97-4782-b64c-a5104dff9ba5 status updated to success in 
+main database
+Scan with id: 3021480d-fe97-4782-b64c-a5104dff9ba5 scan data updated 
+successfully in main database
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:58768 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:53.131947 🟩
+New scan id: 34 added to main database
+INFO:     127.0.0.1:58772 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:53.152934 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/urllib3/urllib3', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/urllib3/urllib3', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/urllib3/urllib3', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+a626a1f8-5243-4778-a07c-1cd2d0ac0c00
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 7, 59, 53, 
+140233) info=None id=34 credit_consumed=None title='P6 s3 urllib3/urllib3' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 7, 59, 53, 140220) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:58773 - "POST /1/sbom_sca/scan/34/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:55.215651 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6600 -> 999538.6500
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/urllib3/urllib3', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:58778 - "POST /1/sbom_sca/scan/34/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 07:59:55.283192 🟩
+SCAN_STATUS: started TASK_ID: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting status and updating db for scan id: 34 and task id: 
+ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 34 found in main database
+0 messages found for scan: 34
+INFO:     127.0.0.1:58782 - "GET /1/sbom_sca/scan/34 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:00.345195 🟩
+SCAN_STATUS: started TASK_ID: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting status and updating db for scan id: 34 and task id: 
+ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414 progress updated to 20 in 
+main database
+Scan id: 34 found in main database
+0 messages found for scan: 34
+INFO:     127.0.0.1:58797 - "GET /1/sbom_sca/scan/34 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:05.499685 🟩
+SCAN_STATUS: started TASK_ID: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting status and updating db for scan id: 34 and task id: 
+ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414 progress updated to 20 in 
+main database
+Scan id: 34 found in main database
+0 messages found for scan: 34
+INFO:     127.0.0.1:58801 - "GET /1/sbom_sca/scan/34 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:10.599564 🟩
+SCAN_STATUS: started TASK_ID: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting status and updating db for scan id: 34 and task id: 
+ad29667c-00a6-4d5a-8c1c-08d3fb0fb414
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414 status updated to success in 
+main database
+Scan with id: ad29667c-00a6-4d5a-8c1c-08d3fb0fb414 scan data updated 
+successfully in main database
+Scan id: 34 found in main database
+0 messages found for scan: 34
+INFO:     127.0.0.1:58811 - "GET /1/sbom_sca/scan/34 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:10.672750 🟩
+New scan id: 35 added to main database
+INFO:     127.0.0.1:58815 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:10.687321 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+4ffc6f19-4f0a-4853-9edf-8faaee66a3c6
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 0, 10, 
+676949) info=None id=35 credit_consumed=None title='P6 s4 sqlalchemy/sqlalchemy'
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 0, 10, 676937) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:58816 - "POST /1/sbom_sca/scan/35/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:14.763481 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6500 -> 999538.6400
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+INFO:     127.0.0.1:58822 - "POST /1/sbom_sca/scan/35/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:14.831290 🟩
+SCAN_STATUS: started TASK_ID: 7f8e3350-b704-46ab-aedd-e090ecea87ef
+Getting status and updating db for scan id: 35 and task id: 
+7f8e3350-b704-46ab-aedd-e090ecea87ef
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 35 found in main database
+0 messages found for scan: 35
+INFO:     127.0.0.1:58826 - "GET /1/sbom_sca/scan/35 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:20.224263 🟩
+SCAN_STATUS: started TASK_ID: 7f8e3350-b704-46ab-aedd-e090ecea87ef
+Getting status and updating db for scan id: 35 and task id: 
+7f8e3350-b704-46ab-aedd-e090ecea87ef
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 7f8e3350-b704-46ab-aedd-e090ecea87ef progress updated to 20 in 
+main database
+Scan id: 35 found in main database
+0 messages found for scan: 35
+INFO:     127.0.0.1:58842 - "GET /1/sbom_sca/scan/35 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:25.498219 🟩
+SCAN_STATUS: started TASK_ID: 7f8e3350-b704-46ab-aedd-e090ecea87ef
+Getting status and updating db for scan id: 35 and task id: 
+7f8e3350-b704-46ab-aedd-e090ecea87ef
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 7f8e3350-b704-46ab-aedd-e090ecea87ef status updated to failure in 
+main database
+Scan with id: 7f8e3350-b704-46ab-aedd-e090ecea87ef failed. Captured sanitized 
+error summary in scan.info.
+0.01 credits 🪙 REFUNDED to team 1 : 999538.6400 -> 999538.6500
+Refunded 0.01 credits to team 1 for failed scan 35
+Scan id: 35 found in main database
+0 messages found for scan: 35
+INFO:     127.0.0.1:58852 - "GET /1/sbom_sca/scan/35 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:25.905137 🟩
+New scan id: 36 added to main database
+INFO:     127.0.0.1:58856 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:25.924418 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/click', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/click', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/click', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+22c1cf55-8dfa-46e2-a19c-f001218d44e6
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 0, 25, 
+913620) info=None id=36 credit_consumed=None title='P6 s5 pallets/click' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 0, 25, 913607) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:58857 - "POST /1/sbom_sca/scan/36/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:28.000049 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6500 -> 999538.6400
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/click', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:58862 - "POST /1/sbom_sca/scan/36/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:28.068707 🟩
+SCAN_STATUS: started TASK_ID: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting status and updating db for scan id: 36 and task id: 
+8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 36 found in main database
+0 messages found for scan: 36
+INFO:     127.0.0.1:58867 - "GET /1/sbom_sca/scan/36 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:33.157777 🟩
+SCAN_STATUS: started TASK_ID: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting status and updating db for scan id: 36 and task id: 
+8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6 progress updated to 20 in 
+main database
+Scan id: 36 found in main database
+0 messages found for scan: 36
+INFO:     127.0.0.1:58882 - "GET /1/sbom_sca/scan/36 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:38.237636 🟩
+SCAN_STATUS: started TASK_ID: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting status and updating db for scan id: 36 and task id: 
+8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6 progress updated to 20 in 
+main database
+Scan id: 36 found in main database
+0 messages found for scan: 36
+INFO:     127.0.0.1:58886 - "GET /1/sbom_sca/scan/36 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.311627 🟩
+SCAN_STATUS: started TASK_ID: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting status and updating db for scan id: 36 and task id: 
+8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6 status updated to success in 
+main database
+Scan with id: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6 scan data updated 
+successfully in main database
+Scan id: 36 found in main database
+0 messages found for scan: 36
+INFO:     127.0.0.1:58896 - "GET /1/sbom_sca/scan/36 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.411626 🟩
+SCAN_STATUS: success TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Scan id: 22 found in main database
+0 messages found for scan: 22
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58901 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.564925 🟩
+INFO:     127.0.0.1:58902 - "POST /1/cbom/scan/22/attestations HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.606862 🟩
+INFO:     127.0.0.1:58903 - "POST /1/cbom/scan/22/sign HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.643083 🟩
+INFO:     127.0.0.1:58904 - "GET /1/cbom/scan/22/vex HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.676337 🟩
+INFO:     127.0.0.1:58905 - "GET /1/cbom/scan/22/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.931306 🟩
+SCAN_STATUS: success TASK_ID: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Scan id: 27 found in main database
+0 messages found for scan: 27
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:58906 - "GET /1/ai_bom/scan/27 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.971781 🟩
+INFO:     127.0.0.1:58907 - "POST /1/ai_bom/scan/27/attestations HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:43.991852 🟩
+INFO:     127.0.0.1:58908 - "POST /1/ai_bom/scan/27/sign HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.007314 🟩
+INFO:     127.0.0.1:58909 - "GET /1/ai_bom/scan/27/vex HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.023362 🟩
+INFO:     127.0.0.1:58910 - "GET /1/ai_bom/scan/27/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.064463 🟩
+SCAN_STATUS: success TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:58911 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.089713 🟩
+INFO:     127.0.0.1:58912 - "POST /1/sbom_sca/scan/33/attestations HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.105982 🟩
+INFO:     127.0.0.1:58913 - "POST /1/sbom_sca/scan/33/sign HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.120501 🟩
+INFO:     127.0.0.1:58914 - "GET /1/sbom_sca/scan/33/vex HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.132507 🟩
+evidence-pack PDF skipped: name 'small_style' is not defined
+INFO:     127.0.0.1:58915 - "GET /1/sbom_sca/scan/33/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:00:44.147445 🟩
+1914 findings found
+INFO:     127.0.0.1:58916 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:01:36.325188 🟩
+New scan id: 37 added to main database
+INFO:     127.0.0.1:58951 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:01:36.354504 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+1b791761-dac6-42f9-8ad4-8d16cd1af8e0
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:04:38.380960 🟩
+New scan id: 38 added to main database
+INFO:     127.0.0.1:58999 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:04:38.420429 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+e6432974-b71f-45c1-8d31-65f7ece689b0
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:07:40.435121 🟩
+New scan id: 39 added to main database
+INFO:     127.0.0.1:59060 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:07:40.464868 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+0e1f71c3-1921-4523-aed1-5f5e1df03ab7
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:10:42.525278 🟩
+New scan id: 40 added to main database
+INFO:     127.0.0.1:59120 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:10:42.561797 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+4f753b79-0a58-4538-bafd-c0f35a966397
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:13:44.586647 🟩
+New scan id: 41 added to main database
+INFO:     127.0.0.1:59164 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:13:44.621208 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+6992fe87-8605-45f7-805b-0d32604b98ba
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59192 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59193 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59194 - "OPTIONS /1/cbom/scan/24 HTTP/1.1" 200 OK
+Error: Signature has expired. 🔴
+INFO:     127.0.0.1:59192 - "GET /teams HTTP/1.1" 401 Unauthorized
+Error: Signature has expired. 🔴
+error in get_user: 401: Could not validate credentials 🔴
+INFO:     127.0.0.1:59194 - "GET /get_user HTTP/1.1" 401 Unauthorized
+Error: Signature has expired. 🔴
+INFO:     127.0.0.1:59193 - "GET /1/cbom/scan/24 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:59193 - "OPTIONS /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59193 - "POST /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59193 - "POST /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59194 - "POST /refresh HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:15:07.094238 🟩
+INFO:     127.0.0.1:59192 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:15:07.120660 🟩
+INFO:     127.0.0.1:59193 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:15:07.138618 🟩
+SCAN_STATUS: success TASK_ID: e8a4f414-4670-4b27-9115-56f191e370a9
+Scan id: 24 found in main database
+0 messages found for scan: 24
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:59192 - "GET /1/cbom/scan/24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59196 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:15:12.680650 🟩
+1943 findings found
+INFO:     127.0.0.1:59196 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59237 - "OPTIONS /1/sbom_sca/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:16:26.421736 🟩
+12 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:59237 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:16:46.637421 🟩
+New scan id: 42 added to main database
+INFO:     127.0.0.1:59243 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:16:46.666856 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+d10edf7c-3a80-459d-8a8e-96d7b6bff16b
+INFO:     127.0.0.1:59253 - "OPTIONS /1/sbom_sca/scan/36 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:16:50.503129 🟩
+SCAN_STATUS: success TASK_ID: 8c50ab46-e9a9-409c-96a2-fa31dc45c3a6
+Scan id: 36 found in main database
+0 messages found for scan: 36
+INFO:     127.0.0.1:59253 - "GET /1/sbom_sca/scan/36 HTTP/1.1" 200 OK
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59282 - "OPTIONS /1/sast/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:18:27.068310 🟩
+0 sast scans found for team: 1
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:59282 - "GET /1/sast/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59286 - "OPTIONS /1/cbom/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:18:32.514197 🟩
+8 cbom scans found for team: 1
+INFO:     127.0.0.1:59286 - "GET /1/cbom/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59290 - "OPTIONS /1/cbom/scan/26 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:18:41.519877 🟩
+SCAN_STATUS: success TASK_ID: a057e7fc-5881-4e52-a35e-7ebe585ffccd
+Scan id: 26 found in main database
+0 messages found for scan: 26
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:59290 - "GET /1/cbom/scan/26 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:20:01.890771 🟩
+INFO:     127.0.0.1:59312 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:20:01.916922 🟩
+INFO:     127.0.0.1:59313 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:20:01.946123 🟩
+SCAN_STATUS: success TASK_ID: a057e7fc-5881-4e52-a35e-7ebe585ffccd
+Scan id: 26 found in main database
+0 messages found for scan: 26
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:59314 - "GET /1/cbom/scan/26 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59318 - "GET /docs HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:20:04.077298 🟩
+13 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:59319 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 16, 46, 
+648632) info=None id=42 credit_consumed=None title='P6 retry 
+sqlalchemy/sqlalchemy' scan_metadata={} created_at=datetime.datetime(2026, 8, 9,
+8, 16, 46, 648597) scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:20:39.912874 🟩
+New scan id: 43 added to main database
+INFO:     127.0.0.1:59356 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:20:39.930348 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+063dab7f-3dad-4a99-aeb9-12842c623664
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59357 - "POST /1/sbom_sca/scan/43/estimate_credits HTTP/1.1" 500 Internal Server Error
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:25:23.134509 🟩
+New scan id: 44 added to main database
+INFO:     127.0.0.1:59442 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:25:28.558263 🟩
+15 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:59448 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59462 - "GET /health HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:26:01.987879 🟩
+New scan id: 45 added to main database
+INFO:     127.0.0.1:59463 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:26:02.009678 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+ee035701-dddd-4333-8181-cb319af3abe6
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:30:39.397258 🟩
+New scan id: 46 added to main database
+INFO:     127.0.0.1:59554 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:30:39.418414 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+4fcc45a5-45f3-422e-8e1e-2d5d863baff1
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59555 - "POST /1/sbom_sca/scan/46/estimate_credits HTTP/1.1" 500 Internal Server Error
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:34:45.157152 🟩
+New scan id: 47 added to main database
+INFO:     127.0.0.1:59619 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:34:45.177439 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+6d13e688-9bb5-4ef9-b4c9-f0ca9c62616a
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59620 - "POST /1/sbom_sca/scan/47/estimate_credits HTTP/1.1" 500 Internal Server Error
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:38:50.932376 🟩
+New scan id: 48 added to main database
+INFO:     127.0.0.1:59676 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:38:50.971037 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+02839c56-8c68-4df3-a4d3-a48bab6f684d
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59677 - "POST /1/sbom_sca/scan/48/estimate_credits HTTP/1.1" 500 Internal Server Error
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:42:56.758475 🟩
+New scan id: 49 added to main database
+INFO:     127.0.0.1:59747 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:42:56.792299 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/jinja', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/jinja', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/jinja', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+d9deb27a-859b-4f3e-a1ed-9703c2132388
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:59748 - "POST /1/sbom_sca/scan/49/estimate_credits HTTP/1.1" 500 Internal Server Error
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:02.842176 🟩
+New scan id: 50 added to main database
+INFO:     127.0.0.1:59821 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:02.879881 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/jinja', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/jinja', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/jinja', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+4eedff83-316d-4ba9-93cf-673bf3edca2f
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.542416 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 44 found in main database
+0 messages found for scan: 44
+INFO:     127.0.0.1:59836 - "GET /1/sbom_sca/scan/44 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.569526 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 45 found in main database
+0 messages found for scan: 45
+INFO:     127.0.0.1:59837 - "GET /1/sbom_sca/scan/45 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.583221 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 46 found in main database
+0 messages found for scan: 46
+INFO:     127.0.0.1:59838 - "GET /1/sbom_sca/scan/46 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.596061 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 47 found in main database
+0 messages found for scan: 47
+INFO:     127.0.0.1:59839 - "GET /1/sbom_sca/scan/47 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.609100 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 48 found in main database
+0 messages found for scan: 48
+INFO:     127.0.0.1:59840 - "GET /1/sbom_sca/scan/48 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.625107 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 49 found in main database
+0 messages found for scan: 49
+INFO:     127.0.0.1:59841 - "GET /1/sbom_sca/scan/49 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.636263 🟩
+SCAN_STATUS: NOT_STARTED TASK_ID: None
+Scan id: 50 found in main database
+0 messages found for scan: 50
+INFO:     127.0.0.1:59842 - "GET /1/sbom_sca/scan/50 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.648629 🟩
+INFO:     127.0.0.1:59843 - "GET /1/sbom_sca/scan/51 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.656834 🟩
+INFO:     127.0.0.1:59844 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.666599 🟩
+INFO:     127.0.0.1:59845 - "GET /1/sbom_sca/scan/53 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:47:49.674992 🟩
+INFO:     127.0.0.1:59846 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 404 Not Found
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:48:13.303832 🟩
+New scan id: 51 added to main database
+INFO:     127.0.0.1:59855 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:48:13.326564 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+a0d369f4-34d5-476f-8860-e3abd92bcd0e
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 47, 2, 
+859565) info=None id=50 credit_consumed=None title='P6 s4 pallets/jinja' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 47, 2, 859537) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 48, 13, 
+314554) info=None id=51 credit_consumed=None title='P6 s1 pallets/itsdangerous' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 48, 13, 314541) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:34.417518 🟩
+New scan id: 52 added to main database
+INFO:     127.0.0.1:59909 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:34.441211 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/itsdangerous', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+e2db0610-de7a-4a97-846a-9f0a7e9ef886
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 49, 34, 
+428773) info=None id=52 credit_consumed=None title='P6 s1 pallets/itsdangerous' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 49, 34, 428760) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:59910 - "POST /1/sbom_sca/scan/52/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:42.537675 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6400 -> 999538.6300
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/itsdangerous', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+INFO:     127.0.0.1:59922 - "POST /1/sbom_sca/scan/52/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:42.634713 🟩
+SCAN_STATUS: started TASK_ID: e167e335-1475-4914-8c33-fa2a63eda76b
+Getting status and updating db for scan id: 52 and task id: 
+e167e335-1475-4914-8c33-fa2a63eda76b
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 52 found in main database
+6 messages found for scan: 52
+INFO:     127.0.0.1:59926 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:46.711363 🟩
+SCAN_STATUS: started TASK_ID: e167e335-1475-4914-8c33-fa2a63eda76b
+Getting status and updating db for scan id: 52 and task id: 
+e167e335-1475-4914-8c33-fa2a63eda76b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e167e335-1475-4914-8c33-fa2a63eda76b progress updated to 20 in 
+main database
+Scan id: 52 found in main database
+6 messages found for scan: 52
+INFO:     127.0.0.1:59943 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:50.819161 🟩
+SCAN_STATUS: started TASK_ID: e167e335-1475-4914-8c33-fa2a63eda76b
+Getting status and updating db for scan id: 52 and task id: 
+e167e335-1475-4914-8c33-fa2a63eda76b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e167e335-1475-4914-8c33-fa2a63eda76b progress updated to 20 in 
+main database
+Scan id: 52 found in main database
+6 messages found for scan: 52
+INFO:     127.0.0.1:59947 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:54.910054 🟩
+SCAN_STATUS: started TASK_ID: e167e335-1475-4914-8c33-fa2a63eda76b
+Getting status and updating db for scan id: 52 and task id: 
+e167e335-1475-4914-8c33-fa2a63eda76b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e167e335-1475-4914-8c33-fa2a63eda76b progress updated to 20 in 
+main database
+Scan id: 52 found in main database
+6 messages found for scan: 52
+INFO:     127.0.0.1:59951 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:49:59.007390 🟩
+SCAN_STATUS: started TASK_ID: e167e335-1475-4914-8c33-fa2a63eda76b
+Getting status and updating db for scan id: 52 and task id: 
+e167e335-1475-4914-8c33-fa2a63eda76b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e167e335-1475-4914-8c33-fa2a63eda76b progress updated to 20 in 
+main database
+Scan id: 52 found in main database
+6 messages found for scan: 52
+INFO:     127.0.0.1:59955 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:03.101270 🟩
+SCAN_STATUS: started TASK_ID: e167e335-1475-4914-8c33-fa2a63eda76b
+Getting status and updating db for scan id: 52 and task id: 
+e167e335-1475-4914-8c33-fa2a63eda76b
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: e167e335-1475-4914-8c33-fa2a63eda76b status updated to success in 
+main database
+Scan with id: e167e335-1475-4914-8c33-fa2a63eda76b scan data updated 
+successfully in main database
+Scan id: 52 found in main database
+6 messages found for scan: 52
+INFO:     127.0.0.1:59968 - "GET /1/sbom_sca/scan/52 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:03.228370 🟩
+New scan id: 53 added to main database
+INFO:     127.0.0.1:59972 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:03.249904 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/jinja', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/jinja', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/jinja', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+2878a674-50e3-4a40-81da-abe2d5404e64
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 50, 3, 
+237366) info=None id=53 credit_consumed=None title='P6 s4 pallets/jinja' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 50, 3, 237350) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:59973 - "POST /1/sbom_sca/scan/53/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:05.311693 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6300 -> 999538.6200
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/jinja', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:59980 - "POST /1/sbom_sca/scan/53/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:05.373711 🟩
+SCAN_STATUS: started TASK_ID: cee914d7-a3e2-4754-90db-561c54a6f06c
+Getting status and updating db for scan id: 53 and task id: 
+cee914d7-a3e2-4754-90db-561c54a6f06c
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 53 found in main database
+0 messages found for scan: 53
+INFO:     127.0.0.1:59984 - "GET /1/sbom_sca/scan/53 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:09.442597 🟩
+SCAN_STATUS: started TASK_ID: cee914d7-a3e2-4754-90db-561c54a6f06c
+Getting status and updating db for scan id: 53 and task id: 
+cee914d7-a3e2-4754-90db-561c54a6f06c
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: cee914d7-a3e2-4754-90db-561c54a6f06c status updated to success in 
+main database
+Scan with id: cee914d7-a3e2-4754-90db-561c54a6f06c scan data updated 
+successfully in main database
+Scan id: 53 found in main database
+0 messages found for scan: 53
+INFO:     127.0.0.1:59993 - "GET /1/sbom_sca/scan/53 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:50:09.563867 🟩
+2017 findings found
+INFO:     127.0.0.1:59997 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60065 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60066 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60067 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:01.028176 🟩
+INFO:     127.0.0.1:60065 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:01.045870 🟩
+INFO:     127.0.0.1:60068 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:01.074735 🟩
+2017 findings found
+INFO:     127.0.0.1:60066 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60078 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60079 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60080 - "OPTIONS /1/sbom_sca/scans HTTP/1.1" 200 OK
+Error: Signature has expired. 🔴
+INFO:     127.0.0.1:60079 - "GET /teams HTTP/1.1" 401 Unauthorized
+Error: Signature has expired. 🔴
+error in get_user: 401: Could not validate credentials 🔴
+INFO:     127.0.0.1:60080 - "GET /get_user HTTP/1.1" 401 Unauthorized
+Error: Signature has expired. 🔴
+INFO:     127.0.0.1:60078 - "GET /1/sbom_sca/scans HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:60078 - "OPTIONS /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60078 - "POST /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60080 - "POST /refresh HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60079 - "POST /refresh HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:04.350385 🟩
+INFO:     127.0.0.1:60078 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:04.365764 🟩
+INFO:     127.0.0.1:60079 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:04.375777 🟩
+24 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:60080 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:05.850446 🟩
+INFO:     127.0.0.1:60066 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60068 - "OPTIONS /1/cbom/scan/22 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:05.875371 🟩
+INFO:     127.0.0.1:60065 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:05.894336 🟩
+SCAN_STATUS: success TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Scan id: 22 found in main database
+0 messages found for scan: 22
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:60066 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60080 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:06.384162 🟩
+2017 findings found
+INFO:     127.0.0.1:60080 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:10.595600 🟩
+24 sbom_sca scans found for team: 1
+INFO:     127.0.0.1:60080 - "GET /1/sbom_sca/scans HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:11.643525 🟩
+INFO:     127.0.0.1:60085 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:11.662164 🟩
+INFO:     127.0.0.1:60086 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:11.675478 🟩
+SCAN_STATUS: success TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Scan id: 22 found in main database
+0 messages found for scan: 22
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:60087 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:15.840116 🟩
+INFO:     127.0.0.1:60087 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60086 - "OPTIONS /1/ai_bom/scan/27 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:15.891921 🟩
+INFO:     127.0.0.1:60085 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:15.902176 🟩
+SCAN_STATUS: success TASK_ID: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Scan id: 27 found in main database
+0 messages found for scan: 27
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:60085 - "GET /1/ai_bom/scan/27 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:21.637733 🟩
+INFO:     127.0.0.1:60094 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:21.654696 🟩
+INFO:     127.0.0.1:60095 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:21.674191 🟩
+SCAN_STATUS: success TASK_ID: 1ec9f4a3-f2fb-4ace-ae20-3c0a9966d191
+Scan id: 27 found in main database
+0 messages found for scan: 27
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:60096 - "GET /1/ai_bom/scan/27 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:25.919134 🟩
+INFO:     127.0.0.1:60096 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60095 - "OPTIONS /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:25.957604 🟩
+INFO:     127.0.0.1:60094 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:25.968044 🟩
+SCAN_STATUS: success TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:60094 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:31.667148 🟩
+INFO:     127.0.0.1:60108 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:31.700631 🟩
+INFO:     127.0.0.1:60109 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:31.725342 🟩
+SCAN_STATUS: success TASK_ID: 3021480d-fe97-4782-b64c-a5104dff9ba5
+Scan id: 33 found in main database
+0 messages found for scan: 33
+INFO:     127.0.0.1:60110 - "GET /1/sbom_sca/scan/33 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:35.835434 🟩
+INFO:     127.0.0.1:60110 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:35.858035 🟩
+INFO:     127.0.0.1:60109 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:35.872360 🟩
+SCAN_STATUS: success TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Scan id: 22 found in main database
+0 messages found for scan: 22
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:60108 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60108 - "OPTIONS /1/cbom/scan/22/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:39.793489 🟩
+INFO:     127.0.0.1:60109 - "GET /1/cbom/scan/22/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:51:40.047082 🟩
+SCAN_STATUS: success TASK_ID: aaac0717-71e0-4c09-8dbd-c0470a5fd4be
+Scan id: 22 found in main database
+0 messages found for scan: 22
+Mean time to remediate : [0, 0, 0]
+INFO:     127.0.0.1:60109 - "GET /1/cbom/scan/22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60280 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60282 - "GET /health HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:33.018582 🟩
+New scan id: 54 added to main database
+INFO:     127.0.0.1:60305 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:33.044006 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+587fd0c8-4350-4e83-9bd8-410970f8f9e2
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 57, 33, 
+28575) info=None id=54 credit_consumed=None title='SBOM5 s1 psf/requests' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 57, 33, 28563) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:60306 - "POST /1/sbom_sca/scan/54/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:41.127848 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6200 -> 999538.6100
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:60320 - "POST /1/sbom_sca/scan/54/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:41.206241 🟩
+SCAN_STATUS: started TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Getting status and updating db for scan id: 54 and task id: 
+d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60324 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:46.268989 🟩
+SCAN_STATUS: started TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Getting status and updating db for scan id: 54 and task id: 
+d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: d55879d9-4cd3-4e40-9954-60f96d1f24b8 status updated to success in 
+main database
+Scan with id: d55879d9-4cd3-4e40-9954-60f96d1f24b8 scan data updated 
+successfully in main database
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60330 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:46.334388 🟩
+New scan id: 55 added to main database
+INFO:     127.0.0.1:60334 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:46.347765 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/flask', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/flask', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/flask', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+96a77084-aa3c-4b98-99bd-0dc0270ddec5
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 57, 46, 
+339662) info=None id=55 credit_consumed=None title='SBOM5 s2 pallets/flask' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 57, 46, 339651) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:60335 - "POST /1/sbom_sca/scan/55/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:48.397717 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6100 -> 999538.6000
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/flask', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:60340 - "POST /1/sbom_sca/scan/55/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:48.487449 🟩
+SCAN_STATUS: started TASK_ID: a72b1082-3a0e-4418-a102-6967d1598f30
+Getting status and updating db for scan id: 55 and task id: 
+a72b1082-3a0e-4418-a102-6967d1598f30
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 55 found in main database
+0 messages found for scan: 55
+INFO:     127.0.0.1:60344 - "GET /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:53.543332 🟩
+SCAN_STATUS: started TASK_ID: a72b1082-3a0e-4418-a102-6967d1598f30
+Getting status and updating db for scan id: 55 and task id: 
+a72b1082-3a0e-4418-a102-6967d1598f30
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: a72b1082-3a0e-4418-a102-6967d1598f30 status updated to success in 
+main database
+Scan with id: a72b1082-3a0e-4418-a102-6967d1598f30 scan data updated 
+successfully in main database
+Scan id: 55 found in main database
+0 messages found for scan: 55
+INFO:     127.0.0.1:60357 - "GET /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:53.645611 🟩
+New scan id: 56 added to main database
+INFO:     127.0.0.1:60361 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:53.661209 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/urllib3/urllib3', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/urllib3/urllib3', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/urllib3/urllib3', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+de71979c-486d-4fb3-86f8-85f319661cde
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 57, 53, 
+651563) info=None id=56 credit_consumed=None title='SBOM5 s3 urllib3/urllib3' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 57, 53, 651551) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:60362 - "POST /1/sbom_sca/scan/56/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:55.722414 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.6000 -> 999538.5900
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/urllib3/urllib3', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:60367 - "POST /1/sbom_sca/scan/56/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:57:55.811060 🟩
+SCAN_STATUS: started TASK_ID: f396247e-9e9a-461b-b9a8-c8144b3db864
+Getting status and updating db for scan id: 56 and task id: 
+f396247e-9e9a-461b-b9a8-c8144b3db864
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 56 found in main database
+0 messages found for scan: 56
+INFO:     127.0.0.1:60371 - "GET /1/sbom_sca/scan/56 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:00.881688 🟩
+SCAN_STATUS: started TASK_ID: f396247e-9e9a-461b-b9a8-c8144b3db864
+Getting status and updating db for scan id: 56 and task id: 
+f396247e-9e9a-461b-b9a8-c8144b3db864
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: f396247e-9e9a-461b-b9a8-c8144b3db864 status updated to success in 
+main database
+Scan with id: f396247e-9e9a-461b-b9a8-c8144b3db864 scan data updated 
+successfully in main database
+Scan id: 56 found in main database
+0 messages found for scan: 56
+INFO:     127.0.0.1:60380 - "GET /1/sbom_sca/scan/56 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:00.959488 🟩
+New scan id: 57 added to main database
+INFO:     127.0.0.1:60384 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:00.979674 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/sqlalchemy/sqlalchemy', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+Sent sbom sca estimation task to celery worker. task id: 
+6c811641-2f0f-4ee0-bc38-0e9916b6aee9
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 58, 0, 
+968457) info=None id=57 credit_consumed=None title='SBOM5 s4 
+sqlalchemy/sqlalchemy' scan_metadata={} created_at=datetime.datetime(2026, 8, 9,
+8, 58, 0, 968435) scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:60385 - "POST /1/sbom_sca/scan/57/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:05.040676 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.5900 -> 999538.5800
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/sqlalchemy/sqlalchemy', 'PAT': '', 'branch': 'main'}} 
+assembled successfully
+INFO:     127.0.0.1:60392 - "POST /1/sbom_sca/scan/57/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:05.089006 🟩
+SCAN_STATUS: started TASK_ID: 06553e8c-a0a6-4368-bbe2-6f4e1280635a
+Getting status and updating db for scan id: 57 and task id: 
+06553e8c-a0a6-4368-bbe2-6f4e1280635a
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 57 found in main database
+0 messages found for scan: 57
+INFO:     127.0.0.1:60396 - "GET /1/sbom_sca/scan/57 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:10.145363 🟩
+SCAN_STATUS: started TASK_ID: 06553e8c-a0a6-4368-bbe2-6f4e1280635a
+Getting status and updating db for scan id: 57 and task id: 
+06553e8c-a0a6-4368-bbe2-6f4e1280635a
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 06553e8c-a0a6-4368-bbe2-6f4e1280635a status updated to success in 
+main database
+Scan with id: 06553e8c-a0a6-4368-bbe2-6f4e1280635a scan data updated 
+successfully in main database
+Scan id: 57 found in main database
+0 messages found for scan: 57
+INFO:     127.0.0.1:60402 - "GET /1/sbom_sca/scan/57 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:10.227792 🟩
+New scan id: 58 added to main database
+INFO:     127.0.0.1:60406 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:10.238407 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/click', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/pallets/click', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/click', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+6acafb88-65aa-4ba5-8ca8-8d0684d4fc3a
+Scan : team_id=1 owner_user_id=1 scan_type='sbom_sca' task_id=None 
+scan_status='NOT_STARTED' last_updated=datetime.datetime(2026, 8, 9, 8, 58, 10, 
+231293) info=None id=58 credit_consumed=None title='SBOM5 s5 pallets/click' 
+scan_metadata={} created_at=datetime.datetime(2026, 8, 9, 8, 58, 10, 231283) 
+scan_data={} integration_settings={}
+Credits required for sbom_sca scan: 0.01 updated in main database
+INFO:     127.0.0.1:60407 - "POST /1/sbom_sca/scan/58/estimate_credits HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:12.289732 🟩
+0.01 credits 🪙 deducted from team 1 : 999538.5800 -> 999538.5700
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/pallets/click', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+INFO:     127.0.0.1:60412 - "POST /1/sbom_sca/scan/58/start HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:12.346815 🟩
+SCAN_STATUS: started TASK_ID: 32a2f4b2-94df-4c37-b233-f7c2e09056ee
+Getting status and updating db for scan id: 58 and task id: 
+32a2f4b2-94df-4c37-b233-f7c2e09056ee
+Getting celery app in Local environment
+Celery app instantiated
+Scan id: 58 found in main database
+0 messages found for scan: 58
+INFO:     127.0.0.1:60416 - "GET /1/sbom_sca/scan/58 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:17.389164 🟩
+SCAN_STATUS: started TASK_ID: 32a2f4b2-94df-4c37-b233-f7c2e09056ee
+Getting status and updating db for scan id: 58 and task id: 
+32a2f4b2-94df-4c37-b233-f7c2e09056ee
+Getting celery app in Local environment
+Celery app instantiated
+Scan with id: 32a2f4b2-94df-4c37-b233-f7c2e09056ee status updated to success in 
+main database
+Scan with id: 32a2f4b2-94df-4c37-b233-f7c2e09056ee scan data updated 
+successfully in main database
+Scan id: 58 found in main database
+0 messages found for scan: 58
+INFO:     127.0.0.1:60426 - "GET /1/sbom_sca/scan/58 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:17.469151 🟩
+SCAN_STATUS: success TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60430 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:17.502236 🟩
+INFO:     127.0.0.1:60431 - "POST /1/sbom_sca/scan/54/sign HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:17.520639 🟩
+INFO:     127.0.0.1:60432 - "GET /1/sbom_sca/scan/54/vex HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:17.535696 🟩
+evidence-pack PDF skipped: name 'small_style' is not defined
+INFO:     127.0.0.1:60433 - "GET /1/sbom_sca/scan/54/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:17.553141 🟩
+2048 findings found
+INFO:     127.0.0.1:60434 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60451 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60452 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60453 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:33.521153 🟩
+INFO:     127.0.0.1:60451 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:33.535840 🟩
+INFO:     127.0.0.1:60454 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:33.555178 🟩
+2048 findings found
+INFO:     127.0.0.1:60452 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:38.571936 🟩
+INFO:     127.0.0.1:60452 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60459 - "OPTIONS /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:38.585545 🟩
+INFO:     127.0.0.1:60460 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:38.596048 🟩
+SCAN_STATUS: success TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60452 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:58:50.083246 🟩
+SCAN_STATUS: success TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60462 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60479 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60480 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60481 - "OPTIONS /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:59:00.670522 🟩
+SCAN_STATUS: success TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60480 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:59:00.710533 🟩
+INFO:     127.0.0.1:60479 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 08:59:00.721128 🟩
+INFO:     127.0.0.1:60482 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:26.872731 🟩
+SCAN_STATUS: success TASK_ID: d55879d9-4cd3-4e40-9954-60f96d1f24b8
+Scan id: 54 found in main database
+0 messages found for scan: 54
+INFO:     127.0.0.1:60520 - "GET /1/sbom_sca/scan/54 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:26.908324 🟩
+SCAN_STATUS: success TASK_ID: a72b1082-3a0e-4418-a102-6967d1598f30
+Scan id: 55 found in main database
+0 messages found for scan: 55
+INFO:     127.0.0.1:60521 - "GET /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:26.938476 🟩
+SCAN_STATUS: success TASK_ID: f396247e-9e9a-461b-b9a8-c8144b3db864
+Scan id: 56 found in main database
+0 messages found for scan: 56
+INFO:     127.0.0.1:60522 - "GET /1/sbom_sca/scan/56 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:26.964475 🟩
+SCAN_STATUS: success TASK_ID: 06553e8c-a0a6-4368-bbe2-6f4e1280635a
+Scan id: 57 found in main database
+0 messages found for scan: 57
+INFO:     127.0.0.1:60523 - "GET /1/sbom_sca/scan/57 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:26.990271 🟩
+SCAN_STATUS: success TASK_ID: 32a2f4b2-94df-4c37-b233-f7c2e09056ee
+Scan id: 58 found in main database
+0 messages found for scan: 58
+INFO:     127.0.0.1:60524 - "GET /1/sbom_sca/scan/58 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60538 - "OPTIONS /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60539 - "OPTIONS /get_user HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60540 - "OPTIONS /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:42.077433 🟩
+INFO:     127.0.0.1:60541 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:42.091755 🟩
+2048 findings found
+INFO:     127.0.0.1:60539 - "GET /team/1/dashboard HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:42.290581 🟩
+INFO:     127.0.0.1:60538 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:46.117438 🟩
+INFO:     127.0.0.1:60539 - "GET /teams HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60538 - "OPTIONS /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:46.196131 🟩
+INFO:     127.0.0.1:60541 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:46.215827 🟩
+SCAN_STATUS: success TASK_ID: a72b1082-3a0e-4418-a102-6967d1598f30
+Scan id: 55 found in main database
+0 messages found for scan: 55
+INFO:     127.0.0.1:60539 - "GET /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:48.815890 🟩
+INFO:     127.0.0.1:60539 - "GET /teams HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:48.831476 🟩
+INFO:     127.0.0.1:60541 - "GET /get_user HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:48.841307 🟩
+SCAN_STATUS: success TASK_ID: a72b1082-3a0e-4418-a102-6967d1598f30
+Scan id: 55 found in main database
+0 messages found for scan: 55
+INFO:     127.0.0.1:60538 - "GET /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60538 - "OPTIONS /1/sbom_sca/scan/55/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:51.755899 🟩
+evidence-pack PDF skipped: name 'small_style' is not defined
+INFO:     127.0.0.1:60541 - "GET /1/sbom_sca/scan/55/evidence-pack HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:00:51.797422 🟩
+SCAN_STATUS: success TASK_ID: a72b1082-3a0e-4418-a102-6967d1598f30
+Scan id: 55 found in main database
+0 messages found for scan: 55
+INFO:     127.0.0.1:60541 - "GET /1/sbom_sca/scan/55 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60934 - "GET /docs HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:20:24.424752 🟩
+New scan id: 59 added to main database
+INFO:     127.0.0.1:60959 - "POST /1/sbom_sca/scan HTTP/1.1" 200 OK
+User found 🟩
+User cbom-demo@cyberultron.com last active updated to 2026-08-09 09:20:24.446307 🟩
+Start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Estimating credits for sbom_sca scan. start scan payload: sast=None iac=None 
+sbom_sca=StartSBOMScanData(repo_context=GithubContextSchema(mode='github', 
+repo_url='https://github.com/psf/requests', PAT='', branch='main'), 
+zip_file_used=False, sbom_file_used=False) mcp=None llm=None dast=None cbom=None
+ai_bom=None
+Getting celery app in Local environment
+Celery app instantiated
+SBOM kwargs: {'repo_dict_context': {'mode': 'github', 'repo_url': 
+'https://github.com/psf/requests', 'PAT': '', 'branch': 'main'}} assembled 
+successfully
+Sent sbom sca estimation task to celery worker. task id: 
+ec74d427-d107-4b3c-93b2-caf887699010
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+Error in estimating credits for sbom_sca scan: 500: Credit estimation timed out,
+please try again later
+INFO:     127.0.0.1:60960 - "POST /1/sbom_sca/scan/59/estimate_credits HTTP/1.1" 500 Internal Server Error
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+Shutting down...
+INFO:     Application shutdown complete.
+INFO:     Finished server process [49621]

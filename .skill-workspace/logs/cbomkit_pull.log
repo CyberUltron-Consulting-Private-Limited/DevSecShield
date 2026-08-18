@@ -1,0 +1,11 @@
+latest: Pulling from cbomkit/cbomkit-theia
+25836bc12405: Pulling fs layer
+4343a7e63195: Pulling fs layer
+6e3776650460: Download complete
+4343a7e63195: Download complete
+4343a7e63195: Pull complete
+25836bc12405: Download complete
+25836bc12405: Pull complete
+Digest: sha256:46a72eadc9849b919fc4c72e1c851f9783e03c35db8fad49ba99341ac97f8dea
+Status: Downloaded newer image for ghcr.io/cbomkit/cbomkit-theia:latest
+ghcr.io/cbomkit/cbomkit-theia:latest

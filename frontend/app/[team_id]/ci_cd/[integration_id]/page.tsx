@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type SastAppLang } from "@/utils/backend_api";
+import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";
 import Link from "next/link";
 import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
 import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
@@ -117,17 +118,6 @@ export default function CicdIntegrationDashboardPage() {
       showErrorToast(error);
     },
   });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
 
 
   const redactApiKey = (apiKey: string) => {
@@ -487,8 +477,7 @@ export default function CicdIntegrationDashboardPage() {
                       minTickGap={24}
                       height={40}
                       tickFormatter={(v) => {
-                        const d = new Date(v);
-                        return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+                        return formatDateOnlyIst(v);
                       }}
                     />
                     <YAxis hide domain={[0, "auto"]} />
@@ -496,7 +485,7 @@ export default function CicdIntegrationDashboardPage() {
                       cursor={false}
                       content={
                         <ChartTooltipContent
-                          labelFormatter={(v) => new Date(v).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                          labelFormatter={(v) => formatMediumDateIst(v)}
                         />
                       }
                     />

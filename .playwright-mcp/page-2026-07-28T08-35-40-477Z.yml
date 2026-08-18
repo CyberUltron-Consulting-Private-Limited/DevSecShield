@@ -1,0 +1,27 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: DevSec Shield
+      - generic [ref=e10]:
+        - text: Don't have an account yet?
+        - link "Sign up" [ref=e11] [cursor=pointer]:
+          - /url: /register
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: Email address
+        - textbox "Email address" [ref=e20]:
+          - /placeholder: email address
+          - text: aibom-demo@local.test
+      - generic [ref=e21]:
+        - generic [ref=e22]: Password
+        - textbox "Password" [ref=e27]: DemoPass123!
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - generic [ref=e30]: Verification Code
+          - textbox "Verification Code" [ref=e31]
+        - button "Send Verification Code" [ref=e33] [cursor=pointer]
+      - button "Login" [ref=e37] [cursor=pointer]
+      - link "Forgot Password?" [ref=e39] [cursor=pointer]:
+        - /url: /password_reset
+  - region "Notifications alt+T"
+  - alert [ref=e40]

@@ -1,0 +1,24 @@
+{
+  "packages": [
+    "-git",
+    "-tox",
+    "-venv",
+    "04-sqlalchemy",
+    "a003",
+    "a005",
+    "aarch64",
+    "aiomysql",
+    "aioodbc",
+    "aiosqlite",
+    "arm64",
+    "asyncpg",
+    "build",
+    "cpython",
+    "cymysql",
+    "cython",
+    "d",
+    "dev",
+    "dist",
+    "doc"
+  ]
+}

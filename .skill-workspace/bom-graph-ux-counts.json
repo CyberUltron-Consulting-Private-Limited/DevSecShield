@@ -1,0 +1,45 @@
+{
+  "cbom94": {
+    "http_ok": true,
+    "full_nodes": 96,
+    "full_edges": 4,
+    "compact_nodes": 9,
+    "compact_edges": 4,
+    "expanded_nodes": 26,
+    "compact_from_metadata": true,
+    "compact_labels_sample": [
+      "Unlinked algorithm (22)",
+      "Unlinked library (5)",
+      "Unlinked protocol (2)",
+      "Unlinked related-crypto-material (62)",
+      "RSA",
+      "SHA-256",
+      "testkey_rsa.cer",
+      "public-key (testkey_pkcs1.pub.pem)",
+      "SSH"
+    ]
+  },
+  "aibom95": {
+    "http_ok": true,
+    "full_nodes": 175,
+    "full_edges": 148,
+    "compact_nodes": 27,
+    "compact_edges": 22,
+    "expanded_nodes": 49,
+    "compact_from_metadata": true,
+    "compact_labels_sample": [
+      "babbage* \u2192 openai (1)",
+      "dall-e* \u2192 openai (2)",
+      "davinci* \u2192 openai (1)",
+      "gpt* \u2192 openai (93)",
+      "gpt-audio* \u2192 openai (4)",
+      "gpt-image* \u2192 openai (5)",
+      "gpt-oss* \u2192 openai (2)",
+      "gpt-realtime* \u2192 openai (10)",
+      "o1* \u2192 openai (1)",
+      "o1-mini* \u2192 openai (2)",
+      "o1-preview* \u2192 openai (2)",
+      "o1-pro* \u2192 openai (2)"
+    ]
+  }
+}
