@@ -27,6 +27,10 @@ def test_phase6_certin_modules_importable() -> None:
     for name in ("common.py", "sign.py", "vex.py", "ledger.yaml", "crypto.py", "ai.py", "sbom.py"):
         assert (cert_in / name).is_file(), name
     assert (_REPO / "aibom/config/cert-in-rollup.yaml").is_file()
+    # Backend image context is backend/ only — VEX/sign must also ship there.
+    backend_cert_in = _REPO / "backend/utilities/compliance/cert_in"
+    for name in ("vex.py", "sign.py"):
+        assert (backend_cert_in / name).is_file(), name
 
 
 def test_phase6_matrix_manifest_has_15_rows() -> None:

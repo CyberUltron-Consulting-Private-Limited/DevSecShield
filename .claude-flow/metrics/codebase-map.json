@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-10T05:07:17.544Z",
+  "timestamp": "2026-08-10T14:37:17.895Z",
   "projectRoot": "/home/contact_cyberultron_com/DevSecShield",
   "structure": {
     "hasPackageJson": false,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1786338437544
+  "scannedAt": 1786372637895
 }

@@ -55,6 +55,7 @@ import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -986,7 +987,8 @@ export default function CbomResults({
     const cbomJson = meta?.cbom_json ?? (data as Record<string, unknown> | null)?.cbom_json;
     if (!cbomJson) { toast.error("No CBOM JSON available"); return; }
     try {
-      const blob = new Blob([JSON.stringify(cbomJson, null, 2)], { type: "application/json" });
+      const bom = overlayBomCompliance(cbomJson, meta?.cbom_compliance);
+      const blob = new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

@@ -42,7 +42,20 @@ def get_severity_color(severity: str):
 
 
 def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, Any]]:
+    """
+    Normalize scan results to a list of vulnerability dicts with a unified shape.
+    - Agent format: scan_results is a list of items with title, description, impact,
+      owasp_top_10, compliance_controls, suggested_fix, dependencies, cves.
+    - Export-route format: full scan_data dict with a ``results`` list (same shape as agent).
+    - Legacy format: scan_results is a dict with "matches"; each match has vulnerability + artifact.
+    Returns list of dicts with keys: title, description, impact, suggested_fix, dependencies,
+    cves, owasp_top_10, compliance_controls (and optionally package_name, package_version for legacy).
+    """
     out: List[Dict[str, Any]] = []
+    # Export route for BOM types passes the full scan_data dict so RBI/CERT-In
+    # appendix helpers can read compliance keys; findings live under "results".
+    if isinstance(scan_results, dict) and "results" in scan_results and "matches" not in scan_results:
+        scan_results = scan_results.get("results") or []
     if isinstance(scan_results, list):
         for item in scan_results:
             if not isinstance(item, dict):

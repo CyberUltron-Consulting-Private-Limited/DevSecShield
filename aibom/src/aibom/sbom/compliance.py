@@ -94,6 +94,31 @@ def _parse_name_version(dep: str) -> tuple[str, str]:
     return name, version
 
 
+def _inventory_bom_ref(
+    name: str,
+    version: str,
+    purl: str | None,
+    index: int,
+    used: set[str],
+) -> str:
+    """Stable CycloneDX bom-ref: purl, else name@version — never sbom-dep-N."""
+    if purl:
+        base = purl
+    elif name and version:
+        base = f"{name}@{version}"
+    elif name:
+        base = name
+    else:
+        base = f"component-{index}"
+    ref = base
+    n = 2
+    while ref in used:
+        ref = f"{base}#{n}"
+        n += 1
+    used.add(ref)
+    return ref
+
+
 def findings_to_scan_result(
     findings: list[dict[str, Any]],
     *,
@@ -110,12 +135,15 @@ def findings_to_scan_result(
     edges: list[Edge] = []
     subject_ref = "sbom-subject"
 
+    used_refs: set[str] = set()
     for i, row in enumerate(findings):
         dep = _dependency(row)
         if not dep:
             continue
         name, version = _parse_name_version(dep)
-        bom_ref = f"sbom-dep-{i}"
+        purl_raw = row.get("purl")
+        purl = str(purl_raw).strip() if isinstance(purl_raw, str) and purl_raw.strip() else None
+        bom_ref = _inventory_bom_ref(name, version, purl, i, used_refs)
         # Legacy vuln rows default to assessed; inventory-only rows must opt in.
         vuln_assessed = row.get("vuln_assessed")
         if vuln_assessed is None:
@@ -134,8 +162,6 @@ def findings_to_scan_result(
         if cve_ids:
             props["sbom:cve_ids"] = cve_ids
 
-        purl_raw = row.get("purl")
-        purl = str(purl_raw).strip() if isinstance(purl_raw, str) and purl_raw.strip() else None
         if purl:
             props["sbom:purl"] = purl
 

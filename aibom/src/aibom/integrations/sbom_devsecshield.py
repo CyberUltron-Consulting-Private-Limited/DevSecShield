@@ -29,7 +29,11 @@ def enrich_sbom_scan(
         "sbom_compliance": run_sbom_compliance(results, bom_properties=props),
     }
     if sbom_json is not None:
-        out["sbom_json"] = sbom_json
+        from aibom.sbom.cyclonedx_export import overlay_sbom_document, stamp_component_compliance
+
+        stamped = overlay_sbom_document(sbom_json, out["sbom_compliance"])
+        stamped = stamp_component_compliance(stamped, results)
+        out["sbom_json"] = stamped if stamped is not None else sbom_json
     return out
 
 

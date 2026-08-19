@@ -60,6 +60,7 @@ import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAIBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type AiBomScanDashboardData, type AiBomFinding, type AiBomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -428,7 +429,8 @@ export default function AiBomResults({
     const aiBomJson = metaRecord?.ai_bom_json ?? (data as Record<string, unknown> | null)?.ai_bom_json;
     if (!aiBomJson) { toast.error("No AI BOM JSON available"); return; }
     try {
-      const blob = new Blob([JSON.stringify(aiBomJson, null, 2)], { type: "application/json" });
+      const bom = overlayBomCompliance(aiBomJson, metaRecord?.ai_bom_compliance);
+      const blob = new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

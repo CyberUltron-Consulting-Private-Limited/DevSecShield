@@ -20,6 +20,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from helpers.tools.sca_sbom_agent.syft import run_syft
 from helpers.tools.sca_sbom_agent.cdxgen_run import run_cdxgen
 from helpers.tools.sca_sbom_agent.merge_inventory import (
+    assemble_cyclonedx,
     inventory_to_finding_rows,
     load_cdx_json,
     merge_cdx_components,
@@ -89,7 +90,16 @@ class SCASBOMAgent(BaseAgent):
 
             merged_comps = merge_cdx_components(syft_path, cdxgen_path)
             preferred_sbom = cdxgen_path or syft_path
-            self.sbom_json = load_cdx_json(preferred_sbom)
+            base_sbom = load_cdx_json(preferred_sbom)
+            if merged_comps:
+                self.sbom_json = assemble_cyclonedx(
+                    merged_comps,
+                    base=base_sbom,
+                    tools=tools,
+                    subject_name=os.path.basename(str(self.directory).rstrip("/")),
+                )
+            else:
+                self.sbom_json = base_sbom
 
             bom_props: dict[str, str] = {
                 "sbom:author": "DevSecShield",
