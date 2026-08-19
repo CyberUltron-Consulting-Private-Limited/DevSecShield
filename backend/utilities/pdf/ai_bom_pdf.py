@@ -24,11 +24,14 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
     severity_color,
+    split_scan_payload,
 )
 
 IMPACT_TO_RISK: Dict[str, float] = {
@@ -65,11 +68,11 @@ def _license_type(v: dict) -> str:
 
 def _normalize_results(scan_results: Union[list, dict]) -> List[dict]:
     """Accept either a list of findings or a dict that contains them."""
-    if isinstance(scan_results, list):
-        return scan_results
-    if isinstance(scan_results, dict):
-        if "results" in scan_results:
-            return scan_results["results"] or []
+    inner, _duration, _raw = split_scan_payload(scan_results)
+    if isinstance(inner, list):
+        return inner
+    if isinstance(inner, dict) and "results" in inner:
+        return inner["results"] or []
     return []
 
 
@@ -86,6 +89,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         output_path = f"ai_bom_scan_report_{timestamp}.pdf"
 
     assets = _normalize_results(scan_results)
+    _inner, duration, raw = split_scan_payload(scan_results)
     total = len(assets)
 
     by_impact: Dict[str, int] = {}
@@ -157,6 +161,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         styles=styles,
         extra_tables=extra_tables or None,
         project_name="AI BOM Findings",
+        scan_time=format_scan_duration(duration),
         meta_chips=[
             ("Scan type", "AI BOM"),
             ("Total assets", str(total)),
@@ -179,7 +184,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     for idx, v in enumerate(sorted_assets, 1):
         title = v.get("title") or _asset_name(v) or f"Finding #{idx}"
         impact = count_label(v.get("impact") or "Unknown")
-        location = str(v.get("location") or "—")
+        location = finding_location(v)
         catalog.append(
             [
                 str(idx),
@@ -224,7 +229,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Framework", str(v.get("framework") or "—")),
                         ("Version", str(v.get("version") or "—")),
                         ("Risk category", str(v.get("risk_category") or "—")),
-                        ("Location", str(v.get("location") or "—")),
+                        ("Where it was found", finding_location(v)),
                     ],
                     description=str(v.get("description") or ""),
                     evidence=str(v.get("snippet") or ""),
@@ -234,7 +239,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 )
             )
 
-    append_bom_compliance_sections(story, scan_results, styles)
+    appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+    append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,

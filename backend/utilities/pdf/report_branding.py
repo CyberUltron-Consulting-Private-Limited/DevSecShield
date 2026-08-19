@@ -197,6 +197,7 @@ BAR_CRITICAL = colors.HexColor("#E11D48")
 BAR_HIGH = colors.HexColor("#EA580C")
 BAR_MEDIUM = colors.HexColor("#D97706")
 BAR_LOW = colors.HexColor("#0891B2")
+BAR_UNKNOWN = colors.HexColor("#64748B")
 
 SEV_CRITICAL = PILL_CRITICAL_FG
 SEV_HIGH = PILL_HIGH_FG
@@ -284,6 +285,12 @@ def count_label(severity: str) -> str:
     return severity_label(severity).title()
 
 
+def color_to_hex(color: colors.Color) -> str:
+    """Return ``#rrggbb`` for Paragraph markup. ``Color.hexval()`` is ``0xRRGGBB``."""
+    r, g, b = color.bitmap_rgb()
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def mapping_entries(val: Any) -> List[Tuple[str, str]]:
     """Normalize OWASP / compliance / CVE blobs to (key, value) pairs."""
     if val is None:
@@ -312,11 +319,110 @@ def mapping_entries(val: Any) -> List[Tuple[str, str]]:
 
 def mapping_rows(val: Any, *, label: str, limit: int = 6) -> List[List[str]]:
     """Format mapping blobs as [label, 'key: value'] rows for finding cards."""
+    entries = mapping_entries(val)
     rows: List[List[str]] = []
-    for k, v in mapping_entries(val)[:limit]:
+    for k, v in entries[:limit]:
         text = f"{k}: {v}" if k else v
         rows.append([label, text])
+    leftover = len(entries) - limit
+    if leftover > 0:
+        rows.append([label, f"… and {leftover} more"])
     return rows
+
+
+def split_scan_payload(data: Any) -> Tuple[Any, Optional[float], Dict[str, Any]]:
+    """Unwrap ``{results, duration_of_scan}`` worker payloads.
+
+    Returns ``(inner, duration_seconds, raw_dict)``. A bare list is returned as
+    inner with no duration so existing list-only callers keep working.
+    """
+    if isinstance(data, list):
+        return data, None, {}
+    if isinstance(data, dict):
+        duration: Optional[float] = None
+        raw_dur = data.get("duration_of_scan")
+        if raw_dur is not None and raw_dur != "":
+            try:
+                duration = float(raw_dur)
+            except (TypeError, ValueError):
+                duration = None
+        if "results" in data:
+            return data.get("results"), duration, data
+        return data, duration, data
+    return data, None, {}
+
+
+def format_scan_duration(seconds: Any) -> str:
+    """Format seconds as the sample KPI string (``2m 14s``, ``45s``, ``—``)."""
+    if seconds is None or seconds == "":
+        return "—"
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):
+        return "—"
+    if value < 0:
+        return "—"
+    if value < 1:
+        return "<1s"
+    total = int(round(value))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def relative_scan_path(path: Any) -> str:
+    """Strip clone prefixes like ``/tmp/repo_<id>/`` from a filesystem path."""
+    raw = str(path or "").strip().replace("\\", "/")
+    if not raw:
+        return ""
+    marker = "repo_"
+    idx = raw.find(marker)
+    if idx == -1:
+        return raw
+    rest = raw[idx + len(marker) :]
+    slash = rest.find("/")
+    if slash == -1:
+        return raw
+    return rest[slash + 1 :]
+
+
+def finding_location(row: Any) -> str:
+    """Catalog/detail location from API finding keys (never invent)."""
+    if not isinstance(row, dict):
+        return "—"
+    loc = row.get("location")
+    if isinstance(loc, str) and loc.strip():
+        return relative_scan_path(loc.strip()) or loc.strip()
+    if isinstance(loc, dict):
+        filename = loc.get("filename") or loc.get("file") or loc.get("path") or ""
+        path = relative_scan_path(filename) if filename else ""
+        line = loc.get("start_line")
+        if line in (None, "", "?"):
+            line = loc.get("line")
+        if path and line not in (None, "", "?"):
+            return f"{path}:{line}"
+        if path:
+            return path
+    dep = row.get("dependency")
+    if isinstance(dep, str) and dep.strip():
+        return dep.strip()
+    deps = row.get("dependencies")
+    if isinstance(deps, list) and deps:
+        first = deps[0]
+        if isinstance(first, str) and first.strip():
+            return first.strip()
+        if first:
+            return str(first)
+    title = str(row.get("title") or "").strip()
+    if title and ("/" in title or title.endswith((".json", ".lock", ".py", ".tf", ".js", ".ts"))):
+        cleaned = relative_scan_path(title)
+        if cleaned:
+            return cleaned
+    return "—"
 
 
 def make_enterprise_document(output_path: str) -> SimpleDocTemplate:
@@ -379,12 +485,10 @@ def mono(text: Any, *, size: int = 8) -> str:
 def _count_sev(severity_counts: Dict[str, int], *keys: str) -> int:
     targets = {k.lower() for k in keys}
     total = 0
-    seen = set()
     for raw, n in severity_counts.items():
         low = str(raw).strip().lower()
-        if low in targets and low not in seen:
+        if low in targets:
             total += int(n or 0)
-            seen.add(low)
     return total
 
 
@@ -1111,6 +1215,7 @@ def build_severity_bar(
     medium: int,
     low: int,
     styles: Dict[str, ParagraphStyle],
+    unknown: int = 0,
 ) -> Table:
     """CSS-flex-style stacked severity bar for PDF."""
     parts = [
@@ -1119,6 +1224,8 @@ def build_severity_bar(
         (medium, BAR_MEDIUM, "Medium"),
         (low, BAR_LOW, "Low"),
     ]
+    if unknown:
+        parts.append((unknown, BAR_UNKNOWN, "Unknown"))
     total = sum(n for n, _, _ in parts) or 1
     seg_row: List[Any] = []
     seg_widths: List[float] = []
@@ -1160,11 +1267,12 @@ def build_severity_bar(
     for n, color, label in parts:
         legend_bits.append(
             Paragraph(
-                f'<font color="{color.hexval()}"><b>■</b></font> {label} <b>{n}</b>',
+                f'<font color="{color_to_hex(color)}"><b>■</b></font> {label} <b>{n}</b>',
                 styles["kpi_hint"],
             )
         )
-    legend = Table([legend_bits], colWidths=[CONTENT_WIDTH / 4.0] * 4)
+    col_w = CONTENT_WIDTH / float(len(legend_bits) or 1)
+    legend = Table([legend_bits], colWidths=[col_w] * len(legend_bits))
     legend.setStyle(
         TableStyle(
             [
@@ -1412,9 +1520,10 @@ def append_executive_summary(
     high = _count_sev(severity_counts, "High", "ERROR")
     medium = _count_sev(severity_counts, "Medium", "WARNING")
     low = _count_sev(severity_counts, "Low", "INFO")
+    unknown = _count_sev(severity_counts, "Unknown", "UNKNOWN")
     total = sum(int(v or 0) for v in severity_counts.values())
     if total == 0:
-        total = critical + high + medium + low
+        total = critical + high + medium + low + unknown
 
     time_label = scan_time or "—"
     if not scan_time:
@@ -1432,7 +1541,11 @@ def append_executive_summary(
             high=high,
             scan_time=time_label,
             styles=styles,
-            total_hint=f"{critical} C · {high} H · {medium} M · {low} L",
+            total_hint=(
+                f"{critical} C · {high} H · {medium} M · {low} L · {unknown} U"
+                if unknown
+                else f"{critical} C · {high} H · {medium} M · {low} L"
+            ),
             risk_score=risk_score,
             risk_grade=risk_grade,
             risk_band=risk_band,
@@ -1445,6 +1558,7 @@ def append_executive_summary(
             high=high,
             medium=medium,
             low=low,
+            unknown=unknown,
             styles=styles,
         )
     )
