@@ -127,3 +127,77 @@ def test_cyclonedx_download_source_is_valid(scan_type, fixture, bom_key):
     assert bom.get("bomFormat") == "CycloneDX", f"{scan_type}: wrong bomFormat"
     assert bom.get("specVersion") == "1.6", f"{scan_type}: expected CycloneDX 1.6"
     assert bom.get("components"), f"{scan_type}: CycloneDX has no components"
+
+
+def test_sbom_sca_export_pdf_with_full_scan_data_dict(tmp_path):
+    """Export route passes full scan_data (not just results[]) for sbom_sca so
+    RBI/CERT-In appendix helpers can read compliance keys. The generator must:
+
+    1. Unwrap ``results`` for findings (not treat the dict as legacy ``matches``).
+    2. Define ``small_style`` used by the appendix sections (prod 500 was
+       NameError: small_style is not defined).
+    """
+    payload = {
+        "results": [
+            {
+                "title": "CVE-2024-0001",
+                "description": "Test vulnerability",
+                "impact": "High",
+                "suggested_fix": "Upgrade package",
+                "dependencies": ["demo@1.0.0"],
+                "cves": {"CVE-2024-0001": "demo issue"},
+                "owasp_top_10": {},
+                "compliance_controls": {},
+            }
+        ],
+        "rbi_compliance": {
+            "disclaimer": "advisory",
+            "rbi_free_ai_protection": {
+                "pass": 1,
+                "fail": 0,
+                "out_of_scope": 0,
+                "not_bom_evidenceable": 0,
+                "na": 0,
+                "coverage": 1.0,
+                "requirements": [],
+            },
+        },
+    }
+    out = tmp_path / "sbom_sca_full_scan_data.pdf"
+    generate_pdf_for_type("sbom_sca", payload, str(out))
+    _assert_valid_pdf(str(out))
+    # Findings must actually render — empty PDF after unwrap-miss was the silent
+    # failure mode once small_style was defined.
+    assert out.stat().st_size > 5000
+
+
+def test_sbom_sca_export_pdf_list_and_legacy_shapes(tmp_path):
+    """List (legacy route) and Syft-style matches dict still export."""
+    out_list = tmp_path / "sbom_list.pdf"
+    generate_pdf_for_type(
+        "sbom_sca",
+        [{"title": "bare finding", "impact": "Low"}],
+        str(out_list),
+    )
+    _assert_valid_pdf(str(out_list))
+
+    out_legacy = tmp_path / "sbom_legacy.pdf"
+    generate_pdf_for_type(
+        "sbom_sca",
+        {
+            "matches": [
+                {
+                    "vulnerability": {
+                        "id": "CVE-X",
+                        "description": "d",
+                        "severity": "HIGH",
+                        "fix": {"state": "fixed", "versions": ["1.2"]},
+                        "cves": {},
+                    },
+                    "artifact": {"name": "pkg", "version": "1.0"},
+                }
+            ]
+        },
+        str(out_legacy),
+    )
+    _assert_valid_pdf(str(out_legacy))

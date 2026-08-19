@@ -49,6 +49,35 @@ limiter = RateLimiter(times=30, seconds=30)
 _BOM_TYPES = frozenset({"ai_bom", "cbom", "sbom_sca"})
 
 
+def _certin_module_candidates(name: str) -> list[Path]:
+    """Paths that may hold stdlib ``cert_in/{name}.py`` (vex/sign).
+
+    Backend images are built from the ``backend/`` context, so
+    ``/aibom/src/aibom/compliance/cert_in/*.py`` is **not** in the image.
+    The copies under ``backend/utilities/compliance/cert_in/`` ship with the
+    API (last candidate). Repo checkouts resolve ``aibom/src/...`` first.
+    """
+    filename = f"{name}.py"
+    here = Path(__file__).resolve()
+    rel = Path("aibom") / "src" / "aibom" / "compliance" / "cert_in" / filename
+    backend_copy = here.parents[1] / "utilities" / "compliance" / "cert_in" / filename
+    docker_abs = Path("/aibom/src/aibom/compliance/cert_in") / filename
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path: Path) -> None:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            out.append(path)
+
+    for parent in here.parents:
+        add(parent / rel)
+    add(docker_abs)
+    add(backend_copy)
+    return out
+
+
 def _load_certin_module(name: str):
     """Load ``cert_in/{name}.py`` without importing ``aibom.compliance`` (jsonschema)."""
     # Prefer normal import when aibom is fully installed (worker / aibom venv).
@@ -56,24 +85,23 @@ def _load_certin_module(name: str):
         return importlib.import_module(f"aibom.compliance.cert_in.{name}")
     except Exception:
         pass
-    # Resolve from repo: backend/utilities/... → parents[3] = repo root
-    repo = Path(__file__).resolve().parents[2]
-    path = repo / "aibom" / "src" / "aibom" / "compliance" / "cert_in" / f"{name}.py"
-    if not path.is_file():
-        raise ImportError(f"cert_in/{name}.py not found at {path}")
-    # Ensure sibling imports inside cert_in work if needed
-    src = str(repo / "aibom" / "src")
-    if src not in sys.path:
-        sys.path.insert(0, src)
-    mod_name = f"_certin_phase4_{name}"
-    spec = importlib.util.spec_from_file_location(mod_name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load {path}")
-    mod = importlib.util.module_from_spec(spec)
-    # Avoid re-executing aibom.compliance.__init__
-    sys.modules[mod_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    tried: list[str] = []
+    for path in _certin_module_candidates(name):
+        tried.append(str(path))
+        if not path.is_file():
+            continue
+        # vex.py / sign.py are stdlib-only (no sibling cert_in imports).
+        mod_name = f"_certin_phase4_{name}_{abs(hash(str(path.resolve())))}"
+        spec = importlib.util.spec_from_file_location(mod_name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {path}")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        return mod
+    raise ImportError(
+        f"cert_in/{name}.py not found (tried {', '.join(tried)})"
+    )
 
 
 def _require_bom_type(scan_type: scan_types) -> None:
@@ -338,10 +366,7 @@ async def download_evidence_pack(
     tmp_path = tmp.name
     tmp.close()
     with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        bom_key = {"ai_bom": "ai_bom_json", "cbom": "cbom_json"}.get(type)
-        if bom_key and isinstance(data.get(bom_key), dict):
-            zf.writestr("bom.cdx.json", json.dumps(data[bom_key], indent=2))
-        elif bom:
+        if bom:
             zf.writestr("bom.cdx.json", json.dumps(bom, indent=2))
         if isinstance(data.get("vex_json"), dict):
             zf.writestr("vex.json", json.dumps(data["vex_json"], indent=2))

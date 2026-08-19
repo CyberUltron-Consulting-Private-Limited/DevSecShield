@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from helpers.tools.sca_sbom_agent.sbom_license import resolve_emit_license
 
@@ -138,3 +140,79 @@ def load_cdx_json(path: Path | None) -> dict[str, Any] | None:
         return data if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+_PLACEHOLDER_RE = re.compile(
+    r"^(?:sbom[\s_-]*dep(?:endency)?[\s_-]*\d+|sbom-dep-\d+|component-\d+)$",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder(value: str) -> bool:
+    return bool(_PLACEHOLDER_RE.match((value or "").strip()))
+
+
+def assemble_cyclonedx(
+    components: list[dict[str, Any]],
+    *,
+    base: dict[str, Any] | None = None,
+    tools: list[str] | None = None,
+    subject_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a CycloneDX 1.6 document from merged inventory components.
+
+    Prefers metadata/dependencies from ``base`` (Syft or cdxgen) but always
+    emits the merged component list with real package names — never
+    ``sbom-dep-N`` placeholders.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    doc: dict[str, Any] = dict(base) if isinstance(base, dict) else {}
+    doc["bomFormat"] = "CycloneDX"
+    doc.setdefault("specVersion", "1.6")
+    doc.setdefault("version", 1)
+    if not doc.get("serialNumber"):
+        doc["serialNumber"] = f"urn:uuid:{uuid4()}"
+
+    cleaned: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, raw in enumerate(components):
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name or _is_placeholder(name):
+            continue
+        item = dict(raw)
+        version = str(item.get("version") or "").strip()
+        purl = item.get("purl") if isinstance(item.get("purl"), str) else None
+        purl = purl.strip() if purl else None
+        item["name"] = name
+        item.setdefault("type", "library")
+        ref = str(item.get("bom-ref") or "").strip()
+        if not ref or _is_placeholder(ref):
+            item["bom-ref"] = purl or (f"{name}@{version}" if version else name) or f"component-{i}"
+        key = str(item["bom-ref"])
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+    doc["components"] = cleaned
+
+    meta = doc.get("metadata")
+    if not isinstance(meta, dict):
+        meta = {}
+        doc["metadata"] = meta
+    meta.setdefault("timestamp", now)
+    if not meta.get("authors"):
+        meta["authors"] = [{"name": "DevSecShield"}]
+    if subject_name:
+        root = meta.get("component")
+        if not isinstance(root, dict) or not str(root.get("name") or "").strip():
+            meta["component"] = {"type": "application", "name": subject_name}
+    if tools:
+        meta["tools"] = {
+            "components": [
+                {"type": "application", "name": tool, "publisher": "DevSecShield"}
+                for tool in tools
+            ]
+        }
+    return doc

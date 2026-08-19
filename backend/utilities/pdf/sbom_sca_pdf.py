@@ -84,11 +84,16 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
     Normalize scan results to a list of vulnerability dicts with a unified shape.
     - Agent format: scan_results is a list of items with title, description, impact,
       owasp_top_10, compliance_controls, suggested_fix, dependencies, cves.
+    - Export-route format: full scan_data dict with a ``results`` list (same shape as agent).
     - Legacy format: scan_results is a dict with "matches"; each match has vulnerability + artifact.
     Returns list of dicts with keys: title, description, impact, suggested_fix, dependencies,
     cves, owasp_top_10, compliance_controls (and optionally package_name, package_version for legacy).
     """
     out: List[Dict[str, Any]] = []
+    # Export route for BOM types passes the full scan_data dict so RBI/CERT-In
+    # appendix helpers can read compliance keys; findings live under "results".
+    if isinstance(scan_results, dict) and "results" in scan_results and "matches" not in scan_results:
+        scan_results = scan_results.get("results") or []
     if isinstance(scan_results, list):
         # Agent output format (worker_sbom_agent_results_testing.json)
         for item in scan_results:
@@ -104,6 +109,8 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
                 "dependencies": item.get("dependencies") or [],
                 "cves": item.get("cves") or {},
             })
+        return out
+    if not isinstance(scan_results, dict):
         return out
     # Legacy: dict with "matches"
     matches = scan_results.get("matches", [])
@@ -304,6 +311,16 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         leading=12,
         textColor=colors.HexColor("#334155"),  # Dark gray
         fontName='Helvetica'
+    )
+
+    # Used by RBI / CERT-In appendix sections (must match cbom_pdf / ai_bom_pdf).
+    small_style = ParagraphStyle(
+        "SbomSmall",
+        parent=styles["Normal"],
+        fontSize=8,
+        textColor=colors.HexColor("#64748B"),
+        fontName="Helvetica",
+        leading=10,
     )
     
     code_style = ParagraphStyle(

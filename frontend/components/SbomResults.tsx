@@ -59,6 +59,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getSBOMExportResults, updateScan, createTicket, toggleFindingState, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type SbomScanDashboardData, type SbomFinding, type SbomScanMetadata, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
+import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
+import SbomBillOfMaterialsTable from "@/components/sbom/SbomBillOfMaterialsTable";
 import {
   ChartContainer,
   ChartTooltip,
@@ -626,6 +628,14 @@ function SbomResultsView({
     list = list.filter((f) => matchesRiskScoreFilter(f.risk_score ?? null, filterRiskScore));
     return list;
   }, [findingsList, useFindings, findingsSearchQuery, relatedFindingRefs, filterImpact, filterRiskScore]);
+  const inventoryBom = useMemo(
+    () =>
+      overlayBomCompliance(
+        (scanMetadata as SbomScanMetadata | null)?.sbom_json,
+        (scanMetadata as SbomScanMetadata | null)?.sbom_compliance,
+      ),
+    [scanMetadata],
+  );
   const hasActiveFindingsFilters =
     findingsSearchQuery.trim() !== "" ||
     relatedFindingRefs.length > 0 ||
@@ -723,6 +733,25 @@ function SbomResultsView({
     queryClient.invalidateQueries({
       queryKey: ["sbom_sca-conversation-data", tid, conversationId],
     });
+  };
+
+  const handleDownloadSbomJson = () => {
+    const meta = scanMetadata as SbomScanMetadata | null;
+    const raw = meta?.sbom_json;
+    if (!raw) {
+      toast.error("No SBOM JSON available");
+      return;
+    }
+    try {
+      const bom = overlayBomCompliance(raw, meta?.sbom_compliance);
+      downloadBlob(
+        new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" }),
+        `sbom-cyclonedx-${conversationId}.json`,
+      );
+      toast.success("CycloneDX SBOM downloaded");
+    } catch (err) {
+      showErrorToast(err, "Failed to download SBOM JSON");
+    }
   };
 
   const handleDownloadVex = async () => {
@@ -921,6 +950,14 @@ function SbomResultsView({
             <Button
               variant="outline"
               className="cursor-pointer"
+              onClick={handleDownloadSbomJson}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download SBOM
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
               onClick={() => void handleDownloadVex()}
             >
               <Download className="h-4 w-4 mr-2" />
@@ -1092,6 +1129,8 @@ function SbomResultsView({
             findings={findingsList ?? []}
           />
         )}
+
+      <SbomBillOfMaterialsTable bom={inventoryBom} onDownload={handleDownloadSbomJson} />
 
       <Card id="bom-findings">
         <CardHeader>

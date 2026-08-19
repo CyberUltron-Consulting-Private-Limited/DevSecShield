@@ -328,6 +328,8 @@ export interface SbomScanMetadata {
   attestations?: Record<string, unknown> | null
   bom_signature?: Record<string, unknown> | null
   vex_json?: Record<string, unknown> | null
+  /** CycloneDX 1.6 SBOM (real package names + advisory compliance properties) */
+  sbom_json?: Record<string, unknown> | null
 }
 
 /** SBOM/SCA single-scan dashboard from backend generate_scan_dashboard (scan.py sbom_sca branch) */
@@ -2597,7 +2599,8 @@ export interface AIBOMConversation {
   total_unlicensed_assets: number | null
   zip_file_used: boolean | null
   ai_bom_file_used: boolean | null
-  info: string | null
+  /** Progress payload from worker; often `{ current: number }`, not a display string. */
+  info: ScanInfoField | string | null
   risk_data: {
     total_critical: number
     total_high: number

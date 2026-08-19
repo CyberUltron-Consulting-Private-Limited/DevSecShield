@@ -8,8 +8,11 @@ Applies uploaded attestations to persisted ``*_compliance`` blobs (NBE →
 from __future__ import annotations
 
 import copy
+import re
 from datetime import datetime, timezone
 from typing import Any
+
+from backend.utilities.compliance.sbom_identity import parse_pkg
 
 _BOM_TYPES = frozenset({"ai_bom", "cbom", "sbom_sca"})
 
@@ -22,8 +25,13 @@ _COMPLIANCE_KEY = {
 _BOM_JSON_KEY = {
     "ai_bom": "ai_bom_json",
     "cbom": "cbom_json",
-    "sbom_sca": None,
+    "sbom_sca": "sbom_json",
 }
+
+_PLACEHOLDER_RE = re.compile(
+    r"^(?:sbom[\s_-]*dep(?:endency)?[\s_-]*\d+|sbom-dep-\d+|component-\d+)$",
+    re.IGNORECASE,
+)
 
 
 def compliance_key_for(scan_type: str) -> str:
@@ -183,30 +191,195 @@ def delete_attestation(
     return out
 
 
-def bom_dict_from_scan_data(scan_type: str, scan_data: dict[str, Any]) -> dict[str, Any] | None:
+def _is_placeholder(value: str) -> bool:
+    return bool(_PLACEHOLDER_RE.match((value or "").strip()))
+
+
+def _parse_name_version(dep: str) -> tuple[str, str]:
+    raw = (dep or "").strip()
+    if not raw:
+        return "", ""
+    if "==" in raw:
+        name, _, ver = raw.partition("==")
+        return name.strip(), ver.strip()
+    if raw.startswith("@"):
+        parts = raw.rsplit("@", 1)
+        if len(parts) == 2 and "/" in parts[0]:
+            return parts[0].strip(), parts[1].strip()
+        return raw, ""
+    if "@" in raw:
+        name, _, ver = raw.partition("@")
+        return name.strip(), ver.strip()
+    return raw, ""
+
+
+def _name_from_purl(purl: str) -> str:
+    body = purl.split("?", 1)[0]
+    if "@" in body:
+        body = body.rsplit("@", 1)[0]
+    if "/" in body:
+        body = body.rsplit("/", 1)[-1]
+    if body.startswith("pkg:"):
+        body = body.split("/", 1)[-1]
+    return body.strip()
+
+
+def _row_identity(row: dict[str, Any]) -> tuple[str, str, str | None]:
+    ident = parse_pkg(
+        name="",
+        version="",
+        purl=str(row.get("purl") or "") if isinstance(row.get("purl"), str) else "",
+        dependency=str(row.get("dependency") or row.get("package_name") or ""),
+    )
+    name, version, purl = ident.name, ident.version, ident.purl or None
+    title = str(row.get("title") or "").strip()
+    if _is_placeholder(name) and title.lower().startswith("inventory:"):
+        fallback = parse_pkg(dependency=title.split(":", 1)[1].strip())
+        name, version = fallback.name or name, fallback.version or version
+        purl = purl or fallback.purl or None
+    if _is_placeholder(name) and purl:
+        name = _name_from_purl(purl)
+    return name, version, purl
+
+
+def _component_ref(name: str, version: str, purl: str | None, index: int) -> str:
+    if purl:
+        return purl
+    if name and version:
+        return f"{name}@{version}"
+    if name and not _is_placeholder(name):
+        return name
+    return f"component-{index}"
+
+
+def _component_from_finding(row: dict[str, Any], index: int) -> dict[str, Any] | None:
+    name, version, purl = _row_identity(row)
+    if not name or _is_placeholder(name):
+        return None
+    comp: dict[str, Any] = {
+        "bom-ref": _component_ref(name, version, purl, index),
+        "name": name,
+        "type": "library",
+    }
+    if version:
+        comp["version"] = version
+    if purl:
+        comp["purl"] = purl
+    return comp
+
+
+def _stub_sbom_from_findings(findings: list[Any] | None) -> dict[str, Any]:
+    comps: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, row in enumerate(findings or []):
+        if not isinstance(row, dict):
+            continue
+        comp = _component_from_finding(row, i)
+        if not comp:
+            continue
+        ref = str(comp.get("bom-ref") or "")
+        if ref in seen:
+            continue
+        seen.add(ref)
+        comps.append(comp)
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "version": 1,
+        "metadata": {
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "authors": [{"name": "DevSecShield"}],
+            "tools": {
+                "components": [
+                    {"type": "application", "name": "DevSecShield SBOM", "publisher": "DevSecShield"}
+                ]
+            },
+        },
+        "components": comps,
+    }
+
+
+def _rewrite_placeholder_components(bom: dict[str, Any]) -> None:
+    comps = bom.get("components")
+    if not isinstance(comps, list):
+        return
+    rewritten: list[dict[str, Any]] = []
+    for i, raw in enumerate(comps):
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        name = str(item.get("name") or "").strip()
+        version = str(item.get("version") or "").strip()
+        purl = item.get("purl") if isinstance(item.get("purl"), str) else None
+        purl = purl.strip() if purl else None
+        if _is_placeholder(name) and purl:
+            name = _name_from_purl(purl)
+            item["name"] = name
+        ref = str(item.get("bom-ref") or "").strip()
+        if not ref or _is_placeholder(ref):
+            item["bom-ref"] = _component_ref(name, version, purl, i)
+        if name and not _is_placeholder(name):
+            rewritten.append(item)
+    bom["components"] = rewritten
+
+
+def overlay_compliance_on_bom(
+    bom: dict[str, Any],
+    compliance: dict[str, Any] | None,
+    *,
+    findings: list[Any] | None = None,
+    subject_name: str | None = None,
+) -> dict[str, Any]:
+    """Copy ``bom`` into an industry CycloneDX document with one Pass/Fail field."""
+    from backend.utilities.compliance.sbom_cyclonedx import sanitize_industry_sbom
+
+    out = copy.deepcopy(bom) if isinstance(bom, dict) else {}
+    if not isinstance(out, dict):
+        out = {}
+    out.setdefault("bomFormat", "CycloneDX")
+    out.setdefault("specVersion", "1.6")
+    out.setdefault("version", 1)
+    _rewrite_placeholder_components(out)
+    comps = out.get("components")
+    if (not isinstance(comps, list) or not comps) and findings:
+        stub = _stub_sbom_from_findings(findings)
+        if stub["components"]:
+            out["components"] = stub["components"]
+    return sanitize_industry_sbom(
+        out,
+        compliance=compliance if isinstance(compliance, dict) else None,
+        findings=findings,
+        subject_name=subject_name,
+    )
+
+
+def bom_dict_from_scan_data(
+    scan_type: str,
+    scan_data: dict[str, Any],
+    *,
+    subject_name: str | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(scan_data, dict):
+        scan_data = {}
     key = _BOM_JSON_KEY.get(scan_type)
+    compliance_key = _COMPLIANCE_KEY.get(scan_type)
+    compliance = scan_data.get(compliance_key) if compliance_key else None
+    findings = scan_data.get("results") if isinstance(scan_data.get("results"), list) else None
+    bom: dict[str, Any] | None = None
     if key and isinstance(scan_data.get(key), dict):
-        return scan_data[key]
-    # Minimal SBOM stand-in from findings for signing/VEX when no CDX present.
+        bom = scan_data[key]
+    elif scan_type == "sbom_sca":
+        bom = _stub_sbom_from_findings(findings)
+    if not isinstance(bom, dict):
+        return None
     if scan_type == "sbom_sca":
-        results = scan_data.get("results")
-        if isinstance(results, list):
-            comps = []
-            for i, row in enumerate(results):
-                if not isinstance(row, dict):
-                    continue
-                dep = str(row.get("dependency") or row.get("package_name") or "").strip()
-                if not dep:
-                    continue
-                name = dep.split("@")[0].split("==")[0].strip()
-                comps.append({"bom-ref": f"sbom-dep-{i}", "name": name, "type": "library"})
-            return {
-                "bomFormat": "CycloneDX",
-                "specVersion": "1.6",
-                "version": 1,
-                "components": comps,
-            }
-    return None
+        return overlay_compliance_on_bom(
+            bom,
+            compliance if isinstance(compliance, dict) else None,
+            findings=findings,
+            subject_name=subject_name,
+        )
+    return bom
 
 
 __all__ = [
@@ -215,6 +388,7 @@ __all__ = [
     "compliance_key_for",
     "delete_attestation",
     "evidence_map_from_attestations",
+    "overlay_compliance_on_bom",
     "recompute_compliance_for_scan",
     "requirement_ids_in_compliance",
     "upsert_attestation",

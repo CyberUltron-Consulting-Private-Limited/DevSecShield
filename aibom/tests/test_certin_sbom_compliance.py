@@ -180,3 +180,42 @@ def test_enrich_sbom_scan_carries_cert_in_sbom() -> None:
     fw = out["sbom_compliance"]["cert_in_sbom"]
     assert len(fw["requirements"]) == 41
     assert "rbi_free_ai_supply" in out["sbom_compliance"]
+
+
+def test_findings_to_scan_result_uses_package_identity_not_sbom_dep() -> None:
+    result = findings_to_scan_result([_row(purl="pkg:pypi/requests@2.31.0")])
+    refs = [c.bom_ref for c in result.components]
+    assert refs == ["pkg:pypi/requests@2.31.0"]
+    assert all("sbom-dep" not in r for r in refs)
+
+
+def test_enrich_overlays_compliance_on_sbom_json() -> None:
+    out = enrich_sbom_scan(
+        [_row(purl="pkg:pypi/requests@2.31.0")],
+        1.0,
+        sbom_json={
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.6",
+            "components": [
+                {
+                    "name": "requests",
+                    "version": "2.31.0",
+                    "purl": "pkg:pypi/requests@2.31.0",
+                    "type": "library",
+                }
+            ],
+        },
+    )
+    bom = out["sbom_json"]
+    props = (bom.get("metadata") or {}).get("properties") or []
+    names = {p.get("name") for p in props if isinstance(p, dict)}
+    assert names == {"dss:compliance"}
+    values = {p.get("value") for p in props if isinstance(p, dict) and p.get("name") == "dss:compliance"}
+    assert values <= {"pass", "fail", "unknown"}
+    comp_props = bom["components"][0].get("properties") or []
+    assert any(p.get("name") == "dss:compliance" for p in comp_props if isinstance(p, dict))
+    assert not any(
+        str(p.get("name") or "").startswith("syft:") or str(p.get("name") or "") in {"dss:compliant", "dss:impact"}
+        for p in comp_props
+        if isinstance(p, dict)
+    )

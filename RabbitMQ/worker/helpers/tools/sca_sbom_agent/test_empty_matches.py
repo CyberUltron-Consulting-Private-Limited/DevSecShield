@@ -70,6 +70,12 @@ class TestEmptyGrypeMatches(unittest.TestCase):
         self.assertGreaterEqual(len(agent.inventory_rows), 1)
         self.assertIn("syft", agent.bom_properties.get("sbom:inventory_tools", ""))
         self.assertEqual(agent.bom_properties.get("sbom:vuln_scanner"), "grype")
+        self.assertIsInstance(agent.sbom_json, dict)
+        names = [c.get("name") for c in agent.sbom_json.get("components") or []]
+        self.assertIn("requests", names)
+        for c in agent.sbom_json.get("components") or []:
+            ref = str(c.get("bom-ref") or "")
+            self.assertFalse(ref.lower().startswith("sbom-dep"))
         mock_ctx.generate_map_reduce_summary.assert_not_called()
 
     def test_populate_empty_matches_does_not_surface_documents_error(self) -> None:
@@ -206,6 +212,30 @@ class TestMergeInventory(unittest.TestCase):
         click_row = next(r for r in rows if "click" in r["dependency"])
         self.assertEqual(click_row["license"], "BSD-3-Clause")  # curated map
         self.assertEqual(click_row["license_type"], "permissive")
+
+    def test_assemble_cyclonedx_uses_real_package_names(self) -> None:
+        from helpers.tools.sca_sbom_agent.merge_inventory import assemble_cyclonedx
+
+        doc = assemble_cyclonedx(
+            [
+                {
+                    "name": "requests",
+                    "version": "2.31.0",
+                    "purl": "pkg:pypi/requests@2.31.0",
+                    "bom-ref": "sbom-dep-0",
+                },
+                {"name": "flask", "version": "3.0.0", "purl": "pkg:pypi/flask@3.0.0"},
+            ],
+            tools=["syft", "cdxgen"],
+            subject_name="my-app",
+        )
+        self.assertEqual(doc["bomFormat"], "CycloneDX")
+        names = [c["name"] for c in doc["components"]]
+        self.assertEqual(names, ["requests", "flask"])
+        for c in doc["components"]:
+            self.assertNotIn("sbom-dep", str(c.get("bom-ref") or "").lower())
+            self.assertNotIn("sbom dependency", str(c.get("name") or "").lower())
+        self.assertEqual(doc["metadata"]["component"]["name"], "my-app")
 
 
 class TestInventoryLicenseNeverUnknown(unittest.TestCase):

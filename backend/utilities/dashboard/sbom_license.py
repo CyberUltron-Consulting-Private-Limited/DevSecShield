@@ -119,6 +119,8 @@ _PACKAGE_SPDX: dict[str, str] = {
     "sqlalchemy": "MIT",
     "alembic": "MIT",
     "pytest": "MIT",
+    "pytest-httpbin": "MIT",
+    "sphinx": "BSD-2-Clause",
     "black": "MIT",
     "redis": "MIT",
     "celery": "BSD-3-Clause",
@@ -149,6 +151,17 @@ _PACKAGE_SPDX: dict[str, str] = {
     "nacl": "Apache-2.0",
     "pynacl": "Apache-2.0",
     "blinker": "MIT",
+    "azure-core": "MIT",
+    "ecdsa": "MIT",
+    "nltk": "Apache-2.0",
+    "fschat": "Apache-2.0",
+    "aiohttp": "Apache-2.0",
+    "aiosignal": "Apache-2.0",
+    "axios": "MIT",
+    "python-multipart": "Apache-2.0",
+    "pyasn1": "BSD-2-Clause",
+    "next": "MIT",
+    "langsmith": "MIT",
 }
 
 _EXTRAS = re.compile(r"\[.*$")
