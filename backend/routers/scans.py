@@ -726,11 +726,9 @@ async def export_scan(
             if scan.scan_status not in ["success"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
             if scan.scan_data and "results" in scan.scan_data:
-                # BOM exports include RBI compliance appendix when present in scan_data.
-                if type in ("ai_bom", "cbom", "sbom_sca"):
-                    scan_data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-                else:
-                    scan_data = scan.scan_data["results"]
+                # Full scan_data so generators can unwrap results + duration_of_scan
+                # (and BOM compliance appendices when present).
+                scan_data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
             else:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
 
