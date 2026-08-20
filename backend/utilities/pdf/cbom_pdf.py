@@ -19,11 +19,14 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
     severity_color,
+    split_scan_payload,
 )
 
 IMPACT_TO_RISK: Dict[str, float] = {
@@ -48,11 +51,11 @@ def _quantum_label(quantum_safe: Any) -> str:
 
 def _normalize_results(scan_results: Union[list, dict]) -> List[dict]:
     """Accept either a list of findings or a dict that contains them."""
-    if isinstance(scan_results, list):
-        return scan_results
-    if isinstance(scan_results, dict):
-        if "results" in scan_results:
-            return scan_results["results"] or []
+    inner, _duration, _raw = split_scan_payload(scan_results)
+    if isinstance(inner, list):
+        return inner
+    if isinstance(inner, dict) and "results" in inner:
+        return inner["results"] or []
     return []
 
 
@@ -69,6 +72,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         output_path = f"cbom_scan_report_{timestamp}.pdf"
 
     vulnerabilities = _normalize_results(scan_results)
+    _inner, duration, raw = split_scan_payload(scan_results)
     total = len(vulnerabilities)
 
     by_impact: Dict[str, int] = {}
@@ -150,6 +154,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         styles=styles,
         extra_tables=extra_tables,
         project_name="CBOM Findings",
+        scan_time=format_scan_duration(duration),
         meta_chips=[
             ("Scan type", "CBOM"),
             ("Total findings", str(total)),
@@ -172,7 +177,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     for idx, v in enumerate(sorted_vulns, 1):
         title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
         impact = count_label(v.get("impact") or "Unknown")
-        location = str(v.get("location") or "—")
+        location = finding_location(v)
         catalog.append(
             [
                 str(idx),
@@ -204,7 +209,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             alg_type = str(v.get("algorithm_type") or "—")
             key_size = v.get("key_size")
             key_size_text = f"{key_size} bits" if key_size is not None else "—"
-            location = str(v.get("location") or "—")
+            location = finding_location(v)
             standards: List[List[str]] = []
             standards.extend(mapping_rows(v.get("owasp_top_10"), label="OWASP Top 10"))
             standards.extend(mapping_rows(v.get("compliance_controls"), label="Compliance"))
@@ -220,7 +225,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Key size", key_size_text),
                         ("Strength", strength.title()),
                         ("Quantum status", _quantum_label(v.get("quantum_safe"))),
-                        ("Location", location),
+                        ("Where it was found", location),
                     ],
                     description=str(v.get("description") or ""),
                     evidence=str(v.get("snippet") or ""),
@@ -230,7 +235,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 )
             )
 
-    append_bom_compliance_sections(story, scan_results, styles)
+    appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+    append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,

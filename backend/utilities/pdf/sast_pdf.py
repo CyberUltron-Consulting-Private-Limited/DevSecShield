@@ -20,21 +20,22 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
+    relative_scan_path,
+    split_scan_payload,
 )
 
 
 def get_relative_path(file_path: str) -> str:
     try:
-        repo_index = file_path.find("repo_")
-        if repo_index != -1:
-            return file_path[repo_index:]
-        return file_path
+        return relative_scan_path(file_path) or (file_path or "")
     except Exception:
-        return file_path
+        return file_path or ""
 
 
 def _is_agent_format(scan_results: Any) -> bool:
@@ -48,23 +49,6 @@ def _is_agent_format(scan_results: Any) -> bool:
     )
 
 
-def _owasp_compliance_entries(val: Any) -> List[Tuple[Any, Any]]:
-    if val is None:
-        return []
-    if isinstance(val, dict) and not isinstance(val, list):
-        return [(k, v) for k, v in val.items() if v is not None and str(v).strip()]
-    if isinstance(val, list):
-        out: List[Tuple[Any, Any]] = []
-        for item in val:
-            if isinstance(item, dict) and item:
-                for k, v in item.items():
-                    if v is not None and str(v).strip():
-                        out.append((k, v))
-                        break
-        return out
-    return []
-
-
 def _standards_rows(vuln: Dict[str, Any]) -> List[List[str]]:
     rows: List[List[str]] = []
     rows.extend(mapping_rows(vuln.get("owasp_top_10"), label="OWASP Top 10"))
@@ -73,7 +57,11 @@ def _standards_rows(vuln: Dict[str, Any]) -> List[List[str]]:
     return rows
 
 
-def _build_agent_pdf_story(story: List[Any], components: List[Dict[str, Any]]) -> None:
+def _build_agent_pdf_story(
+    story: List[Any],
+    components: List[Dict[str, Any]],
+    duration_seconds: Optional[float] = None,
+) -> None:
     styles = get_report_styles()
     flat_vulns: List[Tuple[str, Dict[str, Any]]] = []
     for comp in components:
@@ -97,11 +85,12 @@ def _build_agent_pdf_story(story: List[Any], components: List[Dict[str, Any]]) -
         if by_impact.get(imp):
             overview.append((f"{imp} severity issues", str(by_impact[imp])))
 
-    scan_time = "—"
-    for comp in components:
-        if isinstance(comp, dict) and comp.get("scan_duration"):
-            scan_time = str(comp["scan_duration"])
-            break
+    scan_time = format_scan_duration(duration_seconds)
+    if scan_time == "—":
+        for comp in components:
+            if isinstance(comp, dict) and comp.get("scan_duration"):
+                scan_time = str(comp["scan_duration"])
+                break
 
     append_executive_summary(
         story,
@@ -128,7 +117,9 @@ def _build_agent_pdf_story(story: List[Any], components: List[Dict[str, Any]]) -
     for idx, (comp_title, vuln) in enumerate(flat_vulns, 1):
         title = vuln.get("title") or "Untitled issue"
         impact = (vuln.get("impact") or "").strip() or "—"
-        location = (vuln.get("location") or comp_title or "—").strip() or "—"
+        location = finding_location(vuln)
+        if location == "—":
+            location = (comp_title or "—").strip() or "—"
         catalog.append(
             [
                 str(idx),
@@ -163,7 +154,7 @@ def _build_agent_pdf_story(story: List[Any], components: List[Dict[str, Any]]) -
                 severity=impact,
                 detail_rows=[
                     ("Severity", impact),
-                    ("Where it was found", (vuln.get("location") or "—").strip() or "—"),
+                    ("Where it was found", finding_location(vuln)),
                     ("Application area", comp_title),
                 ],
                 description=(vuln.get("description") or "").strip(),
@@ -175,7 +166,11 @@ def _build_agent_pdf_story(story: List[Any], components: List[Dict[str, Any]]) -
         )
 
 
-def _build_semgrep_pdf_story(story: List[Any], scan_results: Dict[str, Any]) -> None:
+def _build_semgrep_pdf_story(
+    story: List[Any],
+    scan_results: Dict[str, Any],
+    duration_seconds: Optional[float] = None,
+) -> None:
     styles = get_report_styles()
     version = scan_results.get("version", "Unknown")
     results = scan_results.get("results", []) or []
@@ -217,6 +212,7 @@ def _build_semgrep_pdf_story(story: List[Any], scan_results: Dict[str, Any]) -> 
         overview_rows=overview,
         severity_counts=by_severity,
         styles=styles,
+        scan_time=format_scan_duration(duration_seconds),
     )
     story.append(PageBreak())
 
@@ -337,11 +333,19 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
     # Dashboard-first layout (HTML sample style) — no classic title cover page
     story: List[Any] = []
 
-    if _is_agent_format(scan_results):
-        _build_agent_pdf_story(story, scan_results)
+    inner, duration, _raw = split_scan_payload(scan_results)
+    if _is_agent_format(inner):
+        _build_agent_pdf_story(story, inner, duration)
+    elif isinstance(scan_results, dict) and any(
+        key in scan_results for key in ("version", "paths", "errors")
+    ):
+        _build_semgrep_pdf_story(story, scan_results, duration)
+    elif isinstance(inner, list):
+        _build_semgrep_pdf_story(story, {"results": inner}, duration)
+    elif isinstance(inner, dict):
+        _build_semgrep_pdf_story(story, inner, duration)
     else:
-        payload = scan_results if isinstance(scan_results, dict) else {}
-        _build_semgrep_pdf_story(story, payload)
+        _build_semgrep_pdf_story(story, {}, duration)
 
     doc.build(
         story,

@@ -21,14 +21,28 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
+    relative_scan_path,
     severity_color,
+    split_scan_payload,
 )
 
 IMPACT_TO_RISK = {"critical": 9.0, "high": 7.0, "medium": 4.0, "low": 1.0}
+_INVENTORY_FIX_PLACEHOLDERS = {
+    "",
+    "n/a",
+    "n/a — inventory row",
+    "n/a - inventory row",
+}
+_INVENTORY_REMEDIATION = (
+    "No CVE recorded for this component. Track the package and upgrade "
+    "if a vulnerability is later identified."
+)
 
 
 def _impact_to_risk(impact: str) -> float:
@@ -39,6 +53,52 @@ def _impact_to_risk(impact: str) -> float:
 
 def get_severity_color(severity: str):
     return severity_color(severity)
+
+
+def _as_mapping(val: Any) -> Dict[str, Any]:
+    return val if isinstance(val, dict) else {}
+
+
+def _package_label(item: Dict[str, Any]) -> str:
+    dep = item.get("dependency")
+    if isinstance(dep, str) and dep.strip():
+        return dep.strip()
+    deps = item.get("dependencies") or []
+    if isinstance(deps, list) and deps:
+        first = deps[0]
+        if isinstance(first, str) and first.strip():
+            return first.strip()
+        if first:
+            return str(first)
+    return ""
+
+
+def _short_finding_title(item: Dict[str, Any]) -> str:
+    title = str(item.get("title") or "").strip() or "Untitled"
+    if "/" not in title and "\\" not in title:
+        return title
+    dep = _package_label(item)
+    pkg = dep.split("==")[0].split("@")[0] if dep else ""
+    if pkg:
+        return f"Inventory: {pkg}"
+    cleaned = relative_scan_path(title)
+    base = cleaned.rsplit("/", 1)[-1] if cleaned else "component"
+    return f"Lockfile: {base}"
+
+
+def _sbom_remediation(item: Dict[str, Any]) -> str:
+    suggested = str(item.get("suggested_fix") or "").strip()
+    license_val = str(item.get("license") or "").strip()
+    cves = item.get("cves") or {}
+    has_cves = isinstance(cves, dict) and bool(cves)
+    inventory_only = bool(item.get("inventory_only"))
+    is_placeholder = suggested.lower() in _INVENTORY_FIX_PLACEHOLDERS
+    if inventory_only or (is_placeholder and not has_cves):
+        text = _INVENTORY_REMEDIATION
+        if license_val:
+            text += f" License: {license_val}."
+        return text
+    return suggested
 
 
 def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, Any]]:
@@ -60,16 +120,29 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
         for item in scan_results:
             if not isinstance(item, dict):
                 continue
+            dependency = _package_label(item)
+            deps = item.get("dependencies") or []
+            if not isinstance(deps, list):
+                deps = [deps] if deps else []
+            if dependency and dependency not in deps:
+                deps = [dependency, *[d for d in deps if d != dependency]]
             out.append(
                 {
-                    "title": item.get("title") or "Untitled",
+                    "title": _short_finding_title({**item, "dependency": dependency}),
                     "description": item.get("description") or "",
                     "impact": item.get("impact") or "Unknown",
-                    "owasp_top_10": item.get("owasp_top_10") or {},
-                    "compliance_controls": item.get("compliance_controls") or {},
+                    "owasp_top_10": _as_mapping(item.get("owasp_top_10")),
+                    "compliance_controls": _as_mapping(item.get("compliance_controls")),
                     "suggested_fix": item.get("suggested_fix") or "",
-                    "dependencies": item.get("dependencies") or [],
-                    "cves": item.get("cves") or {},
+                    "dependency": dependency,
+                    "dependencies": deps,
+                    "cves": _as_mapping(item.get("cves")),
+                    "location": item.get("location"),
+                    "snippet": item.get("snippet") or "",
+                    "purl": item.get("purl") or "",
+                    "license": item.get("license") or "",
+                    "inventory_only": bool(item.get("inventory_only")),
+                    "_raw": item,
                 }
             )
         return out
@@ -84,24 +157,29 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
         suggested_fix = f"Fix status: {fix_state}"
         if fix_versions:
             suggested_fix += f". Fixed in: {', '.join(fix_versions[:3])}"
-        dependencies = []
         name = artifact.get("name", "")
         version = artifact.get("version", "")
-        if name:
-            dependencies.append(f"{name}@{version}")
+        dependency = f"{name}@{version}" if name else ""
         cves = vuln.get("cves", {}) or {}
         if not isinstance(cves, dict):
-            cves = {k: (v if isinstance(v, str) else str(v)) for k, v in (cves or {}).items()} if cves else {}
+            cves = {}
         out.append(
             {
                 "title": vuln.get("id", "Unknown"),
                 "description": vuln.get("description", "No description available"),
                 "impact": vuln.get("severity", "UNKNOWN"),
-                "owasp_top_10": vuln.get("owasp_top_10") or {},
-                "compliance_controls": vuln.get("compliance_controls") or {},
+                "owasp_top_10": _as_mapping(vuln.get("owasp_top_10")),
+                "compliance_controls": _as_mapping(vuln.get("compliance_controls")),
                 "suggested_fix": suggested_fix,
-                "dependencies": dependencies,
+                "dependency": dependency,
+                "dependencies": [dependency] if dependency else [],
                 "cves": cves,
+                "location": artifact.get("locations") or artifact.get("location"),
+                "snippet": "",
+                "purl": artifact.get("purl") or "",
+                "license": artifact.get("licenses") or artifact.get("license") or "",
+                "inventory_only": False,
+                "_raw": match,
             }
         )
     return out
@@ -112,7 +190,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"sbom_sca_scan_report_{timestamp}.pdf"
 
-    vulnerabilities = _normalize_sbom_results(scan_results)
+    inner, duration, raw = split_scan_payload(scan_results)
+    vulnerabilities = _normalize_sbom_results(inner)
     total = len(vulnerabilities)
     by_severity: Dict[str, int] = {}
     unique_packages: set = set()
@@ -123,15 +202,18 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         impact = count_label(v.get("impact") or "Unknown")
         by_severity[impact] = by_severity.get(impact, 0) + 1
         risk_sum += _impact_to_risk(impact)
-        for dep in v.get("dependencies") or []:
-            if dep:
-                unique_packages.add(dep if isinstance(dep, str) else str(dep))
+        dep = v.get("dependency") or ""
+        if dep:
+            unique_packages.add(dep)
         suggested = (v.get("suggested_fix") or "").lower()
-        if "upgrade" in suggested or "fixed" in suggested or "update" in suggested:
+        if suggested not in _INVENTORY_FIX_PLACEHOLDERS and (
+            "upgrade" in suggested or "fixed" in suggested or "update" in suggested
+        ):
             fixable_count += 1
 
     avg_risk = risk_sum / total if total else 0.0
     styles = get_report_styles()
+    scan_time = format_scan_duration(duration)
 
     doc = SimpleDocTemplate(
         output_path,
@@ -158,7 +240,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         severity_counts=by_severity,
         styles=styles,
         project_name="SBOM / SCA Dependencies",
-        scan_time="—",
+        scan_time=scan_time,
         meta_chips=[
             ("Scan type", "SBOM / SCA"),
             ("Packages affected", str(len(unique_packages))),
@@ -172,10 +254,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     for idx, v in enumerate(vulnerabilities, 1):
         title = v.get("title") or "Untitled"
         impact = (v.get("impact") or "Unknown").strip()
-        deps = v.get("dependencies") or []
-        location = deps[0] if deps else "—"
-        if not isinstance(location, str):
-            location = str(location)
+        location = finding_location(v.get("_raw") or v)
         catalog.append(
             [
                 str(idx),
@@ -190,7 +269,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     story.append(Paragraph("Detailed Findings", styles["title"]))
     story.append(
         Paragraph(
-            "Each card shows affected package(s), description, and remediation. Package and CVE values use monospace.",
+            "Each card shows where the package was found, description, and remediation. "
+            "Package and CVE values use monospace.",
             styles["muted"],
         )
     )
@@ -202,15 +282,19 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         for idx, v in enumerate(vulnerabilities, 1):
             title = v.get("title") or "Untitled"
             impact = (v.get("impact") or "Unknown").strip()
-            dependencies = v.get("dependencies") or []
-            deps_str = "; ".join((d if isinstance(d, str) else str(d)) for d in dependencies[:10])
-            if len(dependencies) > 10:
-                deps_str += f" (+{len(dependencies) - 10} more)"
-
-            detail_rows = [("Severity", impact)]
-            if deps_str:
-                detail_rows.append(("Affected package(s)", deps_str))
+            loc = finding_location(v.get("_raw") or v)
+            dependency = v.get("dependency") or ""
+            purl = str(v.get("purl") or "").strip()
+            license_val = str(v.get("license") or "").strip()
             cves = v.get("cves") or {}
+
+            detail_rows = [("Severity", impact), ("Where it was found", loc)]
+            if dependency:
+                detail_rows.append(("Affected package", dependency))
+            if purl:
+                detail_rows.append(("PURL", purl))
+            if license_val:
+                detail_rows.append(("License", license_val if isinstance(license_val, str) else str(license_val)))
             if isinstance(cves, dict) and cves:
                 detail_rows.append(("CVE IDs", ", ".join(list(cves.keys())[:8])))
 
@@ -226,14 +310,15 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                     severity=impact,
                     detail_rows=detail_rows,
                     description=v.get("description") or "",
-                    evidence="",
-                    recommended_fix=v.get("suggested_fix") or "",
+                    evidence=str(v.get("snippet") or ""),
+                    recommended_fix=_sbom_remediation(v),
                     standards_rows=standards or None,
                     styles=styles,
                 )
             )
 
-    append_bom_compliance_sections(story, scan_results, styles)
+    appendix_payload = raw if raw else (scan_results if isinstance(scan_results, dict) else {})
+    append_bom_compliance_sections(story, appendix_payload, styles)
 
     doc.build(
         story,
