@@ -335,6 +335,13 @@ def split_scan_payload(data: Any) -> Tuple[Any, Optional[float], Dict[str, Any]]
 
     Returns ``(inner, duration_seconds, raw_dict)``. A bare list is returned as
     inner with no duration so existing list-only callers keep working.
+
+    Export passes the full ``scan_data`` dict so duration / BOM compliance
+    appendices survive, but PDF generators never dump that dict wholesale —
+    they only render allowlisted finding fields (title, severity, location,
+    description, evidence, remediation, OWASP/compliance mappings). Keys such
+    as ``metadata``, raw BOM JSON blobs, and other non-finding payloads must
+    not appear as free-form PDF text.
     """
     if isinstance(data, list):
         return data, None, {}
@@ -1652,22 +1659,37 @@ def append_findings_catalog(
                 cells[3] = Paragraph(escape_html(str(loc)), styles["mono_cell"])
         normalized.append(cells)
 
-    table = styled_data_table(
-        ["#", "Severity", "Finding", "Location"],
-        normalized,
-        styles=styles,
-        col_widths=col_widths or [0.35 * inch, 0.85 * inch, 3.55 * inch, 2.25 * inch],
-        severity_col=1,
-    )
-    # strip outer box from table — panel provides it
-    table.setStyle(
-        TableStyle(
-            [
-                ("BOX", (0, 0), (-1, -1), 0, COLOR_WHITE),
-            ]
+    # Chunk so a single catalog panel never exceeds one page height
+    # (ReportLab LayoutError when a wrapped table is taller than the frame).
+    chunk_size = 18
+    widths = col_widths or [0.35 * inch, 0.85 * inch, 3.55 * inch, 2.25 * inch]
+    for offset in range(0, len(normalized), chunk_size):
+        chunk = normalized[offset : offset + chunk_size]
+        end = offset + len(chunk)
+        if offset == 0:
+            title = panel_title
+            meta = f"{len(normalized)} issues"
+        else:
+            title = f"{panel_title} (cont.)"
+            meta = f"{offset + 1}–{end} of {len(normalized)}"
+        table = styled_data_table(
+            ["#", "Severity", "Finding", "Location"],
+            chunk,
+            styles=styles,
+            col_widths=widths,
+            severity_col=1,
         )
-    )
-    story.append(panel_wrap(panel_title, f"{len(normalized)} issues", table, styles=styles))
+        # strip outer box from table — panel provides it
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0, COLOR_WHITE),
+                ]
+            )
+        )
+        story.append(panel_wrap(title, meta, table, styles=styles))
+        if end < len(normalized):
+            story.append(Spacer(1, 0.08 * inch))
 
 
 def build_finding_section(
