@@ -442,3 +442,83 @@ def test_worker_persist_pdf_fields(scan_type, tmp_path):
         assert "repo_99_xyz" not in haystack
     if scan_type == "sbom_sca":
         assert "inventory row" not in haystack.lower()
+
+
+def test_full_scan_data_does_not_leak_non_finding_secrets(tmp_path):
+    """Passing full scan_data must not dump metadata / secret side-channels into PDF text."""
+    secret_markers = (
+        "AKIA_SHOULD_NOT_APPEAR_IN_PDF",
+        "supersecret_password_xyz",
+        "LEAK_MARKER_SHOULD_NOT_APPEAR",
+        "BEGIN RSA PRIVATE KEY",
+    )
+    payload = {
+        "duration_of_scan": 12,
+        "metadata": {
+            "aws_secret_access_key": secret_markers[0],
+            "password": secret_markers[1],
+            "debug_blob": secret_markers[2],
+        },
+        "cbom_json": {"raw": secret_markers[3]},
+        "internal_debug_dump": secret_markers[2],
+        "results": [
+            {
+                "logical_component_title": "payments-api",
+                "vulnerabilities": [
+                    {
+                        "title": "SQL injection",
+                        "impact": "High",
+                        "description": "Unparameterized query",
+                        "location": "app.py:42",
+                        "owasp_top_10": {"A03:2021": "Injection"},
+                        "suggested_fix": "Use parameterized queries",
+                    }
+                ],
+            }
+        ],
+    }
+    out = tmp_path / "sast_no_secret_leak.pdf"
+    generate_pdf_for_type("sast", payload, str(out))
+    _assert_valid_pdf(str(out))
+    haystack = _pdf_haystack(str(out))
+    assert "SQL injection" in haystack
+    assert "A03:2021" in haystack
+    for marker in secret_markers:
+        assert marker not in haystack, f"leaked {marker!r} into PDF"
+
+
+def test_large_sast_payload_completes(tmp_path):
+    """Regression guard: a dense findings list must still produce a valid PDF."""
+    vulns = [
+        {
+            "title": f"Finding {i}",
+            "impact": ("Critical", "High", "Medium", "Low")[i % 4],
+            "description": f"Synthetic finding body {i}",
+            "location": f"src/module_{i % 20}.py:{10 + i}",
+            "owasp_top_10": {"A03:2021": "Injection"} if i % 3 == 0 else {},
+            "suggested_fix": f"Remediate finding {i}",
+        }
+        for i in range(120)
+    ]
+    payload = {
+        "duration_of_scan": 90,
+        "results": [{"logical_component_title": "payments-api", "vulnerabilities": vulns}],
+    }
+    out = tmp_path / "sast_large.pdf"
+    generate_pdf_for_type("sast", payload, str(out))
+    _assert_valid_pdf(str(out))
+    haystack = _pdf_haystack(str(out))
+    assert "Finding 0" in haystack
+    assert "Finding 119" in haystack
+    assert "payments-api" in haystack
+
+
+def test_missing_logo_still_builds_all_scan_types(tmp_path, monkeypatch):
+    """Every generator must keep working when the Zero Shield logo file is missing."""
+    from backend.utilities.pdf import report_branding as branding
+
+    monkeypatch.setattr(branding, "logo_path", lambda: str(tmp_path / "missing-logo.png"))
+    for scan_type in _SCAN_TYPES:
+        out = tmp_path / f"{scan_type}_nologo.pdf"
+        generate_pdf_for_type(scan_type, _typical_payload(scan_type), str(out))
+        _assert_valid_pdf(str(out))

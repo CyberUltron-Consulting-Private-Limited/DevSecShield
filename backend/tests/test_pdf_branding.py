@@ -185,3 +185,15 @@ def test_split_scan_payload_unwraps_results_and_duration():
     assert listed == [{"title": "b"}]
     assert listed_dur is None
     assert listed_raw == {}
+
+
+def test_missing_logo_asset_is_skipped_without_raising(tmp_path, monkeypatch):
+    """Branding chrome must degrade gracefully when the logo file is absent."""
+    from reportlab.pdfgen import canvas as rl_canvas
+    from backend.utilities.pdf import report_branding as branding
+
+    missing = tmp_path / "does-not-exist.png"
+    monkeypatch.setattr(branding, "logo_path", lambda: str(missing))
+    c = rl_canvas.Canvas(str(tmp_path / "nologo.pdf"))
+    assert branding._draw_logo(c, 36, 750) == 0.0
+    c.save()
