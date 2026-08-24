@@ -13,9 +13,8 @@ load_dotenv()
 
 
 def _database_url() -> str:
-    url = os.getenv("DATABASE_URL")
-    if url:
-        return url
+    # Prefer PG_* the same way backend.get_db does. A host-local DATABASE_URL in
+    # .env (localhost:4433 / RDS) will hang Alembic inside Docker.
     user = os.getenv("PG_USER")
     password = os.getenv("PG_USER_PASS")
     db = os.getenv("PG_DB")
@@ -26,6 +25,9 @@ def _database_url() -> str:
         return (
             f"postgresql://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{db}"
         )
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
     raise RuntimeError("DATABASE_URL or PG_USER/PG_USER_PASS/PG_DB must be set")
 
 
