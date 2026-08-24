@@ -1,5 +1,7 @@
 from logging.config import fileConfig
 import os
+from urllib.parse import quote_plus
+
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlmodel import SQLModel
@@ -9,13 +11,32 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv('DATABASE_URL')
+
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+    user = os.getenv("PG_USER")
+    password = os.getenv("PG_USER_PASS")
+    db = os.getenv("PG_DB")
+    is_docker = os.getenv("IS_DOCKER_CONTAINER", "False") == "True"
+    host = os.getenv("PG_HOST", "devsecshield-postgres" if is_docker else "localhost")
+    port = os.getenv("PG_PORT", "5432" if is_docker else "4433")
+    if user and password and db:
+        return (
+            f"postgresql://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{db}"
+        )
+    raise RuntimeError("DATABASE_URL or PG_USER/PG_USER_PASS/PG_DB must be set")
+
+
+DATABASE_URL = _database_url()
 
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL) # for production only ⚠️⭐
+# Alembic ConfigParser treats % as interpolation — escape passwords.
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 # config.set_main_option("sqlalchemy.url", "sqlite:///C:\\Users\\HP\\Desktop\\DevSecShield\\backend\\database.db") # for testing only ⚠️
 
 # Interpret the config file for Python logging.

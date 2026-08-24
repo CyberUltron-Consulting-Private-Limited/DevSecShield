@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build backend image
         run: |
-          docker build -f backend/Dockerfile -t ai-security/backend:ci .
+          docker build -f backend/Dockerfile -t ai-security/backend:ci backend
 
   build-gateway:
     runs-on: ubuntu-latest

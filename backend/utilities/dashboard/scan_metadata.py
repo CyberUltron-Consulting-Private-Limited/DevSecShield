@@ -135,6 +135,8 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         _scan_data = scan.scan_data or {}
         target_url = _meta.get("target_url") if _meta.get("target_url") else None
         auth = _meta.get("auth") if _meta.get("auth") else None
+        if isinstance(auth, dict):
+            auth = {k: v for k, v in auth.items() if k != "password"}
         scan_speed = _meta.get("scan_speed") if _meta.get("scan_speed") else None
         urls_included = _scan_data.get("metadata",{}).get("urls_included",[])
         urls_excluded = _scan_data.get("metadata",{}).get("urls_excluded",[])
@@ -145,6 +147,8 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "scan_speed": scan_speed,
             "urls_included": urls_included,
             "urls_excluded": urls_excluded,
+            "profile_id": _meta.get("profile_id"),
+            "trigger": _meta.get("trigger"),
         }
     
     elif scan_type == "cbom":

@@ -49,6 +49,8 @@ class Team(SQLModel,table=True):
     # scans that this team owns 
     scans : list["Scan"] = Relationship(back_populates="team")
 
+    dast_profiles : list["DastScanProfile"] = Relationship(back_populates="team")
+
 class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
     email : str
@@ -72,6 +74,8 @@ class User(SQLModel,table=True):
 
     # scans that this user owns 
     scans : list["Scan"] = Relationship(back_populates="owner_user")
+
+    dast_profiles : list["DastScanProfile"] = Relationship(back_populates="owner_user")
     
 
 # only the user who created the scan can run the scan or update the scan  or send messages to the scan 
@@ -100,6 +104,47 @@ class Scan(SQLModel,table=True):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class DastScanProfile(SQLModel, table=True):
+    """Saved DAST target + encrypted login for scheduled and Jenkins runs."""
+    __tablename__ = "dastscanprofile"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    owner_user_id: int = Field(foreign_key="user.id")
+    title: str = Field(default="DAST Profile")
+    enabled: bool = Field(default=True)
+    target_url: str
+    allowed_hosts: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    auth_encrypted: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    scan_speed: str = Field(default="medium")
+    max_urls: int = Field(default=100)
+    additional_urls_to_scan: list | None = Field(default=None, sa_column=Column(JSON))
+    exclude_url_patterns: list | None = Field(default=None, sa_column=Column(JSON))
+    include_url_patterns: list | None = Field(default=None, sa_column=Column(JSON))
+    schedule_kind: str = Field(default="off")
+    schedule_time: str | None = Field(default=None)
+    schedule_weekday: int | None = Field(default=None)
+    next_run_at: datetime.datetime | None = Field(default=None, sa_type=DateTime, index=True)
+    inflight_scan_id: int | None = Field(default=None)
+    last_scan_id: int | None = Field(default=None)
+    last_run_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    consent_ok: bool = Field(default=False)
+    created_at: datetime.datetime | None = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
+        sa_type=DateTime,
+    )
+    last_updated: datetime.datetime | None = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
+        sa_type=DateTime,
+    )
+
+    owner_user: "User" = Relationship(back_populates="dast_profiles")
+    team: "Team" = Relationship(back_populates="dast_profiles")
+
+    class Config:
+        arbitrary_types_allowed = True
+
 
 # ========================================= Guardrails Integration (DEPRECATED) =========================================
 # DEPRECATED: Guardrails product UI removed from user-facing frontend. Model retained for legacy APIs/workers.

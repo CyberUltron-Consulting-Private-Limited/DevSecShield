@@ -151,7 +151,11 @@ async def format_input_for_scan(
                 if not start_scan_payload.dast:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DAST context is required")
                 scan_kwargs["dast_dict_context"] = start_scan_payload.dast.model_dump()
-                console.print(f"DAST kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
+                console.print(
+                    f"DAST kwargs assembled target={start_scan_payload.dast.target_url} "
+                    f"max_urls={start_scan_payload.dast.max_urls} (auth redacted)",
+                    style="dim bright_cyan",
+                )
                 return scan_kwargs
             
             case "cbom":

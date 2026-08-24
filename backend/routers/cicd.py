@@ -12,9 +12,9 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import CicdLogs
-from backend.new_models import CicdIntegration , scan_types
+from backend.new_models import CicdIntegration , Scan, DastScanProfile, scan_types
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
-from backend.utilities.celery.celery_connection import get_celery_app
+from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
 from backend.utilities.cicd.auth import create_api_key, get_user_and_integration_id
 from backend.utilities.cicd.parser import get_vulns
 from backend.utilities.cicd.poll import poll_for_results
@@ -22,6 +22,10 @@ from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
     UpdateCicdIntegrationData,
 )
+from backend.utilities.dast.dispatch import run_dast_from_profile
+from backend.utilities.dast.schemas import CicdDastScanRequest
+from backend.utilities.dast.severity import dast_severity_counts
+from backend.utilities.dashboard.scan_metadata import get_scan_metadata
 from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_sast_dashboard_data, get_cicd_vuln_chart_data
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
@@ -40,6 +44,119 @@ limiter = RateLimiter(times=20, seconds=30)
 app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] 
 
 # ==================================== PUBLIC API ROUTES =============================================================
+# Register /cicd/dast/scan BEFORE /cicd/{type}/scan so "dast" is not swallowed by the zip poller.
+
+
+@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202)
+async def run_cicd_dast_scan(
+    body: CicdDastScanRequest,
+    user_and_integration: dict = Depends(get_user_and_integration_id),
+    dependencies=[Depends(limiter)],
+):
+    """Fire-and-forget DAST. Does not poll. Same team as the CI/CD API key."""
+    engine = get_db()
+    team_id = user_and_integration["team_id"]
+    user_id = user_and_integration["user_id"]
+    integration_id = user_and_integration["integration_id"]
+    with Session(engine) as session:
+        profile = session.exec(
+            select(DastScanProfile).where(DastScanProfile.id == body.profile_id)
+        ).first()
+        if profile is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DAST profile not found")
+        if profile.team_id != team_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="DAST profile is not on this CI/CD integration team")
+
+    result = run_dast_from_profile(
+        body.profile_id,
+        trigger="cicd",
+        engine=engine,
+        target_url_override=body.target_url,
+        owner_user_id=user_id,
+    )
+    if result.status == "skipped_in_flight":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.message)
+
+    cicd_log_id = None
+    try:
+        mongo_db = get_mongo_client_db()
+        insert = mongo_db["cicd_logs"].insert_one(
+            CicdLogs(
+                created_at=datetime.now(timezone.utc),
+                ci_cd_integration_id=str(integration_id),
+                task_id=result.task_id,
+                status="pending",
+                credits_consumed=result.credits,
+                scan_settings_metadata={
+                    "profile_id": body.profile_id,
+                    "scan_id": result.scan_id,
+                    "trigger": "cicd",
+                    "target_url": body.target_url,
+                },
+                results=None,
+                error=None,
+            )
+        )
+        cicd_log_id = str(insert.inserted_id) if insert and insert.inserted_id else None
+    except Exception as exc:
+        console.print(f"DAST cicd_logs insert skipped: {exc}", style="dim yellow")
+
+    return {
+        "scan_id": result.scan_id,
+        "task_id": result.task_id,
+        "status": result.status,
+        "cicd_log_id": cicd_log_id,
+        "credits": result.credits,
+    }
+
+
+@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate")
+async def get_cicd_dast_scan(
+    scan_id: int,
+    user_and_integration: dict = Depends(get_user_and_integration_id),
+    dependencies=[Depends(limiter)],
+):
+    engine = get_db()
+    team_id = user_and_integration["team_id"]
+    with Session(engine) as session:
+        scan = session.exec(
+            select(Scan).where(Scan.id == scan_id, Scan.team_id == team_id, Scan.scan_type == "dast")
+        ).first()
+        if scan is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DAST scan not found")
+        task_id = scan.task_id
+        scan_status = scan.scan_status
+        scan_data = scan.scan_data or {}
+
+    if scan_status in ("pending", "NOT_STARTED", "started") and task_id:
+        fetched_status, fetched_data, scan = get_status_and_update_db(
+            scan_id=scan_id,
+            task_id=task_id,
+            table=Scan,
+            engine=engine,
+        )
+        scan_status = fetched_status or scan_status
+        if fetched_data:
+            scan_data = fetched_data
+
+    meta = get_scan_metadata(scan_type="dast", scan=scan) if scan is not None else {}
+    counts = dast_severity_counts(scan_data if isinstance(scan_data, dict) else {})
+    results = scan_data.get("results") if isinstance(scan_data, dict) else []
+    summary = {
+        "finding_count": len(results) if isinstance(results, list) else 0,
+        "duration_of_scan": scan_data.get("duration_of_scan") if isinstance(scan_data, dict) else None,
+    }
+    gate_failed = (counts.get("high") or 0) + (counts.get("critical") or 0) > 0
+    return {
+        "scan_id": scan_id,
+        "status": (scan_status or "").lower(),
+        "severity_counts": counts,
+        "summary": summary,
+        "scan_metadata": meta,
+        "gate_failed": gate_failed,
+        "info": getattr(scan, "info", None) if scan is not None else None,
+    }
+
 
 @router.post("/cicd/{type}/scan",summary="Run a new cicd scan")
 async def run_cicd_scan(
@@ -61,6 +178,11 @@ async def run_cicd_scan(
     6. this route will poll the cicd_worker for the results and return them as a JSON response
     """
     try:
+        if type == "dast":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="DAST CI uses POST /cicd/dast/scan with JSON {profile_id}; do not upload a zip",
+            )
         # SECURITY: Early file size check before expensive operations
         MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
         
@@ -570,3 +692,4 @@ async def get_cicd_integration(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+

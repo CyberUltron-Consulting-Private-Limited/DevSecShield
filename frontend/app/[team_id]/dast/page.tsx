@@ -53,6 +53,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DastProfilesTab } from "@/components/dast/DastProfilesTab";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -694,6 +695,9 @@ export default function DASTPage() {
                 <TabsTrigger value="table" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                   Table
                 </TabsTrigger>
+                <TabsTrigger value="profiles" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                  Profiles
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="dashboard">
@@ -1003,6 +1007,10 @@ export default function DASTPage() {
                     <ScrollBar orientation="horizontal" />
                   </ScrollArea>
                 )}
+              </TabsContent>
+
+              <TabsContent value="profiles">
+                <DastProfilesTab />
               </TabsContent>
             </Tabs>
           )}

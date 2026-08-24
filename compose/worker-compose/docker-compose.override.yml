@@ -16,6 +16,10 @@ services:
     networks:
       - default
       - infra
+  dast_scheduler:
+    networks:
+      - default
+      - infra
 networks:
   infra:
     name: devsecshield-infra-services_default

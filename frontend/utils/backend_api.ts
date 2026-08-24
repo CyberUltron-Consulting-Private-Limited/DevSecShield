@@ -3640,6 +3640,115 @@ const reinitializeDASTScan = async (
     }
 }
 
+export interface DastProfileAuthPublic {
+    login_url?: string
+    xpath_of_username_field?: string
+    xpath_of_password_field?: string
+    username?: string
+    xpath_of_submit_button?: string
+}
+
+export interface DastScanProfile {
+    id: number
+    team_id: number
+    owner_user_id: number
+    title: string
+    enabled: boolean
+    target_url: string
+    allowed_hosts: string[]
+    auth: DastProfileAuthPublic
+    scan_speed: "fast" | "medium" | "slow"
+    max_urls: number
+    additional_urls_to_scan: string[] | null
+    exclude_url_patterns: string[] | null
+    include_url_patterns: string[] | null
+    schedule_kind: "off" | "daily" | "weekly"
+    schedule_time: string | null
+    schedule_weekday: number | null
+    next_run_at: string | null
+    inflight_scan_id: number | null
+    last_scan_id: number | null
+    last_run_at: string | null
+    consent_ok: boolean
+    created_at: string | null
+    last_updated: string | null
+}
+
+export interface DastProfileWrite {
+    title: string
+    target_url: string
+    auth: Omit<AuthRequirements, "password"> & { password?: string }
+    allowed_hosts?: string[] | null
+    scan_speed?: "fast" | "medium" | "slow"
+    max_urls?: number
+    additional_urls_to_scan?: string[] | null
+    exclude_url_patterns?: string[] | null
+    include_url_patterns?: string[] | null
+    schedule_kind?: "off" | "daily" | "weekly"
+    schedule_time?: string | null
+    schedule_weekday?: number | null
+    enabled?: boolean
+    consent_ok: boolean
+}
+
+const listDASTProfiles = async (team_id: number): Promise<DastScanProfile[]> => {
+    try {
+        const response = await api.get(`/${team_id}/dast/profiles`)
+        return response.data?.profiles ?? []
+    } catch (error) {
+        showErrorToast(error, "Error fetching DAST profiles")
+        throw error
+    }
+}
+
+const createDASTProfile = async (team_id: number, body: DastProfileWrite): Promise<DastScanProfile> => {
+    try {
+        const response = await api.post(`/${team_id}/dast/profiles`, body)
+        toast.success("DAST profile saved")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error creating DAST profile")
+        throw error
+    }
+}
+
+const updateDASTProfile = async (
+    team_id: number,
+    profile_id: number,
+    body: Partial<DastProfileWrite>
+): Promise<DastScanProfile> => {
+    try {
+        const response = await api.put(`/${team_id}/dast/profiles/${profile_id}`, body)
+        toast.success("DAST profile updated")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error updating DAST profile")
+        throw error
+    }
+}
+
+const deleteDASTProfile = async (team_id: number, profile_id: number) => {
+    try {
+        const response = await api.delete(`/${team_id}/dast/profiles/${profile_id}`)
+        toast.success("DAST profile deleted")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error deleting DAST profile")
+        throw error
+    }
+}
+
+const runDASTProfile = async (team_id: number, profile_id: number) => {
+    try {
+        const response = await api.post(`/${team_id}/dast/profiles/${profile_id}/run`)
+        toast.success("DAST scan started")
+        return response.data as { scan_id: number; task_id: string; status: string; credits?: number }
+    } catch (error) {
+        showErrorToast(error, "Error starting DAST profile")
+        throw error
+    }
+}
+
 export { 
     getDASTScans,
     getDASTScan,
@@ -3653,7 +3762,12 @@ export {
     getDASTConversationMessages,
     startDASTScan,
     getDASTExportResults,
-    reinitializeDASTScan
+    reinitializeDASTScan,
+    listDASTProfiles,
+    createDASTProfile,
+    updateDASTProfile,
+    deleteDASTProfile,
+    runDASTProfile
 }
 
 // -------------------------------------------------------------- CI/CD API Routes --------------------------------------------------------------

@@ -303,6 +303,54 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">DAST after deploy</CardTitle>
+          <CardDescription>
+            Trigger a saved DAST profile (no zip). Store the API key as Jenkins credentials ID{" "}
+            <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">CICD_API_KEY</code>
+            {" "}and set job env <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">DAST_PROFILE_ID</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="text-sm font-medium mb-2">Default: fire-and-forget</p>
+            <pre className="text-xs font-mono whitespace-pre-wrap rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">{`environment {
+    CICD_API_KEY = credentials('CICD_API_KEY')
+    DAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/dast/scan'
+}
+stage('DAST after Deploy') {
+    steps {
+        sh '''
+          curl -sS -X POST \\
+            -H "cicd-api-key: $CICD_API_KEY" \\
+            -H "Content-Type: application/json" \\
+            -d "{\\"profile_id\\": $DAST_PROFILE_ID}" \\
+            "$DAST_API_URL"
+        '''
+    }
+}`}</pre>
+          </div>
+          <div>
+            <p className="text-sm font-medium mb-2">Optional: wait-and-gate (fail on High/Critical)</p>
+            <pre className="text-xs font-mono whitespace-pre-wrap rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">{`timeout(time: 30, unit: 'MINUTES') {
+    waitUntil {
+        def body = readJSON(text: sh(script: '''
+          curl -sS -H "cicd-api-key: $CICD_API_KEY" \\
+            "$DAST_API_URL/$DAST_SCAN_ID"
+        ''', returnStdout: true).trim())
+        if (body.status == 'failure') { error('DAST scan failed') }
+        if (body.status == 'success' && body.gate_failed) { error('High/Critical DAST findings') }
+        return body.status == 'success'
+    }
+}`}</pre>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Full sample: <code className="font-mono">cicd_workflow_files/Jenkinsfile.dast</code>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

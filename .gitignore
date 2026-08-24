@@ -13,6 +13,9 @@ __pycache__/
 *.pyzwzwzwz
 node_modules/
 .venv/
+.skill-workspace/
+backend/_migrations/*
+!backend/_migrations/.gitkeep
 load_testing/
 # ruflo runtime (never commit)
 *.rvf

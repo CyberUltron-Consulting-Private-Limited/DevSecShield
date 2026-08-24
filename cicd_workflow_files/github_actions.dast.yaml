@@ -1,0 +1,28 @@
+name: DAST Check
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  dast-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start DAST (fire-and-forget)
+        env:
+          CICD_API_KEY: ${{ secrets.CICD_API_KEY }}
+          DAST_PROFILE_ID: ${{ secrets.DAST_PROFILE_ID }}
+          DAST_API_URL: https://devsecshieldapi.zeroshield.ai/cicd/dast/scan
+        run: |
+          RESPONSE=$(curl -sS -X POST \
+            -H "cicd-api-key: ${CICD_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"profile_id\": ${DAST_PROFILE_ID}}" \
+            "${DAST_API_URL}")
+          echo "$RESPONSE"
+          SCAN_ID=$(echo "$RESPONSE" | jq -r '.scan_id')
+          if [ -z "$SCAN_ID" ] || [ "$SCAN_ID" = "null" ]; then
+            echo "DAST dispatch did not return scan_id"
+            exit 1
+          fi
+          echo "scan_id=$SCAN_ID" >> "$GITHUB_OUTPUT"
+          echo "Started DAST scan $SCAN_ID (not waiting; enable wait-and-gate in Jenkinsfile.dast if needed)"

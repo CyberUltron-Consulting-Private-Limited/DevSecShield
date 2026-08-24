@@ -1,0 +1,74 @@
+pipeline {
+    agent any
+
+    environment {
+        CICD_API_KEY = credentials('CICD_API_KEY')
+        DAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/dast/scan'
+    }
+
+    stages {
+        stage('Deploy') {
+            steps {
+                echo 'Deploy the application to the staging URL this DAST profile targets.'
+            }
+        }
+
+        stage('DAST fire-and-forget') {
+            steps {
+                script {
+                    def profileId = env.DAST_PROFILE_ID
+                    if (!profileId?.trim()) {
+                        error('Set DAST_PROFILE_ID on the Jenkins job (saved DevSecShield DAST profile id).')
+                    }
+                    def payload = "{\"profile_id\": ${profileId}}"
+                    if (env.DAST_TARGET_URL?.trim()) {
+                        payload = "{\"profile_id\": ${profileId}, \"target_url\": \"${env.DAST_TARGET_URL}\"}"
+                    }
+                    def response = sh(script: """
+                        curl -sS -X POST \\
+                          -H "cicd-api-key: \$CICD_API_KEY" \\
+                          -H "Content-Type: application/json" \\
+                          -d '${payload}' \\
+                          "\$DAST_API_URL"
+                    """, returnStdout: true).trim()
+                    echo "DAST dispatch: ${response}"
+                    def jsonResponse = readJSON(text: response)
+                    if (!jsonResponse.scan_id) {
+                        error("DAST dispatch did not return scan_id: ${response}")
+                    }
+                    env.DAST_SCAN_ID = jsonResponse.scan_id.toString()
+                }
+            }
+        }
+
+        // Optional wait-and-gate: uncomment to fail the build on High/Critical.
+        // stage('DAST wait-and-gate') {
+        //     steps {
+        //         timeout(time: 30, unit: 'MINUTES') {
+        //             script {
+        //                 def terminal = false
+        //                 while (!terminal) {
+        //                     def statusJson = sh(script: '''
+        //                         curl -sS -H "cicd-api-key: $CICD_API_KEY" \
+        //                           "$DAST_API_URL/$DAST_SCAN_ID"
+        //                     ''', returnStdout: true).trim()
+        //                     def body = readJSON(text: statusJson)
+        //                     echo "DAST status=${body.status} gate_failed=${body.gate_failed}"
+        //                     if (body.status == 'success' || body.status == 'failure') {
+        //                         terminal = true
+        //                         if (body.status == 'failure') {
+        //                             error("DAST scan failed: ${body.info}")
+        //                         }
+        //                         if (body.gate_failed) {
+        //                             error('DAST gate failed: High/Critical findings present')
+        //                         }
+        //                     } else {
+        //                         sleep time: 20, unit: 'SECONDS'
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+    }
+}

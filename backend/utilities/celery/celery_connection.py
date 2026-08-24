@@ -182,6 +182,13 @@ def get_status_and_update_db(
             else:
                 scan.info = None # reset the info field
                 console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
+
+            if SCAN_STATUS in ("success", "failure"):
+                try:
+                    from backend.utilities.dast.dispatch import clear_inflight_for_scan
+                    clear_inflight_for_scan(session, scan_id)
+                except Exception as inflight_err:
+                    console.print(f"DAST inflight clear skipped for scan {scan_id}: {inflight_err}", style="dim yellow")
             
             session.add(scan)
             session.commit()

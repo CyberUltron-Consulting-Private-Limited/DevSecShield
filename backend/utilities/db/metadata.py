@@ -54,9 +54,11 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "probes": start_scan_payload.llm.probes,
             }
         case "dast":
+            auth = start_scan_payload.dast.auth.model_dump()
+            auth.pop("password", None)
             return {
                 "target_url": start_scan_payload.dast.target_url,
-                "auth": start_scan_payload.dast.auth.model_dump(),
+                "auth": auth,
                 "scan_speed": start_scan_payload.dast.scan_speed,
                 "max_urls": start_scan_payload.dast.max_urls,
                 "additional_urls_to_scan": start_scan_payload.dast.additional_urls_to_scan,

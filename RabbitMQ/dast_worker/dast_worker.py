@@ -10,7 +10,7 @@ from helpers.progress_writer import StateUpdateWriter
 from helpers.agent.main import DASTAgent
 from helpers.agent.context import StartDASTScanData
 
-console = Console()
+console = Console(markup=False)
 
 #====================================== Setting credentials to connect to broker ================================================================
 try:
@@ -32,15 +32,18 @@ try:
         raise Exception("RABBIT_ADMIN_USERNAME or RABBIT_ADMIN_PASSWORD not set")
     broker_url = f"amqp://{username}:{password}@{RABBITMQ_HOST}:{RABBITMQ_PORT}"
 
-    # mongo url
+    # mongo url — ignore a credential-less RABBIT_MONGO_CONNECTION_URL (common in local .env)
+    # because docker Mongo is started with --auth.
     mongo_url = os.getenv("RABBIT_MONGO_CONNECTION_URL")
-    if not mongo_url:
+    rest = (mongo_url or "").split("://", 1)[-1]
+    has_userinfo = "@" in rest and ":" in rest.split("@", 1)[0]
+    if not has_userinfo:
         mongo_username = os.getenv("MONGO_INITDB_ROOT_USERNAME")
         mongo_password = os.getenv("MONGO_INITDB_ROOT_PASSWORD")
         if mongo_username and mongo_password:
-            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/"
+            mongo_url = f"mongodb://{mongo_username}:{mongo_password}@{MONGO_HOST}:{MONGO_PORT}/?authSource=admin"
         else:
-            mongo_url = f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
+            mongo_url = mongo_url or f"mongodb://{MONGO_HOST}:{MONGO_PORT}/"
 
     console.print(f"Broker URL: {RABBITMQ_HOST}:{RABBITMQ_PORT}", style="bold green")
     console.print(f"Mongo URL: {MONGO_HOST}:{MONGO_PORT}", style="bold green")
@@ -58,8 +61,8 @@ try:
         RESULT_PERSISTENT=True,
         TASK_TRACK_STARTED=True,
         # SECURITY: Global task timeout defaults to prevent unbounded execution
-        task_time_limit=1800,          # Hard kill after 30 minutes (DAST is slower)
-        task_soft_time_limit=1500,     # SoftTimeLimitExceeded after 25 minutes
+        task_time_limit=43200,         # Hard kill after 12 hours (full authenticated DAST)
+        task_soft_time_limit=41400,    # SoftTimeLimitExceeded after 11.5 hours
         task_acks_late=True,           # Re-queue if worker dies
         task_reject_on_worker_lost=True,
     )
@@ -83,7 +86,11 @@ try:
             # STEP [ 1 ] : =========== Validate the context ======================
             dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
 
-            console.print(f"DAST context: {dast_context}",style="bold green")
+            console.print(
+                f"DAST context target={dast_context.target_url} "
+                f"max_urls={dast_context.max_urls} speed={dast_context.scan_speed} (auth redacted)",
+                style="bold green",
+            )
             
             progress_writer = StateUpdateWriter(self)
 
@@ -122,7 +129,11 @@ try:
             # STEP [ 1 ] : =========== Validate the context ======================
             dast_context = StartDASTScanData.model_validate_json(json.dumps(dast_dict_context))
 
-            console.print(f"DAST context: {dast_context}",style="bold green")
+            console.print(
+                f"DAST estimate context target={dast_context.target_url} "
+                f"max_urls={dast_context.max_urls} (auth redacted)",
+                style="bold green",
+            )
             
             dast_agent = DASTAgent(
                 dast_context=dast_context,
