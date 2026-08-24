@@ -14,7 +14,7 @@ from backend.new_models import DastScanProfile
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.dast.auth_crypto import decrypt_auth, encrypt_auth
 from backend.utilities.dast.dispatch import run_dast_from_profile
-from backend.utilities.dast.schedule import compute_next_run_at
+from backend.utilities.dast.schedule import compute_next_run_at, mirror_from_config, normalize_schedule_config
 from backend.utilities.dast.schemas import DastAuthWrite, DastProfileCreate, DastProfileUpdate
 from backend.utilities.dast.serialize import public_profile
 from backend.utilities.dast.ssrf import DastSsrfError, host_from_url
@@ -56,12 +56,30 @@ def _auth_from_write(auth: DastAuthWrite, existing: dict | None = None) -> dict:
     return encrypt_auth(payload)
 
 
-def _apply_schedule(profile: DastScanProfile) -> None:
-    profile.next_run_at = compute_next_run_at(
+def _config_from_body(schedule_kind, schedule_time, schedule_weekday, schedule_config) -> dict:
+    cfg = schedule_config.model_dump() if schedule_config is not None else {}
+    if schedule_kind and not cfg.get("kind"):
+        cfg["kind"] = schedule_kind
+    if schedule_time and not cfg.get("times"):
+        cfg["times"] = [schedule_time]
+    if schedule_weekday is not None and cfg.get("weekday") is None:
+        cfg["weekday"] = schedule_weekday
+    return normalize_schedule_config(schedule_kind, schedule_time, schedule_weekday, cfg)
+
+
+def _apply_schedule(profile: DastScanProfile, extra_config: dict | None = None) -> None:
+    cfg = normalize_schedule_config(
         profile.schedule_kind,
         profile.schedule_time,
         profile.schedule_weekday,
+        extra_config if extra_config is not None else profile.schedule_config,
     )
+    kind, time_s, weekday = mirror_from_config(cfg)
+    profile.schedule_config = cfg
+    profile.schedule_kind = kind
+    profile.schedule_time = time_s
+    profile.schedule_weekday = weekday
+    profile.next_run_at = compute_next_run_at(kind, time_s, weekday, config=cfg)
 
 
 def _default_hosts(target_url: str, allowed_hosts: list[str] | None) -> list[str]:
@@ -116,6 +134,12 @@ async def create_dast_profile(
         schedule_kind=body.schedule_kind,
         schedule_time=body.schedule_time,
         schedule_weekday=body.schedule_weekday,
+        schedule_config=_config_from_body(
+            body.schedule_kind,
+            body.schedule_time,
+            body.schedule_weekday,
+            body.schedule_config,
+        ),
         consent_ok=body.consent_ok,
         created_at=now,
         last_updated=now,
@@ -184,9 +208,18 @@ async def update_dast_profile(
         if "allowed_hosts" in data:
             profile.allowed_hosts = _default_hosts(profile.target_url, data["allowed_hosts"])
             data.pop("allowed_hosts")
+        extra_config = None
+        if "schedule_config" in data:
+            extra_config = _config_from_body(
+                data.get("schedule_kind", profile.schedule_kind),
+                data.get("schedule_time", profile.schedule_time),
+                data.get("schedule_weekday", profile.schedule_weekday),
+                body.schedule_config,
+            )
+            data.pop("schedule_config")
         for key, value in data.items():
             setattr(profile, key, value)
-        _apply_schedule(profile)
+        _apply_schedule(profile, extra_config)
         profile.last_updated = datetime.now(timezone.utc)
         session.add(profile)
         session.commit()

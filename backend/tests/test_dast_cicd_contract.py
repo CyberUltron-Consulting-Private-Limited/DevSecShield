@@ -71,13 +71,15 @@ def client(monkeypatch: pytest.MonkeyPatch):
         "backend.utilities.dast.ssrf._resolve_ips",
         lambda _host: ["23.22.30.252"],
     )
+    inserted: list = []
+
+    def _insert_one(doc):
+        inserted.append(doc)
+        return types.SimpleNamespace(inserted_id="log1")
+
     monkeypatch.setattr(
         "backend.routers.cicd.get_mongo_client_db",
-        lambda: {
-            "cicd_logs": types.SimpleNamespace(
-                insert_one=lambda *_a, **_k: types.SimpleNamespace(inserted_id="log1")
-            )
-        },
+        lambda: {"cicd_logs": types.SimpleNamespace(insert_one=_insert_one)},
     )
 
     with Session(eng) as session:
@@ -119,6 +121,7 @@ def client(monkeypatch: pytest.MonkeyPatch):
             "integration_id": integ.id,
             "profile_id": profile.id,
             "engine": eng,
+            "inserted": inserted,
         }
 
     def _auth():
@@ -159,6 +162,16 @@ def test_cicd_get_redacts_password(client) -> None:
     meta = blob.get("scan_metadata") or {}
     assert "password" not in (meta.get("auth") or {})
     assert "demo123" not in response.text
+
+
+def test_cicd_log_uses_int_integration_id(client) -> None:
+    http, ids = client
+    response = http.post("/cicd/dast/scan", json={"profile_id": ids["profile_id"]})
+    assert response.status_code in (200, 202)
+    assert ids["inserted"]
+    assert ids["inserted"][0]["ci_cd_integration_id"] == ids["integration_id"]
+    assert isinstance(ids["inserted"][0]["ci_cd_integration_id"], int)
+    assert ids["inserted"][0]["scan_settings_metadata"]["scan_type"] == "dast"
 
 
 def test_cicd_team_mismatch_is_403(client, monkeypatch: pytest.MonkeyPatch) -> None:

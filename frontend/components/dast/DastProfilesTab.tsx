@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Play, Plus, Trash2 } from "lucide-react";
+import { Loader2, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,31 @@ import {
   runDASTProfile,
   updateDASTProfile,
   type DastScanProfile,
+  type DastScheduleKind,
 } from "@/utils/backend_api";
+import { formatDateIst } from "@/utils/datetime";
+import { DastScheduleFields, type DastScheduleState } from "@/components/dast/DastScheduleFields";
+
+function onceAtToIso(local: string): string | null {
+  if (!local) return null;
+  const trimmed = local.length === 16 ? `${local}:00` : local;
+  return `${trimmed}+05:30`;
+}
+
+function onceAtFromIso(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return iso.replace("+05:30", "").replace("Z", "").slice(0, 16);
+}
+
+const EMPTY_SCHEDULE: DastScheduleState = {
+  kind: "off",
+  times: ["09:00"],
+  intervalHours: 4,
+  weekday: 0,
+  monthday: 1,
+  onceAt: "",
+  cron: "0 9 * * 1-5",
+};
 
 const EMPTY_FORM = {
   title: "Altoro testfire",
@@ -36,12 +60,23 @@ const EMPTY_FORM = {
   xpath_of_submit_button: "",
   scan_speed: "fast" as "fast" | "medium" | "slow",
   max_urls: 1,
-  schedule_kind: "off" as "off" | "daily" | "weekly",
-  schedule_time: "09:00",
-  schedule_weekday: 0,
+  schedule: EMPTY_SCHEDULE,
   enabled: true,
   consent_ok: false,
 };
+
+function scheduleFromProfile(profile: DastScanProfile): DastScheduleState {
+  const cfg = profile.schedule_config || {};
+  return {
+    kind: (cfg.kind || profile.schedule_kind || "off") as DastScheduleKind,
+    times: cfg.times?.length ? cfg.times : [profile.schedule_time || "09:00"],
+    intervalHours: cfg.interval_hours || 4,
+    weekday: cfg.weekday ?? profile.schedule_weekday ?? 0,
+    monthday: cfg.monthday || 1,
+    onceAt: onceAtFromIso(cfg.once_at),
+    cron: cfg.cron || "0 9 * * 1-5",
+  };
+}
 
 export function DastProfilesTab() {
   const params = useParams();
@@ -72,9 +107,7 @@ export function DastProfilesTab() {
       xpath_of_submit_button: profile.auth?.xpath_of_submit_button || "",
       scan_speed: profile.scan_speed,
       max_urls: profile.max_urls,
-      schedule_kind: profile.schedule_kind,
-      schedule_time: profile.schedule_time || "09:00",
-      schedule_weekday: profile.schedule_weekday ?? 0,
+      schedule: scheduleFromProfile(profile),
       enabled: profile.enabled,
       consent_ok: profile.consent_ok,
     });
@@ -99,25 +132,34 @@ export function DastProfilesTab() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const schedule = form.schedule;
       const body = {
         title: form.title,
         target_url: form.target_url,
         auth: authPayload,
         scan_speed: form.scan_speed,
         max_urls: Number(form.max_urls) || 1,
-        schedule_kind: form.schedule_kind,
-        schedule_time: form.schedule_kind === "off" ? null : form.schedule_time,
-        schedule_weekday: form.schedule_kind === "weekly" ? form.schedule_weekday : null,
+        schedule_kind: schedule.kind,
+        schedule_time: schedule.kind === "off" ? null : schedule.times[0] || "09:00",
+        schedule_weekday: schedule.kind === "weekly" ? schedule.weekday : null,
+        schedule_config: {
+          kind: schedule.kind,
+          times: schedule.times,
+          interval_hours: schedule.kind === "every_n_hours" ? schedule.intervalHours : null,
+          weekday: schedule.kind === "weekly" ? schedule.weekday : null,
+          monthday: schedule.kind === "monthly" ? schedule.monthday : null,
+          once_at: schedule.kind === "once" ? onceAtToIso(schedule.onceAt) : null,
+          cron: schedule.kind === "cron" ? schedule.cron : null,
+        },
         enabled: form.enabled,
         consent_ok: form.consent_ok,
       };
       if (editingId) {
-          const { password: _pw, ...authKeep } = authPayload;
-          const updateBody = {
-            ...body,
-            auth: form.password ? authPayload : authKeep,
-          };
-          return updateDASTProfile(teamId, editingId, updateBody);
+        const { password: _pw, ...authKeep } = authPayload;
+        return updateDASTProfile(teamId, editingId, {
+          ...body,
+          auth: form.password ? authPayload : authKeep,
+        });
       }
       return createDASTProfile(teamId, body);
     },
@@ -156,7 +198,7 @@ export function DastProfilesTab() {
         <CardHeader>
           <CardTitle>{editingId ? "Edit profile" : "New DAST profile"}</CardTitle>
           <CardDescription>
-            Save target, login, and schedule once. Password is write-only and never shown after save.
+            Save target, login, and schedule once. Times are IST. Password is write-only and never shown after save.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -207,9 +249,9 @@ export function DastProfilesTab() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fast">fast — 10 URLs, XSS+SQLi parallel</SelectItem>
-                  <SelectItem value="medium">medium — 10 URLs in parallel</SelectItem>
-                  <SelectItem value="slow">slow — sequential, full checks</SelectItem>
+                  <SelectItem value="fast">fast — 10 URLs, all checks parallel</SelectItem>
+                  <SelectItem value="medium">medium — 5 URLs, all checks parallel</SelectItem>
+                  <SelectItem value="slow">slow — 2 URLs, all checks parallel</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -217,56 +259,19 @@ export function DastProfilesTab() {
               <Label htmlFor="dast-profile-max-urls">Max URLs</Label>
               <Input id="dast-profile-max-urls" type="number" min={1} value={form.max_urls} onChange={(e) => set("max_urls", Number(e.target.value))} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Schedule</Label>
-              <Select value={form.schedule_kind} onValueChange={(v) => set("schedule_kind", v)}>
-                <SelectTrigger className="cursor-pointer">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="off">Off</SelectItem>
-                  <SelectItem value="daily">Daily (UTC)</SelectItem>
-                  <SelectItem value="weekly">Weekly (UTC)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {form.schedule_kind !== "off" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="dast-profile-time">Time (HH:MM UTC)</Label>
-                <Input id="dast-profile-time" value={form.schedule_time} onChange={(e) => set("schedule_time", e.target.value)} />
-              </div>
-            )}
-            {form.schedule_kind === "weekly" && (
-              <div className="space-y-1.5">
-                <Label>Weekday</Label>
-                <Select value={String(form.schedule_weekday)} onValueChange={(v) => set("schedule_weekday", Number(v))}>
-                  <SelectTrigger className="cursor-pointer">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Monday</SelectItem>
-                    <SelectItem value="1">Tuesday</SelectItem>
-                    <SelectItem value="2">Wednesday</SelectItem>
-                    <SelectItem value="3">Thursday</SelectItem>
-                    <SelectItem value="4">Friday</SelectItem>
-                    <SelectItem value="5">Saturday</SelectItem>
-                    <SelectItem value="6">Sunday</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <DastScheduleFields value={form.schedule} onChange={(schedule) => setForm((prev) => ({ ...prev, schedule }))} />
           </div>
           <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <Checkbox checked={form.consent_ok} onCheckedChange={(v) => set("consent_ok", Boolean(v))} />
-            I confirm this target is authorized for automated DAST (consent required).
+            <Checkbox checked={form.consent_ok} onCheckedChange={(v) => set("consent_ok", v === true)} />
+            I confirm this target is authorized for DAST
           </label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2">
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
               onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || !form.consent_ok || (!editingId && !form.password)}
+              disabled={saveMutation.isPending || !form.consent_ok}
             >
-              {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+              {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {editingId ? "Save changes" : "Save profile"}
             </Button>
             {editingId && (
@@ -281,7 +286,7 @@ export function DastProfilesTab() {
       <Card>
         <CardHeader>
           <CardTitle>Saved profiles</CardTitle>
-          <CardDescription>Run now creates a new scan. Overlapping runs are skipped.</CardDescription>
+          <CardDescription>Run now creates a new scan. Overlapping runs are skipped. Next run is shown in IST.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {query.isLoading ? (
@@ -298,7 +303,10 @@ export function DastProfilesTab() {
                     <p className="font-medium text-zinc-900 dark:text-white">{profile.title}</p>
                     <p className="text-xs text-zinc-500 break-all">{profile.target_url}</p>
                     <p className="text-xs text-zinc-500 mt-1">
-                      {profile.schedule_kind === "off" ? "Manual / Jenkins" : `${profile.schedule_kind} ${profile.schedule_time || ""} UTC`}
+                      {profile.schedule_kind === "off"
+                        ? "Manual / Jenkins"
+                        : `${profile.schedule_kind} ${(profile.schedule_config?.times || (profile.schedule_time ? [profile.schedule_time] : [])).join(", ")} IST`}
+                      {profile.next_run_at ? ` · next ${formatDateIst(profile.next_run_at)}` : ""}
                       {profile.last_scan_id ? ` · last scan #${profile.last_scan_id}` : ""}
                     </p>
                   </div>

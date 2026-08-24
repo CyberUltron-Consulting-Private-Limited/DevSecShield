@@ -34,9 +34,12 @@ _AUTH = {
 
 
 def test_compute_next_run_daily_rolls_forward() -> None:
+    from zoneinfo import ZoneInfo
+
     now = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
     nxt = compute_next_run_at("daily", "09:00", None, now=now)
-    assert nxt == datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc)
+    expected = datetime(2026, 8, 25, 9, 0, tzinfo=ZoneInfo("Asia/Kolkata")).astimezone(timezone.utc)
+    assert nxt == expected
 
 
 @pytest.fixture()
@@ -180,3 +183,58 @@ def test_beat_tick_dispatches_due_profile(api) -> None:
         if nxt.tzinfo is None:
             nxt = nxt.replace(tzinfo=timezone.utc)
         assert nxt > datetime.now(timezone.utc) - timedelta(hours=1)
+
+
+def test_create_profile_schedule_config_two_times_ist(api) -> None:
+    http, ids = api
+    created = http.post(
+        f"/{ids['team_id']}/dast/profiles",
+        json={
+            "title": "two-times",
+            "target_url": "https://demo.testfire.net/index.jsp",
+            "auth": _AUTH,
+            "scan_speed": "fast",
+            "max_urls": 1,
+            "consent_ok": True,
+            "schedule_kind": "daily",
+            "schedule_config": {"kind": "daily", "times": ["09:00", "21:00"]},
+        },
+        headers={"Authorization": "Bearer test"},
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["schedule_kind"] == "daily"
+    assert body["schedule_config"]["times"] == ["09:00", "21:00"]
+    assert body["next_run_at"]
+    assert "UTC" not in (body.get("schedule_config") or {})
+
+
+def test_beat_once_disables_after_fire(api) -> None:
+    http, ids = api
+    eng = ids["engine"]
+    past = datetime.now(timezone.utc) - timedelta(minutes=5)
+    with Session(eng) as session:
+        profile = DastScanProfile(
+            team_id=ids["team_id"],
+            owner_user_id=ids["user_id"],
+            title="once",
+            enabled=True,
+            target_url="https://demo.testfire.net/index.jsp",
+            allowed_hosts=["demo.testfire.net"],
+            auth_encrypted=__import__("backend.utilities.dast.auth_crypto", fromlist=["encrypt_auth"]).encrypt_auth(_AUTH),
+            scan_speed="fast",
+            max_urls=1,
+            consent_ok=True,
+            schedule_kind="once",
+            schedule_config={"kind": "once", "once_at": past.isoformat()},
+            next_run_at=past,
+        )
+        session.add(profile)
+        session.commit()
+        session.refresh(profile)
+        pid = profile.id
+    tick(engine=eng, now=datetime.now(timezone.utc))
+    with Session(eng) as session:
+        profile = session.get(DastScanProfile, pid)
+        assert profile.schedule_kind == "off"
+        assert profile.next_run_at is None

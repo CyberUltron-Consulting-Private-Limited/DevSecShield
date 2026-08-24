@@ -26,7 +26,13 @@ from backend.utilities.dast.dispatch import run_dast_from_profile
 from backend.utilities.dast.schemas import CicdDastScanRequest
 from backend.utilities.dast.severity import dast_severity_counts
 from backend.utilities.dashboard.scan_metadata import get_scan_metadata
-from backend.utilities.dashboard.cicd import get_cicd_list_dashboard_data, get_cicd_sast_dashboard_data, get_cicd_vuln_chart_data
+from backend.utilities.dashboard.cicd import (
+    cicd_integration_id_filter,
+    dast_results_for_chart,
+    get_cicd_list_dashboard_data,
+    get_cicd_sast_dashboard_data,
+    get_cicd_vuln_chart_data,
+)
 from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
@@ -83,11 +89,12 @@ async def run_cicd_dast_scan(
         insert = mongo_db["cicd_logs"].insert_one(
             CicdLogs(
                 created_at=datetime.now(timezone.utc),
-                ci_cd_integration_id=str(integration_id),
+                ci_cd_integration_id=integration_id,
                 task_id=result.task_id,
                 status="pending",
                 credits_consumed=result.credits,
                 scan_settings_metadata={
+                    "scan_type": "dast",
                     "profile_id": body.profile_id,
                     "scan_id": result.scan_id,
                     "trigger": "cicd",
@@ -459,7 +466,7 @@ async def delete_cicd_integration(
         
         # STEP [ 4 ] : ======================================== Delete the logs ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
-        cicd_logs_collection.delete_many({"ci_cd_integration_id": integration_id})
+        cicd_logs_collection.delete_many(cicd_integration_id_filter(integration_id))
         console.print(f"Cicd logs deleted successfully for integration {integration_id}", style="bold green")
 
         return {
@@ -602,7 +609,7 @@ async def get_cicd_integration(
         # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
         cicd_logs = cicd_logs_collection.find(
-            {"$and": [{"ci_cd_integration_id": integration_id}, {"status": {"$in": ["pending", "started" , "success"]}}]}
+            {"$and": [cicd_integration_id_filter(integration_id), {"status": {"$in": ["pending", "started" , "success"]}}]}
         ) # including success because sometimes the scan  might have comepleted quickly and we might need to get results after status is success            
     
         
@@ -611,6 +618,9 @@ async def get_cicd_integration(
         celery_app = get_celery_app()
         result , task_status = None, None
         for log in cicd_logs:
+            meta = log.get("scan_settings_metadata") or {}
+            if meta.get("scan_type") == "dast" or meta.get("trigger") == "cicd":
+                continue
 
             # update status if not success
             if log["status"] != "success":
@@ -642,28 +652,45 @@ async def get_cicd_integration(
         
         
         # STEP [ 6 ] : =============== Get ci cd mongo logs for integration ================================
-        logs = mongo_db["cicd_logs"].find({"ci_cd_integration_id": integration_id}).sort("created_at", -1).limit(limit).skip(offset)
+        logs = mongo_db["cicd_logs"].find(cicd_integration_id_filter(integration_id)).sort("created_at", -1).limit(limit).skip(offset)
         logs_data = []
         results_list = []
-        for log in logs:
-            dashboard_data = None
-            # SAST results may be list or dict with "results" key (DataSpecs.md); get_cicd_sast_dashboard_data accepts both
-            if log.get("results") and scan_type == "sast":
-                try:
-                    dashboard_data = get_cicd_sast_dashboard_data(log["results"])
-                except Exception:
-                    dashboard_data = None
-            logs_data.append({
-                "id": str(log["_id"]),
-                "created_at": log["created_at"],
-                "status": log["status"],
-                "results": log["results"],
-                "dashboard": dashboard_data,
-                "credits_consumed": round(float(log["credits_consumed"]), 2) if log["credits_consumed"] else None,
-                "error": log.get("error"),
-            })
-            if log["results"]:
-                results_list.append((log["results"],log["created_at"].date()))
+        with Session(engine) as session:
+            for log in logs:
+                dashboard_data = None
+                meta = log.get("scan_settings_metadata") or {}
+                scan_id = meta.get("scan_id")
+                is_dast = meta.get("scan_type") == "dast" or meta.get("trigger") == "cicd"
+                if is_dast and scan_id:
+                    scan = session.get(Scan, int(scan_id))
+                    if scan is not None:
+                        log["status"] = scan.scan_status
+                        chart_rows = dast_results_for_chart(scan.scan_data)
+                        if chart_rows:
+                            log["results"] = chart_rows
+                # SAST results may be list or dict with "results" key (DataSpecs.md); get_cicd_sast_dashboard_data accepts both
+                if log.get("results") and scan_type == "sast" and not is_dast:
+                    try:
+                        dashboard_data = get_cicd_sast_dashboard_data(log["results"])
+                    except Exception:
+                        dashboard_data = None
+                logs_data.append({
+                    "id": str(log["_id"]),
+                    "created_at": log["created_at"],
+                    "status": log["status"],
+                    "results": log["results"],
+                    "dashboard": dashboard_data,
+                    "credits_consumed": round(float(log["credits_consumed"]), 2) if log["credits_consumed"] else None,
+                    "error": log.get("error"),
+                    "scan_id": scan_id,
+                    "profile_id": meta.get("profile_id"),
+                    "trigger": meta.get("trigger"),
+                    "scan_kind": "dast" if is_dast else scan_type,
+                })
+                if log.get("results"):
+                    created = log["created_at"]
+                    created_date = created.date() if hasattr(created, "date") else created
+                    results_list.append((log["results"], created_date))
         
         # STEP [ 7 ] : ================= Return the integration and logs ================================
         if not integration.scan_settings  or integration.scan_settings == {} : 

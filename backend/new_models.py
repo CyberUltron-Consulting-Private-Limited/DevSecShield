@@ -125,6 +125,7 @@ class DastScanProfile(SQLModel, table=True):
     schedule_kind: str = Field(default="off")
     schedule_time: str | None = Field(default=None)
     schedule_weekday: int | None = Field(default=None)
+    schedule_config: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     next_run_at: datetime.datetime | None = Field(default=None, sa_type=DateTime, index=True)
     inflight_scan_id: int | None = Field(default=None)
     last_scan_id: int | None = Field(default=None)

@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from backend.get_db import get_db
 from backend.new_models import DastScanProfile
 from backend.utilities.dast.dispatch import DispatchResult, run_dast_from_profile
-from backend.utilities.dast.schedule import compute_next_run_at
+from backend.utilities.dast.schedule import compute_next_run_at, mirror_from_config, normalize_schedule_config
 
 console = Console()
 TICK_SECONDS = 60
@@ -34,6 +34,32 @@ def _due_profile_ids(engine, now: datetime) -> list[int]:
         return [int(row.id) for row in rows if row.id is not None]
 
 
+def _advance_schedule(profile: DastScanProfile, now: datetime) -> None:
+    cfg = normalize_schedule_config(
+        profile.schedule_kind,
+        profile.schedule_time,
+        profile.schedule_weekday,
+        profile.schedule_config,
+    )
+    if cfg.get("kind") == "once":
+        cfg["kind"] = "off"
+        kind, time_s, weekday = mirror_from_config(cfg)
+        profile.schedule_config = cfg
+        profile.schedule_kind = kind
+        profile.schedule_time = time_s
+        profile.schedule_weekday = weekday
+        profile.next_run_at = None
+        return
+    profile.next_run_at = compute_next_run_at(
+        profile.schedule_kind,
+        profile.schedule_time,
+        profile.schedule_weekday,
+        now=now,
+        config=cfg,
+    )
+    profile.schedule_config = cfg
+
+
 def tick(*, engine=None, now: datetime | None = None) -> list[DispatchResult]:
     engine = engine or get_db()
     now = now or datetime.now(timezone.utc)
@@ -54,12 +80,7 @@ def tick(*, engine=None, now: datetime | None = None) -> list[DispatchResult]:
             profile = session.get(DastScanProfile, profile_id)
             if profile is None:
                 continue
-            profile.next_run_at = compute_next_run_at(
-                profile.schedule_kind,
-                profile.schedule_time,
-                profile.schedule_weekday,
-                now=now,
-            )
+            _advance_schedule(profile, now)
             profile.last_updated = now
             session.add(profile)
             session.commit()

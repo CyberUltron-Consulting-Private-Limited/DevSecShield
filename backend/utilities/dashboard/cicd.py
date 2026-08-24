@@ -1,8 +1,23 @@
 import datetime
 from collections import defaultdict
 
-from backend.get_db import get_db , get_mongo_client_db
+from backend.get_db import get_db, get_mongo_client_db
+from backend.utilities.dast.severity import dast_severity_counts
 from rich.console import Console
+
+
+def cicd_integration_id_filter(integration_id: int) -> dict:
+    """Match both int (SAST) and str (legacy DAST) cicd_logs keys."""
+    return {"ci_cd_integration_id": {"$in": [integration_id, str(integration_id)]}}
+
+
+def dast_results_for_chart(scan_data: dict | None) -> list[dict]:
+    counts = dast_severity_counts(scan_data)
+    vulns: list[dict] = []
+    for label in ("Critical", "High", "Medium", "Low"):
+        vulns.extend([{"impact": label}] * int(counts.get(label.lower(), 0)))
+    return [{"vulnerabilities": vulns}] if vulns else []
+
 
 console = Console()
 
@@ -213,7 +228,9 @@ def get_cicd_list_dashboard_data(integration_ids : list[int]) -> dict:
 
         results_list = []
         for integration_id in integration_ids:
-            cicd_logs = cicd_logs_collection.find({"ci_cd_integration_id": integration_id, "status": {"$in": ["pending", "started" , "success"]}})
+            cicd_logs = cicd_logs_collection.find(
+                {**cicd_integration_id_filter(integration_id), "status": {"$in": ["pending", "started", "success"]}}
+            )
             for log in cicd_logs:
                 if not log["results"] or log["results"] is None or len(log["results"]) == 0:
                     continue

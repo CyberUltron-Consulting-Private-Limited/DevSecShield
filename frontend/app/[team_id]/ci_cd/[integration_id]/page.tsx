@@ -68,7 +68,7 @@ export default function CicdIntegrationDashboardPage() {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide" | "scan-settings" | "ticketing">("dashboard");
-  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo">("github-actions");
+  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo">("jenkins");
   const [logsPage, setLogsPage] = useState(1);
   const logsOffset = (logsPage - 1) * LOGS_PAGE_SIZE;
 
@@ -159,8 +159,12 @@ export default function CicdIntegrationDashboardPage() {
     return <Badge variant="outline">{status}</Badge>;
   };
 
-  const handleViewResults = (logId: string) => {
-    router.push(`/${team_id}/ci_cd/${integration_id}/sast/results?log_id=${logId}`);
+  const handleViewResults = (log: { id: string; scan_id?: number | null; scan_kind?: string | null }) => {
+    if (log.scan_kind === "dast" && log.scan_id) {
+      router.push(`/${team_id}/dast/${log.scan_id}/results`);
+      return;
+    }
+    router.push(`/${team_id}/ci_cd/${integration_id}/sast/results?log_id=${log.id}`);
   };
 
   const dashboardData: CicdIntegrationDashboard = query.data ?? {
@@ -551,6 +555,7 @@ export default function CicdIntegrationDashboardPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Scan ID</TableHead>
+                        <TableHead>Kind</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Credits</TableHead>
                         <TableHead>Error</TableHead>
@@ -562,7 +567,10 @@ export default function CicdIntegrationDashboardPage() {
                       {dashboardData.logs.map((log) => (
                         <TableRow key={log.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                           <TableCell className="font-mono text-sm">
-                            {log.id.toString().slice(-8)}
+                            {log.scan_id ? `#${log.scan_id}` : log.id.toString().slice(-8)}
+                          </TableCell>
+                          <TableCell className="uppercase text-xs text-zinc-500">
+                            {log.scan_kind || dashboardData.scan_type}
                           </TableCell>
                           <TableCell>
                             {getStatusBadge(log.status)}
@@ -584,7 +592,7 @@ export default function CicdIntegrationDashboardPage() {
                                 variant="outline"
                                 size="sm"
                                 className="cursor-pointer"
-                                onClick={() => handleViewResults(log.id)}
+                                onClick={() => handleViewResults(log)}
                               >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Results
@@ -737,7 +745,7 @@ export default function CicdIntegrationDashboardPage() {
               )}
 
               {activeSubTab === "jenkins" && (
-                <JenkinsGuide apiKey={dashboardData.api_key} />
+                <JenkinsGuide apiKey={dashboardData.api_key} teamId={Number(team_id)} />
               )}
 
               {activeSubTab === "bamboo" && (

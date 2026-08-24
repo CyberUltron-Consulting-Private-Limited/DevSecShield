@@ -3648,6 +3648,27 @@ export interface DastProfileAuthPublic {
     xpath_of_submit_button?: string
 }
 
+export type DastScheduleKind =
+    | "off"
+    | "hourly"
+    | "every_n_hours"
+    | "daily"
+    | "weekdays"
+    | "weekly"
+    | "monthly"
+    | "once"
+    | "cron"
+
+export interface DastScheduleConfig {
+    kind?: DastScheduleKind
+    times?: string[] | null
+    interval_hours?: number | null
+    weekday?: number | null
+    monthday?: number | null
+    once_at?: string | null
+    cron?: string | null
+}
+
 export interface DastScanProfile {
     id: number
     team_id: number
@@ -3662,9 +3683,10 @@ export interface DastScanProfile {
     additional_urls_to_scan: string[] | null
     exclude_url_patterns: string[] | null
     include_url_patterns: string[] | null
-    schedule_kind: "off" | "daily" | "weekly"
+    schedule_kind: DastScheduleKind
     schedule_time: string | null
     schedule_weekday: number | null
+    schedule_config?: DastScheduleConfig | null
     next_run_at: string | null
     inflight_scan_id: number | null
     last_scan_id: number | null
@@ -3684,9 +3706,10 @@ export interface DastProfileWrite {
     additional_urls_to_scan?: string[] | null
     exclude_url_patterns?: string[] | null
     include_url_patterns?: string[] | null
-    schedule_kind?: "off" | "daily" | "weekly"
+    schedule_kind?: DastScheduleKind
     schedule_time?: string | null
     schedule_weekday?: number | null
+    schedule_config?: DastScheduleConfig | null
     enabled?: boolean
     consent_ok: boolean
 }
@@ -3829,6 +3852,10 @@ export interface CicdLog {
     credits_consumed?: number | null
     /** Error message when scan failed; may be null */
     error?: string | null
+    scan_id?: number | null
+    profile_id?: number | null
+    trigger?: string | null
+    scan_kind?: string | null
 }
 
 /** Per-date counts by impact (Critical, High, Medium, Low). Keys are date strings YYYY-MM-DD. */

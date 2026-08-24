@@ -24,6 +24,7 @@ def public_profile(profile: DastScanProfile) -> dict:
         "schedule_kind": profile.schedule_kind,
         "schedule_time": profile.schedule_time,
         "schedule_weekday": profile.schedule_weekday,
+        "schedule_config": profile.schedule_config or {},
         "next_run_at": profile.next_run_at.isoformat() if profile.next_run_at else None,
         "inflight_scan_id": profile.inflight_scan_id,
         "last_scan_id": profile.last_scan_id,
