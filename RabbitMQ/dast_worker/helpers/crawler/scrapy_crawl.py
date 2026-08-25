@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 from rich.console import Console
 import logging
 
-console = Console()
+console = Console(markup=False)
 
 def get_child_urls(
     target_url: str,

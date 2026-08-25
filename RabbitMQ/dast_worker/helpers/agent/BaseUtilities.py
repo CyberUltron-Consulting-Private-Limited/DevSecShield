@@ -1,4 +1,5 @@
 
+import json
 import os
 from dotenv import load_dotenv
 from langsmith import traceable
@@ -7,13 +8,174 @@ from pydantic import BaseModel
 from helpers.agent.BaseSummaryManager import BaseSummaryManager
 from langchain_aws import ChatBedrock
 import base64
+from langchain_core.output_parsers import BaseOutputParser
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 
 load_dotenv()
-console = Console()
+console = Console(markup=False)
+
+
+class _JsonSchemaOutputParser(BaseOutputParser):
+    """Parse Bedrock text into a Pydantic model; fuzzy-fix enum mismatches (scan-worker parity)."""
+
+    output_model: type[BaseModel]
+
+    @staticmethod
+    def _best_enum_match(value: str, allowed: list[str]) -> str | None:
+        if value in allowed:
+            return value
+
+        def _norm(s: str) -> str:
+            return "".join(c.lower() for c in s if c.isalnum() or c == " ").strip()
+
+        norm_value = _norm(value)
+        for candidate in allowed:
+            if _norm(candidate) == norm_value:
+                return candidate
+        return None
+
+    def _get_enum_allowed_values(self, loc: tuple) -> list[str]:
+        try:
+            schema = self.output_model.model_json_schema()
+            defs = schema.get("$defs", {})
+            current = schema
+            for key in loc:
+                if isinstance(key, int):
+                    if "items" in current:
+                        current = current["items"]
+                        if "$ref" in current:
+                            ref_name = current["$ref"].split("/")[-1]
+                            current = defs.get(ref_name, current)
+                    continue
+                props = current.get("properties", {})
+                if key in props:
+                    current = props[key]
+                    if "$ref" in current:
+                        ref_name = current["$ref"].split("/")[-1]
+                        current = defs.get(ref_name, current)
+                    elif "items" in current:
+                        items = current["items"]
+                        if "$ref" in items:
+                            ref_name = items["$ref"].split("/")[-1]
+                            current = defs.get(ref_name, current)
+            if "enum" in current:
+                return [str(v) for v in current["enum"]]
+        except Exception:
+            pass
+        return []
+
+    def _fix_enum_errors(self, payload: dict, errors) -> dict:
+        import copy
+        from collections import defaultdict
+
+        fixed = copy.deepcopy(payload)
+        items_to_remove = []
+        for error in errors:
+            if error["type"] != "enum":
+                continue
+            loc = error["loc"]
+            allowed = self._get_enum_allowed_values(loc)
+            if not allowed:
+                ctx = error.get("ctx", {})
+                expected = ctx.get("expected", "")
+                for part in str(expected).split("'"):
+                    part = part.strip().rstrip(",").strip()
+                    if part and part not in (",", "or", ""):
+                        allowed.append(part)
+            if not allowed:
+                continue
+            obj = fixed
+            for key in loc[:-1]:
+                if isinstance(obj, list) and isinstance(key, int):
+                    obj = obj[key]
+                elif isinstance(obj, dict):
+                    obj = obj[key]
+            last_key = loc[-1]
+            if isinstance(obj, list) and isinstance(last_key, int):
+                bad_val = obj[last_key]
+            elif isinstance(obj, dict):
+                bad_val = obj[last_key]
+            else:
+                continue
+            match = self._best_enum_match(str(bad_val), allowed)
+            if match:
+                if isinstance(obj, list) and isinstance(last_key, int):
+                    obj[last_key] = match
+                elif isinstance(obj, dict):
+                    obj[last_key] = match
+            elif isinstance(obj, list) and isinstance(last_key, int):
+                items_to_remove.append((obj, last_key))
+        removals_by_parent: dict[int, list[int]] = defaultdict(list)
+        parent_refs = {}
+        for parent_obj, idx in items_to_remove:
+            obj_id = id(parent_obj)
+            removals_by_parent[obj_id].append(idx)
+            parent_refs[obj_id] = parent_obj
+        for obj_id, indices in removals_by_parent.items():
+            parent = parent_refs[obj_id]
+            for idx in sorted(indices, reverse=True):
+                if idx < len(parent):
+                    parent.pop(idx)
+        return fixed
+
+    def parse(self, text: str):
+        content = text if isinstance(text, str) else getattr(text, "content", str(text))
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict) and "text" in item:
+                    parts.append(str(item["text"]))
+            content = "\n".join(parts)
+        if "<reasoning>" in content and "</reasoning>" in content:
+            content = content.split("</reasoning>", 1)[-1].strip()
+        start = content.find("{")
+        end = content.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError("JSON object not found in model response")
+        payload = json.loads(content[start : end + 1])
+        try:
+            return self.output_model.model_validate(payload)
+        except Exception as first_err:
+            from pydantic import ValidationError
+            if isinstance(first_err, ValidationError):
+                fixed_payload = self._fix_enum_errors(payload, first_err.errors())
+                try:
+                    return self.output_model.model_validate(fixed_payload)
+                except Exception:
+                    pass
+            raise first_err
+
+
+def _build_structured_chain(base_llm, output_model: type[BaseModel]):
+    from langchain_core.runnables import RunnableLambda
+
+    schema_json = json.dumps(output_model.model_json_schema())
+
+    def _inject_schema(input_value):
+        if hasattr(input_value, "to_messages"):
+            messages = list(input_value.to_messages())
+        elif isinstance(input_value, list):
+            messages = list(input_value)
+        elif isinstance(input_value, str):
+            messages = [HumanMessage(content=input_value)]
+        else:
+            messages = [HumanMessage(content=str(input_value))]
+        messages.append(
+            SystemMessage(
+                content=(
+                    "You MUST return ONLY valid JSON (no extra text, no markdown fences) "
+                    f"strictly following this schema:\n{schema_json}"
+                )
+            )
+        )
+        return messages
+
+    return RunnableLambda(_inject_schema) | base_llm | _JsonSchemaOutputParser(output_model=output_model)
 
 
 class BaseUtilities:
@@ -55,7 +217,7 @@ class BaseUtilities:
                 raise ValueError("AWS credentials not found")
             
             if output_model:
-                llm = ChatBedrock(
+                base_llm = ChatBedrock(
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -63,8 +225,13 @@ class BaseUtilities:
                     aws_access_key_id=aws_access_key,
                     aws_secret_access_key=aws_secret_key,
                     model_kwargs={"top_p": 1},
-                ).with_structured_output(schema=output_model)
-                console.print("Structured Bedrock LLM fetched successfully", style="dim green")
+                )
+                try:
+                    llm = base_llm.with_structured_output(schema=output_model)
+                    console.print("Structured Bedrock LLM fetched successfully (native)", style="dim green")
+                except (ValueError, NotImplementedError):
+                    llm = _build_structured_chain(base_llm, output_model)
+                    console.print("Structured Bedrock LLM fetched successfully (JSON fallback)", style="dim yellow")
             else:
                 llm = ChatBedrock(
                     model=model,
@@ -141,7 +308,8 @@ class BaseUtilities:
             # STEP [ 2 ] ----------------> Validation and fallback prompts--------------------------------- --------------------------
             
             if not self.documents:
-                raise ValueError("Documents are not set")
+                console.print("No documents to summarize; returning empty vulnerability list", style="dim yellow")
+                return summary_output_model(vulnerabilities=[])
             if not refine_prompt_string or not map_prompt_string or not combine_prompt_string:
                 console.print(f"Combine prompt string or map prompt string is not set. Therfore using fallback prompts",style="dim yellow")
                 refine_prompt_string = "Refine the given summary to make it more coherent and detailed:\n\nThe existing summary that needs to be refined is  :\n {summary} \n\n\nHere is the new content that must be used to refine the existing summary : {text}"

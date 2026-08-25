@@ -3,7 +3,7 @@ from langchain_community.document_loaders import TextLoader
 from langchain_community.docstore.document import Document
 from rich.console import Console
 
-console = Console() 
+console = Console(markup=False) 
 
 
 def load_dir_to_documents(dir_path: str) -> list[Document]:

@@ -8,9 +8,8 @@ from helpers.checks.nuclei.run_nuclei import run_nuclei
 from helpers.agent.BaseUtilities import BaseUtilities
 from helpers.agent.BaseSummaryManager import BaseSummaryManager
 from langchain_core.documents import Document
-from helpers.agent.base_vuln import parse_vuln_list
 
-console = Console()
+console = Console(markup=False)
 
 
 class PageAnalysisCheck(BaseTest,BaseUtilities):
@@ -29,29 +28,31 @@ class PageAnalysisCheck(BaseTest,BaseUtilities):
         self.xpath_of_submit_button = auth.xpath_of_submit_button
 
 
-    def run(self)->list[DASTVulnerability]:
+    def run(self, documents: list[Document] | None = None, timeout_seconds: int = 90)->list[DASTVulnerability]:
         """
         Run the page analysis check
         """
         try :
+            result = documents
+            if result is None:
+                new_login_template = construct_login_template(self.auth)
+                new_navigate_template = construct_navigate_template(self.url)
+                new_template = new_login_template + new_navigate_template
+                temp_yaml_file = tempfile.NamedTemporaryFile(delete=False,suffix=".yaml")
+                with open(temp_yaml_file.name, "w+") as f:
+                    f.write(new_template)
+                result = run_nuclei(
+                    template_path=temp_yaml_file.name,
+                    url=self.url,
+                    timeout_seconds=timeout_seconds,
+                )
 
-            new_login_template = construct_login_template(self.auth)
-            new_navigate_template = construct_navigate_template(self.url)
-
-            new_template = new_login_template + new_navigate_template
-
-            # for testing 
-            with open("new_template.yaml", "w+") as f:
-                f.write(new_template)
-            
-            temp_yaml_file = tempfile.NamedTemporaryFile(delete=False,suffix=".yaml")
-
-            with open(temp_yaml_file.name, "w+") as f:
-                f.write(new_template)
-            
-
-            result : list[Document] = run_nuclei(template_path=temp_yaml_file.name, url=self.url)
-
+            if not result:
+                console.print(
+                    f"No page documents for {self.url}; page analysis has nothing to summarize",
+                    style="dim yellow",
+                )
+                return []
 
             self.documents = result
 
@@ -65,7 +66,7 @@ class PageAnalysisCheck(BaseTest,BaseUtilities):
 
         except Exception as e:
             console.print(f"Error while running page analysis check: {e}",style="bold red")
-            return None
+            return []
 
 
 

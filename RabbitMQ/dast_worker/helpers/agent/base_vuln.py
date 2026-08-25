@@ -11,7 +11,7 @@ from helpers.schema import (
     DASTConfidence,
     DASTVulnerabilityGroup
 )
-console = Console()
+console = Console(markup=False)
 
 
 

@@ -4,7 +4,7 @@ from helpers.schema import FinalVulnResponse , DASTVulnerability
 from langchain_core.documents import Document
 from helpers.agent.agent_graph import build_graph, OverallState
 from rich.console import Console
-console = Console()
+console = Console(markup=False)
 
 class XSSAgent(BaseUtilities):
 
@@ -13,11 +13,17 @@ class XSSAgent(BaseUtilities):
         target_url : str,
         page_content : str,
         auth_login_template : str,
+        exploit_retries : int = 2,
+        validation_retries : int = 2,
+        nuclei_timeout_seconds : int = 90,
         ):
 
 
         self.target_url = target_url
         self.page_content = page_content
+        self.exploit_retries = exploit_retries
+        self.validation_retries = validation_retries
+        self.nuclei_timeout_seconds = nuclei_timeout_seconds
         self.strategy_generation_system_prompt = """
         You are a cybersecurity expert who is tasked with testing a Web application for XSS vulnerabilities.
         You will be given the HTML page source of the website and you must generate a strategy for generating a **headless** nuclei template to test for XSS vulnerabilities in the web application .
@@ -77,13 +83,14 @@ class XSSAgent(BaseUtilities):
 
 
                 # states to be updated by nodes
-                "exploit_retries_left" : 2,
+                "exploit_retries_left" : self.exploit_retries,
                 "current_strategy" : None,
                 "current_template" : None, # YAML file content for the headless nuclei template
                 "template_valid" : False,
-                "validation_retries_left" : 2,
+                "validation_retries_left" : self.validation_retries,
                 "template_validation_reason" : None,
                 "vulnerabilities" : [],
+                "nuclei_timeout_seconds" : self.nuclei_timeout_seconds,
             }
             overall_state : OverallState = graph.invoke(initial_overall_state)
 

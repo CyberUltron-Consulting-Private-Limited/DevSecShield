@@ -10,7 +10,7 @@ from helpers.agent.BaseSummaryManager import BaseSummaryManager
 from langchain_core.documents import Document
 from helpers.agent.base_vuln import parse_vuln_list
 
-console = Console()
+console = Console(markup=False)
 
 
 class XSSCheck(BaseTest,BaseUtilities):

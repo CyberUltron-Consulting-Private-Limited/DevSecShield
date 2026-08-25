@@ -407,22 +407,25 @@ export function DASTOptionsSidebar({
                       value="fast"
                       className="text-white hover:bg-zinc-700 cursor-pointer"
                     >
-                      Fast
+                      Fast — 10 URLs in parallel, every check
                     </SelectItem>
                     <SelectItem
                       value="medium"
                       className="text-white hover:bg-zinc-700 cursor-pointer"
                     >
-                      Medium
+                      Medium — 5 URLs in parallel, every check
                     </SelectItem>
                     <SelectItem
                       value="slow"
                       className="text-white hover:bg-zinc-700 cursor-pointer"
                     >
-                      Slow
+                      Slow — 2 URLs in parallel, every check
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-zinc-500">
+                  All speeds run headers, Nuclei, page analysis, XSS, and SQLi. XSS and SQLi always run at the same time. Worker counts: slow 2, medium 5, fast 10.
+                </p>
               </div>
 
               <div className="space-y-2 w-full">

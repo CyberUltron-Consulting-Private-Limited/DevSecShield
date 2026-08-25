@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from helpers.checks.security_headers import SecurityHeadersCheck
 from helpers.crawler.crawler import Crawler
@@ -7,12 +8,13 @@ from helpers.agent.xss_agent import XSSAgent
 from helpers.agent.sqli_agent import SQLiAgent
 from helpers.checks.page_analysis import PageAnalysisCheck
 from helpers.progress_writer import StateUpdateWriter
-from typing import Literal
 from helpers.agent.context import StartDASTScanData, AuthRequirements
 import time
 from helpers.agent.base_vuln import parse_vuln_list
-from helpers.agent.utils import get_page_content , get_auth_login_template
-console = Console()
+from helpers.agent.scan_config import ScanRuntime
+from helpers.agent.utils import fetch_authenticated_page, get_auth_login_template
+from helpers.checks.nuclei.run_nuclei import set_nuclei_concurrency
+console = Console(markup=False)
 
 
 
@@ -33,18 +35,14 @@ class DASTAgent():
         self.include_url_patterns = dast_context.include_url_patterns
         self.exclude_url_patterns = dast_context.exclude_url_patterns
         self.auth_requirements : AuthRequirements = dast_context.auth
+        self.runtime = ScanRuntime.from_speed(dast_context.scan_speed)
+        self.interval_between_requests = self.runtime.interval_between_requests
+        set_nuclei_concurrency(self.runtime.nuclei_concurrency)
     
         self.vulnerabilities : list[dict] = []
         self.metadata = {}
         self.urls = []
         self.state_update_writer = state_update_writer
-
-        if dast_context.scan_speed == "fast":
-            self.interval_between_requests = 5 # seconds 
-        elif dast_context.scan_speed == "medium":
-            self.interval_between_requests = 10 # seconds 
-        elif dast_context.scan_speed == "slow":
-            self.interval_between_requests = 15 # seconds 
 
         if not self.auth_requirements.username or not self.auth_requirements.password or not self.auth_requirements.xpath_of_username_field or not self.auth_requirements.xpath_of_password_field or not self.auth_requirements.xpath_of_submit_button:
             raise Exception("Username, password, xpath of username field, xpath of password field, and xpath of submit button are required for authentication")
@@ -52,6 +50,134 @@ class DASTAgent():
         # checks 
         self.checks : list[BaseTest] = []
 
+
+    def _attach_url(self, parsed_vulnerabilities: list[dict], url: str) -> list[dict]:
+        for parsed_vulnerability in parsed_vulnerabilities:
+            parsed_vulnerability["url"] = url
+        return parsed_vulnerabilities
+
+    def _run_headers(self, url: str) -> list[dict]:
+        try:
+            security_headers_check = SecurityHeadersCheck(
+                url=url,
+                vulnerability_model=FinalVulnResponse,
+                timeout=self.runtime.http_timeout_seconds,
+            )
+            security_headers_output : type[FinalVulnResponse] = security_headers_check.run()
+            parsed = parse_vuln_list(security_headers_output.vulnerabilities)
+            console.print(f"Security headers check completed for {url}",style="bold green")
+            console.print(f"Number of vulnerabilities found: {len(parsed)}",style="bold green")
+            return self._attach_url(parsed, url)
+        except Exception as e:
+            console.print(f"Error in security headers check for {url}: {e}",style="dim red")
+            return []
+
+    def _fetch_page(self, url: str):
+        try:
+            return fetch_authenticated_page(
+                url,
+                self.auth_requirements,
+                timeout_seconds=self.runtime.nuclei_timeout_seconds,
+            )
+        except Exception as e:
+            console.print(f"Error fetching page content for {url}: {e}",style="dim red")
+            return "", []
+
+    def _run_page_analysis(self, url: str, documents) -> list[dict]:
+        try:
+            page_analysis_check = PageAnalysisCheck(url=url,auth=self.auth_requirements)
+            vulnerabilities : list[DASTVulnerability] = page_analysis_check.run(
+                documents=documents,
+                timeout_seconds=self.runtime.nuclei_timeout_seconds,
+            )
+            parsed = parse_vuln_list(vulnerabilities or [])
+            console.print(f"Page analysis check completed for {url}",style="bold green")
+            console.print(f"Number of vulnerabilities found: {len(parsed)}",style="bold green")
+            return self._attach_url(parsed, url)
+        except Exception as e:
+            console.print(f"Error in page analysis check for {url}: {e}",style="dim red")
+            return []
+
+    def _run_xss(self, url: str, page_content: str, auth_login_template: str) -> list[dict]:
+        try:
+            if page_content is None:
+                raise Exception("page content unavailable")
+            xss_agent = XSSAgent(
+                target_url=url,
+                page_content=page_content,
+                auth_login_template=auth_login_template,
+                exploit_retries=self.runtime.exploit_retries,
+                validation_retries=self.runtime.validation_retries,
+                nuclei_timeout_seconds=self.runtime.nuclei_timeout_seconds,
+            )
+            vulnerabilities : list[DASTVulnerability] = xss_agent.run_xss_agent_graph()
+            parsed = parse_vuln_list(vulnerabilities)
+            console.print(f"XSS check completed for {url}",style="bold green")
+            console.print(f"Number of vulnerabilities found: {len(parsed)}",style="bold green")
+            return self._attach_url(parsed, url)
+        except Exception as e:
+            console.print(f"Error in XSS check for {url}: {e}",style="dim red")
+            return []
+
+    def _run_sqli(self, url: str, page_content: str, auth_login_template: str) -> list[dict]:
+        try:
+            if page_content is None:
+                raise Exception("page content unavailable")
+            sqli_agent = SQLiAgent(
+                target_url=url,
+                page_content=page_content,
+                auth_login_template=auth_login_template,
+                exploit_retries=self.runtime.exploit_retries,
+                validation_retries=self.runtime.validation_retries,
+                nuclei_timeout_seconds=self.runtime.nuclei_timeout_seconds,
+            )
+            vulnerabilities : list[DASTVulnerability] = sqli_agent.run_sqli_agent_graph()
+            parsed = parse_vuln_list(vulnerabilities)
+            console.print(f"SQLi check completed for {url}",style="bold green")
+            console.print(f"Number of vulnerabilities found: {len(parsed)}",style="bold green")
+            return self._attach_url(parsed, url)
+        except Exception as e:
+            console.print(f"Error in SQLi check for {url}: {e}",style="dim red")
+            return []
+
+    def _report_progress(self, completed: int, total: int):
+        if not self.state_update_writer or total <= 0:
+            return
+        pct = 30 + int(69 * completed / total)
+        self.state_update_writer.write_progress_percentage(min(pct, 99))
+        self.state_update_writer.write_progress_out_of_total(completed, total)
+
+    def _scan_url(self, url: str) -> list[dict]:
+        started = time.time()
+        found: list[dict] = []
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            headers_future = pool.submit(self._run_headers, url)
+            page_future = pool.submit(self._fetch_page, url)
+            found.extend(headers_future.result())
+            page_content, documents = page_future.result()
+
+        auth_login_template = ""
+        try:
+            auth_login_template = get_auth_login_template(url, self.auth_requirements)
+        except Exception as e:
+            console.print(f"Error building auth template for {url}: {e}", style="dim red")
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            page_future = pool.submit(self._run_page_analysis, url, documents)
+            xss_future = pool.submit(self._run_xss, url, page_content or "", auth_login_template)
+            sqli_future = pool.submit(self._run_sqli, url, page_content or "", auth_login_template)
+            found.extend(page_future.result())
+            found.extend(xss_future.result())
+            found.extend(sqli_future.result())
+
+        if self.runtime.interval_between_requests:
+            time.sleep(self.runtime.interval_between_requests)
+        elapsed = time.time() - started
+        console.print(
+            f"URL completed in {elapsed:.1f}s findings={len(found)} url={url}",
+            style="bold yellow1",
+        )
+        return found
 
 
     def run(self):
@@ -77,8 +203,17 @@ class DASTAgent():
                 include_url_patterns=self.include_url_patterns,
                 exclude_url_patterns=self.exclude_url_patterns,
             )
-            urls = crawler.crawl()
+            urls = list(dict.fromkeys(crawler.crawl()))
             metadata = crawler.metadata
+            console.print(f"Scanning {len(urls)} unique URLs", style="bold yellow1")
+            console.print(
+                f"Scan runtime speed workers={self.runtime.url_workers} "
+                f"checks={self.runtime.check_workers} nuclei_slots={self.runtime.nuclei_concurrency} "
+                f"interval={self.runtime.interval_between_requests}s "
+                f"nuclei_timeout={self.runtime.nuclei_timeout_seconds}s "
+                f"all_stages=headers,nuclei,page,xss,sqli",
+                style="bold yellow1",
+            )
             if not len(urls)>0 : 
                 raise Exception("No Urls to crawl") 
 
@@ -91,72 +226,26 @@ class DASTAgent():
             
             # STEP [ 3 ] : ----------------------- Cycle through each url and run the checks ----------------------------------------
 
-            for url in self.urls:
-                try:
-                    # Step 1 : security headers Chech 
-                    security_headers_check = SecurityHeadersCheck(url=url,vulnerability_model=FinalVulnResponse)
-                    security_headers_output : type[FinalVulnResponse] = security_headers_check.run()
-                    vulnerabilities = security_headers_output.vulnerabilities
-                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                    for parsed_vulnerability in parsed_vulnerabilities:
-                        parsed_vulnerability["url"] = url
-                    self.vulnerabilities.extend(parsed_vulnerabilities)
-                    console.print(f"Security headers check completed for {url}",style="bold green")
-                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
-                except Exception as e:
-                    console.print(f"Error in security headers check for {url}: {e}",style="dim red")
-                    pass
-
-
-                try:
-                    # Step 2 : page analysis check 
-                    page_analysis_check = PageAnalysisCheck(url=url,auth=self.auth_requirements)
-                    vulnerabilities : list[DASTVulnerability] = page_analysis_check.run()
-                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                    for parsed_vulnerability in parsed_vulnerabilities:
-                        parsed_vulnerability["url"] = url
-                    self.vulnerabilities.extend(parsed_vulnerabilities)
-                    console.print(f"Page analysis check completed for {url}",style="bold green")
-                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
-                except Exception as e:
-                    console.print(f"Error in page analysis check for {url}: {e}",style="dim red")
-                    pass
-
-
-                try:
-                    # Step 3 : XSS check 
-                    page_content = get_page_content(url,self.auth_requirements)
-                    auth_login_template = get_auth_login_template(url,self.auth_requirements)
-                    xss_agent = XSSAgent(target_url=url,page_content=page_content,auth_login_template=auth_login_template)
-                    vulnerabilities : list[DASTVulnerability] = xss_agent.run_xss_agent_graph()
-                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                    for parsed_vulnerability in parsed_vulnerabilities:
-                        parsed_vulnerability["url"] = url
-                    self.vulnerabilities.extend(parsed_vulnerabilities)
-                    console.print(f"XSS check completed for {url}",style="bold green")
-                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
-                except Exception as e:
-                    console.print(f"Error in XSS check for {url}: {e}",style="dim red")
-                    pass
-
-                try:
-                    # Step 4 : SQLi check 
-                    sqli_agent = SQLiAgent(target_url=url,page_content=page_content,auth_login_template=auth_login_template)
-                    vulnerabilities : list[DASTVulnerability] = sqli_agent.run_sqli_agent_graph()
-                    parsed_vulnerabilities = parse_vuln_list(vulnerabilities)
-                    for parsed_vulnerability in parsed_vulnerabilities:
-                        parsed_vulnerability["url"] = url
-                    self.vulnerabilities.extend(parsed_vulnerabilities)
-                    console.print(f"SQLi check completed for {url}",style="bold green")
-                    console.print(f"Number of vulnerabilities found: {len(parsed_vulnerabilities)}",style="bold green")
-                except Exception as e:
-                    console.print(f"Error in SQLi check for {url}: {e}",style="dim red")
-                    pass
-
-                time.sleep(self.interval_between_requests) # sleep for the interval between requests  
+            workers = max(1, min(self.runtime.url_workers, len(self.urls)))
+            completed = 0
+            if workers == 1:
+                for url in self.urls:
+                    self.vulnerabilities.extend(self._scan_url(url))
+                    completed += 1
+                    self._report_progress(completed, len(self.urls))
+            else:
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = {pool.submit(self._scan_url, url): url for url in self.urls}
+                    for future in as_completed(futures):
+                        url = futures[future]
+                        try:
+                            self.vulnerabilities.extend(future.result())
+                        except Exception as e:
+                            console.print(f"Error scanning {url}: {e}", style="dim red")
+                        completed += 1
+                        self._report_progress(completed, len(self.urls))
 
             
-
             # STEP [ 4 ] : ----------------------- Return the Vulnerabilities ----------------------------------------
             if self.state_update_writer:
                 self.state_update_writer.write_progress_percentage(100)

@@ -3,7 +3,7 @@ from rich.console import Console
 # from helpers.crawler.scrapy_crawl import get_child_urls
 from helpers.crawler.native_crawler import crawl as get_child_urls
 
-console = Console()
+console = Console(markup=False)
 
 
 class Crawler():
@@ -63,9 +63,10 @@ class Crawler():
                 discovered_urls.extend(self.additional_urls_to_scan)
                 console.print(f"Added {len(self.additional_urls_to_scan)} additional URLs to scan", style="bold yellow1")
 
-            
-            self.final_urls_to_scan = discovered_urls
-            
+            # Preserve order while dropping duplicates from filters or additional URLs.
+            self.final_urls_to_scan = list(dict.fromkeys(discovered_urls))
+            self.metadata["urls_included"] = list(dict.fromkeys(self.metadata["urls_included"]))
+            self.metadata["urls_excluded"] = list(dict.fromkeys(self.metadata["urls_excluded"]))
             return self.final_urls_to_scan
         
         except Exception as e:
@@ -77,12 +78,11 @@ class Crawler():
         try: 
             filtered_urls = []
             for url in urls:
-                for pattern in include_url_patterns:
-                    if does_url_match_pattern(url, pattern):
-                        filtered_urls.append(url)
-                        self.metadata["urls_included"].append(url)
-                    else:
-                        self.metadata["urls_excluded"].append(url)
+                if any(does_url_match_pattern(url, pattern) for pattern in include_url_patterns):
+                    filtered_urls.append(url)
+                    self.metadata["urls_included"].append(url)
+                else:
+                    self.metadata["urls_excluded"].append(url)
             return filtered_urls
         except Exception as e:
             console.print(f"Error in filter_based_on_include_url_patterns: {e}", style="bold red")
@@ -92,13 +92,11 @@ class Crawler():
         try: 
             filtered_urls = []
             for url in urls:
-                for pattern in exclude_url_patterns:
-                    if does_url_match_pattern(url, pattern):
-                        self.metadata["urls_excluded"].append(url)
-                        continue # skip the url if it matches the pattern
-                    else:
-                        filtered_urls.append(url)
-                        self.metadata["urls_included"].append(url)
+                if any(does_url_match_pattern(url, pattern) for pattern in exclude_url_patterns):
+                    self.metadata["urls_excluded"].append(url)
+                else:
+                    filtered_urls.append(url)
+                    self.metadata["urls_included"].append(url)
             return filtered_urls
         except Exception as e:
             console.print(f"Error in filter_based_on_exclude_url_patterns: {e}", style="bold red")
