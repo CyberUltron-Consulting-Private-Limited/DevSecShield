@@ -69,6 +69,10 @@ services:
       MONGO_HOST: "host.docker.internal"
       MONGO_PORT: "27017"
       RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
-    command: uv run celery -A dast_worker worker -P threads --loglevel=info -Q dast_worker_queue
+    command: uv run celery -A dast_worker worker -P threads --concurrency=1 --loglevel=info -Q dast_worker_queue
+    init: true
+    mem_limit: 6g
+    memswap_limit: 6g
+    pids_limit: 2048
     extra_hosts:
       - "host.docker.internal:host-gateway"

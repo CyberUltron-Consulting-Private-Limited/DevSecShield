@@ -41,7 +41,7 @@ WORKDIR /app
 
 # Install nuclei directly from GitHub releases (no Homebrew needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates unzip git \
+    curl ca-certificates unzip git tini \
     # Chromium/Playwright runtime dependencies
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libgbm1 libasound2 \
@@ -68,4 +68,6 @@ COPY --from=builder /app /app
 # Copy Playwright browsers from builder
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
+# tini as PID 1 reaps Nuclei/Chrome zombies that uv/celery will not.
+ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["uv", "run", "celery", "-A", "dast_worker", "worker", "-P", "threads", "--loglevel=info"]

@@ -9,6 +9,7 @@ from helpers.agent.base_vuln import parse_vuln_list
 from helpers.progress_writer import StateUpdateWriter
 from helpers.agent.main import DASTAgent
 from helpers.agent.context import StartDASTScanData
+from helpers.checks.nuclei.run_nuclei import reap_orphan_browsers
 
 console = Console(markup=False)
 
@@ -111,6 +112,8 @@ try:
         except Exception as e:
             console.print(f"Error in dast task: {str(e)}",style="bold red")
             raise e
+        finally:
+            reap_orphan_browsers()
         
 
     console.print(f"Registered DAST scan task",style="bold green")

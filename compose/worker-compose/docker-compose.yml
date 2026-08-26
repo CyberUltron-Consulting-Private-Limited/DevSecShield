@@ -26,10 +26,21 @@ services:
   dast_worker:
     container_name: devsecshield-dast-worker
     image: ${ECR_REGISTRY}/dast-worker:${TAG}
+    init: true
+    mem_limit: 6g
+    memswap_limit: 6g
+    pids_limit: 2048
+    restart: unless-stopped
+    env_file:
+      - path: .env.dast.aws
+        required: false
+      - path: .env
+        required: false
     environment:
       IS_DOCKER_CONTAINER: "True"
+      DAST_REAP_BROWSERS: "1"
       RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@devsecshield-mongodb:27017/"
-    command: uv run celery -A dast_worker worker -P threads --loglevel=info -Q dast_worker_queue
+    command: uv run celery -A dast_worker worker -P threads --concurrency=1 --loglevel=info -Q dast_worker_queue --time-limit=43200 --soft-time-limit=41400
 
   dast_scheduler:
     container_name: devsecshield-dast-scheduler

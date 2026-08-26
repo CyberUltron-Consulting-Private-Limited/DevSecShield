@@ -13,7 +13,7 @@ import time
 from helpers.agent.base_vuln import parse_vuln_list
 from helpers.agent.scan_config import ScanRuntime
 from helpers.agent.utils import fetch_authenticated_page, get_auth_login_template
-from helpers.checks.nuclei.run_nuclei import set_nuclei_concurrency
+from helpers.checks.nuclei.run_nuclei import reap_orphan_browsers, set_nuclei_concurrency
 console = Console(markup=False)
 
 
@@ -255,7 +255,9 @@ class DASTAgent():
             
         except Exception as e:
             console.print(f"Error in running DAST agent: {e}",style="dim red")
-            raise e 
+            raise e
+        finally:
+            reap_orphan_browsers() 
     
 
     def estimate_credits(self):

@@ -351,6 +351,8 @@ def test_nuclei_semaphore_caps_parallel_chromes(monkeypatch, tmp_path):
 
     monkeypatch.setattr(nuclei_mod.subprocess, "Popen", lambda *_args, **_kwargs: FakeProc())
     monkeypatch.setattr(nuclei_mod, "load_dir_to_documents", lambda _path: [])
+    monkeypatch.setattr(nuclei_mod, "_kill_process_group", lambda _proc: None)
+    monkeypatch.setattr(nuclei_mod, "_reap_new_browser_pids", lambda _before: 0)
     template = tmp_path / "t.yaml"
     template.write_text("id: t\ninfo:\n  name: t\nheadless: []\n")
 
