@@ -6,6 +6,7 @@ from fastapi import HTTPException , status
 from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics, get_mttr_per_day
+from backend.utilities.dashboard.ai_bom_provider import ai_bom_provider_label
 
 console = Console()
 
@@ -1864,7 +1865,7 @@ def generate_ai_bom_dashboard_data(scans: list[Scan]) -> dict:
             component_type = (asset.get("component_type") or "unknown").lower()
             asset_type_distribution[component_type] += 1
 
-            provider = asset.get("source") or "unknown"
+            provider = ai_bom_provider_label(asset)
             provider_distribution[provider] += 1
 
             license_type = asset.get("license") or "unknown"

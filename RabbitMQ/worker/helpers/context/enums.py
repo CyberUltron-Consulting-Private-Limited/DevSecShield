@@ -322,4 +322,5 @@ class ModelProvider(str, Enum):
     MISTRAL = "mistral"
     HUGGINGFACE = "huggingface"
     LOCAL = "local"
+    PYPI = "pypi"
     UNKNOWN = "unknown"

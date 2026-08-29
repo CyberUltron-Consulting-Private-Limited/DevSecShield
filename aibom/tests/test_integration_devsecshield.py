@@ -34,7 +34,7 @@ _AI_COMPONENT_TYPE = {
 }
 _MODEL_PROVIDER = {
     "openai", "anthropic", "bedrock", "vertex", "cohere", "mistral",
-    "huggingface", "local", "unknown",
+    "huggingface", "local", "pypi", "unknown",
 }
 _AI_RISK_CATEGORY = {
     "untrusted_model_deserialization", "unpinned_model_version",
@@ -182,3 +182,15 @@ def test_normalize_is_deterministic() -> None:
     r1 = run_native_scan(_SHADOW, level=4, allowlist=_ALLOW)
     r2 = run_native_scan(_SHADOW, level=4, allowlist=_ALLOW)
     assert normalize(r1, duration_of_scan=0.0) == normalize(r2, duration_of_scan=0.0)
+
+
+def test_provider_matches_production_buckets() -> None:
+    """Prod Providers chart: pypi for libs, local for weights, named vendors."""
+    from aibom.integrations.devsecshield import _provider
+
+    assert _provider(None, "torch", "framework", "pkg:pypi/torch@2.3") == "pypi"
+    assert _provider(None, "langchain", "framework", None) == "pypi"
+    assert _provider(None, "weights.bin", "model", None) == "local"
+    assert _provider(None, "openai", "framework", "pkg:pypi/openai") == "openai"
+    assert _provider(None, "anthropic", "service", None) == "anthropic"
+    assert _provider(None, "custom-endpoint", "service", None) == "unknown"
