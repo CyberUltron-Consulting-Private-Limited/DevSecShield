@@ -97,7 +97,7 @@ COPY graph_db/ /app/graph_db/
 
 # Copy entrypoint script
 COPY recon/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Create volume mount points (NOT /app/recon/output - that's bind-mounted by the orchestrator)
 VOLUME ["/var/run/docker.sock", "/data"]
@@ -125,5 +125,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
         (test -S /var/run/docker.sock && docker info > /dev/null 2>&1 || true)
 
 # Default command - run the recon pipeline
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
 CMD ["python", "/app/recon/main.py"]

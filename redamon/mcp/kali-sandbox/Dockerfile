@@ -49,6 +49,7 @@ RUN apt-get install -y --fix-missing \
     gcc \
     g++ \
     make \
+    cmake \
     # Scripting (for execute_code perl support)
     perl \
     # Build dependencies for naabu (requires libpcap)
@@ -90,7 +91,7 @@ COPY servers/ /opt/mcp_servers/
 
 # Copy and set entrypoint script
 COPY kali-sandbox/entrypoint.sh /opt/entrypoint.sh
-RUN chmod +x /opt/entrypoint.sh
+RUN sed -i 's/\r$//' /opt/entrypoint.sh && chmod +x /opt/entrypoint.sh
 
 WORKDIR /opt/mcp_servers
 
@@ -106,4 +107,4 @@ EXPOSE 8000 8002 8003 8004 8014 4040
 RUN msfdb init || true
 
 # Entrypoint handles updates + launches MCP servers
-ENTRYPOINT ["/opt/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/opt/entrypoint.sh"]
