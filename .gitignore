@@ -33,3 +33,7 @@ redamon/agentic/logs/
 *.log
 .DS_Store
 Thumbs.db
+
+*.pem
+*.ppk
+*.key
