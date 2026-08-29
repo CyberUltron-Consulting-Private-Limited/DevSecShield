@@ -110,8 +110,18 @@ _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 ProgressCb = Callable[[int, str], None]
 
 
-def _provider(publisher: str | None, name: str, kind: str) -> str:
-    """Infer a ModelProvider value from a component's vendor/name/kind."""
+def _provider(
+    publisher: str | None,
+    name: str,
+    kind: str,
+    purl: str | None = None,
+) -> str:
+    """Infer a ModelProvider value from vendor/name/kind/purl.
+
+    Production Providers chart buckets PyPI libraries as ``pypi`` and local
+    weight files as ``local`` — never ``unknown`` for those asset classes.
+    Named cloud SDKs (openai, anthropic, …) still win when the name matches.
+    """
     text = f"{publisher or ''} {name}".lower()
     for needle, value in (
         ("openai", "openai"),
@@ -124,7 +134,12 @@ def _provider(publisher: str | None, name: str, kind: str) -> str:
     ):
         if needle in text:
             return value
-    return "local" if kind == "model" else "unknown"
+    if kind == "model":
+        return "local"
+    purl_l = (purl or "").lower()
+    if purl_l.startswith("pkg:pypi/") or kind == "framework":
+        return "pypi"
+    return "unknown"
 
 
 def _component_type(kind: str) -> str:
@@ -233,7 +248,7 @@ def _finding_from_component(comp: AIComponent, result: ScanResult) -> dict[str, 
         "model_card": _card_summary(comp),
         "framework": comp.name if comp.kind == "framework" else None,
         "version": comp.version,
-        "source": _provider(comp.publisher, comp.name, comp.kind),
+        "source": _provider(comp.publisher, comp.name, comp.kind, getattr(comp, "purl", None)),
         "license": _license_str(getattr(comp, "licenses", None)),
         "location": props.get("discovery:source") or props.get("discovery:host") or "",
         "snippet": props.get("discovery:snippet", ""),

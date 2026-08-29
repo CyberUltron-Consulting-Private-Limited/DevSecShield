@@ -9,6 +9,7 @@ from backend.utilities.db.findings import get_findings_for_scan_id
 from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
 from backend.utilities.dashboard.finding_metrics import get_average_resolution_time, get_issue_address_metrics, get_issue_status_metrics
 from backend.utilities.dashboard.garak_probes import GARAK_PROBES_DESCRIPTION
+from backend.utilities.dashboard.ai_bom_provider import ai_bom_provider_label
 
 risk_score_for_impact = {
     "critical" : 10.0,
@@ -1322,8 +1323,9 @@ def generate_scan_dashboard(
                 component_type = (asset.get("component_type") or "unknown").lower()
                 asset_type_distribution[component_type] += 1
 
-                # provider distribution (from source)
-                provider = asset.get("source") or "unknown"
+                # provider distribution (from source; remap empty/unknown to
+                # pypi/local like production — see ai_bom_provider_label)
+                provider = ai_bom_provider_label(asset)
                 provider_distribution[provider] += 1
 
                 # license distribution (from license)
