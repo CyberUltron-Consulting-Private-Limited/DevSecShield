@@ -118,9 +118,9 @@ def _provider(
 ) -> str:
     """Infer a ModelProvider value from vendor/name/kind/purl.
 
-    Production Providers chart buckets PyPI libraries as ``pypi`` and local
-    weight files as ``local`` — never ``unknown`` for those asset classes.
-    Named cloud SDKs (openai, anthropic, …) still win when the name matches.
+    Precedence: named cloud vendor in publisher/name, then local models,
+    then PyPI libraries identified by ``pkg:pypi/`` purl. Kind ``framework``
+    is not a registry signal — only the purl identifies the ecosystem.
     """
     text = f"{publisher or ''} {name}".lower()
     for needle, value in (
@@ -136,8 +136,7 @@ def _provider(
             return value
     if kind == "model":
         return "local"
-    purl_l = (purl or "").lower()
-    if purl_l.startswith("pkg:pypi/") or kind == "framework":
+    if (purl or "").lower().startswith("pkg:pypi/"):
         return "pypi"
     return "unknown"
 

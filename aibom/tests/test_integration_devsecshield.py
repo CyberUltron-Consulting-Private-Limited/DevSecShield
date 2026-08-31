@@ -185,12 +185,29 @@ def test_normalize_is_deterministic() -> None:
 
 
 def test_provider_matches_production_buckets() -> None:
-    """Prod Providers chart: pypi for libs, local for weights, named vendors."""
+    """Provider is vendor, then local model, then pkg:pypi/ — not kind=framework."""
     from aibom.integrations.devsecshield import _provider
 
     assert _provider(None, "torch", "framework", "pkg:pypi/torch@2.3") == "pypi"
-    assert _provider(None, "langchain", "framework", None) == "pypi"
+    assert _provider(None, "langchain", "framework", None) == "unknown"
     assert _provider(None, "weights.bin", "model", None) == "local"
     assert _provider(None, "openai", "framework", "pkg:pypi/openai") == "openai"
     assert _provider(None, "anthropic", "service", None) == "anthropic"
     assert _provider(None, "custom-endpoint", "service", None) == "unknown"
+
+
+def test_scan_to_devsecshield_persists_deterministic_source() -> None:
+    """Same scanner input → same results[].source (purl-based PyPI, vendor first)."""
+    synthetic = pathlib.Path(__file__).resolve().parent / "fixtures" / "synthetic"
+    clinical = _CLINICAL
+
+    syn = {r["component_name"]: r["source"] for r in scan_to_devsecshield(synthetic, level=4)["results"]}
+    assert syn["torch"] == "pypi"
+    assert syn["numpy"] == "pypi"
+    assert syn["langchain"] == "pypi"
+    assert syn["openai"] == "openai"
+    assert syn["anthropic"] == "anthropic"
+
+    clin = {r["component_name"]: r["source"] for r in scan_to_devsecshield(clinical, level=4)["results"]}
+    assert clin["chestxr-nodule-detector"] == "local"
+    assert clin["chestxr-training-cohort"] == "unknown"

@@ -27,3 +27,12 @@ def test_local_model_file_is_local():
 
 def test_huggingface_model_type():
     assert ai_bom_provider_label({"component_type": "huggingface_model"}) == "huggingface"
+
+
+def test_stored_pypi_is_kept():
+    assert ai_bom_provider_label({"source": "pypi", "component_type": "ml_framework"}) == "pypi"
+
+
+def test_genuinely_unknown_stays_unknown():
+    assert ai_bom_provider_label({"source": "unknown", "component_type": "dataset"}) == "unknown"
+    assert ai_bom_provider_label({"source": "unknown", "component_type": "prompt_asset"}) == "unknown"
