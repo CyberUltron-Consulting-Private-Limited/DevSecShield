@@ -787,7 +787,8 @@ async def export_scan(
         temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
         temp_pdf_path = temp_pdf_file.name
         temp_pdf_file.close()
-        generate_pdf_for_type(type, scan_data, temp_pdf_path, started_at=scan.created_at, completed_at=scan.last_updated, full_scan_data=scan.scan_data)
+        generate_pdf_for_type(type, scan_data, temp_pdf_path,
+                              started_at=scan.created_at, completed_at=scan.last_updated)
 
 
         # STEP [ 4 ] : =========================== return the pdf file as a response and schedule cleanup ========================================
