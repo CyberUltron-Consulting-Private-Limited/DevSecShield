@@ -359,6 +359,76 @@ def split_scan_payload(data: Any) -> Tuple[Any, Optional[float], Dict[str, Any]]
     return data, None, {}
 
 
+def _coerce_seconds(value: Any) -> Optional[float]:
+    """Best-effort float seconds; ``None`` for missing or non-numeric values."""
+    if value is None or value == "":
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
+
+
+def elapsed_seconds(started_at: Any, completed_at: Any) -> Optional[float]:
+    """Wall-clock scan duration from the scan row timestamps.
+
+    Returns ``None`` for anything unusable (missing end, non-datetime, clock
+    skew) so the KPI falls back to the em-dash instead of printing nonsense.
+    """
+    if not isinstance(started_at, datetime) or not isinstance(completed_at, datetime):
+        return None
+    # Scan.created_at / last_updated are written timezone-aware but read back
+    # naive (sa_type=DateTime drops the offset); mixing the two would raise.
+    if (started_at.tzinfo is None) != (completed_at.tzinfo is None):
+        started_at = started_at.replace(tzinfo=None)
+        completed_at = completed_at.replace(tzinfo=None)
+    seconds = (completed_at - started_at).total_seconds()
+    return seconds if seconds >= 0 else None
+
+
+def _attach(data: Any, key: str, value: Any) -> Any:
+    """Add ``key`` to the payload without overwriting a value already there.
+
+    A bare ``results`` list is promoted to the wrapper dict the generators
+    unwrap, so a payload the export route flattened can still carry the field.
+    """
+    if value is None:
+        return data
+    if isinstance(data, dict):
+        if data.get(key) in (None, ""):
+            return {**data, key: value}
+        return data
+    if isinstance(data, list):
+        return {"results": data, key: value}
+    return data
+
+
+def with_scan_context(
+    data: Any,
+    full_scan_data: Any = None,
+    started_at: Any = None,
+    completed_at: Any = None,
+) -> Any:
+    """Restore the wrapper fields the export route flattens away.
+
+    The route hands non-BOM generators a bare ``results`` list, dropping the
+    worker's ``duration_of_scan`` and the DAST crawler's ``metadata`` block.
+    Both are recovered from ``full_scan_data``, the unflattened row payload.
+
+    Duration precedence, most accurate first: the payload's own value, then the
+    worker-timed one off the row, then the row's wall clock — which spans row
+    creation to completion, so it only covers scans the worker never timed.
+    """
+    row = full_scan_data if isinstance(full_scan_data, dict) else {}
+    duration = _coerce_seconds(row.get("duration_of_scan"))
+    if duration is None:
+        duration = elapsed_seconds(started_at, completed_at)
+    metadata = row.get("metadata")
+    data = _attach(data, "duration_of_scan", duration)
+    return _attach(data, "metadata", metadata if isinstance(metadata, dict) else None)
+
+
 def format_scan_duration(seconds: Any) -> str:
     """Format seconds as the sample KPI string (``2m 14s``, ``45s``, ``—``)."""
     if seconds is None or seconds == "":
