@@ -787,8 +787,13 @@ async def export_scan(
         temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
         temp_pdf_path = temp_pdf_file.name
         temp_pdf_file.close()
-        generate_pdf_for_type(type, scan_data, temp_pdf_path,
-                              started_at=scan.created_at, completed_at=scan.last_updated)
+        try:
+            generate_pdf_for_type(type, scan_data, temp_pdf_path,
+                                  started_at=scan.created_at, completed_at=scan.last_updated)
+        except ValueError as e:
+            # Unsupported scan type (leakage / agent_discovery), not a renderer failure.
+            os.unlink(temp_pdf_path)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
         # STEP [ 4 ] : =========================== return the pdf file as a response and schedule cleanup ========================================

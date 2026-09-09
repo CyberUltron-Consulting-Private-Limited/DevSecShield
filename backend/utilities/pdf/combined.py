@@ -43,4 +43,5 @@ def generate_pdf_for_type(
         case "ai_bom":
             return generate_pdf_for_ai_bom(scan_data, output_path)
         case _:
+            # Branded export covers the eight types above; the export route maps this to 400.
             raise ValueError(f"PDF export is not supported for scan type {type!r}")
