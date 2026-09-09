@@ -254,7 +254,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     for idx, v in enumerate(vulnerabilities, 1):
         title = v.get("title") or "Untitled"
         impact = (v.get("impact") or "Unknown").strip()
-        location = finding_location(v.get("_raw") or v)
+        location = finding_location(v)
         catalog.append(
             [
                 str(idx),
@@ -282,7 +282,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         for idx, v in enumerate(vulnerabilities, 1):
             title = v.get("title") or "Untitled"
             impact = (v.get("impact") or "Unknown").strip()
-            loc = finding_location(v.get("_raw") or v)
+            loc = finding_location(v)
             dependency = v.get("dependency") or ""
             purl = str(v.get("purl") or "").strip()
             license_val = str(v.get("license") or "").strip()
