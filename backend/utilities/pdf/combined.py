@@ -12,8 +12,8 @@ from backend.utilities.pdf.report_branding import with_scan_duration
 
 
 def generate_pdf_for_type(
-    type: scan_types ,
-    scan_data: dict ,
+    type: scan_types,
+    scan_data: dict | list,
     output_path: str,
     started_at=None,
     completed_at=None,
@@ -42,3 +42,5 @@ def generate_pdf_for_type(
             return generate_pdf_for_cbom(scan_data, output_path)
         case "ai_bom":
             return generate_pdf_for_ai_bom(scan_data, output_path)
+        case _:
+            raise ValueError(f"PDF export is not supported for scan type {type!r}")
