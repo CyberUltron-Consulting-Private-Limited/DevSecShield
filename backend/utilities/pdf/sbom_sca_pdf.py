@@ -26,6 +26,7 @@ from backend.utilities.pdf.report_branding import (
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
+    mapping_entries,
     mapping_rows,
     relative_scan_path,
     severity_color,
@@ -55,8 +56,10 @@ def get_severity_color(severity: str):
     return severity_color(severity)
 
 
-def _as_mapping(val: Any) -> Dict[str, Any]:
-    return val if isinstance(val, dict) else {}
+def _as_mapping(val: Any) -> Any:
+    if isinstance(val, dict) or isinstance(val, list):
+        return val
+    return {}
 
 
 def _package_label(item: Dict[str, Any]) -> str:
@@ -90,7 +93,7 @@ def _sbom_remediation(item: Dict[str, Any]) -> str:
     suggested = str(item.get("suggested_fix") or "").strip()
     license_val = str(item.get("license") or "").strip()
     cves = item.get("cves") or {}
-    has_cves = isinstance(cves, dict) and bool(cves)
+    has_cves = bool(mapping_entries(cves))
     inventory_only = bool(item.get("inventory_only"))
     is_placeholder = suggested.lower() in _INVENTORY_FIX_PLACEHOLDERS
     if inventory_only or (is_placeholder and not has_cves):
@@ -295,8 +298,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 detail_rows.append(("PURL", purl))
             if license_val:
                 detail_rows.append(("License", license_val if isinstance(license_val, str) else str(license_val)))
-            if isinstance(cves, dict) and cves:
-                detail_rows.append(("CVE IDs", ", ".join(list(cves.keys())[:8])))
+            cve_ids = [k or v for k, v in mapping_entries(cves)]
+            if cve_ids:
+                detail_rows.append(("CVE IDs", ", ".join(cve_ids[:8])))
 
             standards: List[List[str]] = []
             standards.extend(mapping_rows(v.get("owasp_top_10"), label="OWASP Top 10"))
