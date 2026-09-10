@@ -1,1 +1,1 @@
-from .combined import generate_pdf_for_type
+from .combined import UnsupportedPdfExport, generate_pdf_for_type

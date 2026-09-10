@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -407,20 +408,30 @@ def format_scan_duration(seconds: Any) -> str:
     return f"{secs}s"
 
 
+# tempfile.mkdtemp(prefix="repo_") lives under the process temp dir
+# (/tmp, %TEMP%, macOS /var/folders/.../T). Require that parent so project
+# paths like src/repo_utils/foo.py are not truncated. Leading-segment form
+# covers workers that stored repo_<id>/... without the temp parent.
+_CLONE_ROOT_RE = re.compile(
+    r"(?i)(?:^|/)(?:tmp|temp|var/folders/[^/]+/[^/]+/T)/repo_[^/]+/"
+)
+_LEADING_CLONE_RE = re.compile(r"(?i)^repo_[a-z0-9_]{8}/")
+
+
 def relative_scan_path(path: Any) -> str:
     """Strip clone prefixes like ``/tmp/repo_<id>/`` from a filesystem path."""
     raw = str(path or "").strip().replace("\\", "/")
     if not raw:
         return ""
-    marker = "repo_"
-    idx = raw.find(marker)
-    if idx == -1:
-        return raw
-    rest = raw[idx + len(marker) :]
-    slash = rest.find("/")
-    if slash == -1:
-        return raw
-    return rest[slash + 1 :]
+    m = _CLONE_ROOT_RE.search(raw)
+    if m:
+        stripped = raw[m.end() :]
+        return stripped or raw
+    m = _LEADING_CLONE_RE.match(raw)
+    if m:
+        stripped = raw[m.end() :]
+        return stripped or raw
+    return raw
 
 
 def finding_location(row: Any) -> str:

@@ -10,6 +10,9 @@ from backend.utilities.pdf.ai_bom_pdf import generate_pdf as generate_pdf_for_ai
 from backend.utilities.pdf.report_branding import with_scan_duration
 
 
+class UnsupportedPdfExport(Exception):
+    """Scan type has no branded PDF renderer (leakage / agent_discovery)."""
+
 
 def generate_pdf_for_type(
     type: scan_types,
@@ -44,4 +47,6 @@ def generate_pdf_for_type(
             return generate_pdf_for_ai_bom(scan_data, output_path)
         case _:
             # Branded export covers the eight types above; the export route maps this to 400.
-            raise ValueError(f"PDF export is not supported for scan type {type!r}")
+            raise UnsupportedPdfExport(
+                f"PDF export is not supported for scan type {type!r}"
+            )
