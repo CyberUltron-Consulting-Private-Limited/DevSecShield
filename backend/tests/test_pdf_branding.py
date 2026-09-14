@@ -170,6 +170,12 @@ def test_relative_scan_path_does_not_truncate_repo_utils():
     assert relative_scan_path("repo_utils/clone.py") == "repo_utils/clone.py"
 
 
+def test_relative_scan_path_does_not_truncate_letter_only_repo_folders():
+    """Leading clone strip must not eat project dirs like repo_internal (8 letters)."""
+    assert relative_scan_path("repo_internal/src/app.py") == "repo_internal/src/app.py"
+    assert relative_scan_path("repo_services/lib/mod.py") == "repo_services/lib/mod.py"
+
+
 def test_relative_scan_path_strips_long_leading_clone_id():
     # mkdtemp is 8 chars today; stored UUID-style dirs are longer.
     assert (

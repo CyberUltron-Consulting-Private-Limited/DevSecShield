@@ -12,6 +12,16 @@ from backend.utilities.pdf.ai_bom_pdf import generate_pdf as generate_pdf_for_ai
 from backend.utilities.pdf.report_branding import with_scan_duration
 
 _BOM_EXPORT_TYPES = ("ai_bom", "cbom", "sbom_sca")
+_BOM_PAYLOAD_KEYS = (
+    "results",
+    "duration_of_scan",
+    "matches",
+    "ai_bom_compliance",
+    "cbom_compliance",
+    "sbom_compliance",
+    "rbi_csf_rollup",
+    "rbi_compliance",
+)
 _DAST_METADATA_KEYS = ("urls_included", "urls_excluded")
 
 
@@ -20,11 +30,16 @@ class UnsupportedPdfExport(Exception):
 
 
 def prepare_pdf_export_payload(scan_type: str, scan_data: dict | list | None) -> dict | list:
-    """Allowlisted export payload: findings + duration; DAST URL counts; full BOM dict."""
-    if scan_type in _BOM_EXPORT_TYPES:
-        return scan_data if isinstance(scan_data, dict) else {}
+    """Allowlisted export payload: findings + duration + BOM appendix keys.
+
+    DAST keeps URL counts from metadata. BOM keeps compliance blobs for the
+    RBI/CERT-In appendix. Side-channel keys (raw BOM JSON, debug dumps, secrets
+    in metadata) are dropped.
+    """
     if not isinstance(scan_data, dict):
         return scan_data if scan_data is not None else {}
+    if scan_type in _BOM_EXPORT_TYPES:
+        return {key: scan_data[key] for key in _BOM_PAYLOAD_KEYS if key in scan_data}
     payload: dict = {"results": scan_data.get("results")}
     worker_duration = scan_data.get("duration_of_scan")
     if worker_duration not in (None, ""):

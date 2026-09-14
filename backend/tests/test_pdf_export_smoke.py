@@ -40,8 +40,8 @@ def _assert_valid_pdf(path: str) -> None:
     assert size > 1000, f"PDF suspiciously small ({size} bytes)"
 
 
-def _pdf_haystack(path: str) -> str:
-    """Flatten PDF page text from ASCII85+Flate content streams."""
+def _pdf_stream_and_literals(path: str) -> tuple[str, list[str]]:
+    """Decode ReportLab streams to (haystack-without-literals, string literals)."""
     with open(path, "rb") as fh:
         raw = fh.read()
     chunks = [raw]
@@ -78,7 +78,18 @@ def _pdf_haystack(path: str) -> str:
             .replace("\\\\", "\\")
         )
         literals.append(inner)
+    return text, literals
+
+
+def _pdf_haystack(path: str) -> str:
+    """Flatten PDF page text from ASCII85+Flate content streams."""
+    text, literals = _pdf_stream_and_literals(path)
     return text + "\n" + "\n".join(literals)
+
+
+def _pdf_literals(path: str) -> list[str]:
+    """Visible PDF string literals only (no stream doubling)."""
+    return _pdf_stream_and_literals(path)[1]
 
 
 def _load_fixture(name: str) -> dict:
@@ -456,25 +467,35 @@ def test_worker_persist_pdf_fields(scan_type, tmp_path):
         assert not re.search(r"\d+ U\b", haystack), haystack
     if scan_type == "dast":
         assert "AKIA_SHOULD_NOT_APPEAR_IN_PDF" not in haystack
+        assert _pdf_literals(str(out)).count("URLs included") == 1
+
+
+_SECRET_MARKERS = (
+    "AKIA_SHOULD_NOT_APPEAR_IN_PDF",
+    "supersecret_password_xyz",
+    "LEAK_MARKER_SHOULD_NOT_APPEAR",
+    "BEGIN RSA PRIVATE KEY",
+)
+
+
+def _secret_side_channels() -> dict:
+    return {
+        "metadata": {
+            "aws_secret_access_key": _SECRET_MARKERS[0],
+            "password": _SECRET_MARKERS[1],
+            "debug_blob": _SECRET_MARKERS[2],
+        },
+        "cbom_json": {"raw": _SECRET_MARKERS[3]},
+        "ai_bom_json": {"raw": _SECRET_MARKERS[3]},
+        "internal_debug_dump": _SECRET_MARKERS[2],
+    }
 
 
 def test_full_scan_data_does_not_leak_non_finding_secrets(tmp_path):
     """Passing full scan_data must not dump metadata / secret side-channels into PDF text."""
-    secret_markers = (
-        "AKIA_SHOULD_NOT_APPEAR_IN_PDF",
-        "supersecret_password_xyz",
-        "LEAK_MARKER_SHOULD_NOT_APPEAR",
-        "BEGIN RSA PRIVATE KEY",
-    )
     payload = {
         "duration_of_scan": 12,
-        "metadata": {
-            "aws_secret_access_key": secret_markers[0],
-            "password": secret_markers[1],
-            "debug_blob": secret_markers[2],
-        },
-        "cbom_json": {"raw": secret_markers[3]},
-        "internal_debug_dump": secret_markers[2],
+        **_secret_side_channels(),
         "results": [
             {
                 "logical_component_title": "payments-api",
@@ -497,8 +518,29 @@ def test_full_scan_data_does_not_leak_non_finding_secrets(tmp_path):
     haystack = _pdf_haystack(str(out))
     assert "SQL injection" in haystack
     assert "A03:2021" in haystack
-    for marker in secret_markers:
+    for marker in _SECRET_MARKERS:
         assert marker not in haystack, f"leaked {marker!r} into PDF"
+
+
+@pytest.mark.parametrize("scan_type", _SCAN_TYPES)
+def test_export_payload_does_not_leak_secrets_for_every_scan_type(scan_type, tmp_path):
+    raw = dict(_worker_persist_payload(scan_type))
+    secrets = _secret_side_channels()
+    merged_meta = dict(raw.get("metadata") or {})
+    merged_meta.update(secrets["metadata"])
+    raw.update(secrets)
+    raw["metadata"] = merged_meta
+    payload = prepare_pdf_export_payload(scan_type, raw)
+    out = tmp_path / f"{scan_type}_export_no_secret.pdf"
+    generate_pdf_for_type(scan_type, payload, str(out))
+    _assert_valid_pdf(str(out))
+    haystack = _pdf_haystack(str(out))
+    for marker in _SECRET_MARKERS:
+        assert marker not in haystack, f"{scan_type} leaked {marker!r}"
+    if scan_type == "dast":
+        assert _pdf_literals(str(out)).count("URLs included") == 1
+        assert "metadata" in payload
+        assert "aws_secret_access_key" not in payload["metadata"]
 
 
 def test_large_sast_payload_completes(tmp_path):
@@ -558,6 +600,39 @@ def test_prepare_export_payload_allowlists_dast_urls_not_secrets():
     sast = prepare_pdf_export_payload("sast", raw)
     assert "metadata" not in sast
     assert sast["duration_of_scan"] == 12
+
+
+def test_prepare_export_payload_allowlists_bom_compliance_not_secrets():
+    raw = {
+        "results": [{"title": "3DES-CBC", "impact": "High"}],
+        "duration_of_scan": 12,
+        "cbom_compliance": {"disclaimer": "advisory", "nist_800_57": {"pass": 1, "fail": 0}},
+        "rbi_csf_rollup": {"disclaimer": "advisory"},
+        "metadata": {"aws_secret_access_key": "AKIA_SHOULD_NOT_APPEAR_IN_PDF"},
+        "cbom_json": {"raw": "BEGIN RSA PRIVATE KEY"},
+        "internal_debug_dump": "LEAK_MARKER_SHOULD_NOT_APPEAR",
+    }
+    cbom = prepare_pdf_export_payload("cbom", raw)
+    assert cbom["results"] == [{"title": "3DES-CBC", "impact": "High"}]
+    assert cbom["duration_of_scan"] == 12
+    assert cbom["cbom_compliance"]["disclaimer"] == "advisory"
+    assert cbom["rbi_csf_rollup"]["disclaimer"] == "advisory"
+    assert "metadata" not in cbom
+    assert "cbom_json" not in cbom
+    assert "internal_debug_dump" not in cbom
+
+    sbom = prepare_pdf_export_payload(
+        "sbom_sca",
+        {
+            "results": [{"title": "lodash"}],
+            "sbom_compliance": {"disclaimer": "advisory"},
+            "matches": [{"vulnerability": {"id": "CVE-1"}}],
+            "ai_bom_json": {"raw": "BEGIN RSA PRIVATE KEY"},
+        },
+    )
+    assert sbom["sbom_compliance"]["disclaimer"] == "advisory"
+    assert sbom["matches"][0]["vulnerability"]["id"] == "CVE-1"
+    assert "ai_bom_json" not in sbom
 
 
 def test_sbom_legacy_list_cves_and_license_list(tmp_path):
