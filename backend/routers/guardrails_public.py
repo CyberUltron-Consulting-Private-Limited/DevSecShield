@@ -20,7 +20,7 @@ from sqlmodel import Session, select
 from rich.console import Console
 from fastapi_throttle import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
-from backend.utilities.db.encryption import decrypt_value, is_encrypted
+from backend.utilities.db.encryption import decrypt_if_encrypted
 
 class StartScanData(BaseModel):
     input_prompt: str
@@ -68,7 +68,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
                 if "jira" in team.integration_settings and "jira" in integration.integration_settings and integration.integration_settings["jira"]["jira_project_id"] and team.integration_settings["jira"]["api_token"] and team.integration_settings["jira"]["url"] and team.integration_settings["jira"]["email"]:
                     # SECURITY: Decrypt api_token if encrypted (supports both encrypted and legacy plaintext)
                     jira_api_token_raw = team.integration_settings["jira"]["api_token"]
-                    jira_api_token = decrypt_value(jira_api_token_raw) if is_encrypted(jira_api_token_raw) else jira_api_token_raw
+                    jira_api_token = decrypt_if_encrypted(jira_api_token_raw)
                     integration_kwargs = { "jira" : {
                         "jira_project_id": integration.integration_settings["jira"]["jira_project_id"],
                         "jira_api_token": jira_api_token,

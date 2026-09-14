@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { Save, Loader2 } from "lucide-react";
 
@@ -18,6 +19,9 @@ export interface TicketingIntegrationsSettingsProps {
   jiraProjectId: string;
   /** Called when the user types in the Jira project ID field */
   onJiraProjectIdChange: (value: string) => void;
+  /** Create one Jira Task per finding when the scan succeeds */
+  autoCreateTickets: boolean;
+  onAutoCreateTicketsChange: (value: boolean) => void;
   /** Called when the user clicks Save */
   onSave: () => void;
   /** Whether a save request is in progress */
@@ -29,10 +33,13 @@ export interface TicketingIntegrationsSettingsProps {
 export default function TicketingIntegrationsSettings({
   jiraProjectId,
   onJiraProjectIdChange,
+  autoCreateTickets,
+  onAutoCreateTicketsChange,
   onSave,
   isSaving,
   inputId = "ticketing-jira-project-id",
 }: TicketingIntegrationsSettingsProps) {
+  const autoId = `${inputId}-auto-create`;
   return (
     <Card>
       <CardHeader>
@@ -55,15 +62,29 @@ export default function TicketingIntegrationsSettings({
             <AccordionContent>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
                 Send scan findings to Jira as issues. Set the Jira project ID to link this scan to a project.
+                Turn on auto-create to open one Jira Task per finding when the scan succeeds.
               </p>
-              <div className="space-y-2 max-w-sm">
-                <Label htmlFor={inputId}>Jira project ID</Label>
-                <Input
-                  id={inputId}
-                  value={jiraProjectId}
-                  onChange={(e) => onJiraProjectIdChange(e.target.value)}
-                  placeholder="e.g. 10000"
-                />
+              <div className="space-y-3 max-w-sm">
+                <div className="space-y-2">
+                  <Label htmlFor={inputId}>Jira project ID</Label>
+                  <Input
+                    id={inputId}
+                    value={jiraProjectId}
+                    onChange={(e) => onJiraProjectIdChange(e.target.value)}
+                    placeholder="e.g. 10000"
+                  />
+                </div>
+                <label htmlFor={autoId} className="flex items-start gap-2 cursor-pointer">
+                  <Checkbox
+                    id={autoId}
+                    checked={autoCreateTickets}
+                    onCheckedChange={(checked) => onAutoCreateTicketsChange(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm text-zinc-600 dark:text-zinc-300">
+                    Auto-create a Jira ticket for each finding when this scan succeeds. Marking a finding Fixed closes that ticket.
+                  </span>
+                </label>
                 <Button
                   onClick={onSave}
                   disabled={isSaving}

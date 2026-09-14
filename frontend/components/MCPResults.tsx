@@ -750,6 +750,7 @@ function AgentResultsView({
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(new Set());
   const [jiraProjectId, setJiraProjectId] = useState("");
+  const [autoCreateTickets, setAutoCreateTickets] = useState(false);
 
   const findingsList = Array.isArray(apiFindings) ? apiFindings : [];
   const useApiFindings = findingsList.length > 0;
@@ -763,12 +764,15 @@ function AgentResultsView({
 
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
-      ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
+      ? (integrationSettings.jira as { jira_project_id?: string; auto_create_tickets?: boolean } | undefined)
       : undefined;
   const initialJiraProjectId = jiraFromSettings?.jira_project_id ?? "";
   useEffect(() => {
     setJiraProjectId(initialJiraProjectId);
   }, [initialJiraProjectId]);
+  useEffect(() => {
+    setAutoCreateTickets(jiraFromSettings?.auto_create_tickets === true);
+  }, [jiraFromSettings?.auto_create_tickets]);
 
   const updateIntegrationMutation = useMutation({
     mutationFn: (payload: { integration_settings: ScanTicketingIntegrationSettings }) =>
@@ -832,7 +836,12 @@ function AgentResultsView({
         if ((f.suggested_fix ?? "").trim()) parts.push(`Suggested fix: ${f.suggested_fix!.trim()}`);
         return parts.join("\n");
       });
-      await createTicket(tid, "mcp", conversationId, { ticket_type: "jira", summary, description: descSections.join("\n\n") });
+      await createTicket(tid, "mcp", conversationId, {
+        ticket_type: "jira",
+        summary,
+        description: descSections.join("\n\n"),
+        finding_ids: selected.map((f) => f.id),
+      });
     },
     onMutate: () => ({ toastId: toast.loading("Creating Jira ticket(s)...") }),
     onSuccess: (_data, _vars, context) => {
@@ -1075,10 +1084,12 @@ function AgentResultsView({
         <TicketingIntegrationsSettings
           jiraProjectId={jiraProjectId}
           onJiraProjectIdChange={setJiraProjectId}
+          autoCreateTickets={autoCreateTickets}
+          onAutoCreateTicketsChange={setAutoCreateTickets}
           onSave={() => {
             updateIntegrationMutation.mutate({
               integration_settings: {
-                jira: { jira_project_id: jiraProjectId.trim() || null },
+                jira: { jira_project_id: jiraProjectId.trim() || null, auto_create_tickets: autoCreateTickets },
               },
             });
           }}

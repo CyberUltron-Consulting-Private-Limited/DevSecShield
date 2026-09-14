@@ -1,0 +1,61 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - generic [ref=f1e5]:
+      - button "Loading…" [ref=f1e8] [cursor=pointer]
+      - generic [ref=f1e16]:
+        - list [ref=f1e19]:
+          - listitem [ref=f1e20]:
+            - link "Home" [ref=f1e21] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f1e26]:
+          - generic [ref=f1e27]: Scanning Utilities
+          - list [ref=f1e29]:
+            - listitem [ref=f1e30]:
+              - link "SAST" [ref=f1e31] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f1e36]:
+              - link "SCA + SBOM" [ref=f1e37] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f1e43]:
+              - link "CBOM" [ref=f1e44] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f1e49]:
+              - link "AI BOM" [ref=f1e50] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f1e55]:
+              - link "MCP" [ref=f1e56] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f1e61]:
+              - link "LLM" [ref=f1e62] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f1e67]:
+              - link "IAC" [ref=f1e68] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f1e73]:
+              - link "DAST" [ref=f1e74] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f1e79]:
+          - generic [ref=f1e80]: Integrations
+          - list [ref=f1e82]:
+            - listitem [ref=f1e83]:
+              - link "CI / CD" [ref=f1e84] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f1e89]:
+        - list [ref=f1e90]:
+          - listitem [ref=f1e91]:
+            - link "Teams" [ref=f1e92] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f1e99]:
+            - link "Settings" [ref=f1e100] [cursor=pointer]:
+              - /url: /1/settings
+        - paragraph [ref=f1e111]: Loading...
+    - main [ref=f1e112]:
+      - generic [ref=f1e116]:
+        - generic [ref=f1e117]:
+          - heading "DAST Scans" [level=1] [ref=f1e118]
+          - paragraph [ref=f1e119]: Manage and view all your DAST scan conversations.
+        - generic [ref=f1e120]:
+          - button "New Scan" [ref=f1e121] [cursor=pointer]
+          - button "Refresh" [ref=f1e122] [cursor=pointer]
+  - region "Notifications alt+T"
+  - alert [ref=f1e126]

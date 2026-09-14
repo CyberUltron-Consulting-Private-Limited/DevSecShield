@@ -532,6 +532,7 @@ export interface CreateTicketData {
   ticket_type: "jira";
   summary: string;
   description: string;
+  finding_ids?: string[];
 }
 
 /** Create a ticket for a scan. POST /{team_id}/{type}/scan/{scan_id}/create_ticket */
@@ -1934,9 +1935,10 @@ export interface SCASBOMConversationMessage {
     is_streaming: boolean
 }
 
-/** Matches backend JiraTeamSettingsData for scans (db/schemas.py). Only jira_project_id is sent for scan integration_settings. */
+/** Matches backend JiraScanSettingsData for scans (db/schemas.py). */
 export interface ScanJiraSettings {
     jira_project_id: string | null;
+    auto_create_tickets?: boolean | null;
 }
 /** Matches backend ScanTicketingIntegrationSettingsData. */
 export interface ScanTicketingIntegrationSettings {
@@ -3800,7 +3802,7 @@ export interface CicdIntegration {
     title: string
     created_at: string
     last_updated: string
-    scan_type: "sast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    scan_type: "sast" | "dast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
     api_key: string
 }
 
@@ -3826,7 +3828,7 @@ const getCicdIntegrations = async (team_id: number): Promise<CicdIntegrationsRes
 
 export interface CreateCicdIntegrationData {
     title: string
-    scan_type: "sast"
+    scan_type: "sast" | "dast"
 }
 
 const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData) => {
@@ -3866,10 +3868,10 @@ export interface CicdIntegrationDashboard {
     title: string
     created_at: string
     last_updated: string
-    scan_type: "sast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    scan_type: "sast" | "dast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
     api_key: string
     integration_active?: boolean
-    integration_settings?: Record<string, { jira_project_id?: string | null } | null> | null
+    integration_settings?: Record<string, { jira_project_id?: string | null; auto_create_tickets?: boolean | null } | null> | null
     scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null } | null> | null
     logs: CicdLog[]
     /** Vulns-over-time chart data (date -> severity counts); from get_cicd_vuln_chart_data */
@@ -3902,7 +3904,7 @@ const deleteCicdIntegration = async (team_id: number, integration_id: number) =>
 }
 
 export interface CicdIntegrationSettingsData {
-    jira?: { jira_project_id?: string | null } | null
+    jira?: { jira_project_id?: string | null; auto_create_tickets?: boolean | null } | null
 }
 
 export interface CicdScanSettingsData {

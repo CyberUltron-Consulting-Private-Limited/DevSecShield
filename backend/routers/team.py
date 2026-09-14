@@ -11,7 +11,7 @@ from backend.new_models import Team, TeamMembership , User , Scan , CicdIntegrat
 from backend.utilities.team.membership import add_emails_to_team , remove_emails_from_team
 from sqlalchemy import or_
 from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
-from backend.utilities.db.encryption import encrypt_value, decrypt_value, is_encrypted
+from backend.utilities.db.encryption import prepare_secret_for_storage, SECRET_PLACEHOLDER
 import copy
 
 router = APIRouter( tags=["team"] )   
@@ -63,7 +63,7 @@ async def get_team(
                 if "jira" in safe_integration_settings and safe_integration_settings["jira"]:
                     if "api_token" in safe_integration_settings["jira"] and safe_integration_settings["jira"]["api_token"]:
                         # Mask the token - show only that it's configured
-                        safe_integration_settings["jira"]["api_token"] = "••••••••" if safe_integration_settings["jira"]["api_token"] else None
+                        safe_integration_settings["jira"]["api_token"] = SECRET_PLACEHOLDER if safe_integration_settings["jira"]["api_token"] else None
             
             return {
                 "team_id": team.id,
@@ -207,15 +207,16 @@ async def update_team(
             if data.integration_settings is not None:
                 if data.integration_settings.jira is not None:
                     specific_settings_dict = data.integration_settings.model_dump()
-                    settings_dict = team.integration_settings.copy() or {}
+                    settings_dict = (team.integration_settings or {}).copy()
                     
-                    # SECURITY: Encrypt sensitive Jira credentials before storage
+                    # Encrypt the token; if the UI echoed the masked placeholder, keep the stored ciphertext.
                     jira_settings = specific_settings_dict["jira"]
-                    if jira_settings and "api_token" in jira_settings and jira_settings["api_token"]:
-                        # Only encrypt if not already encrypted (for migration compatibility)
-                        if not is_encrypted(jira_settings["api_token"]):
-                            jira_settings["api_token"] = encrypt_value(jira_settings["api_token"])
-                    
+                    if jira_settings:
+                        existing_token = (settings_dict.get("jira") or {}).get("api_token")
+                        jira_settings["api_token"] = prepare_secret_for_storage(
+                            jira_settings.get("api_token"),
+                            existing_token,
+                        )
                     settings_dict["jira"] = jira_settings
                     team.integration_settings = settings_dict
             session.add(team)

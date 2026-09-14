@@ -12,11 +12,16 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.get_db import get_db, get_mongo_client_db
 from backend.mongo_models import CicdLogs
-from backend.new_models import CicdIntegration , Scan, DastScanProfile, scan_types
+from backend.new_models import CicdIntegration , Scan, DastScanProfile, Team, scan_types
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.celery.celery_connection import get_celery_app, get_status_and_update_db
-from backend.utilities.cicd.auth import create_api_key, get_user_and_integration_id
-from backend.utilities.cicd.parser import get_vulns
+from backend.utilities.cicd.auth import (
+    create_api_key,
+    get_user_and_integration_id,
+    require_dast_cicd_key,
+    require_zip_cicd_key,
+)
+from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
 from backend.utilities.cicd.poll import poll_for_results
 from backend.utilities.cicd.schemas import (
     CreateCicdIntegrationData,
@@ -37,9 +42,6 @@ from backend.utilities.team import check_if_user_is_in_team
 from backend.utilities.db.s3_utils import delete_file, upload_file
 from backend.utilities.cicd.start_cicd_scan import start_cicd_scan_and_update_db
 from backend.utilities.cicd.estimate_cicd_scan import estimate_cicd_scan
-from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
-from backend.utilities.db.encryption import decrypt_value, is_encrypted
-from backend.utilities.cicd.sast_output import create_output_string_for_results
 from backend.utilities.team.credits import deduct_credits_from_team
 
 console = Console()
@@ -60,6 +62,7 @@ async def run_cicd_dast_scan(
     dependencies=[Depends(limiter)],
 ):
     """Fire-and-forget DAST. Does not poll. Same team as the CI/CD API key."""
+    require_dast_cicd_key(user_and_integration)
     engine = get_db()
     team_id = user_and_integration["team_id"]
     user_id = user_and_integration["user_id"]
@@ -72,6 +75,8 @@ async def run_cicd_dast_scan(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DAST profile not found")
         if profile.team_id != team_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="DAST profile is not on this CI/CD integration team")
+        integration = session.get(CicdIntegration, integration_id)
+        integ_settings = dict(integration.integration_settings or {}) if integration else {}
 
     result = run_dast_from_profile(
         body.profile_id,
@@ -79,6 +84,7 @@ async def run_cicd_dast_scan(
         engine=engine,
         target_url_override=body.target_url,
         owner_user_id=user_id,
+        integration_settings=integ_settings,
     )
     if result.status == "skipped_in_flight":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.message)
@@ -123,6 +129,7 @@ async def get_cicd_dast_scan(
     user_and_integration: dict = Depends(get_user_and_integration_id),
     dependencies=[Depends(limiter)],
 ):
+    require_dast_cicd_key(user_and_integration)
     engine = get_db()
     team_id = user_and_integration["team_id"]
     with Session(engine) as session:
@@ -185,6 +192,7 @@ async def run_cicd_scan(
     6. this route will poll the cicd_worker for the results and return them as a JSON response
     """
     try:
+        require_zip_cicd_key(user_and_integration, type)
         if type == "dast":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -290,27 +298,38 @@ async def run_cicd_scan(
         
         
         # STEP [ 6 ] : ================= Integrate with Jira if enabled =================================
+        # Re-load Team/CicdIntegration in a live session so Jira helpers do not hit DetachedInstanceError.
         try:
-            if integration.integration_settings  and "jira" in integration.integration_settings and results is not None :
-                jira_project_id = integration.integration_settings["jira"].get("jira_project_id")
-                jira_email = team.integration_settings["jira"].get("email")
-                jira_api_token_raw = team.integration_settings["jira"].get("api_token")
-                # SECURITY: Decrypt api_token if encrypted (supports both encrypted and legacy plaintext)
-                jira_api_token = decrypt_value(jira_api_token_raw) if is_encrypted(jira_api_token_raw) else jira_api_token_raw
-                jira_api_url = team.integration_settings["jira"].get("url")
-                if not jira_project_id or not jira_email or not jira_api_token or not jira_api_url:
-                    raise Exception("Jira project id, email, api token or url is missing, cannot create ticket")
-                
-                description = create_output_string_for_results(scan_type = scan_type, results = results)
-                console.print("Creating ticket in jira 🎫", style="bold yellow")
-                create_issue_in_jira(
-                    project_id=jira_project_id,
-                    jira_token=jira_api_token,
-                    jira_url=jira_api_url,
-                    jira_email=jira_email,
-                    summary=f"CICD Scan Results Scan that ran on {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC",
-                    description=description,
-                )
+            from backend.utilities.integrations.jira_ticketing import (
+                auto_create_enabled,
+                flatten_scan_result_rows,
+                create_tickets_from_result_rows,
+            )
+            with Session(engine) as jira_session:
+                live_integration = jira_session.get(CicdIntegration, user_and_integration["integration_id"])
+                live_team = jira_session.get(Team, team_id)
+                if (
+                    live_integration
+                    and live_team
+                    and auto_create_enabled(live_integration.integration_settings)
+                    and results is not None
+                ):
+                    jira_project_id = ((live_integration.integration_settings or {}).get("jira") or {}).get(
+                        "jira_project_id"
+                    )
+                    if jira_project_id:
+                        rows = flatten_scan_result_rows(
+                            scan_type,
+                            {"results": results} if isinstance(results, list) else results,
+                        )
+                        console.print("Creating per-finding Jira tickets from CI/CD results", style="bold yellow")
+                        create_tickets_from_result_rows(
+                            team=live_team,
+                            project_id=str(jira_project_id),
+                            scan_type=scan_type,
+                            scan_id=None,
+                            rows=rows,
+                        )
         except Exception as e:
             console.print(f"Error Creating ticket in cicd scan: {str(e)}", style="bold red")
             
@@ -402,6 +421,8 @@ async def create_cicd_integration(
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         if data.title is None or data.scan_type is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title and scan type are required")
+        if data.scan_type not in ("sast", "dast"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan type must be sast or dast")
 
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================
@@ -411,6 +432,13 @@ async def create_cicd_integration(
         # STEP [ 3 ] : ======================================== Create the integration ====================================
         plaintext_api_key, hashed_api_key = create_api_key(team_id)
         with Session(engine) as session:
+            existing_dast = session.exec(
+                select(CicdIntegration).where(
+                    CicdIntegration.team_id == team_id,
+                    CicdIntegration.scan_type == "dast",
+                )
+            ).all()
+            is_first_dast = data.scan_type == "dast" and len(existing_dast) == 0
             integration = CicdIntegration(
                 team_id=team_id, 
                 owner_user_id=user.id, 
@@ -420,8 +448,14 @@ async def create_cicd_integration(
             session.add(integration)
             session.commit()
             session.refresh(integration)
+            created_id = integration.id
+            if is_first_dast:
+                try:
+                    migrate_dast_cicd_logs_for_team(session, mongo_db, team_id)
+                except Exception as migrate_exc:
+                    console.print(f"DAST cicd_logs migrate skipped: {migrate_exc}", style="dim yellow")
             return {
-                "integration_id": integration.id,
+                "integration_id": created_id,
                 "api_key": plaintext_api_key,  # Return plaintext ONCE, user must save it
                 "warning": "Save this API key now. It will not be shown again."
             }
@@ -605,6 +639,10 @@ async def get_cicd_integration(
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             scan_type = integration.scan_type
+            scan_settings_snapshot = integration.scan_settings
+            has_dast_profile = session.exec(
+                select(DastScanProfile.id).where(DastScanProfile.team_id == team_id)
+            ).first() is not None
 
         # STEP [ 4 ] : ==================================== Get the ci cd integration logs from the mongo db ====================================
         cicd_logs_collection = mongo_db["cicd_logs"]
@@ -619,7 +657,7 @@ async def get_cicd_integration(
         result , task_status = None, None
         for log in cicd_logs:
             meta = log.get("scan_settings_metadata") or {}
-            if meta.get("scan_type") == "dast" or meta.get("trigger") == "cicd":
+            if (meta.get("scan_type") or "").lower() == "dast":
                 continue
 
             # update status if not success
@@ -655,12 +693,15 @@ async def get_cicd_integration(
         logs = mongo_db["cicd_logs"].find(cicd_integration_id_filter(integration_id)).sort("created_at", -1).limit(limit).skip(offset)
         logs_data = []
         results_list = []
+        integ_is_dast = (scan_type or "").lower() == "dast"
         with Session(engine) as session:
             for log in logs:
                 dashboard_data = None
                 meta = log.get("scan_settings_metadata") or {}
                 scan_id = meta.get("scan_id")
-                is_dast = meta.get("scan_type") == "dast" or meta.get("trigger") == "cicd"
+                is_dast = (meta.get("scan_type") or "").lower() == "dast"
+                if integ_is_dast != is_dast:
+                    continue
                 if is_dast and scan_id:
                     scan = session.get(Scan, int(scan_id))
                     if scan is not None:
@@ -693,7 +734,9 @@ async def get_cicd_integration(
                     results_list.append((log["results"], created_date))
         
         # STEP [ 7 ] : ================= Return the integration and logs ================================
-        if not integration.scan_settings  or integration.scan_settings == {} : 
+        if integ_is_dast:
+            integration_active = has_dast_profile
+        elif not scan_settings_snapshot or scan_settings_snapshot == {}:
             integration_active = False
         else:
             integration_active = True

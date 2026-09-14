@@ -94,10 +94,25 @@ def client(monkeypatch: pytest.MonkeyPatch):
         session.add(user)
         session.commit()
         session.refresh(user)
-        integ = CicdIntegration(team_id=team.id, owner_user_id=user.id, api_key="hashed", title="ci", scan_type="sast")
+        integ = CicdIntegration(
+            team_id=team.id,
+            owner_user_id=user.id,
+            api_key="hashed-dast",
+            title="ci-dast",
+            scan_type="dast",
+        )
+        sast_integ = CicdIntegration(
+            team_id=team.id,
+            owner_user_id=user.id,
+            api_key="hashed-sast",
+            title="ci-sast",
+            scan_type="sast",
+        )
         session.add(integ)
+        session.add(sast_integ)
         session.commit()
         session.refresh(integ)
+        session.refresh(sast_integ)
         profile = DastScanProfile(
             team_id=team.id,
             owner_user_id=user.id,
@@ -119,6 +134,7 @@ def client(monkeypatch: pytest.MonkeyPatch):
             "other_team_id": other.id,
             "user_id": user.id,
             "integration_id": integ.id,
+            "sast_integration_id": sast_integ.id,
             "profile_id": profile.id,
             "engine": eng,
             "inserted": inserted,
@@ -129,6 +145,7 @@ def client(monkeypatch: pytest.MonkeyPatch):
             "user_id": ids["user_id"],
             "integration_id": ids["integration_id"],
             "team_id": ids["team_id"],
+            "scan_type": "dast",
         }
 
     app.dependency_overrides[get_user_and_integration_id] = _auth
@@ -182,8 +199,38 @@ def test_cicd_team_mismatch_is_403(client, monkeypatch: pytest.MonkeyPatch) -> N
             "user_id": ids["user_id"],
             "integration_id": ids["integration_id"],
             "team_id": ids["other_team_id"],
+            "scan_type": "dast",
         }
 
     app.dependency_overrides[get_user_and_integration_id] = _other
     response = http.post("/cicd/dast/scan", json={"profile_id": ids["profile_id"]})
     assert response.status_code == 403
+
+
+def test_sast_key_cannot_start_dast_scan(client) -> None:
+    http, ids = client
+
+    def _sast():
+        return {
+            "user_id": ids["user_id"],
+            "integration_id": ids["sast_integration_id"],
+            "team_id": ids["team_id"],
+            "scan_type": "sast",
+        }
+
+    app.dependency_overrides[get_user_and_integration_id] = _sast
+    response = http.post("/cicd/dast/scan", json={"profile_id": ids["profile_id"]})
+    assert response.status_code == 403
+    assert "not a DAST" in (response.json().get("detail") or "")
+    get_resp = http.get("/cicd/dast/scan/1")
+    assert get_resp.status_code == 403
+
+
+def test_dast_key_cannot_start_sast_zip_scan(client) -> None:
+    http, _ids = client
+    response = http.post(
+        "/cicd/sast/scan",
+        files={"zip_file": ("proj.zip", b"PK\x03\x04not-a-real-zip", "application/zip")},
+    )
+    assert response.status_code == 403
+    assert "DAST-only" in (response.json().get("detail") or "")

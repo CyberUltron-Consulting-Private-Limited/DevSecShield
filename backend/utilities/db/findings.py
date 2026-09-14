@@ -61,6 +61,14 @@ def _ai_bom_risk_score(impact) -> float:
     return AI_BOM_RISK_SCORE_MAP.get((impact or "").lower(), 0)
 
 
+def _jira_issue_key(finding: dict) -> str | None:
+    info = finding.get("info") if isinstance(finding.get("info"), dict) else {}
+    key = info.get("jira_issue_key")
+    if isinstance(key, str) and key.strip():
+        return key.strip()
+    return None
+
+
 def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dict]:
     findings = []
     if scan_type == "sast":
@@ -68,6 +76,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
         for finding in findings_fetched:
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
@@ -87,6 +96,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
         for finding in findings_fetched:
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
@@ -112,6 +122,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
             title = str(fd.get("title") or "").strip() or dep or "Untitled finding"
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": title,
                 "description": fd.get("description") or "",
                 "impact": impact,
@@ -133,6 +144,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
         for finding in findings_fetched:
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
@@ -151,6 +163,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
         for finding in findings_fetched:
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": finding["finding_data"]["title"],
                 "description": finding["finding_data"]["description"],
                 "impact": finding["finding_data"]["impact"],
@@ -167,6 +180,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
         for finding in findings_fetched:
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": finding["finding_data"]["title"],
                 "url": finding["finding_data"].get("url","-"),
                 "description": finding["finding_data"]["description"],
@@ -187,6 +201,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
             fd = finding.get("finding_data", {})
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 # Inventory bom_ref (additive; present on reconciled aibom rows)
                 # — charts join "View finding" via bom_ref, not Mongo id.
                 "bom_ref": fd.get("bom_ref") or None,
@@ -214,6 +229,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
             fd = finding.get("finding_data", {})
             findings.append({
                 "id": str(finding["_id"]),
+                "jira_issue_key": _jira_issue_key(finding),
                 "title": fd.get("title", ""),
                 "description": fd.get("description", ""),
                 "impact": fd.get("impact") or "low",

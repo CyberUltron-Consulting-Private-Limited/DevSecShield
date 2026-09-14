@@ -266,6 +266,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [jiraProjectId, setJiraProjectId] = useState("");
+  const [autoCreateTickets, setAutoCreateTickets] = useState(false);
   const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
   const [filterImpact, setFilterImpact] = useState<string>("all");
   type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
@@ -314,12 +315,15 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
 
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
-      ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
+      ? (integrationSettings.jira as { jira_project_id?: string; auto_create_tickets?: boolean } | undefined)
       : undefined;
   const initialJiraProjectId = jiraFromSettings?.jira_project_id ?? "";
   useEffect(() => {
     setJiraProjectId(initialJiraProjectId);
   }, [initialJiraProjectId]);
+  useEffect(() => {
+    setAutoCreateTickets(jiraFromSettings?.auto_create_tickets === true);
+  }, [jiraFromSettings?.auto_create_tickets]);
 
   const updateIntegrationMutation = useMutation({
     mutationFn: (payload: { integration_settings: ScanTicketingIntegrationSettings }) =>
@@ -411,6 +415,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
         ticket_type: "jira",
         summary,
         description,
+        finding_ids: selectedFindings.map((vuln) => vuln.id),
       });
     },
     onMutate: () => {
@@ -591,10 +596,12 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
         <TicketingIntegrationsSettings
           jiraProjectId={jiraProjectId}
           onJiraProjectIdChange={setJiraProjectId}
+          autoCreateTickets={autoCreateTickets}
+          onAutoCreateTicketsChange={setAutoCreateTickets}
           onSave={() => {
             updateIntegrationMutation.mutate({
               integration_settings: {
-                jira: { jira_project_id: jiraProjectId.trim() || null },
+                jira: { jira_project_id: jiraProjectId.trim() || null, auto_create_tickets: autoCreateTickets },
               },
             });
           }}

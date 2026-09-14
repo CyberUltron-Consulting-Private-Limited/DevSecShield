@@ -194,6 +194,13 @@ def get_status_and_update_db(
             session.commit()
             session.refresh(scan)
             SCAN_OBJECT = scan
+
+        if SCAN_STATUS == "success" and previous_status != "success":
+            try:
+                from backend.utilities.integrations.jira_ticketing import auto_create_tickets_for_successful_scan
+                auto_create_tickets_for_successful_scan(scan_id, engine)
+            except Exception as jira_err:
+                console.print(f"Auto-Jira skipped for scan {scan_id}: {jira_err}", style="yellow")
         
             
         return (SCAN_STATUS , SCAN_DATA , SCAN_OBJECT)

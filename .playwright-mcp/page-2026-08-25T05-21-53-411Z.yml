@@ -1,0 +1,81 @@
+- generic [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - generic [ref=f3e5]:
+      - button "Ansh Singhal's Team 7699.91 credits" [ref=f3e117] [cursor=pointer]:
+        - generic [ref=f3e12]:
+          - text: Ansh Singhal's Team
+          - generic [ref=f3e118]: 7699.91 credits
+      - generic [ref=f3e16]:
+        - list [ref=f3e19]:
+          - listitem [ref=f3e20]:
+            - link "Home" [ref=f3e21] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f3e26]:
+          - generic [ref=f3e27]: Scanning Utilities
+          - list [ref=f3e29]:
+            - listitem [ref=f3e30]:
+              - link "SAST" [ref=f3e31] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f3e36]:
+              - link "SCA + SBOM" [ref=f3e37] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f3e43]:
+              - link "CBOM" [ref=f3e44] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f3e49]:
+              - link "AI BOM" [ref=f3e50] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f3e55]:
+              - link "MCP" [ref=f3e56] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f3e61]:
+              - link "LLM" [ref=f3e62] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f3e67]:
+              - link "IAC" [ref=f3e68] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f3e73]:
+              - link "DAST" [ref=f3e74] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f3e79]:
+          - generic [ref=f3e80]: Integrations
+          - list [ref=f3e82]:
+            - listitem [ref=f3e83]:
+              - link "CI / CD" [ref=f3e84] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f3e89]:
+        - list [ref=f3e90]:
+          - listitem [ref=f3e91]:
+            - link "Teams" [ref=f3e92] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f3e99]:
+            - link "Settings" [ref=f3e100] [cursor=pointer]:
+              - /url: /1/settings
+        - button "KS Krishna Sharma shivam@cyberultron.com" [ref=f3e119] [cursor=pointer]:
+          - generic [ref=f3e120]: KS
+          - generic [ref=f3e121]:
+            - paragraph [ref=f3e122]: Krishna Sharma
+            - paragraph [ref=f3e123]: shivam@cyberultron.com
+    - main [ref=f3e112]:
+      - generic [ref=f3e127]:
+        - generic [ref=f3e128]:
+          - generic [ref=f3e129]:
+            - button "Back" [ref=f3e130] [cursor=pointer]
+            - generic [ref=f3e131]:
+              - heading "DAST Scan Results" [level=1] [ref=f3e132]
+              - paragraph [ref=f3e133]: Findings and security metrics
+          - generic [ref=f3e134]:
+            - button "Download scan report" [ref=f3e135] [cursor=pointer]: Download Scan Report
+            - button "Chat with the Results" [ref=f3e136] [cursor=pointer]
+        - generic [ref=f3e137]:
+          - button "Results" [ref=f3e138] [cursor=pointer]
+          - button "Ticketing integrations" [active] [ref=f3e142] [cursor=pointer]
+        - generic [ref=f3e808]:
+          - generic [ref=f3e809]:
+            - generic [ref=f3e810]: Ticketing integrations
+            - generic [ref=f3e811]: Connect this scan to ticketing systems. Configure Jira project to send findings.
+          - heading [level=3] [ref=f3e815]:
+            - button "Jira" [ref=f3e816] [cursor=pointer]
+  - region "Notifications alt+T"
+  - alert [ref=f3e116]
+  - generic [ref=f3e807]: 800-53

@@ -198,6 +198,63 @@ def create_issue_in_project(
         raise
 
 
+def list_issue_transitions(
+    jira_url: str,
+    jira_token: str,
+    issue_key: str,
+    jira_email: str = "support@zeroshield.ai",
+) -> list[dict]:
+    validate_jira_url(jira_url)
+    url = f"{jira_url.rstrip('/')}/rest/api/3/issue/{issue_key}/transitions"
+    auth = HTTPBasicAuth(jira_email, jira_token)
+    headers = {"Accept": "application/json"}
+    try:
+        response = requests.request(
+            "GET",
+            url,
+            headers=headers,
+            auth=auth,
+            timeout=REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+        return response.json().get("transitions") or []
+    except Timeout:
+        raise Exception("Jira request timed out. Please try again.")
+    except RequestException as e:
+        console.print(f"[ERROR] Jira transitions request failed: {e}", style="bold red")
+        raise
+
+
+def transition_issue(
+    jira_url: str,
+    jira_token: str,
+    issue_key: str,
+    transition_id: str,
+    jira_email: str = "support@zeroshield.ai",
+) -> None:
+    validate_jira_url(jira_url)
+    url = f"{jira_url.rstrip('/')}/rest/api/3/issue/{issue_key}/transitions"
+    auth = HTTPBasicAuth(jira_email, jira_token)
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    payload = json.dumps({"transition": {"id": str(transition_id)}})
+    try:
+        response = requests.request(
+            "POST",
+            url,
+            data=payload,
+            headers=headers,
+            auth=auth,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code not in (200, 204):
+            raise Exception(f"Failed to transition Jira issue {issue_key}: {response.text}")
+    except Timeout:
+        raise Exception("Jira request timed out. Please try again.")
+    except RequestException as e:
+        console.print(f"[ERROR] Jira transition failed: {e}", style="bold red")
+        raise
+
+
 if __name__ == "__main__":
     try:
         # Test examples removed - use environment variables

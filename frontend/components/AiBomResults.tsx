@@ -234,14 +234,18 @@ export default function AiBomResults({
   // Jira ticketing state
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
-      ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
+      ? (integrationSettings.jira as { jira_project_id?: string; auto_create_tickets?: boolean } | undefined)
       : undefined;
   const initialJiraProjectId = jiraFromSettings?.jira_project_id ?? "";
   const [jiraProjectId, setJiraProjectId] = useState(initialJiraProjectId);
+  const [autoCreateTickets, setAutoCreateTickets] = useState(jiraFromSettings?.auto_create_tickets === true);
 
   useEffect(() => {
     setJiraProjectId(initialJiraProjectId);
   }, [initialJiraProjectId]);
+  useEffect(() => {
+    setAutoCreateTickets(jiraFromSettings?.auto_create_tickets === true);
+  }, [jiraFromSettings?.auto_create_tickets]);
 
   const relatedRefAliases = useMemo(() => {
     const fromMeta = (scanMetadata as AiBomScanMetadata | null)?.ai_bom_graph as
@@ -367,6 +371,7 @@ export default function AiBomResults({
         ticket_type: "jira",
         summary,
         description,
+        finding_ids: selected.map((f) => f.id),
       });
     },
     onMutate: () => {
@@ -783,10 +788,12 @@ export default function AiBomResults({
         <TicketingIntegrationsSettings
           jiraProjectId={jiraProjectId}
           onJiraProjectIdChange={setJiraProjectId}
+          autoCreateTickets={autoCreateTickets}
+          onAutoCreateTicketsChange={setAutoCreateTickets}
           onSave={() => {
             updateIntegrationMutation.mutate({
               integration_settings: {
-                jira: { jira_project_id: jiraProjectId.trim() || null },
+                jira: { jira_project_id: jiraProjectId.trim() || null, auto_create_tickets: autoCreateTickets },
               },
             });
           }}

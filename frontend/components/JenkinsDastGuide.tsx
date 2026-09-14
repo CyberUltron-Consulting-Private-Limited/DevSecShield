@@ -91,8 +91,11 @@ export function JenkinsDastGuide({ teamId }: { apiKey: string; teamId: number })
       <div>
         <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">Jenkins DAST after deploy</h3>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Same CI/CD API key as SAST. No zip. Pick a saved DAST profile; the pipeline POSTs JSON to{" "}
-          <code className="font-mono text-xs">/cicd/dast/scan</code>.
+          Use the API key from this DAST integration. A SAST key on{" "}
+          <code className="font-mono text-xs">/cicd/dast/scan</code> returns 403. No zip. Pick a saved DAST
+          profile; the pipeline POSTs JSON. Existing Jenkinsfiles that still use a SAST key for DAST must
+          switch to this key. To open one Jira Task per finding when the scan succeeds, save a Jira project ID
+          and enable auto-create on this DAST CI/CD integration (Ticketing settings).
         </p>
       </div>
 
@@ -116,7 +119,7 @@ export function JenkinsDastGuide({ teamId }: { apiKey: string; teamId: number })
             </SelectContent>
           </Select>
           {(!profiles.data || profiles.data.length === 0) && !profiles.isLoading && (
-            <p className="text-xs text-zinc-500">Create a profile on the DAST Profiles tab first.</p>
+            <p className="text-xs text-zinc-500">Create a profile on the Scan settings tab first.</p>
           )}
         </CardContent>
       </Card>

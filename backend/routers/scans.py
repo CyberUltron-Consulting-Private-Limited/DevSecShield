@@ -1,4 +1,3 @@
-import datetime
 import json
 import os
 import tempfile
@@ -27,7 +26,6 @@ from backend.utilities.db.findings import get_findings_for_scan_type
 from backend.utilities.pdf import generate_pdf_for_type
 from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
-    check_if_user_is_admin_of_team,
     check_if_user_is_in_team,
 )
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
@@ -43,8 +41,8 @@ from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
-from backend.utilities.db.encryption import decrypt_value, is_encrypted
-from backend.new_models import scan_types
+from backend.utilities.db.encryption import decrypt_if_encrypted
+from backend.new_models import scan_types, Team
 from rich.console import Console
 from backend.utilities.dashboard.scan_list import generate_dashboard_data_for_scan_list
 from datetime import datetime, timezone
@@ -726,9 +724,21 @@ async def update_scan(
             session.add(scan)
             session.commit()
             session.refresh(scan)
-            return {
-                "message": "Scan title updated successfully",
-            }
+            should_backfill = (
+                scan.scan_status == "success"
+                and data.integration_settings is not None
+                and data.integration_settings.jira is not None
+            )
+            return_payload = {"message": "Scan title updated successfully"}
+        if should_backfill:
+            try:
+                from backend.utilities.integrations.jira_ticketing import auto_create_tickets_for_successful_scan
+                created = auto_create_tickets_for_successful_scan(scan_id, engine)
+                if created:
+                    return_payload["jira_tickets_created"] = created
+            except Exception as jira_err:
+                console.print(f"Auto-Jira backfill skipped for scan {scan_id}: {jira_err}", style="yellow")
+        return return_payload
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -984,25 +994,56 @@ async def create_ticket(
             
             jira_project_id = scan.integration_settings["jira"]["jira_project_id"]
             jira_api_token_raw = team.integration_settings["jira"]["api_token"]
-            # SECURITY: Decrypt api_token if encrypted (supports both encrypted and legacy plaintext)
-            jira_api_token = decrypt_value(jira_api_token_raw) if is_encrypted(jira_api_token_raw) else jira_api_token_raw
+            jira_api_token = decrypt_if_encrypted(jira_api_token_raw)
             jira_api_url = team.integration_settings["jira"]["url"]
             jira_api_email = team.integration_settings["jira"]["email"]
 
             if not jira_project_id or not jira_api_token or not jira_api_url or not jira_api_email:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira project id, api token, url or email is missing, cannot create ticket")
 
-            create_issue_in_jira(
-                project_id=jira_project_id,
-                jira_token=jira_api_token,
-                jira_url=jira_api_url,
-                jira_email=jira_api_email,
-                summary=data.summary,
-                description=data.description,
-            )
+            issue_keys: list[str] = []
+            mongo_db = get_mongo_client_db()
+            if data.finding_ids:
+                from backend.utilities.integrations.jira_ticketing import create_jira_issue_for_finding
+                for raw_id in data.finding_ids:
+                    try:
+                        finding_oid = ObjectId(raw_id)
+                    except (InvalidId, TypeError):
+                        continue
+                    doc = mongo_db["scan_findings"].find_one({"_id": finding_oid, "scan_id": scan_id})
+                    if not doc:
+                        continue
+                    info = doc.get("info") if isinstance(doc.get("info"), dict) else {}
+                    if (info.get("jira_issue_key") or "").strip():
+                        issue_keys.append(info["jira_issue_key"])
+                        continue
+                    key = create_jira_issue_for_finding(
+                        team=team,
+                        project_id=str(jira_project_id),
+                        scan_type=type,
+                        scan_id=scan_id,
+                        finding_data=doc.get("finding_data") if isinstance(doc.get("finding_data"), dict) else {},
+                    )
+                    mongo_db["scan_findings"].update_one(
+                        {"_id": finding_oid},
+                        {"$set": {"info": {**info, "jira_issue_key": key, "jira_project_id": str(jira_project_id)}}},
+                    )
+                    issue_keys.append(key)
+            else:
+                created = create_issue_in_jira(
+                    project_id=jira_project_id,
+                    jira_token=jira_api_token,
+                    jira_url=jira_api_url,
+                    jira_email=jira_api_email,
+                    summary=data.summary,
+                    description=data.description,
+                )
+                if isinstance(created, dict) and created.get("key"):
+                    issue_keys.append(created["key"])
 
             return {
                 "message": "Ticket created successfully",
+                "issue_keys": issue_keys,
             }
 
     except HTTPException as e:
@@ -1030,8 +1071,8 @@ async def toggle_finding_state(
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
         mongo_db = get_mongo_client_db()
 
-        # STEP [ 1 ] : =========== Check if user is admin of team ======================
-        check_if_user_is_admin_of_team(user.id, team_id, engine)
+        # STEP [ 1 ] : =========== Check if user is in team ======================
+        check_if_user_is_in_team(user.id, team_id, engine)
 
         # STEP [ 1.5 ] : === Authorize: scan must belong to this team (prevent cross-tenant IDOR) ===
         with Session(engine) as session:
@@ -1056,6 +1097,14 @@ async def toggle_finding_state(
 
         if data.state == "fixed":
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state, "fixed_at": datetime.now(timezone.utc)}})
+            try:
+                from backend.utilities.integrations.jira_ticketing import close_jira_issue_for_finding
+                with Session(engine) as session:
+                    team = session.exec(select(Team).where(Team.id == team_id)).first()
+                    if team:
+                        close_jira_issue_for_finding(target_finding, team)
+            except Exception as jira_close_err:
+                console.print(f"Jira close-on-fixed skipped for {data.finding_id}: {jira_close_err}", style="yellow")
         elif data.state == "ignored":
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state, "ignored_at": datetime.now(timezone.utc)}})
         else:

@@ -65,7 +65,7 @@ export default function CicdPage() {
   const [newName, setNewName] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
   const [formTitle, setFormTitle] = useState("");
-  const [formScanType, setFormScanType] = useState<"sast" | "">("");
+  const [formScanType, setFormScanType] = useState<"sast" | "dast" | "">("");
   const [searchQuery, setSearchQuery] = useState("");
   const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
   const router = useRouter();
@@ -493,7 +493,7 @@ export default function CicdPage() {
                   if (e.key === "Enter" && formTitle.trim() && formScanType) {
                     createCicdIntegrationMutation.mutate({
                       title: formTitle.trim(),
-                      scan_type: formScanType as "sast",
+                      scan_type: formScanType as "sast" | "dast",
                     });
                   }
                 }}
@@ -504,13 +504,14 @@ export default function CicdPage() {
               <Label htmlFor="scan_type" className="cursor-pointer">Scan Type *</Label>
               <Select
                 value={formScanType}
-                onValueChange={(value) => setFormScanType(value as "sast")}
+                onValueChange={(value) => setFormScanType(value as "sast" | "dast")}
               >
                 <SelectTrigger id="scan_type" className="cursor-pointer">
                   <SelectValue placeholder="Select scan type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="sast" className="cursor-pointer">SAST</SelectItem>
+                  <SelectItem value="dast" className="cursor-pointer">DAST</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -541,7 +542,7 @@ export default function CicdPage() {
                 
                 createCicdIntegrationMutation.mutate({
                   title: formTitle.trim(),
-                  scan_type: formScanType as "sast",
+                  scan_type: formScanType as "sast" | "dast",
                 });
               }}
               disabled={!formTitle.trim() || !formScanType || createCicdIntegrationMutation.isPending}

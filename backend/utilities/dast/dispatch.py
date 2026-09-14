@@ -62,6 +62,7 @@ def run_dast_from_profile(
     engine: Engine | None = None,
     target_url_override: str | None = None,
     owner_user_id: int | None = None,
+    integration_settings: dict | None = None,
 ) -> DispatchResult:
     engine = engine or get_db()
     now = datetime.now(timezone.utc)
@@ -120,6 +121,7 @@ def run_dast_from_profile(
             scan_status="NOT_STARTED",
             credit_consumed=credits,
             scan_metadata=redacted_meta,
+            integration_settings=integration_settings or {},
         )
         session.add(scan)
         session.commit()

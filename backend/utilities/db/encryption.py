@@ -56,43 +56,93 @@ def encrypt_value(plaintext: str) -> str:
     return base64.urlsafe_b64encode(ciphertext).decode("utf-8")
 
 
+def _fernet_token_candidates(ciphertext: str) -> list[bytes]:
+    """
+    encrypt_value() wraps a Fernet token in an extra urlsafe-b64 layer.
+    Older rows may store the raw Fernet token (prefix gAAAAA). Try both.
+    """
+    raw = ciphertext.encode("utf-8")
+    candidates = [raw]
+    try:
+        unwrapped = base64.urlsafe_b64decode(raw)
+        if unwrapped and unwrapped != raw:
+            candidates.append(unwrapped)
+    except Exception:
+        pass
+    return candidates
+
+
 def decrypt_value(ciphertext: str) -> str:
     """
-    Decrypt a base64-encoded ciphertext and return plaintext.
+    Decrypt a stored secret and return plaintext.
+    Accepts both encrypt_value() output (outer urlsafe-b64 + Fernet) and a raw Fernet token.
     Returns empty string if input is empty/None.
     Raises ValueError if decryption fails (invalid key or corrupted data).
     """
     if not ciphertext:
         return ""
-    
+
     fernet = _get_fernet()
-    try:
-        # Decode from our outer base64 encoding
-        encrypted_bytes = base64.urlsafe_b64decode(ciphertext.encode("utf-8"))
-        plaintext_bytes = fernet.decrypt(encrypted_bytes)
-        return plaintext_bytes.decode("utf-8")
-    except InvalidToken as e:
-        logger.error("Failed to decrypt value: invalid token or key mismatch")
-        raise ValueError("Decryption failed: invalid token or key") from e
-    except Exception as e:
-        logger.error(f"Failed to decrypt value: {type(e).__name__}")
-        raise ValueError(f"Decryption failed: {type(e).__name__}") from e
+    last_error: Exception | None = None
+    for token in _fernet_token_candidates(ciphertext):
+        try:
+            return fernet.decrypt(token).decode("utf-8")
+        except InvalidToken as e:
+            last_error = e
+        except Exception as e:
+            last_error = e
+    logger.error("Failed to decrypt value: invalid token or key mismatch")
+    raise ValueError("Decryption failed: invalid token or key") from last_error
 
 
 def is_encrypted(value: str) -> bool:
     """
-    Check if a value appears to be encrypted (heuristic based on format).
-    Encrypted values are base64 and start with 'gAAAAA' (Fernet format).
+    True when `value` decrypts with the current key.
+
+    Prefix heuristics are not enough: encrypt_value() double-encodes Fernet
+    tokens so they start with Z0FBQU... rather than gAAAAA. A plaintext
+    Atlassian API token must not be treated as ciphertext.
     """
     if not value or len(value) < 50:
         return False
-    
     try:
-        decoded = base64.urlsafe_b64decode(value.encode("utf-8"))
-        # Fernet tokens start with version byte 0x80 followed by timestamp
-        return decoded[:1] == b'\x80' or value.startswith('gAAAAA')
+        decrypt_value(value)
+        return True
     except Exception:
         return False
+
+
+# GET /team masks api_token as this exact string. Re-saving settings must not
+# encrypt the mask and wipe the real token.
+SECRET_PLACEHOLDER = "••••••••"
+
+
+def is_secret_placeholder(value: str | None) -> bool:
+    if value is None:
+        return True
+    stripped = value.strip()
+    return (not stripped) or stripped == SECRET_PLACEHOLDER
+
+
+def decrypt_if_encrypted(value: str | None) -> str:
+    """Return plaintext for a stored secret (encrypted or legacy plaintext)."""
+    if not value:
+        return ""
+    if is_encrypted(value):
+        return decrypt_value(value)
+    return value
+
+
+def prepare_secret_for_storage(new_value: str | None, existing_value: str | None = None) -> str:
+    """
+    Encrypt a newly submitted secret, or keep the existing ciphertext when the
+    client echoed the masked placeholder / left the field blank.
+    """
+    if is_secret_placeholder(new_value):
+        return existing_value or ""
+    if is_encrypted(new_value):
+        return new_value or ""
+    return encrypt_value(new_value or "")
 
 
 def encrypt_if_not_encrypted(value: str) -> str:

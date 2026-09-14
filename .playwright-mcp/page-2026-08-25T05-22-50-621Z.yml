@@ -1,0 +1,382 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - generic [ref=f3e5]:
+      - button "Ansh Singhal's Team 7699.91 credits" [ref=f3e117] [cursor=pointer]:
+        - generic [ref=f3e12]:
+          - text: Ansh Singhal's Team
+          - generic [ref=f3e118]: 7699.91 credits
+      - generic [ref=f3e16]:
+        - list [ref=f3e19]:
+          - listitem [ref=f3e20]:
+            - link "Home" [ref=f3e21] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f3e26]:
+          - generic [ref=f3e27]: Scanning Utilities
+          - list [ref=f3e29]:
+            - listitem [ref=f3e30]:
+              - link "SAST" [ref=f3e31] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f3e36]:
+              - link "SCA + SBOM" [ref=f3e37] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f3e43]:
+              - link "CBOM" [ref=f3e44] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f3e49]:
+              - link "AI BOM" [ref=f3e50] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f3e55]:
+              - link "MCP" [ref=f3e56] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f3e61]:
+              - link "LLM" [ref=f3e62] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f3e67]:
+              - link "IAC" [ref=f3e68] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f3e73]:
+              - link "DAST" [ref=f3e74] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f3e79]:
+          - generic [ref=f3e80]: Integrations
+          - list [ref=f3e82]:
+            - listitem [ref=f3e83]:
+              - link "CI / CD" [ref=f3e84] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f3e89]:
+        - list [ref=f3e90]:
+          - listitem [ref=f3e91]:
+            - link "Teams" [ref=f3e92] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f3e99]:
+            - link "Settings" [ref=f3e100] [cursor=pointer]:
+              - /url: /1/settings
+        - button "KS Krishna Sharma shivam@cyberultron.com" [ref=f3e119] [cursor=pointer]:
+          - generic [ref=f3e120]: KS
+          - generic [ref=f3e121]:
+            - paragraph [ref=f3e122]: Krishna Sharma
+            - paragraph [ref=f3e123]: shivam@cyberultron.com
+    - main [ref=f3e112]:
+      - generic [ref=f3e127]:
+        - generic [ref=f3e128]:
+          - generic [ref=f3e129]:
+            - button "Back" [ref=f3e130] [cursor=pointer]
+            - generic [ref=f3e131]:
+              - heading "DAST Scan Results" [level=1] [ref=f3e132]
+              - paragraph [ref=f3e133]: Findings and security metrics
+          - generic [ref=f3e134]:
+            - button "Download scan report" [ref=f3e135] [cursor=pointer]: Download Scan Report
+            - button "Chat with the Results" [ref=f3e136] [cursor=pointer]
+        - generic [ref=f3e137]:
+          - button "Results" [ref=f3e138] [cursor=pointer]
+          - button "Ticketing integrations" [ref=f3e142] [cursor=pointer]
+        - generic [ref=f3e830]:
+          - generic [ref=f3e831]:
+            - generic [ref=f3e834]:
+              - paragraph [ref=f3e840]: Critical
+              - paragraph [ref=f3e841]: "0"
+            - generic [ref=f3e844]:
+              - paragraph [ref=f3e848]: High
+              - paragraph [ref=f3e849]: "3"
+            - generic [ref=f3e852]:
+              - paragraph [ref=f3e856]: Medium
+              - paragraph [ref=f3e857]: "3"
+            - generic [ref=f3e860]:
+              - paragraph [ref=f3e864]: Low
+              - paragraph [ref=f3e865]: "0"
+            - generic [ref=f3e868]:
+              - paragraph [ref=f3e872]: Avg risk score
+              - paragraph [ref=f3e873]: "6.2"
+            - generic [ref=f3e876]:
+              - paragraph [ref=f3e885]: URLs scanned
+              - paragraph [ref=f3e886]: "4"
+            - generic [ref=f3e889]:
+              - paragraph [ref=f3e895]: Coverage %
+              - paragraph [ref=f3e896]: 100.0%
+          - generic [ref=f3e897]:
+            - generic [ref=f3e898]:
+              - generic [ref=f3e899]:
+                - generic [ref=f3e900]: Severity Distribution
+                - generic [ref=f3e901]: Critical / High / Medium / Low
+              - img [ref=f3e906]:
+                - generic [ref=f3e1481]:
+                  - generic [ref=f3e1482]: High 50%
+                  - generic [ref=f3e1485]: Medium 50%
+            - generic [ref=f3e913]:
+              - generic [ref=f3e914]:
+                - generic [ref=f3e915]: Compliance Status
+                - generic [ref=f3e916]: Issues per standard (PCI DSS, ISO 27001–27004)
+              - generic [ref=f3e918]:
+                - generic [ref=f3e919]:
+                  - generic [ref=f3e923]: PCI DSS
+                  - generic [ref=f3e924]: "4"
+                - generic [ref=f3e928]:
+                  - generic [ref=f3e932]: ISO 27001
+                  - generic [ref=f3e933]: "8"
+                - generic [ref=f3e937]:
+                  - generic [ref=f3e941]: ISO 27002
+                  - generic [ref=f3e942]: "2"
+                - generic [ref=f3e946]:
+                  - generic [ref=f3e950]: NIST 800-53
+                  - generic [ref=f3e951]: "11"
+                - generic [ref=f3e955]:
+                  - generic [ref=f3e959]: SOC 2
+                  - generic [ref=f3e960]: "1"
+                - generic [ref=f3e964]:
+                  - generic [ref=f3e968]: NIST CSF
+                  - generic [ref=f3e969]: "3"
+                - generic [ref=f3e973]:
+                  - generic [ref=f3e977]: MITRE ATT&CK
+                  - generic [ref=f3e978]: "2"
+                - generic [ref=f3e982]:
+                  - generic [ref=f3e986]: GDPR
+                  - generic [ref=f3e987]: "1"
+          - generic [ref=f3e991]:
+            - generic [ref=f3e992]:
+              - generic [ref=f3e993]: OWASP Top 10 Issues
+              - generic [ref=f3e994]: Issue count by OWASP category
+            - img [ref=f3e999]:
+              - generic [ref=f3e1003]:
+                - generic [ref=f3e1004]: "0"
+                - generic [ref=f3e1006]: "1"
+                - generic [ref=f3e1008]: "2"
+                - generic [ref=f3e1010]: "3"
+                - generic [ref=f3e1012]: "4"
+              - generic [ref=f3e1015]:
+                - generic [ref=f3e1016]: Broken Access Control
+                - generic [ref=f3e1018]: CryptographicFailures
+                - generic [ref=f3e1020]: Injection
+                - generic [ref=f3e1022]: Insecure Design
+                - generic [ref=f3e1024]: Security Misconfiguratio
+                - generic [ref=f3e1026]: Vulnerable andOutdated
+                - generic [ref=f3e1028]: Identification andAuthe
+                - generic [ref=f3e1030]: Software andData Integr
+                - generic [ref=f3e1032]: Security Logging andMon
+                - generic [ref=f3e1034]: Server-SideRequest Forg
+          - generic [ref=f3e1045]:
+            - generic [ref=f3e1046]:
+              - generic [ref=f3e1047]: Vulnerability Category Issues Distribution
+              - generic [ref=f3e1048]: Five categories
+            - img [ref=f3e1053]:
+              - generic [ref=f3e1057]:
+                - generic [ref=f3e1058]: injection
+                - generic [ref=f3e1060]: authentication
+                - generic [ref=f3e1062]: session and state
+              - generic [ref=f3e1065]:
+                - generic [ref=f3e1066]: "0"
+                - generic [ref=f3e1068]: "1"
+                - generic [ref=f3e1070]: "2"
+                - generic [ref=f3e1072]: "3"
+                - generic [ref=f3e1074]: "4"
+          - generic [ref=f3e1083]:
+            - generic [ref=f3e1084]:
+              - generic [ref=f3e1085]: Risk Scores per Category
+              - generic [ref=f3e1086]: Count by severity for each category
+            - generic [ref=f3e1090]:
+              - img [ref=f3e1091]:
+                - generic [ref=f3e1095]:
+                  - generic [ref=f3e1096]: injection
+                  - generic [ref=f3e1098]: authentication
+                  - generic [ref=f3e1100]: session and state
+                - generic [ref=f3e1103]:
+                  - generic [ref=f3e1104]: "0"
+                  - generic [ref=f3e1106]: "1"
+                  - generic [ref=f3e1108]: "2"
+                  - generic [ref=f3e1110]: "3"
+                  - generic [ref=f3e1112]: "4"
+              - generic [ref=f3e1133]:
+                - generic [ref=f3e1134]: Critical
+                - generic [ref=f3e1136]: High
+                - generic [ref=f3e1138]: Medium
+                - generic [ref=f3e1140]: Low
+          - generic [ref=f3e1142]:
+            - generic [ref=f3e1143]:
+              - generic [ref=f3e1144]:
+                - generic [ref=f3e1145]: Confidence Distribution
+                - generic [ref=f3e1146]: High / Medium / Low
+              - img [ref=f3e1151]:
+                - generic [ref=f3e1492]:
+                  - generic [ref=f3e1493]: High 83%
+                  - generic [ref=f3e1496]: Medium 17%
+            - generic [ref=f3e1158]:
+              - generic [ref=f3e1159]:
+                - generic [ref=f3e1160]: Security Category Assessment
+                - generic [ref=f3e1161]: Average risk score per category
+              - img [ref=f3e1166]:
+                - generic [ref=f3e1170]:
+                  - generic [ref=f3e1171]: injection
+                  - generic [ref=f3e1173]: authentication
+                  - generic [ref=f3e1175]: session and state
+                - generic [ref=f3e1178]:
+                  - generic [ref=f3e1179]: "0"
+                  - generic [ref=f3e1181]: "2"
+                  - generic [ref=f3e1183]: "4"
+                  - generic [ref=f3e1185]: "6"
+                  - generic [ref=f3e1187]: "8"
+          - generic [ref=f3e1196]:
+            - generic [ref=f3e1197]:
+              - generic [ref=f3e1198]: Compliance Risk Assessment
+              - generic [ref=f3e1199]: Average risk score per compliance control
+            - img [ref=f3e1204]:
+              - generic [ref=f3e1208]:
+                - generic [ref=f3e1209]: PCI DSS
+                - generic [ref=f3e1211]: ISO 27002
+                - generic [ref=f3e1213]: NIST 800-53
+                - generic [ref=f3e1215]: NIST CSF
+                - generic [ref=f3e1217]: GDPR
+              - generic [ref=f3e1220]:
+                - generic [ref=f3e1221]: "0"
+                - generic [ref=f3e1223]: "2"
+                - generic [ref=f3e1225]: "4"
+                - generic [ref=f3e1227]: "6"
+                - generic [ref=f3e1229]: "8"
+          - generic [ref=f3e1250]:
+            - generic [ref=f3e1251]:
+              - generic [ref=f3e1252]: Remediation Metrics
+              - generic [ref=f3e1253]: Finding status breakdown
+            - generic [ref=f3e1255]:
+              - generic [ref=f3e1256]:
+                - generic [ref=f3e1260]: Total findings
+                - generic [ref=f3e1261]: "6"
+              - generic [ref=f3e1265]:
+                - generic [ref=f3e1269]: Fixed
+                - generic [ref=f3e1270]: "0"
+                - generic [ref=f3e1271]: 0%
+              - generic [ref=f3e1274]:
+                - generic [ref=f3e1278]: In progress
+                - generic [ref=f3e1279]: "0"
+                - generic [ref=f3e1280]: 0%
+              - generic [ref=f3e1283]:
+                - generic [ref=f3e1288]: Not started
+                - generic [ref=f3e1289]: "6"
+                - generic [ref=f3e1290]: 100%
+              - generic [ref=f3e1294]:
+                - generic [ref=f3e1298]: Ignored
+                - generic [ref=f3e1299]: "0"
+                - generic [ref=f3e1300]: 0%
+          - generic [ref=f3e1303]:
+            - generic [ref=f3e1304]:
+              - generic [ref=f3e1305]: Findings
+              - generic [ref=f3e1306]: 6 findings. Select rows to create Jira tickets; use Action to change finding state.
+            - generic [ref=f3e1307]:
+              - generic [ref=f3e1308]:
+                - searchbox "Search findings table" [ref=f3e1313]
+                - combobox [ref=f3e1314] [cursor=pointer]:
+                  - generic: All impacts
+                - button "Risk score" [ref=f3e1315] [cursor=pointer]
+              - table [ref=f3e1322]:
+                - rowgroup [ref=f3e1323]:
+                  - row [ref=f3e1324]:
+                    - columnheader [ref=f3e1325]:
+                      - checkbox "Select all rows" [ref=f3e1326] [cursor=pointer]
+                    - columnheader "Title" [ref=f3e1327]
+                    - columnheader "URL" [ref=f3e1328]
+                    - columnheader "Description" [ref=f3e1329]
+                    - columnheader "Impact" [ref=f3e1330]
+                    - columnheader "Risk score" [ref=f3e1331]
+                    - columnheader "Status" [ref=f3e1332]
+                    - columnheader "Category" [ref=f3e1333]
+                    - columnheader "Confidence" [ref=f3e1334]
+                    - columnheader "OWASP" [ref=f3e1335]
+                    - columnheader "Compliance" [ref=f3e1336]
+                    - columnheader "Actions" [ref=f3e1337]
+                - rowgroup [ref=f3e1338]:
+                  - row [ref=f3e1339]:
+                    - cell [ref=f3e1340]:
+                      - checkbox "Select finding Reflected Cross-Site Scripting (XSS) via Search Query Parameter" [ref=f3e1341] [cursor=pointer]
+                    - cell [ref=f3e1342]:
+                      - button "Reflected Cross-Site Scripting (XSS) via Search Query Parameter" [ref=f3e1343] [cursor=pointer]
+                    - cell "https://demo.testfire.net/" [ref=f3e1344]
+                    - 'cell "The page contains a search form (`<form id=\"frmSearch\" method=\"get\" action=\"/sea…" [ref=f3e1345]'
+                    - cell "High" [ref=f3e1346]
+                    - cell "3" [ref=f3e1348]
+                    - cell "not started" [ref=f3e1350]
+                    - cell "xss and client side" [ref=f3e1352]
+                    - cell "High" [ref=f3e1354]
+                    - cell "1" [ref=f3e1356]
+                    - cell "5" [ref=f3e1358]
+                    - cell [ref=f3e1360]:
+                      - button "Finding actions" [ref=f3e1361] [cursor=pointer]: Action
+                  - row [ref=f3e1362]:
+                    - cell [ref=f3e1363]:
+                      - checkbox "Select finding Information Disclosure through Exposed Swagger UI (REST API Documentation)" [ref=f3e1364] [cursor=pointer]
+                    - cell [ref=f3e1365]:
+                      - button "Information Disclosure through Exposed Swagger UI (REST API Documentation)" [ref=f3e1366] [cursor=pointer]
+                    - cell "https://demo.testfire.net/" [ref=f3e1367]
+                    - 'cell "The footer includes a direct link to `/swagger/index.html` labeled \"REST API\". T…" [ref=f3e1368]'
+                    - cell "Medium" [ref=f3e1369]
+                    - cell "2" [ref=f3e1371]
+                    - cell "not started" [ref=f3e1373]
+                    - cell "information disclosure" [ref=f3e1375]
+                    - cell "High" [ref=f3e1377]
+                    - cell "1" [ref=f3e1379]
+                    - cell "5" [ref=f3e1381]
+                    - cell [ref=f3e1383]:
+                      - button "Finding actions" [ref=f3e1384] [cursor=pointer]: Action
+                  - row [ref=f3e1385]:
+                    - cell [ref=f3e1386]:
+                      - checkbox "Select finding Reflected Cross-Site Scripting (XSS) in search functionality" [ref=f3e1387] [cursor=pointer]
+                    - cell [ref=f3e1388]:
+                      - button "Reflected Cross-Site Scripting (XSS) in search functionality" [ref=f3e1389] [cursor=pointer]
+                    - cell "https://demo.testfire.net/index.jsp" [ref=f3e1390]
+                    - 'cell "The page includes a search form that sends the user‑controlled parameter `query`…" [ref=f3e1391]'
+                    - cell "High" [ref=f3e1392]
+                    - cell "3" [ref=f3e1394]
+                    - cell "not started" [ref=f3e1396]
+                    - cell "xss and client side" [ref=f3e1398]
+                    - cell "High" [ref=f3e1400]
+                    - cell "1" [ref=f3e1402]
+                    - cell "6" [ref=f3e1404]
+                    - cell [ref=f3e1406]:
+                      - button "Finding actions" [ref=f3e1407] [cursor=pointer]: Action
+                  - row [ref=f3e1408]:
+                    - cell [ref=f3e1409]:
+                      - checkbox "Select finding Publicly exposed Swagger UI revealing internal REST API endpoints" [ref=f3e1410] [cursor=pointer]
+                    - cell [ref=f3e1411]:
+                      - button "Publicly exposed Swagger UI revealing internal REST API endpoints" [ref=f3e1412] [cursor=pointer]
+                    - cell "https://demo.testfire.net/index.jsp" [ref=f3e1413]
+                    - 'cell "The footer contains a link to `/swagger/index.html`, which loads the Swagger UI …" [ref=f3e1414]'
+                    - cell "Medium" [ref=f3e1415]
+                    - cell "2" [ref=f3e1417]
+                    - cell "not started" [ref=f3e1419]
+                    - cell "information disclosure" [ref=f3e1421]
+                    - cell "High" [ref=f3e1423]
+                    - cell "1" [ref=f3e1425]
+                    - cell "6" [ref=f3e1427]
+                    - cell [ref=f3e1429]:
+                      - button "Finding actions" [ref=f3e1430] [cursor=pointer]: Action
+                  - row [ref=f3e1431]:
+                    - cell [ref=f3e1432]:
+                      - checkbox "Select finding Missing Anti-CSRF Token on Login Form" [ref=f3e1433] [cursor=pointer]
+                    - cell [ref=f3e1434]:
+                      - button "Missing Anti-CSRF Token on Login Form" [ref=f3e1435] [cursor=pointer]
+                    - cell "https://demo.testfire.net/login.jsp" [ref=f3e1436]
+                    - cell "The login form (action=\"doLogin\", method=\"post\") does not include any hidden ant…" [ref=f3e1437]
+                    - cell "High" [ref=f3e1438]
+                    - cell "3" [ref=f3e1440]
+                    - cell "not started" [ref=f3e1442]
+                    - cell "session and state" [ref=f3e1444]
+                    - cell "High" [ref=f3e1446]
+                    - cell "1" [ref=f3e1448]
+                    - cell "5" [ref=f3e1450]
+                    - cell [ref=f3e1452]:
+                      - button "Finding actions" [ref=f3e1453] [cursor=pointer]: Action
+                  - row [ref=f3e1454]:
+                    - cell [ref=f3e1455]:
+                      - checkbox "Select finding Sensitive Information Disclosure via Public Pages" [ref=f3e1456] [cursor=pointer]
+                    - cell [ref=f3e1457]:
+                      - button "Sensitive Information Disclosure via Public Pages" [ref=f3e1458] [cursor=pointer]
+                    - cell "https://demo.testfire.net/login.jsp" [ref=f3e1459]
+                    - 'cell "The page leaks internal operational details: a phone number for site operations …" [ref=f3e1460]'
+                    - cell "Medium" [ref=f3e1461]
+                    - cell "2" [ref=f3e1463]
+                    - cell "not started" [ref=f3e1465]
+                    - cell "information disclosure" [ref=f3e1467]
+                    - cell "Medium" [ref=f3e1469]
+                    - cell "1" [ref=f3e1471]
+                    - cell "5" [ref=f3e1473]
+                    - cell [ref=f3e1475]:
+                      - button "Finding actions" [ref=f3e1476] [cursor=pointer]: Action
+  - region "Notifications alt+T"
+  - alert [ref=f3e116]
+  - generic [ref=f3e807]: 800-53

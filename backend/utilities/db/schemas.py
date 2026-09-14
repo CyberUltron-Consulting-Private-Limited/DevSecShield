@@ -37,6 +37,7 @@ class UpdateTeamData(BaseModel):
 
 class JiraScanSettingsData(BaseModel):
     jira_project_id: str | None = None
+    auto_create_tickets: bool | None = None
 
 class ScanTicketingIntegrationSettingsData(BaseModel):
     jira: JiraScanSettingsData | None = None
@@ -53,6 +54,7 @@ class CreateTicketData(BaseModel):
     ticket_type: Literal["jira"]
     summary: str
     description: str
+    finding_ids: list[str] | None = None
 # ----------------------------------------------------- Start scan related schemas --------------------------------------------
 
 def _validate_repo_url(repo_url: str, provider_host: str, provider_label: str) -> None:

@@ -6,16 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { JenkinsDastGuide } from "@/components/JenkinsDastGuide";
 
 interface JenkinsIntegrationGuideProps {
   apiKey: string;
   teamId: number;
 }
 
-export function JenkinsGuide({ apiKey, teamId }: JenkinsIntegrationGuideProps) {
+export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
-  const [flavor, setFlavor] = useState<"sast" | "dast">("dast");
 
   // Helper function to mask API key (show first 4 and last 4 characters)
   const maskApiKey = (key: string) => {
@@ -178,35 +176,6 @@ export function JenkinsGuide({ apiKey, teamId }: JenkinsIntegrationGuideProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 border-b border-zinc-200 dark:border-zinc-800">
-        <button
-          type="button"
-          onClick={() => setFlavor("sast")}
-          className={`px-4 py-2 font-medium text-sm border-b-2 cursor-pointer ${
-            flavor === "sast"
-              ? "border-blue-600 text-blue-600 dark:text-blue-400"
-              : "border-transparent text-zinc-600 dark:text-zinc-400"
-          }`}
-        >
-          SAST
-        </button>
-        <button
-          type="button"
-          onClick={() => setFlavor("dast")}
-          className={`px-4 py-2 font-medium text-sm border-b-2 cursor-pointer ${
-            flavor === "dast"
-              ? "border-blue-600 text-blue-600 dark:text-blue-400"
-              : "border-transparent text-zinc-600 dark:text-zinc-400"
-          }`}
-        >
-          DAST
-        </button>
-      </div>
-
-      {flavor === "dast" ? (
-        <JenkinsDastGuide apiKey={apiKey} teamId={teamId} />
-      ) : (
-        <>
       <div>
         <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-2">
           Jenkins Integration
@@ -335,8 +304,6 @@ export function JenkinsGuide({ apiKey, teamId }: JenkinsIntegrationGuideProps) {
           </ScrollArea>
         </CardContent>
       </Card>
-        </>
-      )}
     </div>
   );
 }

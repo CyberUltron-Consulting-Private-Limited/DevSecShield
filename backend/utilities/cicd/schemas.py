@@ -4,10 +4,11 @@ from typing import Literal
 
 class CreateCicdIntegrationData(BaseModel):
     title: str | None = None
-    scan_type: scan_types | None = None
+    scan_type: Literal["sast", "dast"] | None = None
 
 class JiraCICDSettingsData(BaseModel):
     jira_project_id: str | None = None
+    auto_create_tickets: bool | None = None
 
 class CicdIntegrationSettingsData(BaseModel):
     jira: JiraCICDSettingsData | None = None

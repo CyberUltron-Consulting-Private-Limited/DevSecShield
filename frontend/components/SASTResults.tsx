@@ -673,6 +673,7 @@ function SASTResultsAgentView({
 }) {
   const [activeTab, setActiveTab] = useState<"results" | "ticketing">("results");
   const [jiraProjectId, setJiraProjectId] = useState("");
+  const [autoCreateTickets, setAutoCreateTickets] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [selectedFinding, setSelectedFinding] = useState<SastFinding | null>(null);
   const [findingsSearchQuery, setFindingsSearchQuery] = useState("");
@@ -730,13 +731,16 @@ function SASTResultsAgentView({
 
   const jiraFromSettings =
     integrationSettings && typeof integrationSettings === "object" && "jira" in integrationSettings
-      ? (integrationSettings.jira as { jira_project_id?: string } | undefined)
+      ? (integrationSettings.jira as { jira_project_id?: string; auto_create_tickets?: boolean } | undefined)
       : undefined;
   const initialJiraProjectId = jiraFromSettings?.jira_project_id ?? "";
 
   useEffect(() => {
     setJiraProjectId(initialJiraProjectId);
   }, [initialJiraProjectId]);
+  useEffect(() => {
+    setAutoCreateTickets(jiraFromSettings?.auto_create_tickets === true);
+  }, [jiraFromSettings?.auto_create_tickets]);
 
   const updateIntegrationMutation = useMutation({
     mutationFn: (payload: { integration_settings: ScanTicketingIntegrationSettings }) =>
@@ -814,6 +818,7 @@ function SASTResultsAgentView({
         ticket_type: "jira",
         summary,
         description,
+        finding_ids: selected.map((f) => f.id),
       });
     },
     onMutate: () => {
@@ -943,10 +948,12 @@ function SASTResultsAgentView({
         <TicketingIntegrationsSettings
           jiraProjectId={jiraProjectId}
           onJiraProjectIdChange={setJiraProjectId}
+          autoCreateTickets={autoCreateTickets}
+          onAutoCreateTicketsChange={setAutoCreateTickets}
           onSave={() => {
             updateIntegrationMutation.mutate({
               integration_settings: {
-                jira: { jira_project_id: jiraProjectId.trim() || null },
+                jira: { jira_project_id: jiraProjectId.trim() || null, auto_create_tickets: autoCreateTickets },
               },
             });
           }}

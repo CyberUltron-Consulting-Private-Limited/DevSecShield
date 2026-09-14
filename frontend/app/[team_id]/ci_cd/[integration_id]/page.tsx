@@ -23,9 +23,12 @@ import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } f
 import Link from "next/link";
 import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
 import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
+import { JenkinsDastGuide } from "@/components/JenkinsDastGuide";
 import { BambooGuide } from "@/components/BambooIntegrationGuide";
+import { DastProfilesTab } from "@/components/dast/DastProfilesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Accordion,
   AccordionContent,
@@ -77,6 +80,7 @@ export default function CicdIntegrationDashboardPage() {
     exclude_path_arrays: [],
   });
   const [jiraProjectId, setJiraProjectId] = useState("");
+  const [autoCreateTickets, setAutoCreateTickets] = useState(false);
 
   const query = useQuery({
     queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset],
@@ -97,7 +101,8 @@ export default function CicdIntegrationDashboardPage() {
   const isJira = query.data?.integration_settings?.jira;
   useEffect(() => {
     setJiraProjectId(isJira?.jira_project_id ?? "");
-  }, [isJira?.jira_project_id]);
+    setAutoCreateTickets(isJira?.auto_create_tickets === true);
+  }, [isJira?.jira_project_id, isJira?.auto_create_tickets]);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
@@ -178,6 +183,7 @@ export default function CicdIntegrationDashboardPage() {
     logs: [],
     dashboard_data: undefined,
   };
+  const isDast = (dashboardData.scan_type || "").toLowerCase() === "dast";
 
   const vulnsOverTimeChartArray = useMemo(() => {
     const raw = dashboardData.dashboard_data;
@@ -612,6 +618,9 @@ export default function CicdIntegrationDashboardPage() {
 
           {/* Scan settings Tab */}
           {activeTab === "scan-settings" && (
+            isDast ? (
+              <DastProfilesTab />
+            ) : (
             <Card>
               <CardHeader>
                 <CardTitle>Scan settings</CardTitle>
@@ -646,6 +655,7 @@ export default function CicdIntegrationDashboardPage() {
                 )}
               </CardContent>
             </Card>
+            )
           )}
 
           {/* Ticketing settings Tab */}
@@ -670,9 +680,9 @@ export default function CicdIntegrationDashboardPage() {
                     </AccordionTrigger>
                     <AccordionContent>
                       <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-                        Send CI/CD scan findings to Jira as issues. Set the Jira project ID to link this integration to a project.
+                        Send CI/CD scan findings to Jira as issues. Set the Jira project ID and turn on auto-create to open one Task per finding when a job succeeds.
                       </p>
-                      <div className="space-y-2 max-w-sm">
+                      <div className="space-y-3 max-w-sm">
                         <Label htmlFor="cicd-jira-project-id">Jira project ID</Label>
                         <Input
                           id="cicd-jira-project-id"
@@ -680,11 +690,25 @@ export default function CicdIntegrationDashboardPage() {
                           onChange={(e) => setJiraProjectId(e.target.value)}
                           placeholder="e.g. 10000"
                         />
+                        <label htmlFor="cicd-jira-auto-create" className="flex items-start gap-2 cursor-pointer">
+                          <Checkbox
+                            id="cicd-jira-auto-create"
+                            checked={autoCreateTickets}
+                            onCheckedChange={(checked) => setAutoCreateTickets(checked === true)}
+                            className="mt-0.5"
+                          />
+                          <span className="text-sm text-zinc-600 dark:text-zinc-300">
+                            Auto-create a Jira ticket for each finding when this CI job succeeds
+                          </span>
+                        </label>
                         <Button
                           onClick={() => {
                             updateCicdMutation.mutate({
                               integration_settings: {
-                                jira: { jira_project_id: jiraProjectId.trim() || null },
+                                jira: {
+                                  jira_project_id: jiraProjectId.trim() || null,
+                                  auto_create_tickets: autoCreateTickets,
+                                },
                               },
                             });
                           }}
@@ -705,6 +729,10 @@ export default function CicdIntegrationDashboardPage() {
           {/* Integration Guide Tab Content */}
           {activeTab === "integration-guide" && (
             <div className="space-y-6">
+              {isDast ? (
+                <JenkinsDastGuide apiKey={dashboardData.api_key} teamId={Number(team_id)} />
+              ) : (
+                <>
               {/* Sub-tabs */}
               <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
                 <button
@@ -750,6 +778,8 @@ export default function CicdIntegrationDashboardPage() {
 
               {activeSubTab === "bamboo" && (
                 <BambooGuide apiKey={dashboardData.api_key} />
+              )}
+                </>
               )}
             </div>
           )}
