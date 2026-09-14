@@ -20,11 +20,14 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
     severity_color,
+    split_scan_payload,
 )
 
 
@@ -78,6 +81,14 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
     if output_path is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"mcp_scan_report_{timestamp}.pdf"
+
+    inner, duration, _raw = split_scan_payload(scan_results)
+    if isinstance(inner, dict):
+        scan_results = inner
+    elif isinstance(inner, list):
+        scan_results = {"final_issues": inner}
+    else:
+        scan_results = {}
 
     if not isinstance(scan_results, dict):
         scan_results = {}
@@ -183,6 +194,7 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         styles=styles,
         extra_tables=extra_tables or None,
         project_name="MCP Findings",
+        scan_time=format_scan_duration(duration),
         meta_chips=[
             ("Scan type", "MCP"),
             ("Total issues", str(total_issues)),
@@ -197,7 +209,9 @@ def generate_pdf(scan_results: dict, output_path: Optional[str] = None) -> str:
         for idx, (resource_type, resource_name, vuln) in enumerate(flat_vulns, 1):
             title = vuln.get("title") or "Untitled"
             impact = count_label(vuln.get("impact") or "Unknown")
-            location = f"{resource_type}: {resource_name}"
+            location = finding_location(vuln)
+            if location == "—":
+                location = f"{resource_type}: {resource_name}"
             catalog.append(
                 [
                     str(idx),

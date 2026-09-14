@@ -20,23 +20,29 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
     severity_color,
+    split_scan_payload,
 )
 
 
 def _normalize_vulnerabilities(scan_results: Any) -> List[Dict[str, Any]]:
     """Accept list of vulns or dict with 'vulnerabilities' key."""
-    if scan_results is None:
+    inner, _duration, _raw = split_scan_payload(scan_results)
+    if inner is None:
         return []
-    if isinstance(scan_results, list):
-        return scan_results if all(isinstance(x, dict) for x in scan_results) else []
-    if isinstance(scan_results, dict) and "vulnerabilities" in scan_results:
-        v = scan_results["vulnerabilities"]
-        return v if isinstance(v, list) else []
+    if isinstance(inner, list):
+        return [row for row in inner if isinstance(row, dict)]
+    if isinstance(inner, dict) and "vulnerabilities" in inner:
+        v = inner["vulnerabilities"]
+        if not isinstance(v, list):
+            return []
+        return [row for row in v if isinstance(row, dict)]
     return []
 
 
@@ -53,6 +59,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         output_path = f"llm_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
     vulnerabilities = _normalize_vulnerabilities(scan_results)
+    _inner, duration, _raw = split_scan_payload(scan_results)
     total = len(vulnerabilities)
 
     by_impact: Dict[str, int] = {}
@@ -83,6 +90,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         severity_counts=by_impact,
         styles=styles,
         project_name="LLM Findings",
+        scan_time=format_scan_duration(duration),
         meta_chips=[
             ("Scan type", "LLM"),
             ("Total issues", str(total)),
@@ -101,7 +109,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                 str(idx),
                 impact,
                 Paragraph(escape_html(title), styles["table_cell"]),
-                Paragraph("—", styles["mono_cell"]),
+                Paragraph(escape_html(finding_location(vuln)), styles["mono_cell"]),
             ]
         )
     append_findings_catalog(story, catalog_rows=catalog, styles=styles)
@@ -122,6 +130,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         for idx, vuln in enumerate(vulnerabilities, 1):
             title = (vuln.get("title") or "Untitled finding").strip() or "Untitled finding"
             impact = count_label(vuln.get("impact") or "Unknown")
+            loc = finding_location(vuln)
             standards: List[List[str]] = []
             standards.extend(mapping_rows(vuln.get("owasp_top_10_llm"), label="OWASP Top 10 for LLM"))
             standards.extend(mapping_rows(vuln.get("owasp_top_10"), label="OWASP Top 10"))
@@ -131,7 +140,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
                     index=idx,
                     title=title,
                     severity=impact,
-                    detail_rows=[("Severity", impact)],
+                    detail_rows=[("Severity", impact), ("Where it was found", loc)],
                     description=(vuln.get("description") or "").strip(),
                     evidence="",
                     recommended_fix=(vuln.get("suggested_fix") or "").strip(),

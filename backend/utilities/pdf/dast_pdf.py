@@ -20,23 +20,26 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
     severity_color,
+    split_scan_payload,
 )
 
 
 def _normalize_scan_data(scan_data: Any) -> Tuple[List[Dict[str, Any]], Optional[float], Optional[Dict]]:
-    if isinstance(scan_data, list):
-        return scan_data, None, None
-    if isinstance(scan_data, dict):
-        results = scan_data.get("results", [])
-        if not isinstance(results, list):
-            results = []
-        return results, scan_data.get("duration_of_scan"), scan_data.get("metadata")
-    return [], None, None
+    inner, duration, raw = split_scan_payload(scan_data)
+    if isinstance(inner, list):
+        results = [row for row in inner if isinstance(row, dict)]
+    else:
+        results = []
+    metadata = raw.get("metadata") if isinstance(raw, dict) else None
+    if metadata is not None and not isinstance(metadata, dict):
+        metadata = None
+    return results, duration, metadata
 
 
 def _format_owasp_compliance_dict(d: Any) -> List[List[str]]:
@@ -85,16 +88,28 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]
     if duration_of_scan is not None:
-        overview.append(("Scan duration", f"{float(duration_of_scan):.1f} seconds"))
+        overview.append(("Scan duration", format_scan_duration(duration_of_scan)))
+
+    extra_tables = []
+    url_rows: List[List[str]] = []
     if metadata and isinstance(metadata, dict):
         urls_in = metadata.get("urls_included")
         urls_ex = metadata.get("urls_excluded")
         if isinstance(urls_in, list):
             overview.append(("URLs included", str(len(urls_in))))
+            url_rows.append(["URLs included", str(len(urls_in))])
         if isinstance(urls_ex, list):
             overview.append(("URLs excluded", str(len(urls_ex))))
-
-    extra_tables = []
+            url_rows.append(["URLs excluded", str(len(urls_ex))])
+    if url_rows:
+        extra_tables.append(
+            (
+                "Scan coverage",
+                ["Metric", "Count"],
+                url_rows,
+                [4.0 * inch, 1.5 * inch],
+            )
+        )
     conf_rows = [[level, str(by_confidence[level])] for level in ["High", "Medium", "Low", "Unknown"] if by_confidence.get(level)]
     if conf_rows:
         extra_tables.append(
@@ -116,7 +131,7 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
             )
         )
 
-    duration_label = f"{float(duration_of_scan):.1f}s" if duration_of_scan is not None else "—"
+    duration_label = format_scan_duration(duration_of_scan)
     append_executive_summary(
         story,
         report_key="dast",

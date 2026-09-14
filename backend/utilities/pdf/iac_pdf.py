@@ -20,20 +20,26 @@ from backend.utilities.pdf.report_branding import (
     build_finding_section,
     count_label,
     escape_html,
+    finding_location,
+    format_scan_duration,
     get_report_styles,
     make_cover_callback,
     make_footer_callback,
     mapping_rows,
+    relative_scan_path,
     severity_color,
+    split_scan_payload,
 )
 
 
 def _normalize_results(scan_results: Any) -> List[Dict[str, Any]]:
     """Accept either a list of findings (agent format) or a dict with 'results' key."""
-    if isinstance(scan_results, list):
-        return scan_results
-    if isinstance(scan_results, dict):
-        return scan_results.get("results", [])
+    inner, _duration, _raw = split_scan_payload(scan_results)
+    if isinstance(inner, list):
+        return [row for row in inner if isinstance(row, dict)]
+    if isinstance(inner, dict):
+        nested = inner.get("results", [])
+        return nested if isinstance(nested, list) else []
     return []
 
 
@@ -51,12 +57,9 @@ def get_severity_color(impact_or_severity: str):
 
 
 def get_relative_path(file_path: str) -> str:
-    """Extract path from repo_xxxxxxx onwards for legacy location.filename."""
+    """Strip clone prefixes so catalog Location is a repo-relative path."""
     try:
-        repo_index = file_path.find("repo_")
-        if repo_index != -1:
-            return file_path[repo_index:]
-        return file_path or ""
+        return relative_scan_path(file_path) or (file_path or "")
     except Exception:
         return file_path or ""
 
@@ -74,6 +77,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         output_path = f"iac_scan_report_{timestamp}.pdf"
 
     results = _normalize_results(scan_results)
+    _inner, duration, _raw = split_scan_payload(scan_results)
     use_agent_format = len(results) > 0 and _is_agent_format(results[0])
 
     total_findings = len(results)
@@ -146,6 +150,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         styles=styles,
         extra_tables=extra_tables or None,
         project_name="IAC Findings",
+        scan_time=format_scan_duration(duration),
         meta_chips=[
             ("Scan type", "IAC"),
             ("Total findings", str(total_findings)),
@@ -160,7 +165,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
         if use_agent_format:
             title = (result.get("title") or "Finding").strip() or "Finding"
             impact = count_label(result.get("impact") or "Unknown")
-            location = (result.get("location") or "—").strip() or "—"
+            location = finding_location(result)
         else:
             extra = result.get("rule_description") or result.get("rule_id") or "Finding"
             title = str(extra)
@@ -196,7 +201,7 @@ def generate_pdf(scan_results: Any, output_path: Optional[str] = None) -> str:
             if use_agent_format:
                 title = (result.get("title") or "Finding").strip() or "Finding"
                 impact = count_label(result.get("impact") or "Unknown")
-                location_str = (result.get("location") or "").strip() or "—"
+                location_str = finding_location(result)
                 standards: List[List[str]] = []
                 standards.extend(mapping_rows(result.get("owasp_top_10"), label="OWASP Top 10"))
                 standards.extend(mapping_rows(result.get("compliance_controls"), label="Compliance"))
