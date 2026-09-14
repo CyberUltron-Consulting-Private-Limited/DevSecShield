@@ -37,10 +37,12 @@ def _normalize_vulnerabilities(scan_results: Any) -> List[Dict[str, Any]]:
     if inner is None:
         return []
     if isinstance(inner, list):
-        return inner if all(isinstance(x, dict) for x in inner) else []
+        return [row for row in inner if isinstance(row, dict)]
     if isinstance(inner, dict) and "vulnerabilities" in inner:
         v = inner["vulnerabilities"]
-        return v if isinstance(v, list) else []
+        if not isinstance(v, list):
+            return []
+        return [row for row in v if isinstance(row, dict)]
     return []
 
 

@@ -415,7 +415,8 @@ def format_scan_duration(seconds: Any) -> str:
 _CLONE_ROOT_RE = re.compile(
     r"(?i)(?:^|/)(?:tmp|temp|var/folders/[^/]+/[^/]+/T)/repo_[^/]+/"
 )
-_LEADING_CLONE_RE = re.compile(r"(?i)^repo_[a-z0-9_]{8}/")
+# {8,} so repo_utils (5 chars after repo_) is kept, but UUID-length clone dirs strip.
+_LEADING_CLONE_RE = re.compile(r"(?i)^repo_[a-z0-9_]{8,}/")
 
 
 def relative_scan_path(path: Any) -> str:

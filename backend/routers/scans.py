@@ -24,7 +24,7 @@ from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exce
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
 from backend.utilities.db.metadata import get_scan_metadata_for_type
 from backend.utilities.db.findings import get_findings_for_scan_type
-from backend.utilities.pdf import UnsupportedPdfExport, generate_pdf_for_type
+from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
 from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
     check_if_user_is_admin_of_team,
@@ -773,31 +773,21 @@ async def export_scan(
             if scan.scan_status not in ["success"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
             if scan.scan_data and "results" in scan.scan_data:
-                # BOM exports include RBI compliance appendix when present in scan_data.
-                if type in ("ai_bom", "cbom", "sbom_sca"):
-                    scan_data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-                else:
-                    # Findings only — do not dump the rest of scan_data into PDFs —
-                    # plus the worker's duration so Scan Time is not queue-wait wall-clock.
-                    scan_data = {"results": scan.scan_data["results"]}
-                    worker_duration = scan.scan_data.get("duration_of_scan")
-                    if worker_duration not in (None, ""):
-                        scan_data["duration_of_scan"] = worker_duration
+                scan_data = prepare_pdf_export_payload(type, scan.scan_data)
             else:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
 
-        
+
         
         # STEP [ 3 ] : =========================== create a temp pdf file to create the exported scan data pdf ========================================
         temp_pdf_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
         temp_pdf_path = temp_pdf_file.name
         temp_pdf_file.close()
         try:
-            generate_pdf_for_type(type, scan_data, temp_pdf_path,
-                                  started_at=scan.created_at, completed_at=scan.last_updated)
+            write_scan_pdf(type, scan_data, temp_pdf_path,
+                           started_at=scan.created_at, completed_at=scan.last_updated)
         except UnsupportedPdfExport as e:
-            # Unsupported scan type (leakage / agent_discovery), not a renderer failure.
-            os.unlink(temp_pdf_path)
+            # write_scan_pdf already unlinked the temp file.
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 

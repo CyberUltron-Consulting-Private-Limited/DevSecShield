@@ -62,6 +62,26 @@ def _as_mapping(val: Any) -> Any:
     return {}
 
 
+def _license_label(val: Any) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val.strip()
+    if isinstance(val, list):
+        parts: List[str] = []
+        for item in val:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                name = item.get("name") or item.get("id") or item.get("value") or ""
+                if str(name).strip():
+                    parts.append(str(name).strip())
+            elif item:
+                parts.append(str(item).strip())
+        return ", ".join(parts)
+    return str(val).strip()
+
+
 def _package_label(item: Dict[str, Any]) -> str:
     dep = item.get("dependency")
     if isinstance(dep, str) and dep.strip():
@@ -91,7 +111,7 @@ def _short_finding_title(item: Dict[str, Any]) -> str:
 
 def _sbom_remediation(item: Dict[str, Any]) -> str:
     suggested = str(item.get("suggested_fix") or "").strip()
-    license_val = str(item.get("license") or "").strip()
+    license_val = _license_label(item.get("license"))
     cves = item.get("cves") or {}
     has_cves = bool(mapping_entries(cves))
     inventory_only = bool(item.get("inventory_only"))
@@ -143,7 +163,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
                     "location": item.get("location"),
                     "snippet": item.get("snippet") or "",
                     "purl": item.get("purl") or "",
-                    "license": item.get("license") or "",
+                    "license": _license_label(item.get("license") or item.get("licenses")),
                     "inventory_only": bool(item.get("inventory_only")),
                     "_raw": item,
                 }
@@ -163,9 +183,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
         name = artifact.get("name", "")
         version = artifact.get("version", "")
         dependency = f"{name}@{version}" if name else ""
-        cves = vuln.get("cves", {}) or {}
-        if not isinstance(cves, dict):
-            cves = {}
+        cves = _as_mapping(vuln.get("cves"))
         out.append(
             {
                 "title": vuln.get("id", "Unknown"),
@@ -180,7 +198,7 @@ def _normalize_sbom_results(scan_results: Union[dict, list]) -> List[Dict[str, A
                 "location": artifact.get("locations") or artifact.get("location"),
                 "snippet": "",
                 "purl": artifact.get("purl") or "",
-                "license": artifact.get("licenses") or artifact.get("license") or "",
+                "license": _license_label(artifact.get("licenses") or artifact.get("license")),
                 "inventory_only": False,
                 "_raw": match,
             }
@@ -288,7 +306,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             loc = finding_location(v)
             dependency = v.get("dependency") or ""
             purl = str(v.get("purl") or "").strip()
-            license_val = str(v.get("license") or "").strip()
+            license_val = _license_label(v.get("license"))
             cves = v.get("cves") or {}
 
             detail_rows = [("Severity", impact), ("Where it was found", loc)]
@@ -297,7 +315,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             if purl:
                 detail_rows.append(("PURL", purl))
             if license_val:
-                detail_rows.append(("License", license_val if isinstance(license_val, str) else str(license_val)))
+                detail_rows.append(("License", license_val))
             cve_ids = [k or v for k, v in mapping_entries(cves)]
             if cve_ids:
                 detail_rows.append(("CVE IDs", ", ".join(cve_ids[:8])))

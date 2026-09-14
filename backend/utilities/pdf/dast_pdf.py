@@ -89,15 +89,27 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
     ]
     if duration_of_scan is not None:
         overview.append(("Scan duration", format_scan_duration(duration_of_scan)))
+
+    extra_tables = []
+    url_rows: List[List[str]] = []
     if metadata and isinstance(metadata, dict):
         urls_in = metadata.get("urls_included")
         urls_ex = metadata.get("urls_excluded")
         if isinstance(urls_in, list):
             overview.append(("URLs included", str(len(urls_in))))
+            url_rows.append(["URLs included", str(len(urls_in))])
         if isinstance(urls_ex, list):
             overview.append(("URLs excluded", str(len(urls_ex))))
-
-    extra_tables = []
+            url_rows.append(["URLs excluded", str(len(urls_ex))])
+    if url_rows:
+        extra_tables.append(
+            (
+                "Scan coverage",
+                ["Metric", "Count"],
+                url_rows,
+                [4.0 * inch, 1.5 * inch],
+            )
+        )
     conf_rows = [[level, str(by_confidence[level])] for level in ["High", "Medium", "Low", "Unknown"] if by_confidence.get(level)]
     if conf_rows:
         extra_tables.append(
