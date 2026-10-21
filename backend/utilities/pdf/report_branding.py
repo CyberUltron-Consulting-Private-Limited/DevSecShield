@@ -157,6 +157,92 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "detail card for provider, license, and remediation guidance."
         ),
     },
+    # Team-wide CBOM regulatory deliverables (backend/utilities/pdf/cbom_*_pdf.py). Every key
+    # needs its own entry: an unknown key silently falls back to the SAST header/footer.
+    "cbom_scope_register": {
+        "title": "Scope Baseline & Asset Population Register",
+        "subtitle": "Cryptographic Bill of Materials · Team-wide scope and asset population",
+        "footer_label": "CBOM Scope Baseline Register",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Register of the sources assessed and the cryptographic asset population "
+            "found across all completed CBOM scans of the team."
+        ),
+        "how_to_read": (
+            "Review the sources and asset population first, then complete the cells "
+            "marked (assessor) to finalise the assessment boundary."
+        ),
+    },
+    "cbom_methodology": {
+        "title": "Cryptographic Discovery Methodology & Evidence Plan",
+        "subtitle": "Cryptographic Bill of Materials · Discovery methodology and evidence plan",
+        "footer_label": "CBOM Discovery Methodology",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "How cryptographic assets are discovered, classified and evidenced, with "
+            "live figures from the team's completed CBOM scans."
+        ),
+        "how_to_read": (
+            "Read the automated discovery sections first, then complete the manual "
+            "discovery checklist and ownership tables marked (assessor)."
+        ),
+    },
+    "cbom_cert_register": {
+        "title": "Certificate Estate Register",
+        "subtitle": "Cryptographic Bill of Materials · Team-wide certificate estate",
+        "footer_label": "CBOM Certificate Estate Register",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Every unique X.509 certificate found across the team's completed CBOM "
+            "scans, with validity, algorithm and trust-chain details."
+        ),
+        "how_to_read": (
+            "Start with the validity bands, then review the register; owner and "
+            "business-system columns marked (assessor) are completed by the assessor."
+        ),
+    },
+    "cbom_assurance_register": {
+        "title": "Third-Party Cryptographic Assurance & Attestation Register",
+        "subtitle": "Cryptographic Bill of Materials · Third-party assurance and attestations",
+        "footer_label": "CBOM Third-Party Assurance Register",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Third-party cryptographic components and the control attestation ledger "
+            "rolled up across the team's completed CBOM scans."
+        ),
+        "how_to_read": (
+            "Review the component and attestation tables, then record vendor assurance "
+            "evidence in the cells marked (assessor)."
+        ),
+    },
+    "cbom_pqc_roadmap": {
+        "title": "PQC Migration Roadmap",
+        "subtitle": "Cryptographic Bill of Materials · Post-quantum migration planning",
+        "footer_label": "CBOM PQC Migration Roadmap",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Quantum-vulnerable public-key assets across the team's completed CBOM "
+            "scans, with the NIST post-quantum target for each."
+        ),
+        "how_to_read": (
+            "Use the regulatory timeline for context, then assign wave, target date "
+            "and owner in the cells marked (assessor); the order is not a sequence."
+        ),
+    },
+    "cbom_board_report": {
+        "title": "Board / IT Strategy Committee Regulatory & Executive Report",
+        "subtitle": "Cryptographic Bill of Materials · Board and executive regulatory report",
+        "footer_label": "CBOM Board Report",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Executive view of the team's cryptographic posture, quantum readiness and "
+            "regulatory exposure, based on all completed CBOM scans."
+        ),
+        "how_to_read": (
+            "Read the executive summary and material risks first; decisions required "
+            "and sign-offs are completed by the named owners."
+        ),
+    },
 }
 
 SEVERITY_MEANING = {
