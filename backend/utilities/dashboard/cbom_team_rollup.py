@@ -1,10 +1,25 @@
 """Team-wide CBOM roll-up: the aggregation core behind the six regulatory PDF deliverables.
 
-STATUS - WP1a interface freeze.  This module holds the *types* and the *function signatures*
-(every function body raises ``NotImplementedError``).  WP1b implements the bodies test-first
-WITHOUT changing a name, field or signature below; WP2 / WP3a-f / WP4 code against these types
-in parallel.  If a downstream package needs a type to change, it asks for a new interface
-freeze - it does not edit this file ad hoc.
+STATUS - WP1b implemented (test-first; ``backend/tests/test_cbom_team_rollup.py``).  The *types*
+and *function signatures* are the WP1a interface freeze and are unchanged: WP2 / WP3a-f / WP4
+code against them in parallel.  If a downstream package needs a type to change, it asks for a
+new interface freeze - it does not edit this file ad hoc.
+
+Conventions the bodies guarantee (renderers may rely on them):
+
+* Count dictionaries (``assets_by_type``, ``assets_by_impact``, ``issue_by_impact``,
+  ``finding_counts``, ``SourceAgg.asset_counts`` / ``impact_counts``) are SPARSE: a bucket with a
+  zero count is absent, so read them with ``.get(key, 0)``.  Keys come in canonical order
+  (``ASSET_TYPES`` / ``IMPACT_LEVELS``, unknown values last, sorted).
+* The fold is ORDER-INDEPENDENT: the same set of scans gives an equal view whatever the order of
+  ``heads`` or the ``batch_size``.  "Newest" always means the larger ``(created_at, scan_id)``.
+* An entity's attributes come from the newest scan containing it; ``first_seen`` / ``last_seen`` /
+  ``scan_count`` are over every folded scan.  Two exceptions, both for facts that cannot change
+  for the same certificate: ``CertAgg.is_ca`` / ``self_signed`` fall back to the newest KNOWN
+  value, and ``CertAgg.signed_by`` is the union of issuer files seen in the current scans (all
+  scans when the certificate is not current anywhere).
+* ``ScanFacts.warnings`` and ``TeamCbomView.warnings`` never echo scanned text, only indexes and
+  framework keys, so they are safe to print.
 
 Spec: ``.agents/tasks/cbom-medium-renderers-plan.md`` section 4 (aggregation), section 5.2
 (signatures), section 6.2 + Appendix B (fixture and independent oracle).
@@ -33,10 +48,16 @@ pure functions of that view.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import date, datetime
+import contextlib
+import hashlib
+import math
+import re
+from collections import Counter, deque
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 # ---------------------------------------------------------------------------------------------
 # Plan 5.2 constants (caps are decision D-04)
@@ -491,11 +512,140 @@ class TeamCbomView:
 
 
 # ---------------------------------------------------------------------------------------------
-# Function stubs - bodies are WP1b.  Signatures are plan 5.2 verbatim (annotations added).
+# Private constants and total (never-raising) value coercers
 # ---------------------------------------------------------------------------------------------
-def _wp1b(name: str) -> NotImplementedError:
-    return NotImplementedError(f"{name}: WP1a interface freeze - implemented by WP1b")
+_UTC = timezone.utc
+_EPOCH = datetime(1970, 1, 1, tzinfo=_UTC)
+_MAX_WARNINGS = 100
 
+# ``aibom.cbom.compliance.CBOM_FRAMEWORKS`` order.  The backend cannot import ``aibom``, so the
+# keys are mirrored here; ``test_cbom_team_rollup`` pins them to the generated registry fixture.
+_FRAMEWORK_ORDER = (
+    "nist_1800_38b",
+    "nist_800_57",
+    "omb_m_23_02",
+    "eu_cra",
+    "eu_dora",
+    "pci_dss_4",
+    "fips_140_3",
+    "bsi_tr_02102",
+    "nist_1800_38c",
+    "cnsa_2_0",
+    "rbi_free_ai_protection",
+    "cert_in_cbom",
+    "sebi_cscrf_cbom",
+)
+_FRAMEWORK_RANK = {key: index for index, key in enumerate(_FRAMEWORK_ORDER)}
+_VERDICT_RANK = {verdict: index for index, verdict in enumerate(VERDICT_PRECEDENCE)}
+_IMPACT_BY_FOLD = {level.casefold(): level for level in IMPACT_LEVELS}
+_LEGACY_ASSET_TYPE = {  # pre-reconcile ``algorithm_type`` -> CycloneDX assetType (plan 3.1)
+    "certificate": ASSET_CERTIFICATE,
+    "key": ASSET_MATERIAL,
+    "protocol": ASSET_PROTOCOL,
+}
+_REPO_SCHEMES = frozenset({"http", "https", "ssh", "git"})
+_DEFAULT_PORTS = {"http": 80, "https": 443, "ssh": 22, "git": 9418}
+_SCP_RE = re.compile(r"^[\w.-]+@([\w.-]+):(?!//)(.+)$")  # git@host:org/repo.git
+_BARE_URL_RE = re.compile(r"^[A-Za-z0-9.-]+(:\d{1,5})?/.+$")  # host/org/repo (no scheme)
+_CONTROL_OR_SPACE_RE = re.compile(r"[\x00-\x20\x7f]")
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+_INT_RE = re.compile(r"[+-]?\d+")
+_SAFE_KEY_RE = re.compile(r"[A-Za-z0-9_.-]{1,40}")  # a framework key that may appear in a warning
+
+
+def _utc(moment: Any) -> datetime | None:
+    """Timezone-aware UTC copy of a datetime (naive values are taken as UTC), else ``None``."""
+    if not isinstance(moment, datetime):
+        return None
+    if moment.tzinfo is None or moment.utcoffset() is None:
+        return moment.replace(tzinfo=_UTC)
+    return moment.astimezone(_UTC)
+
+
+def _text(value: Any) -> str | None:
+    """Stripped non-empty text; numbers become text; bools, containers and ``None`` are ``None``."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float) and math.isfinite(value):
+        return str(int(value)) if value.is_integer() else str(value)
+    return None
+
+
+def _int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value.is_integer() else None
+    if isinstance(value, str) and _INT_RE.fullmatch(value.strip()):
+        return int(value.strip())
+    return None
+
+
+def _float(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _tri(value: Any) -> bool | None:
+    """Tri-state: ``True`` / ``False`` for bools and 'true'/'false' text, else unknown."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        folded = value.strip().casefold()
+        if folded in ("true", "yes", "1"):
+            return True
+        if folded in ("false", "no", "0"):
+            return False
+    return None
+
+
+def _slug(text: str) -> str:
+    """Lower-case ASCII slug; titles without ASCII letters get a stable hash instead."""
+    slug = _SLUG_RE.sub("-", text.lower()).strip("-")
+    if slug:
+        return slug
+    return "t-" + hashlib.sha256(text.casefold().encode("utf-8", "replace")).hexdigest()[:10]
+
+
+def _props(component: Mapping[str, Any]) -> dict[str, str]:
+    """``properties[]`` of a CycloneDX component as ``{name: text}`` (first occurrence wins)."""
+    found: dict[str, str] = {}
+    entries = component.get("properties")
+    if isinstance(entries, list):
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            name, value = entry.get("name"), entry.get("value")
+            if isinstance(name, str) and name not in found and isinstance(value, (str, int, float)):
+                found[name] = value if isinstance(value, str) else str(value)
+    return found
+
+
+def _coverage(passed: int, passed_with_evidence: int, failed: int) -> float | None:
+    """Engine rule: ``(pass + pass_with_evidence) / (pass + pass_with_evidence + fail)``."""
+    denominator = passed + passed_with_evidence + failed
+    if denominator <= 0:
+        return None
+    return round((passed + passed_with_evidence) / denominator, 3)
+
+
+def _ordered_counts(counter: Mapping[str, int], order: Sequence[str]) -> dict[str, int]:
+    """Sparse count dict in canonical key order (known keys first, unknown sorted last)."""
+    known = [key for key in order if counter.get(key, 0) > 0]
+    unknown = sorted(key for key, count in counter.items() if key not in order and count > 0)
+    return {key: counter[key] for key in known + unknown}
+
+
+# ---------------------------------------------------------------------------------------------
+# Functions.  Signatures are plan 5.2 verbatim (annotations added); docstrings are the contract.
+# ---------------------------------------------------------------------------------------------
 
 def sanitize_repo_url(url: str | None) -> str | None:
     """Canonical, credential-free repository URL, or ``None`` for empty / unparseable input.
@@ -503,7 +653,36 @@ def sanitize_repo_url(url: str | None) -> str | None:
     Drops userinfo (``user:token@``), query and fragment, a trailing ``/`` and a ``.git``
     suffix; lower-cases scheme and host; keeps the path's case.  Total: never raises.
     """
-    raise _wp1b("sanitize_repo_url")
+    if not isinstance(url, str):
+        return None
+    text = url.strip()
+    if not text or _CONTROL_OR_SPACE_RE.search(text):
+        return None
+    if "://" not in text:
+        scp = _SCP_RE.match(text)
+        if scp:
+            text = f"ssh://{scp.group(1)}/{scp.group(2)}"
+        elif _BARE_URL_RE.match(text):
+            text = "https://" + text
+        else:
+            return None
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower()  # ``hostname`` already excludes any userinfo
+    if scheme not in _REPO_SCHEMES or not host:
+        return None
+    if ":" in host:  # IPv6 literal
+        host = f"[{host}]"
+    if port is not None and port != _DEFAULT_PORTS.get(scheme):
+        host = f"{host}:{port}"
+    path = parts.path.rstrip("/")
+    if path.lower().endswith(".git"):
+        path = path[: -len(".git")].rstrip("/")
+    return f"{scheme}://{host}{path}"
 
 
 def source_key_for(
@@ -517,7 +696,19 @@ def source_key_for(
     -> ``file:{slug(title)}`` / ``Uploaded CBOM: {title}``; else ``scan:{scan_id}`` /
     ``Scan #{scan_id}``.
     """
-    raise _wp1b("source_key_for")
+    data: Mapping[str, Any] = meta if isinstance(meta, Mapping) else {}
+    name = (title if isinstance(title, str) else "" if title is None else str(title)).strip()
+    repo = sanitize_repo_url(data.get("repo_url"))
+    if repo is not None:
+        parts = urlsplit(repo)
+        where = parts.netloc + parts.path  # credentials were dropped by ``sanitize_repo_url``
+        branch = _text(data.get("branch")) or "default"
+        return f"repo:{where}@{branch}".lower(), f"{where} ({branch})", SOURCE_REPO
+    if _tri(data.get("zip_file_used")) is True:
+        return f"zip:{_slug(name)}", f"Zip upload: {name or '(untitled)'}", SOURCE_ZIP
+    if _tri(data.get("cbom_file_used")) is True:
+        return f"file:{_slug(name)}", f"Uploaded CBOM: {name or '(untitled)'}", SOURCE_FILE
+    return f"scan:{scan_id}", f"Scan #{scan_id}", SOURCE_SCAN
 
 
 def cert_identity_key(
@@ -531,7 +722,28 @@ def cert_identity_key(
     ``crypto:subjectName`` or ``crypto:notValidAfter`` is missing, the key falls back to
     ``"name:" + fallback_name + "|" + source_key`` and ``strong`` is ``False``.
     """
-    raise _wp1b("cert_identity_key")
+
+    def pick(name: str) -> str:
+        value = props.get(name) if isinstance(props, Mapping) else None
+        if value is None:
+            return ""
+        return value if isinstance(value, str) else str(value)
+
+    subject, not_after = pick("crypto:subjectName"), pick("crypto:notValidAfter")
+    if not subject.strip() or not not_after.strip():
+        return f"name:{fallback_name}|{source_key}", False
+    parts = [
+        subject.strip().casefold(),
+        pick("crypto:issuerName").strip().casefold(),
+        pick("crypto:notValidBefore"),
+        not_after,
+        pick("crypto:signatureAlgorithm").casefold(),
+        pick("crypto:publicKeyAlgorithm").casefold(),
+        pick("crypto:keySize"),
+        pick("crypto:curve").casefold(),
+    ]
+    digest = hashlib.sha256("\x1f".join(parts).encode("utf-8", "replace")).hexdigest()
+    return digest[:16], True
 
 
 def classify_expiry(not_after_iso: str | None, as_of: date) -> ExpiryBand:
@@ -541,7 +753,484 @@ def classify_expiry(not_after_iso: str | None, as_of: date) -> ExpiryBand:
     ``<= NEAR_EXPIRY_DAYS`` -> LE_90, else VALID; a missing / unparseable value -> UNKNOWN with
     ``days_left=None``.  Same "strictly before today" rule as aibom ``cert_expiry_finding``.
     """
-    raise _wp1b("classify_expiry")
+    today = as_of.date() if isinstance(as_of, datetime) else as_of
+    if not isinstance(not_after_iso, str) or not isinstance(today, date):
+        return ExpiryBand(UNKNOWN, None)
+    try:
+        expires = date.fromisoformat(not_after_iso.strip()[:10])
+    except ValueError:
+        return ExpiryBand(UNKNOWN, None)
+    days_left = (expires - today).days
+    if days_left < 0:
+        return ExpiryBand(EXPIRED, days_left)
+    if days_left <= 30:
+        return ExpiryBand(LE_30, days_left)
+    if days_left <= NEAR_EXPIRY_DAYS:
+        return ExpiryBand(LE_90, days_left)
+    return ExpiryBand(VALID, days_left)
+
+
+def _status_exclusion(status: Any) -> str | None:
+    """``None`` for a successful scan, else the ``EXCLUDED_*`` bucket of any other status."""
+    folded = ("" if status is None else str(status)).strip().casefold()
+    if folded == STATUS_SUCCESS:
+        return None
+    return EXCLUDED_FAILURE if folded == STATUS_FAILURE else EXCLUDED_NOT_COMPLETED
+
+
+def _head_facts(head: ScanHead) -> ScanFacts:
+    """Everything that needs no blob: identity, source, dates and the status-based exclusion."""
+    warnings: list[str] = []
+    created = _utc(getattr(head, "created_at", None))
+    if created is None:
+        created = _EPOCH
+        warnings.append("created_at is not a datetime (treated as 1970-01-01)")
+    updated = _utc(getattr(head, "last_updated", None)) or created
+    scan_id = _int(getattr(head, "id", None)) or 0
+    raw_meta = getattr(head, "scan_metadata", None)
+    meta: Mapping[str, Any] = raw_meta if isinstance(raw_meta, Mapping) else {}
+    raw_title = getattr(head, "title", None)
+    title = ("" if raw_title is None else str(raw_title)).strip()
+    key, label, kind = source_key_for(meta, title, scan_id)
+    status = getattr(head, "status", None)
+    return ScanFacts(
+        scan_id=scan_id,
+        title=title,
+        status="" if status is None else str(status),
+        created_at=created,
+        last_updated=updated,
+        source_key=key,
+        source_label=label,
+        source_kind=kind,
+        repo_url=sanitize_repo_url(meta.get("repo_url")) if kind == SOURCE_REPO else None,
+        branch=_text(meta.get("branch")) if kind == SOURCE_REPO else None,
+        exclusion=_status_exclusion(status),
+        warnings=warnings,
+    )
+
+
+def _asset_type_of(row: Mapping[str, Any]) -> str:
+    declared = _text(row.get("asset_type"))
+    if declared is not None:
+        folded = declared.casefold()
+        return folded if folded in ASSET_TYPES else ASSET_OTHER
+    legacy = (_text(row.get("algorithm_type")) or "").casefold()
+    return _LEGACY_ASSET_TYPE.get(legacy, ASSET_ALGORITHM)
+
+
+def _impact_of(value: Any) -> str | None:
+    text = _text(value)
+    return None if text is None else _IMPACT_BY_FOLD.get(text.casefold(), text)
+
+
+def _codes_of(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    cleaned = (code.strip() for code in value if isinstance(code, str) and code.strip())
+    return tuple(dict.fromkeys(cleaned))
+
+
+def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
+    """One ``results[]`` row (any tier) as a single-scan ``AssetAgg`` observation."""
+    asset_type = _asset_type_of(row)
+    title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
+    location = _text(row.get("location")) or ""
+    bom_ref = _text(row.get("bom_ref"))
+    quantum_safe = _tri(row.get("quantum_safe"))
+    quantum_vulnerable = _tri(row.get("quantum_vulnerable"))
+    if quantum_vulnerable is None and quantum_safe is not None:
+        quantum_vulnerable = not quantum_safe  # pre-reconcile rows only carry ``quantum_safe``
+    primitive = _text(row.get("primitive"))
+    if primitive is None and asset_type == ASSET_ALGORITHM:
+        primitive = _text(row.get("algorithm_type"))
+    return AssetAgg(
+        source_key=facts.source_key,
+        source_label=facts.source_label,
+        asset_type=asset_type,
+        ident=bom_ref or f"{_slug(title)}#{location}",
+        title=title,
+        location=location,
+        impact=_impact_of(row.get("impact")) or "Low",
+        finding_codes=_codes_of(row.get("finding_codes")),
+        bom_ref=bom_ref,
+        description=_text(row.get("description")) or "",
+        primitive=primitive,
+        key_size=_text(row.get("key_size")),
+        curve=_text(row.get("curve")),
+        mode=_text(row.get("mode")),
+        protocol_version=_text(row.get("protocol_version")),
+        material_kind=_text(row.get("material_kind")),
+        parameter_set=_text(row.get("parameter_set")),
+        not_valid_after=_text(row.get("not_valid_after")),
+        security_strength_bits=_int(row.get("security_strength_bits")),
+        risk_score=_float(row.get("risk_score")),
+        quantum_vulnerable=quantum_vulnerable,
+        quantum_safe=quantum_safe,
+        hybrid=_tri(row.get("hybrid")),
+        nist_quantum_security_level=_int(row.get("nist_quantum_security_level")),
+        pqc_migration_target=_text(row.get("pqc_migration_target")),
+        pqc_migration_roadmap=_text(row.get("pqc_migration_roadmap")),
+        first_seen=facts.created_at,
+        last_seen=facts.created_at,
+        scan_count=1,
+        scan_ids=(facts.scan_id,),
+        latest_scan_id=facts.scan_id,
+    )
+
+
+def _read_rows(
+    results: list[Any], facts: ScanFacts, warnings: list[str]
+) -> tuple[list[AssetAgg], list[dict[str, Any]], bool]:
+    """``(assets, raw rows parallel to assets, any row untyped)``; the first duplicate wins."""
+    assets: list[AssetAgg] = []
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    untyped = False
+    for index, row in enumerate(results):
+        if not isinstance(row, dict):
+            warnings.append(f"results[{index}] is not an object (skipped)")
+            continue
+        untyped = untyped or _text(row.get("asset_type")) is None
+        asset = _asset_from_row(row, facts)
+        identity = (asset.asset_type, asset.ident)
+        if identity in seen:
+            warnings.append(f"results[{index}] duplicates an earlier asset identity (first kept)")
+            continue
+        seen.add(identity)
+        assets.append(asset)
+        rows.append(row)
+    return assets, rows, untyped
+
+
+def _basename(path: str) -> str:
+    return path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+# crypto:* property -> CycloneDX certificateProperties key (the two carry the same values)
+_CERT_PROPERTY_FALLBACK = (
+    ("crypto:subjectName", "subjectName"),
+    ("crypto:issuerName", "issuerName"),
+    ("crypto:notValidBefore", "notValidBefore"),
+    ("crypto:notValidAfter", "notValidAfter"),
+)
+
+
+def _cert_name(comp: Mapping[str, Any], props: Mapping[str, str]) -> str:
+    path = _text(props.get("discovery:source"))
+    return _text(comp.get("name")) or (_basename(path) if path else "") or "(unnamed certificate)"
+
+
+def _new_cert(facts: ScanFacts, path: str, **fields: Any) -> CertAgg:
+    """A single-scan observation: provenance fields describe this scan only."""
+    return CertAgg(
+        source_keys=(facts.source_key,),
+        locations=((facts.source_label, path),),
+        locations_total=1,
+        first_seen=facts.created_at,
+        last_seen=facts.created_at,
+        scan_count=1,
+        scan_ids=(facts.scan_id,),
+        latest_scan_id=facts.scan_id,
+        **fields,
+    )
+
+
+def _cert_from_component(
+    comp: Mapping[str, Any],
+    props: Mapping[str, str],
+    pair: tuple[dict[str, Any], AssetAgg] | None,
+    signed_by: tuple[str, ...],
+    facts: ScanFacts,
+) -> CertAgg:
+    """A certificate ``cbom_json`` component joined to its ``results[]`` row (impact, codes)."""
+    merged = dict(props)
+    crypto = comp.get("cryptoProperties")
+    cert_props = crypto.get("certificateProperties") if isinstance(crypto, dict) else None
+    if isinstance(cert_props, dict):
+        for prop, field_name in _CERT_PROPERTY_FALLBACK:
+            replacement = _text(cert_props.get(field_name))
+            if not merged.get(prop, "").strip() and replacement is not None:
+                merged[prop] = replacement
+    name = _cert_name(comp, props)
+    path = _text(props.get("discovery:source")) or name
+    key, strong = cert_identity_key(merged, fallback_name=name, source_key=facts.source_key)
+    row, asset = pair if pair is not None else (None, None)
+    self_signed = _tri(props.get("crypto:selfSigned"))
+    if self_signed is None and row is not None:
+        self_signed = _tri(row.get("self_signed"))
+    return _new_cert(
+        facts,
+        path,
+        key=key,
+        identity_strong=strong,
+        name=name,
+        file_names=(name,),
+        subject_cn=_text(merged.get("crypto:subjectName")),
+        issuer_cn=_text(merged.get("crypto:issuerName")),
+        not_before=_text(merged.get("crypto:notValidBefore")),
+        not_after=_text(merged.get("crypto:notValidAfter")),
+        public_key_algorithm=_text(merged.get("crypto:publicKeyAlgorithm")),
+        key_size=_text(merged.get("crypto:keySize")),
+        curve=_text(merged.get("crypto:curve")),
+        signature_algorithm=_text(merged.get("crypto:signatureAlgorithm")),
+        self_signed=self_signed,
+        is_ca=_tri(props.get("crypto:isCertificateAuthority")),
+        signed_by=signed_by,
+        scan_time_expired=_tri(row.get("expired")) if row is not None else None,
+        impact=asset.impact if asset is not None else "Low",
+        finding_codes=asset.finding_codes if asset is not None else (),
+    )
+
+
+def _cert_from_row(row: Mapping[str, Any], asset: AssetAgg, facts: ScanFacts) -> CertAgg:
+    """A certificate seen only as a ``results[]`` row (pre-reconcile scans): weak identity."""
+    props = {"crypto:notValidAfter": asset.not_valid_after} if asset.not_valid_after else {}
+    key, strong = cert_identity_key(props, fallback_name=asset.title, source_key=facts.source_key)
+    return _new_cert(
+        facts,
+        asset.location or asset.title,
+        key=key,
+        identity_strong=strong,
+        name=asset.title,
+        file_names=(asset.title,),
+        not_after=asset.not_valid_after,
+        key_size=asset.key_size,
+        curve=asset.curve,
+        self_signed=_tri(row.get("self_signed")),
+        scan_time_expired=_tri(row.get("expired")),
+        impact=asset.impact,
+        finding_codes=asset.finding_codes,
+    )
+
+
+def _read_components(
+    bom: Mapping[str, Any],
+    assets: list[AssetAgg],
+    rows: list[dict[str, Any]],
+    graph: Any,
+    facts: ScanFacts,
+    warnings: list[str],
+) -> tuple[list[CertAgg], list[LibAgg]]:
+    """Certificates and libraries of ``cbom_json`` (plus certificate rows it does not cover)."""
+    components = bom.get("components")
+    if components is not None and not isinstance(components, list):
+        warnings.append("cbom_json.components is not a list (ignored)")
+        components = []
+    cert_pairs = [
+        (row, asset)
+        for row, asset in zip(rows, assets, strict=True)
+        if asset.asset_type == ASSET_CERTIFICATE
+    ]
+    by_ref = {asset.bom_ref: (row, asset) for row, asset in cert_pairs if asset.bom_ref}
+    by_place = {(asset.title, asset.location): (row, asset) for row, asset in cert_pairs}
+    cert_components: list[tuple[dict[str, Any], dict[str, str]]] = []
+    names_by_ref: dict[str, str] = {}
+    library_paths: dict[str, tuple[str, list[str]]] = {}
+    for index, comp in enumerate(components or []):
+        if not isinstance(comp, dict):
+            warnings.append(f"cbom_json.components[{index}] is not an object (skipped)")
+            continue
+        props = _props(comp)
+        crypto = comp.get("cryptoProperties")
+        declared = (_text(crypto.get("assetType")) if isinstance(crypto, dict) else None) or ""
+        declared = declared or props.get("crypto:assetType", "")
+        if (_text(comp.get("type")) or "").casefold() == "library" or (
+            props.get("crypto:role", "").casefold() == "library"
+        ):
+            name = _text(comp.get("name"))
+            if name is None:
+                warnings.append(f"cbom_json.components[{index}] is a library without a name")
+                continue
+            paths = library_paths.setdefault(name.casefold(), (name, []))[1]
+            path = _text(props.get("discovery:source"))
+            if path and path not in paths:
+                paths.append(path)
+        elif declared.casefold() == ASSET_CERTIFICATE:
+            cert_components.append((comp, props))
+            ref = _text(comp.get("bom-ref"))
+            if ref:
+                names_by_ref[ref] = _cert_name(comp, props)
+    signers: dict[str, list[str]] = {}
+    edges = graph.get("edges") if isinstance(graph, dict) else None
+    for edge in edges if isinstance(edges, list) else []:
+        if not isinstance(edge, dict) or edge.get("rel") != "signed_by":
+            continue
+        source, target = _text(edge.get("source")), _text(edge.get("target"))
+        issuer = names_by_ref.get(target) if target else None
+        if source in names_by_ref and issuer is not None:
+            chain = signers.setdefault(source or "", [])
+            if issuer not in chain:
+                chain.append(issuer)
+    certs: list[CertAgg] = []
+    used: set[int] = set()
+    for comp, props in cert_components:
+        ref = _text(comp.get("bom-ref"))
+        name = _cert_name(comp, props)
+        place = (name, _text(props.get("discovery:source")) or name)
+        pair = (by_ref.get(ref) if ref else None) or by_place.get(place)
+        if pair is not None:
+            used.add(id(pair[1]))
+        certs.append(
+            _cert_from_component(comp, props, pair, tuple(signers.get(ref or "", ())), facts)
+        )
+    certs.extend(
+        _cert_from_row(row, asset, facts) for row, asset in cert_pairs if id(asset) not in used
+    )
+    libs = [
+        LibAgg(
+            key=key,
+            name=name,
+            source_keys=(facts.source_key,),
+            source_labels=(facts.source_label,),
+            discovered_in=tuple(paths[:MAX_LOCATIONS]),
+            discovered_in_total=len(paths),
+            first_seen=facts.created_at,
+            last_seen=facts.created_at,
+            scan_count=1,
+            scan_ids=(facts.scan_id,),
+            latest_scan_id=facts.scan_id,
+        )
+        for key, (name, paths) in library_paths.items()
+    ]
+    return certs, libs
+
+
+def _read_compliance(
+    scan_data: Mapping[str, Any], facts: ScanFacts, warnings: list[str]
+) -> tuple[dict[str, FrameworkPool], list[RequirementAgg]]:
+    """Per-framework verdict counts and per-requirement rows of ONE scan (never the disclaimer)."""
+    compliance = scan_data.get("cbom_compliance")
+    if not isinstance(compliance, dict):
+        return {}, []
+    attestations = scan_data.get("attestations")
+    attested: Mapping[str, Any] = attestations if isinstance(attestations, dict) else {}
+    frameworks: dict[str, FrameworkPool] = {}
+    requirements: list[RequirementAgg] = []
+    for raw_key, block in compliance.items():
+        if not isinstance(block, dict):  # "disclaimer" and anything else that is not a framework
+            continue
+        framework = str(raw_key)
+        counts = {
+            state: _int(block.get(state)) or 0
+            for state in ("pass", "pass_with_evidence", "fail", "out_of_scope",
+                          "not_bom_evidenceable", "na")  # fmt: skip
+        }
+        frameworks[framework] = FrameworkPool(
+            framework=framework,
+            passed=counts["pass"],
+            passed_with_evidence=counts["pass_with_evidence"],
+            failed=counts["fail"],
+            out_of_scope=counts["out_of_scope"],
+            not_bom_evidenceable=counts["not_bom_evidenceable"],
+            na=counts["na"],
+            coverage=_coverage(counts["pass"], counts["pass_with_evidence"], counts["fail"]),
+            sources_pooled=1,
+        )
+        entries = block.get("requirements")
+        if entries is None:
+            continue
+        shown = framework if _SAFE_KEY_RE.fullmatch(framework) else "?"  # never echo odd text
+        if not isinstance(entries, list):
+            warnings.append(f"cbom_compliance.{shown}.requirements is not a list (ignored)")
+            continue
+        notes = attested.get(framework)
+        notes = notes if isinstance(notes, dict) else {}
+        seen: set[str] = set()
+        for index, entry in enumerate(entries):
+            where = f"cbom_compliance.{shown}.requirements[{index}]"
+            if not isinstance(entry, dict):
+                warnings.append(f"{where} is not an object (skipped)")
+                continue
+            req_id = _text(entry.get("id"))
+            if req_id is None or req_id in seen:
+                warnings.append(f"{where} has no usable id (skipped)")
+                continue
+            seen.add(req_id)
+            verdict = (_text(entry.get("verdict")) or VERDICT_NA).casefold()
+            note = notes.get(req_id)
+            note = note if isinstance(note, dict) else {}
+            requirements.append(
+                RequirementAgg(
+                    framework=framework,
+                    req_id=req_id,
+                    title=_text(entry.get("title")) or "",
+                    citation=_text(entry.get("source")) or "",
+                    verdict=verdict,
+                    verdicts={facts.source_key: verdict},
+                    attestable_sources=int(
+                        verdict in (VERDICT_NOT_BOM_EVIDENCEABLE, VERDICT_PASS_WITH_EVIDENCE)
+                    ),
+                    attested_sources=int(verdict == VERDICT_PASS_WITH_EVIDENCE),
+                    latest_attestation_file=_text(note.get("filename")),
+                    latest_attestation_note=_text(note.get("note")),
+                    latest_attestation_at=_text(note.get("uploaded_at")),
+                )
+            )
+    return frameworks, requirements
+
+
+def _fill_from_blob(facts: ScanFacts, scan_data: Any) -> ScanFacts:
+    """Read ``scan_data`` into ``facts``; assigns last, so a failure leaves no half state."""
+    if facts.exclusion is not None:  # failure / not completed: the blob is never looked at
+        return facts
+    results = scan_data.get("results") if isinstance(scan_data, dict) else None
+    bom = scan_data.get("cbom_json") if isinstance(scan_data, dict) else None
+    has_rows, has_bom = isinstance(results, list), isinstance(bom, dict)
+    if not has_rows and not has_bom:
+        facts.exclusion = EXCLUDED_NO_DATA
+        return facts
+    warnings: list[str] = []
+    if results is not None and not has_rows:
+        warnings.append("results is not a list (ignored)")
+    raw_rows: list[Any] = results if isinstance(results, list) else []
+    raw_bom: dict[str, Any] = bom if isinstance(bom, dict) else {}
+    assets, rows, untyped = _read_rows(raw_rows, facts, warnings)
+    certs, libs = _read_components(
+        raw_bom, assets, rows, scan_data.get("cbom_graph"), facts, warnings
+    )
+    frameworks, requirements = _read_compliance(scan_data, facts, warnings)
+    compliance = scan_data.get("cbom_compliance")
+    reasons = tuple(
+        reason
+        for reason, missing in (
+            ("no_distributions", not isinstance(scan_data.get("cbom_distributions"), dict)),
+            ("no_compliance", not (isinstance(compliance, dict) and bool(frameworks))),
+            ("no_asset_type", untyped),
+            ("no_cbom_json", not has_bom),
+        )
+        if missing
+    )
+    if not reasons:
+        tier = TIER_A
+    elif "no_asset_type" in reasons or "no_cbom_json" in reasons:
+        tier = TIER_C
+    else:
+        tier = TIER_B
+    for asset in assets:
+        asset.tier = tier
+    for cert in certs:
+        cert.tier = tier
+    facts.assets, facts.certs, facts.libs = assets, certs, libs
+    facts.frameworks, facts.requirements = frameworks, requirements
+    facts.asset_count, facts.cert_count, facts.lib_count = len(assets), len(certs), len(libs)
+    facts.tier = tier
+    facts.fidelity = FIDELITY_REDUCED if reasons else FIDELITY_FULL
+    facts.fidelity_reasons = reasons
+    facts.warnings.extend(warnings)
+    return facts
+
+
+def _safe_fill(facts: ScanFacts, scan_data: Any) -> ScanFacts:
+    try:
+        return _fill_from_blob(facts, scan_data)
+    except Exception:  # noqa: BLE001 - the contract is "total": never fail a document on one scan
+        facts.assets, facts.certs, facts.libs = [], [], []
+        facts.frameworks, facts.requirements = {}, []
+        facts.asset_count = facts.cert_count = facts.lib_count = 0
+        facts.tier, facts.fidelity, facts.fidelity_reasons = TIER_NONE, FIDELITY_NONE, ()
+        facts.exclusion = EXCLUDED_NO_DATA
+        facts.warnings.append("scan_data could not be read (unexpected structure)")
+        return facts
 
 
 def extract_scan_facts(head: ScanHead, scan_data: Any) -> ScanFacts:
@@ -556,7 +1245,306 @@ def extract_scan_facts(head: ScanHead, scan_data: Any) -> ScanFacts:
     (certificate / key -> related-crypto-material / protocol / else algorithm).  Never prints or
     copies ``cbom_compliance["disclaimer"]`` or ``cbom_json.metadata`` (AIBOM text, plan F-05).
     """
-    raise _wp1b("extract_scan_facts")
+    return _safe_fill(_head_facts(head), scan_data)
+
+
+Rank = tuple[datetime, int]  # (created_at, scan_id): "newer" simply means a larger Rank
+
+
+class _AssetAcc:
+    """Running aggregate of one asset identity; order-independent (newest rank wins)."""
+
+    __slots__ = ("best", "rank", "scan_ids")
+
+    def __init__(self, obs: AssetAgg, rank: Rank) -> None:
+        self.best, self.rank = obs, rank
+        self.scan_ids: set[int] = {rank[1]}
+
+
+class _CertAcc:
+    __slots__ = ("best", "rank", "scan_ids", "names", "places", "signers", "is_ca", "self_signed")
+
+    def __init__(self, obs: CertAgg, rank: Rank) -> None:
+        self.best, self.rank = obs, rank
+        self.scan_ids: set[int] = set()
+        self.names: dict[str, Rank] = {}  # file basename -> newest rank seen
+        self.places: dict[tuple[str, str], Rank] = {}  # (source_key, path) -> newest rank
+        self.signers: dict[str, set[int]] = {}  # issuer file -> scans whose graph had the edge
+        self.is_ca: tuple[Rank, bool] | None = None  # newest KNOWN value (not newest scan's)
+        self.self_signed: tuple[Rank, bool] | None = None
+
+
+class _LibAcc:
+    __slots__ = ("best", "rank", "scan_ids", "paths")
+
+    def __init__(self, obs: LibAgg, rank: Rank) -> None:
+        self.best, self.rank = obs, rank
+        self.scan_ids: set[int] = set()
+        self.paths: dict[str, Rank] = {}
+
+
+class _SourceAcc:
+    """Included scans of one source.  Only the newest keeps its compliance payload."""
+
+    __slots__ = ("ranks", "newest", "newest_rank")
+
+    def __init__(self) -> None:
+        self.ranks: list[Rank] = []
+        self.newest: ScanFacts | None = None
+        self.newest_rank: Rank | None = None
+
+
+def _bump(table: dict[Any, Rank], key: Any, rank: Rank) -> None:
+    current = table.get(key)
+    if current is None or rank > current:
+        table[key] = rank
+
+
+def _merge_asset(accs: dict[tuple[str, str, str], _AssetAcc], obs: AssetAgg, rank: Rank) -> None:
+    identity = (obs.source_key, obs.asset_type, obs.ident)
+    acc = accs.get(identity)
+    if acc is None:
+        accs[identity] = _AssetAcc(obs, rank)
+        return
+    acc.scan_ids.add(rank[1])
+    if rank > acc.rank:
+        acc.best, acc.rank = obs, rank
+
+
+def _merge_cert(accs: dict[str, _CertAcc], obs: CertAgg, rank: Rank) -> None:
+    acc = accs.get(obs.key)
+    if acc is None:
+        acc = accs[obs.key] = _CertAcc(obs, rank)
+    elif rank > acc.rank:
+        acc.best, acc.rank = obs, rank
+    acc.scan_ids.add(rank[1])
+    for name in obs.file_names:
+        _bump(acc.names, name, rank)
+    for _label, path in obs.locations:
+        _bump(acc.places, (obs.source_keys[0], path), rank)
+    for signer in obs.signed_by:
+        acc.signers.setdefault(signer, set()).add(rank[1])
+    if obs.is_ca is not None and (acc.is_ca is None or rank > acc.is_ca[0]):
+        acc.is_ca = (rank, obs.is_ca)
+    if obs.self_signed is not None and (acc.self_signed is None or rank > acc.self_signed[0]):
+        acc.self_signed = (rank, obs.self_signed)
+
+
+def _merge_lib(accs: dict[str, _LibAcc], obs: LibAgg, rank: Rank) -> None:
+    acc = accs.get(obs.key)
+    if acc is None:
+        acc = accs[obs.key] = _LibAcc(obs, rank)
+    elif rank > acc.rank:
+        acc.best, acc.rank = obs, rank
+    acc.scan_ids.add(rank[1])
+    for path in obs.discovered_in:
+        _bump(acc.paths, path, rank)
+
+
+class _Ctx:
+    """Lookups the finalisers need once every scan has been folded."""
+
+    def __init__(
+        self,
+        rank_of: dict[int, Rank],
+        source_of: dict[int, str],
+        current_ids: set[int],
+        label_of: dict[str, str],
+        as_of: date,
+    ) -> None:
+        self.rank_of, self.source_of = rank_of, source_of
+        self.current_ids, self.label_of, self.as_of = current_ids, label_of, as_of
+
+    def ordered(self, scan_ids: Iterable[int]) -> list[int]:
+        """Scan ids newest first."""
+        return sorted(scan_ids, key=lambda scan_id: self.rank_of[scan_id], reverse=True)
+
+    def span(self, scan_ids: Iterable[int]) -> tuple[datetime, datetime]:
+        stamps = [self.rank_of[scan_id][0] for scan_id in scan_ids]
+        return min(stamps), max(stamps)
+
+    def by_label(self, source_keys: Iterable[str]) -> tuple[str, ...]:
+        return tuple(sorted(source_keys, key=lambda key: (self.label_of[key].casefold(), key)))
+
+    @staticmethod
+    def newest_first(table: Mapping[Any, Rank]) -> list[Any]:
+        """Keys by newest rank first; ties break on the key (stable, deterministic)."""
+        items = sorted(table.items(), key=lambda item: item[0])
+        items.sort(key=lambda item: item[1], reverse=True)
+        return [key for key, _ in items]
+
+
+def _finish_assets(accs: dict[tuple[str, str, str], _AssetAcc], ctx: _Ctx) -> list[AssetAgg]:
+    finished = []
+    for acc in accs.values():
+        ids = ctx.ordered(acc.scan_ids)
+        first, last = ctx.span(acc.scan_ids)
+        finished.append(
+            replace(
+                acc.best,
+                source_label=ctx.label_of[acc.best.source_key],
+                current=any(scan_id in ctx.current_ids for scan_id in acc.scan_ids),
+                first_seen=first,
+                last_seen=last,
+                scan_count=len(ids),
+                scan_ids=tuple(ids[:MAX_SCAN_IDS]),
+                latest_scan_id=ids[0],
+            )
+        )
+    finished.sort(key=lambda asset: (asset.source_key, asset.asset_type, asset.ident))
+    return finished
+
+
+def _known(newest: bool | None, fallback: tuple[Rank, bool] | None) -> bool | None:
+    """The newest scan's tri-state value, else the newest KNOWN value of an older scan."""
+    if newest is not None:
+        return newest
+    return fallback[1] if fallback is not None else None
+
+
+def _finish_certs(accs: dict[str, _CertAcc], ctx: _Ctx) -> list[CertAgg]:
+    finished = []
+    for acc in accs.values():
+        best = acc.best
+        ids = ctx.ordered(acc.scan_ids)
+        first, last = ctx.span(acc.scan_ids)
+        sources = {ctx.source_of[scan_id] for scan_id in acc.scan_ids}
+        live = {ctx.source_of[i] for i in acc.scan_ids if i in ctx.current_ids}
+        places = [(ctx.label_of[key], path) for key, path in ctx.newest_first(acc.places)]
+        signer_rank: dict[str, Rank] = {}
+        for signer, seen_in in acc.signers.items():
+            relevant = [i for i in seen_in if not live or i in ctx.current_ids]
+            if relevant:
+                signer_rank[signer] = max(ctx.rank_of[i] for i in relevant)
+        finished.append(
+            replace(
+                best,
+                file_names=tuple(ctx.newest_first(acc.names)),
+                self_signed=_known(best.self_signed, acc.self_signed),
+                is_ca=_known(best.is_ca, acc.is_ca),
+                signed_by=tuple(ctx.newest_first(signer_rank)),
+                expiry=classify_expiry(best.not_after, ctx.as_of),
+                source_keys=ctx.by_label(sources),
+                current_source_keys=ctx.by_label(live),
+                locations=tuple(places[:MAX_LOCATIONS]),
+                locations_total=len(places),
+                current=bool(live),
+                first_seen=first,
+                last_seen=last,
+                scan_count=len(ids),
+                scan_ids=tuple(ids[:MAX_SCAN_IDS]),
+                latest_scan_id=ids[0],
+            )
+        )
+    finished.sort(key=lambda cert: cert.key)
+    return finished
+
+
+def _finish_libs(accs: dict[str, _LibAcc], ctx: _Ctx) -> list[LibAgg]:
+    finished = []
+    for acc in accs.values():
+        ids = ctx.ordered(acc.scan_ids)
+        first, last = ctx.span(acc.scan_ids)
+        sources = ctx.by_label({ctx.source_of[scan_id] for scan_id in acc.scan_ids})
+        live = {ctx.source_of[i] for i in acc.scan_ids if i in ctx.current_ids}
+        paths = ctx.newest_first(acc.paths)
+        finished.append(
+            replace(
+                acc.best,
+                source_keys=sources,
+                source_labels=tuple(ctx.label_of[key] for key in sources),
+                current_source_keys=tuple(key for key in sources if key in live),
+                discovered_in=tuple(paths[:MAX_LOCATIONS]),
+                discovered_in_total=len(paths),
+                current=bool(live),
+                first_seen=first,
+                last_seen=last,
+                scan_count=len(ids),
+                scan_ids=tuple(ids[:MAX_SCAN_IDS]),
+                latest_scan_id=ids[0],
+            )
+        )
+    finished.sort(key=lambda lib: lib.key)
+    return finished
+
+
+def _rollup_verdict(verdicts: Iterable[str]) -> str:
+    """Highest-precedence verdict (fail > nbe > pwe > pass > out_of_scope > na); unknown last."""
+    best, best_rank = VERDICT_NA, len(VERDICT_PRECEDENCE) + 1
+    for verdict in verdicts:
+        rank = _VERDICT_RANK.get(verdict, len(VERDICT_PRECEDENCE))
+        if rank < best_rank:
+            best, best_rank = verdict, rank
+    return best
+
+
+def _stamp(text: str | None) -> tuple[datetime, str]:
+    """Sort key of an ``uploaded_at`` string: parsed instant first, raw text as tie-break."""
+    moment = None
+    if text:
+        candidate = text.strip()
+        if candidate[-1:] in ("Z", "z"):
+            candidate = candidate[:-1] + "+00:00"
+        try:
+            moment = _utc(datetime.fromisoformat(candidate))
+        except ValueError:
+            moment = None
+    return moment or _EPOCH, text or ""
+
+
+def _keep_latest_attestation(agg: RequirementAgg, one: RequirementAgg) -> None:
+    """Keep the attestation with the latest ``uploaded_at`` across sources (first wins a tie)."""
+    fields = (one.latest_attestation_file, one.latest_attestation_note, one.latest_attestation_at)
+    if all(value is None for value in fields):
+        return
+    held = (agg.latest_attestation_file, agg.latest_attestation_note, agg.latest_attestation_at)
+    if all(value is None for value in held) or _stamp(fields[2]) > _stamp(held[2]):
+        agg.latest_attestation_file, agg.latest_attestation_note = fields[0], fields[1]
+        agg.latest_attestation_at = fields[2]
+
+
+def _pool_compliance(
+    newest_full: Sequence[ScanFacts], legacy_excluded: int
+) -> tuple[tuple[FrameworkPool, ...], tuple[RequirementAgg, ...]]:
+    """Pool the current full-fidelity scans (given newest first): sums, then the roll-up."""
+    pools: dict[str, FrameworkPool] = {}
+    merged: dict[tuple[str, str], RequirementAgg] = {}
+    for facts in newest_full:
+        for framework, one in facts.frameworks.items():
+            pool = pools.setdefault(framework, FrameworkPool(framework=framework))
+            pool.passed += one.passed
+            pool.passed_with_evidence += one.passed_with_evidence
+            pool.failed += one.failed
+            pool.out_of_scope += one.out_of_scope
+            pool.not_bom_evidenceable += one.not_bom_evidenceable
+            pool.na += one.na
+            pool.sources_pooled += 1
+        for req in facts.requirements:
+            agg = merged.setdefault(
+                (req.framework, req.req_id), RequirementAgg(req.framework, req.req_id)
+            )
+            agg.verdicts.update(req.verdicts)
+            agg.attestable_sources += req.attestable_sources
+            agg.attested_sources += req.attested_sources
+            agg.title = agg.title or req.title
+            agg.citation = agg.citation or req.citation
+            _keep_latest_attestation(agg, req)
+    for pool in pools.values():
+        pool.coverage = _coverage(pool.passed, pool.passed_with_evidence, pool.failed)
+        pool.legacy_excluded = legacy_excluded
+    for agg in merged.values():
+        agg.verdict = _rollup_verdict(agg.verdicts.values())
+    unknown_rank = len(_FRAMEWORK_ORDER)
+    frameworks = sorted(
+        pools.values(), key=lambda p: (_FRAMEWORK_RANK.get(p.framework, unknown_rank), p.framework)
+    )
+    requirements = sorted(merged.values(), key=lambda r: (r.framework, r.req_id))
+    return tuple(frameworks), tuple(requirements)
+
+
+def _bounded(value: Any, default: int, minimum: int) -> int:
+    number = _int(value)
+    return max(minimum, default if number is None else number)
 
 
 def fold_scans(
@@ -584,7 +1572,212 @@ def fold_scans(
     gives the same fingerprint; a re-scan or an attestation upload moves ``last_updated`` and
     therefore the fingerprint.  Every date derives from ``now``.
     """
-    raise _wp1b("fold_scans")
+    moment = _utc(now) or _EPOCH
+    hard = _bounded(hard_max, HARD_MAX_SCANS, 0)
+    batch = _bounded(batch_size, BATCH_SIZE, 1)
+    window = min(_bounded(history_window, HISTORY_WINDOW, 0), hard)
+
+    # 1. heads: tenancy + type filter (defence in depth), one ScanFacts each, newest first
+    entries: list[tuple[Rank, ScanFacts]] = []
+    seen_ids: set[int] = set()
+    for head in heads:
+        if getattr(head, "team_id", None) != team_id:
+            continue
+        if str(getattr(head, "scan_type", "")).strip().casefold() != "cbom":
+            continue
+        facts = _head_facts(head)
+        if facts.scan_id in seen_ids:
+            continue
+        seen_ids.add(facts.scan_id)
+        entries.append(((facts.created_at, facts.scan_id), facts))
+    entries.sort(key=lambda entry: entry[0], reverse=True)
+
+    excluded = {EXCLUDED_FAILURE: 0, EXCLUDED_NOT_COMPLETED: 0, EXCLUDED_NO_DATA: 0}
+    attempt: dict[str, ScanFacts] = {}  # source -> its newest scan of ANY status
+    for _rank, facts in entries:
+        attempt.setdefault(facts.source_key, facts)
+        if facts.exclusion is not None:
+            excluded[facts.exclusion] += 1
+    eligible = [entry for entry in entries if entry[1].exclusion is None]
+
+    # 2. stream the blobs of eligible scans; merge each into order-independent accumulators
+    assets: dict[tuple[str, str, str], _AssetAcc] = {}
+    certs: dict[str, _CertAcc] = {}
+    libs: dict[str, _LibAcc] = {}
+    sources: dict[str, _SourceAcc] = {}
+    rank_of: dict[int, Rank] = {}
+    source_of: dict[int, str] = {}
+    folded: list[ScanFacts] = []  # data-bearing scans
+    loaded: list[ScanFacts] = []  # data-bearing + success-but-empty scans
+
+    def fold_into(rank: Rank, facts: ScanFacts) -> None:
+        folded.append(facts)
+        rank_of[facts.scan_id], source_of[facts.scan_id] = rank, facts.source_key
+        acc = sources.setdefault(facts.source_key, _SourceAcc())
+        acc.ranks.append(rank)
+        if acc.newest is None or acc.newest_rank is None or rank > acc.newest_rank:
+            if acc.newest is not None:  # only a source's newest scan keeps its compliance payload
+                acc.newest.frameworks, acc.newest.requirements = {}, []
+            acc.newest, acc.newest_rank = facts, rank
+        else:
+            facts.frameworks, facts.requirements = {}, []
+        for asset in facts.assets:
+            _merge_asset(assets, asset, rank)
+        for cert in facts.certs:
+            _merge_cert(certs, cert, rank)
+        for lib in facts.libs:
+            _merge_lib(libs, lib, rank)
+        facts.assets, facts.certs, facts.libs = [], [], []
+
+    def load(group: list[tuple[Rank, ScanFacts]]) -> None:
+        found = load_blobs([facts.scan_id for _rank, facts in group])
+        blobs = found if isinstance(found, Mapping) else {}
+        for rank, facts in sorted(group, key=lambda entry: entry[0], reverse=True):
+            _safe_fill(facts, blobs.get(facts.scan_id))
+            loaded.append(facts)
+            if facts.exclusion is not None:
+                excluded[facts.exclusion] += 1  # success but no usable data
+            else:
+                fold_into(rank, facts)
+
+    first_pass = eligible[:window]
+    for start in range(0, len(first_pass), batch):
+        load(first_pass[start : start + batch])
+    # beyond the window, chase ONLY the sources that still lack a data-bearing scan, one scan
+    # per source per batch, so no source silently drops out of scope (plan 4.2 step 2)
+    satisfied = {facts.source_key for facts in folded}
+    queues: dict[str, deque[tuple[Rank, ScanFacts]]] = {}
+    for entry in eligible[window:]:
+        if entry[1].source_key not in satisfied:
+            queues.setdefault(entry[1].source_key, deque()).append(entry)
+    while queues and len(loaded) < hard:
+        room = min(batch, hard - len(loaded))
+        picked = [queues[key].popleft() for key in list(queues)[:room]]
+        load(picked)
+        for _rank, facts in picked:
+            if facts.exclusion is None or not queues.get(facts.source_key):
+                queues.pop(facts.source_key, None)
+
+    # 3. finalise entities against the now-known current scan of every source
+    current = {key: acc.newest for key, acc in sources.items() if acc.newest is not None}
+    current_ids = {facts.scan_id for facts in current.values()}
+    label_of = {key: facts.source_label for key, facts in current.items()}
+    ctx = _Ctx(rank_of, source_of, current_ids, label_of, moment.date())
+    asset_rows = _finish_assets(assets, ctx)
+    cert_rows = _finish_certs(certs, ctx)
+    lib_rows = _finish_libs(libs, ctx)
+
+    newest_first = sorted(current.values(), key=lambda f: (f.created_at, f.scan_id), reverse=True)
+    full = [facts for facts in newest_first if facts.fidelity == FIDELITY_FULL]
+    legacy_excluded = len(newest_first) - len(full)
+    framework_rows, requirement_rows = _pool_compliance(full, legacy_excluded)
+
+    live = [asset for asset in asset_rows if asset.current]
+    types_by_source: dict[str, Counter[str]] = {}
+    impacts_by_source: dict[str, Counter[str]] = {}
+    for asset in live:
+        types_by_source.setdefault(asset.source_key, Counter())[asset.asset_type] += 1
+        impacts_by_source.setdefault(asset.source_key, Counter())[asset.impact] += 1
+    libs_by_source = Counter(key for lib in lib_rows for key in lib.current_source_keys)
+    source_rows = []
+    for key, acc in sources.items():
+        newest, ranks, last_try = current[key], sorted(acc.ranks, reverse=True), attempt[key]
+        source_rows.append(
+            SourceAgg(
+                key=key,
+                label=newest.source_label,
+                kind=newest.source_kind,
+                repo_url=newest.repo_url,
+                branch=newest.branch,
+                scan_ids=tuple(rank[1] for rank in ranks),
+                scan_count=len(ranks),
+                first_scanned=ranks[-1][0],
+                last_scanned=newest.created_at,
+                current_scan_id=newest.scan_id,
+                current_tier=newest.tier,
+                current_fidelity=newest.fidelity,
+                last_attempt_scan_id=last_try.scan_id,
+                last_attempt_status=last_try.status,
+                last_attempt_at=last_try.created_at,
+                asset_counts=_ordered_counts(types_by_source.get(key, Counter()), ASSET_TYPES),
+                impact_counts=_ordered_counts(impacts_by_source.get(key, Counter()), IMPACT_LEVELS),
+                library_count=libs_by_source.get(key, 0),
+            )
+        )
+    source_rows.sort(key=lambda source: (source.label.casefold(), source.key))
+
+    # 4. headline counts: CURRENT state only, computed once so every document agrees
+    algorithms = [asset for asset in live if asset.asset_type == ASSET_ALGORITHM]
+    vulnerable = sum(1 for asset in algorithms if asset.quantum_vulnerable is True)
+    safe = sum(1 for asset in algorithms if asset.quantum_vulnerable is False)
+    hybrid = sum(1 for a in algorithms if a.quantum_vulnerable is False and a.hybrid is True)
+    codes = Counter(code for asset in live for code in asset.finding_codes)
+
+    # 5. slim per-scan facts (no payload survives), warnings, fingerprint
+    loaded_ids = {facts.scan_id for facts in loaded}
+    in_view = [
+        facts
+        for _rank, facts in entries
+        if facts.exclusion in (EXCLUDED_FAILURE, EXCLUDED_NOT_COMPLETED)
+        or facts.scan_id in loaded_ids
+    ]
+    notes = sorted(
+        (facts.scan_id, index, text)
+        for facts in in_view
+        for index, text in enumerate(facts.warnings)
+    )
+    warning_text = [f"scan #{scan_id}: {text}" for scan_id, _index, text in notes]
+    if len(warning_text) > _MAX_WARNINGS:
+        omitted = len(warning_text) - (_MAX_WARNINGS - 1)
+        warning_text = [*warning_text[: _MAX_WARNINGS - 1], f"{omitted} further warnings omitted"]
+    for facts in in_view:
+        facts.is_current = facts.scan_id in current_ids
+        facts.assets, facts.certs, facts.libs = [], [], []
+        facts.frameworks, facts.requirements, facts.warnings = {}, [], []
+    stamped = ",".join(
+        f"{f.scan_id}:{f.last_updated.isoformat()}" for f in sorted(folded, key=lambda f: f.scan_id)
+    )
+    digest = hashlib.sha256(f"{FINGERPRINT_NAMESPACE}|{stamped}".encode("utf-8", "replace"))
+    created = [facts.created_at for facts in folded]
+
+    return TeamCbomView(
+        team_id=team_id,
+        team_name=team_name if isinstance(team_name, str) else str(team_name),
+        generated_at=moment,
+        as_of=moment.date(),
+        scans_total=len(entries),
+        eligible=len(eligible),
+        included=len(folded),
+        excluded=excluded,
+        history_truncated=len(eligible) - len(loaded),
+        fidelity_full=sum(1 for facts in folded if facts.fidelity == FIDELITY_FULL),
+        fidelity_reduced=sum(1 for facts in folded if facts.fidelity != FIDELITY_FULL),
+        window_start=min(created) if created else None,
+        window_end=max(created) if created else None,
+        fingerprint=digest.hexdigest()[:12],
+        scans=tuple(in_view),
+        sources=tuple(source_rows),
+        assets=tuple(asset_rows),
+        certs=tuple(cert_rows),
+        libs=tuple(lib_rows),
+        frameworks=framework_rows,
+        requirements=requirement_rows,
+        asset_occurrences=len(live),
+        assets_by_type=_ordered_counts(Counter(a.asset_type for a in live), ASSET_TYPES),
+        assets_by_impact=_ordered_counts(Counter(a.impact for a in live), IMPACT_LEVELS),
+        issue_by_impact=_ordered_counts(
+            Counter(a.impact for a in live if a.finding_codes), IMPACT_LEVELS
+        ),
+        finding_counts=dict(sorted(codes.items())),
+        pqc_vulnerable=vulnerable,
+        pqc_safe=safe,
+        pqc_hybrid=hybrid,
+        pqc_ungraded=len(algorithms) - vulnerable - safe,
+        readiness_pct=round(100.0 * safe / (safe + vulnerable), 1) if safe + vulnerable else None,
+        compliance_sources_pooled=len(full),
+        compliance_legacy_excluded=legacy_excluded,
+        warnings=tuple(warning_text),
+    )
 
 
 def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = None) -> TeamCbomView:
@@ -596,7 +1789,51 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
     ``sqlmodel`` / ``backend.new_models`` INSIDE this function.  ``now=None`` means the current
     UTC time - the only clock read this module may make.
     """
-    raise _wp1b("load_team_cbom_view")
+    from sqlmodel import Session, col, select  # lazy: keeps the import closure stdlib-only
+
+    from backend.new_models import Scan, Team
+
+    moment = datetime.now(_UTC) if now is None else now
+    # a caller-owned Session is used as is (and left open); an engine gets a short-lived one
+    owner = contextlib.nullcontext(engine) if isinstance(engine, Session) else Session(engine)
+    with owner as session:
+        team_name = session.exec(select(Team.name).where(Team.id == team_id)).first()
+        rows = session.exec(
+            select(
+                Scan.id, Scan.team_id, Scan.scan_type, Scan.title, Scan.scan_status,
+                Scan.created_at, Scan.last_updated, Scan.scan_metadata,
+            )  # pass 1: heads only, never the scan_data blob
+            .where(Scan.team_id == team_id, Scan.scan_type == "cbom")
+            .order_by(col(Scan.created_at).desc(), col(Scan.id).desc())
+        ).all()  # fmt: skip
+        heads = []
+        for scan_id, owner_team, kind, title, status, created, updated, meta in rows:
+            made = _utc(created) or _EPOCH  # Postgres / SQLite return naive UTC
+            heads.append(
+                ScanHead(
+                    id=scan_id, team_id=owner_team, scan_type=kind, title=title, status=status,
+                    created_at=made, last_updated=_utc(updated) or made, scan_metadata=meta,
+                )  # fmt: skip
+            )
+
+        def load_blobs(ids: Sequence[int]) -> dict[int, Any]:
+            # pass 2: only ids the fold asked for, still scoped to the tenant and scan type
+            found = session.exec(
+                select(Scan.id, Scan.scan_data).where(
+                    col(Scan.id).in_(list(ids)),
+                    Scan.team_id == team_id,
+                    Scan.scan_type == "cbom",
+                )
+            ).all()
+            return {scan_id: data for scan_id, data in found}
+
+        return fold_scans(
+            heads,
+            load_blobs,
+            team_id=team_id,
+            team_name=team_name or f"Team {team_id}",
+            now=moment,
+        )
 
 
 __all__ = [
