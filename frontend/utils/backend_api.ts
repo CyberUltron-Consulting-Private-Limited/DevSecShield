@@ -2479,6 +2479,65 @@ const reinitializeCBOMScanWithPayload = async (
   return response.data;
 };
 
+/**
+ * Team-wide CBOM regulatory deliverables, rendered in-house as PDFs by the backend
+ * (GET /{team_id}/cbom/deliverables/{slug}). Order and slugs mirror the backend registry;
+ * backend/tests/test_cbom_deliverables_contract.py (T-CON-1) pins the slug list.
+ */
+export const CBOM_DELIVERABLES = [
+  { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
+  { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
+  { slug: "certificate-estate-register", number: 7, title: "Certificate Estate Register" },
+  { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance & Attestation Register" },
+  { slug: "pqc-migration-roadmap", number: 15, title: "PQC Migration Roadmap" },
+  { slug: "board-executive-report", number: 16, title: "Board / IT Strategy Committee Regulatory & Executive Report" },
+] as const;
+
+export type CbomDeliverableSlug = (typeof CBOM_DELIVERABLES)[number]["slug"];
+
+/** One row of the deliverables manifest (GET /{team_id}/cbom/deliverables). */
+export interface CbomDeliverableManifestItem {
+  slug: string
+  number: number
+  title: string
+  description: string
+  format: "pdf"
+  /** UI hint only: the PDF route always answers 200 (with a banner when data is missing). */
+  available: boolean
+  /** Why the item is unavailable; used as the tooltip of the disabled menu item. */
+  reason?: string | null
+}
+
+export interface CbomDeliverablesManifest {
+  team_id: number
+  generated_at: string
+  basis: {
+    eligible: number
+    included_hint: number
+    sources: number
+    excluded: { failure: number; not_completed: number }
+  }
+  deliverables: CbomDeliverableManifestItem[]
+}
+
+/** Team-scoped: GET /{team_id}/cbom/deliverables (manifest). No toast: the menu stays enabled if this fails. */
+const getCbomDeliverables = async (team_id: number): Promise<CbomDeliverablesManifest> => {
+  const response = await api.get(`/${team_id}/cbom/deliverables`);
+  return response.data as CbomDeliverablesManifest;
+};
+
+/** Team-scoped: GET /{team_id}/cbom/deliverables/{slug} (PDF). No toast here: the caller owns success/error UX. */
+const downloadCbomDeliverable = async (
+  team_id: number,
+  slug: CbomDeliverableSlug,
+): Promise<Blob> => {
+  const response = await api.get(
+    `/${team_id}/cbom/deliverables/${slug}`,
+    { responseType: "blob" },
+  );
+  return response.data as Blob;
+};
+
 export {
   getCBOMScans,
   getCBOMScanData,
@@ -2491,6 +2550,8 @@ export {
   postCertInSign,
   getCertInVex,
   getCertInEvidencePack,
+  getCbomDeliverables,
+  downloadCbomDeliverable,
 }
 
 // -------------------------------------------------------------- AI BOM API Routes --------------------------------------------------------------

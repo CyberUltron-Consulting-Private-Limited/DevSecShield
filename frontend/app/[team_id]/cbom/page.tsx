@@ -29,16 +29,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  CBOM_DELIVERABLES,
   deleteCBOMScan,
+  downloadCbomDeliverable,
+  getCbomDeliverables,
   getCBOMScans,
   renameCBOMScan,
   createCBOMScan,
 } from "@/utils/backend_api";
 import type { CBOMConversation } from "@/utils/backend_api";
 import type { CBOMDashboardData } from "@/utils/backend_api";
+import type { CbomDeliverableSlug } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
@@ -126,6 +130,12 @@ function getScanProgress(info: CBOMConversation["info"]): number | null {
     return (info as { current?: number }).current ?? null;
   }
   return null;
+}
+
+/** Mirrors the server's Content-Disposition name: cbom-<slug>-team<id>-<YYYYMMDD>.pdf (UTC date). */
+function deliverableFileName(slug: CbomDeliverableSlug, teamId: number, now: Date): string {
+  const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, "");
+  return `cbom-${slug}-team${teamId}-${yyyymmdd}.pdf`;
 }
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
@@ -547,6 +557,41 @@ export default function CBOMPage() {
     onError: (error) => { showErrorToast(error); },
   });
 
+  // Team-wide regulatory deliverables (PDF). The manifest only supplies availability hints:
+  // while it loads or if it fails, every item stays enabled (the PDF route itself answers
+  // 200 with a banner even for teams that have no completed scans).
+  const deliverablesQuery = useQuery({
+    queryKey: ["cbom-deliverables", team_id],
+    queryFn: () => getCbomDeliverables(parseInt(team_id)),
+    enabled: !!team_id,
+    retry: 1,
+  });
+
+  const downloadDeliverableMutation = useMutation({
+    mutationFn: (slug: CbomDeliverableSlug) => {
+      const tid = parseInt(team_id);
+      if (Number.isNaN(tid)) throw new Error("Missing or invalid team id");
+      return downloadCbomDeliverable(tid, slug);
+    },
+    onSuccess: (blob, slug) => {
+      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = deliverableFileName(slug, parseInt(team_id), new Date());
+      a.click();
+      URL.revokeObjectURL(url);
+      const title = CBOM_DELIVERABLES.find((d) => d.slug === slug)?.title ?? slug;
+      toast.success(`Downloaded ${title}`);
+    },
+    onError: (error) => { showErrorToast(error, "Error downloading deliverable"); },
+  });
+
+  const pendingSlug = downloadDeliverableMutation.isPending ? (downloadDeliverableMutation.variables ?? null) : null;
+  const manifestItems = deliverablesQuery.data?.deliverables;
+  const deliverableHints = new Map(
+    (Array.isArray(manifestItems) ? manifestItems : []).map((d) => [d.slug, d] as const),
+  );
+
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {
       not_started: { variant: "outline" as const, className: "text-zinc-500 dark:text-zinc-500" },
@@ -635,6 +680,36 @@ export default function CBOMPage() {
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" data-testid="cbom-deliverables-trigger">
+                    {pendingSlug ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                    Deliverables
+                    <ChevronDown className="h-4 w-4 ml-1.5 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-[30rem] max-w-[calc(100vw-2rem)]">
+                  <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Team-wide regulatory deliverables (PDF)</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {CBOM_DELIVERABLES.map((d) => {
+                    const hint = deliverableHints.get(d.slug);
+                    const unavailable = hint?.available === false;
+                    return (
+                      <DropdownMenuItem
+                        key={d.slug}
+                        data-testid={`cbom-deliverable-${d.slug}`}
+                        className="cursor-pointer whitespace-normal data-[disabled]:pointer-events-auto data-[disabled]:cursor-not-allowed"
+                        disabled={unavailable || pendingSlug !== null}
+                        title={unavailable ? (hint?.reason ?? undefined) : undefined}
+                        onSelect={() => downloadDeliverableMutation.mutate(d.slug)}
+                      >
+                        {pendingSlug === d.slug ? <Loader2 className="animate-spin" /> : <FileText />}
+                        <span>{`#${d.number} · ${d.title}`}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ["cbom-conversations", team_id] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />Refresh
               </Button>
