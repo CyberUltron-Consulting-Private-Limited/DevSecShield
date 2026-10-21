@@ -1,0 +1,37 @@
+# Ignore file for the E2E backend image (e2e/docker/backend.e2e.Dockerfile).
+#
+# BuildKit uses "<Dockerfile name>.dockerignore" from the Dockerfile's own directory in preference
+# to a .dockerignore at the root of the build context, so this file is what filters backend/ when
+# scripts/build.sh runs:
+#   docker buildx build -f e2e/docker/backend.e2e.Dockerfile backend
+#
+# Part 1 is a verbatim copy of backend/.dockerignore (scripts/preflight.sh checks every line of it
+# is still present). Part 2 is the E2E addition: no secret-bearing file may reach the image.
+
+# --- part 1: identical to backend/.dockerignore -------------------------------------------------
+.venv/
+__pycache__/
+*.pyc
+.python-version
+*.db
+C:\*
+DashboardSpecs.md
+Notes.md
+routes_arch.md
+validation_error.txt
+mongo-compose.yml
+testing.py
+*.pdf
+db_confs/
+
+# --- part 2: E2E additions (never bake a real credential into a test image) ---------------------
+# backend/.env and backend/utilities/ai/.env are TRACKED in git and hold real AWS key ids; the
+# Dockerfile also COPYs _migrations/ (a populated copy of prod_database_migrations/, which tracks
+# its own .env). scripts/build.sh asserts none of them exists inside the built image.
+.env
+.env.*
+**/.env
+**/.env.*
+_migrations/.env
+# agent runtime state that happens to be tracked; not application code
+.claude-flow/

@@ -1,0 +1,17 @@
+{
+  "name": "dss-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DevSecShield CBOM team deliverables: Docker + Playwright E2E proof harness. Dev tooling only; never shipped and never imported by product code.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "playwright test",
+    "test:list": "playwright test --list"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

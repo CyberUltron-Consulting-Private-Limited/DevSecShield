@@ -1,0 +1,24 @@
+# Ignore file for the E2E frontend image (e2e/docker/frontend.e2e.Dockerfile).
+#
+# BuildKit uses "<Dockerfile name>.dockerignore" from the Dockerfile's own directory in preference
+# to a .dockerignore at the root of the build context:
+#   docker buildx build -f e2e/docker/frontend.e2e.Dockerfile frontend
+#
+# Part 1 is a verbatim copy of frontend/.dockerignore (scripts/preflight.sh checks every line of
+# it is still present). Part 2 keeps local env files (.env.local, .env.production.local, ...) out
+# of the build: `next build` would otherwise inline their NEXT_PUBLIC_* values into the bundle and
+# override the build-arg that points the UI at the E2E backend (http://127.0.0.1:43080).
+
+# --- part 1: identical to frontend/.dockerignore ------------------------------------------------
+node_modules/
+.next/
+Notes.md
+README.md
+
+# --- part 2: E2E additions ----------------------------------------------------------------------
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+.claude-flow/

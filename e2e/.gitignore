@@ -1,0 +1,20 @@
+# Ephemeral run state: scan trees, scan outputs, seed.json, sanitized build contexts, evidence fallback.
+# scripts/teardown.sh removes it; nothing in here is ever committed.
+.work/
+
+# Throw-away secrets generated per run by scripts/lib.sh (openssl rand -hex). NEVER commit.
+compose/.env.e2e
+compose/.env.e2e.*
+.env
+.env.*
+
+# Playwright / npm
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+*.log
+
+# Python helper caches (scripts/*.py are stdlib-only tooling)
+__pycache__/
+.ruff_cache/

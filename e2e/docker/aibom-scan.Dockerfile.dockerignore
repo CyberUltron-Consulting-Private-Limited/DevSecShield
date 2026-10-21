@@ -1,0 +1,14 @@
+# Ignore file for the E2E aibom-scan image (e2e/docker/aibom-scan.Dockerfile). The build context is
+# aibom/; BuildKit applies this "<Dockerfile name>.dockerignore" from the Dockerfile's directory.
+#
+# Allowlist: `pip install /src/aibom` (hatchling) needs only pyproject.toml, README.md (declared as
+# the package readme), src/ and config/ (force-included into the wheel). Everything else stays out
+# of the context: tests/ (including the 71 MB chroma fixture clone), bench/, examples/, state/,
+# .venv/, uv.lock, caches and agent files.
+*
+!pyproject.toml
+!README.md
+!src/
+!config/
+**/__pycache__
+**/*.pyc

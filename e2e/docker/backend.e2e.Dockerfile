@@ -1,0 +1,45 @@
+# ============================================================
+# Stage 1: Builder — install dependencies and compile bytecode
+# ============================================================
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_HTTP_TIMEOUT=180 \
+    UV_HTTP_RETRIES=5 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /backend
+
+# Install dependencies first (cached layer)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project
+
+# Copy application source and install the project
+COPY . /backend
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked
+
+# ============================================================
+# Stage 2: Runtime — slim image with only what's needed
+# ============================================================
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+ENV IS_DOCKER_CONTAINER="True" \
+    PYTHONPATH="/backend/.." \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /backend
+
+# Copy the entire app + venv from builder
+COPY --from=builder /backend /backend
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY _migrations /prod_database_migrations
+RUN chmod +x /docker-entrypoint.sh
+
+EXPOSE 8080
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["uv", "run", "gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "--workers", "9", "--bind", "0.0.0.0:8080", "--timeout", "120", "--graceful-timeout", "30", "--keep-alive", "5"]
