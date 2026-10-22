@@ -1767,6 +1767,216 @@ def test_fingerprint_moves_with_included_scans_only(view, raw):
     assert moved != view.fingerprint and len(moved) == 12 and int(moved, 16) >= 0
 
 
+# ---------------------------------------------------------------------------------------------
+# Fingerprint and attestation uploads (addendum A-2)
+# ---------------------------------------------------------------------------------------------
+# The upload route stores scan_data["attestations"][framework][req_id] = {filename, note,
+# uploaded_at} and never touches Scan.last_updated, so (scan id, last_updated) alone cannot see an
+# upload.  Rule: the attestation records of the INCLUDED scans are appended to the hashed text as
+# "|attestations|" + ",".join(compact JSON [scan_id, framework, req_id, uploaded_at], sorted), and
+# ONLY when at least one record exists, so every attestation-free scan set keeps its old value.
+PRE_A2_FINGERPRINT = "6a1e31ae946c"  # fixture scans 1..8 as pinned before A-2 (no attestations)
+STAMP = "2026-10-18T09:00:00Z"
+
+
+def a2_fingerprint(scans, included_ids, records=()):
+    """The A-2 rule spelled out by hand with plain string handling (not a product helper)."""
+    stamped = ",".join(
+        f"{s['id']}:{_ts(s['last_updated']).isoformat()}"
+        for s in sorted(scans, key=lambda s: s["id"])
+        if s["id"] in included_ids
+    )
+    text = "cbom-team-rollup|" + stamped
+    if records:
+        text += "|attestations|" + ",".join(
+            json.dumps(list(record), separators=(",", ":")) for record in sorted(records)
+        )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+def upload_record(at=STAMP, filename="supplier-cbom.pdf", note="Supplier CBOM received"):
+    """One attestation entry exactly as ``upsert_attestation`` stores it."""
+    return {"filename": filename, "note": note, "uploaded_at": at}
+
+
+def attested_fixture(raw, uploads):
+    """Deep copy of the fixture scans with ``scan_data["attestations"]`` set per scan id."""
+    scans = copy.deepcopy(raw["scans"])
+    for scan_id, attestations in uploads.items():
+        next(s for s in scans if s["id"] == scan_id)["scan_data"]["attestations"] = attestations
+    return scans
+
+
+def attested_fingerprint(raw, uploads, **kwargs):
+    return run_fold(attested_fixture(raw, uploads), **kwargs)[0].fingerprint
+
+
+def test_an_attestation_upload_moves_the_fingerprint_by_the_documented_rule(view, raw):
+    assert view.fingerprint == PRE_A2_FINGERPRINT == a2_fingerprint(raw["scans"], range(1, 9))
+    moved = attested_fingerprint(raw, {2: {"cert_in_cbom": {"8.4.1.1": upload_record()}}})
+    assert moved != view.fingerprint and len(moved) == 12 and int(moved, 16) >= 0
+    records = [(2, "cert_in_cbom", "8.4.1.1", STAMP)]
+    assert moved == a2_fingerprint(raw["scans"], range(1, 9), records)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param({}, id="no-key"),
+        pytest.param({"attestations": None}, id="none"),
+        pytest.param({"attestations": {}}, id="empty"),
+        pytest.param({"attestations": {"cert_in_cbom": {}, "nist_800_57": {}}}, id="empty-buckets"),
+    ],
+)
+def test_attestation_free_scan_sets_keep_the_pre_a2_value(raw, extra):
+    scans = copy.deepcopy(raw["scans"])
+    blob = next(s for s in scans if s["id"] == 2)["scan_data"]
+    blob.pop("attestations", None)
+    blob.update(extra)
+    assert run_fold(scans)[0].fingerprint == PRE_A2_FINGERPRINT
+
+
+def test_the_attested_fingerprint_ignores_scan_order_batching_and_dict_order(raw):
+    uploads = {
+        1: {"cert_in_cbom": {"8.4.1.1": upload_record("2026-09-29T09:00:00Z")}},  # history scan
+        2: {
+            "cert_in_cbom": {
+                "8.4.1.1": upload_record("2026-10-18T09:00:00Z"),
+                "8.4.1.2": upload_record("2026-10-18T09:05:00Z"),
+            },
+            "bsi_tr_02102": {"BSI-4": upload_record("2026-10-17T08:00:00Z")},
+        },
+        4: {"nist_800_57": {"KM-1": upload_record("2026-10-16T07:00:00Z")}},
+    }
+    records = [
+        (1, "cert_in_cbom", "8.4.1.1", "2026-09-29T09:00:00Z"),
+        (2, "bsi_tr_02102", "BSI-4", "2026-10-17T08:00:00Z"),
+        (2, "cert_in_cbom", "8.4.1.1", "2026-10-18T09:00:00Z"),
+        (2, "cert_in_cbom", "8.4.1.2", "2026-10-18T09:05:00Z"),
+        (4, "nist_800_57", "KM-1", "2026-10-16T07:00:00Z"),
+    ]
+    expected = a2_fingerprint(raw["scans"], range(1, 9), records)
+    scans = attested_fixture(raw, uploads)
+    assert run_fold(scans)[0].fingerprint == expected != PRE_A2_FINGERPRINT
+    shuffled = scans[:]
+    random.Random(2026).shuffle(shuffled)
+    for order, size in ((list(reversed(scans)), 2), (shuffled, 3), (scans, 1)):
+        assert run_fold(order, batch_size=size)[0].fingerprint == expected
+    flipped = {  # same records, every dict built in the opposite insertion order
+        sid: {fw: dict(reversed(list(reqs.items()))) for fw, reqs in reversed(list(att.items()))}
+        for sid, att in reversed(list(uploads.items()))
+    }
+    assert attested_fingerprint(raw, flipped) == expected
+
+
+MALFORMED_ATTESTATIONS = {
+    "container-list": [],
+    "container-text": "attested",
+    "container-number": 7,
+    "container-bool": True,
+    "container-none": None,
+    "bucket-text": {"cert_in_cbom": "x"},
+    "bucket-list": {"cert_in_cbom": [{"uploaded_at": STAMP}]},
+    "bucket-none": {"cert_in_cbom": None},
+    "bucket-number": {"cert_in_cbom": 5},
+    "record-text": {"cert_in_cbom": {"8.4.1.1": STAMP}},
+    "record-number": {"cert_in_cbom": {"8.4.1.1": 5}},
+    "record-none": {"cert_in_cbom": {"8.4.1.1": None}},
+    "record-list": {"cert_in_cbom": {"8.4.1.1": [{"uploaded_at": STAMP}]}},
+    "record-bool": {"cert_in_cbom": {"8.4.1.1": True}},
+}
+
+
+@pytest.mark.parametrize(
+    "junk", list(MALFORMED_ATTESTATIONS.values()), ids=list(MALFORMED_ATTESTATIONS)
+)
+def test_a_malformed_attestation_entry_is_ignored_without_raising(raw, junk):
+    assert attested_fingerprint(raw, {2: junk}) == PRE_A2_FINGERPRINT
+    valid = {"cert_in_cbom": {"8.4.1.2": upload_record()}}
+    expected = a2_fingerprint(raw["scans"], range(1, 9), [(3, "cert_in_cbom", "8.4.1.2", STAMP)])
+    assert attested_fingerprint(raw, {2: junk, 3: valid}) == expected  # junk beside a good scan
+
+
+def test_malformed_entries_beside_a_valid_record_in_the_same_scan_are_skipped(raw):
+    mixed = {
+        "cert_in_cbom": {"8.4.1.1": "junk", "8.4.1.2": upload_record(), "8.4.1.3": None},
+        "nist_800_57": "junk",
+        "eu_dora": [],
+    }
+    expected = a2_fingerprint(raw["scans"], range(1, 9), [(2, "cert_in_cbom", "8.4.1.2", STAMP)])
+    assert attested_fingerprint(raw, {2: mixed}) == expected
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        pytest.param({"filename": "a.pdf"}, id="no-timestamp"),
+        pytest.param({"filename": "a.pdf", "uploaded_at": None}, id="none"),
+        pytest.param({"filename": "a.pdf", "uploaded_at": ""}, id="empty"),
+        pytest.param({"filename": "a.pdf", "uploaded_at": "   "}, id="blank"),
+    ],
+)
+def test_a_record_without_a_usable_timestamp_still_counts_as_a_record(raw, record):
+    # the ledger prints such a record (file and note, no date), so the Document ID must see it
+    moved = attested_fingerprint(raw, {2: {"cert_in_cbom": {"8.4.1.1": record}}})
+    expected = a2_fingerprint(raw["scans"], range(1, 9), [(2, "cert_in_cbom", "8.4.1.1", "")])
+    assert moved == expected != PRE_A2_FINGERPRINT
+
+
+def test_attestations_on_scans_that_are_not_included_do_not_move_the_fingerprint(raw):
+    held = {"cert_in_cbom": {"8.4.1.1": upload_record()}}
+    scans = copy.deepcopy(raw["scans"])
+    for scan in scans:
+        if scan["id"] >= 9:  # 9 failed, 10 queued, 11 started, 12 sbom_sca, 13 no data, 14 team 2
+            scan["scan_data"] = {**(scan["scan_data"] or {}), "attestations": held}
+    moved, spy = run_fold(scans)
+    assert moved.fingerprint == PRE_A2_FINGERPRINT
+    assert set(spy.seen) == {1, 2, 3, 4, 5, 6, 7, 8, 13}  # 13 is read, then dropped as no_data
+    assert moved.included == 8 and moved.excluded[EXCLUDED_NO_DATA] == 1
+
+
+def test_an_attestation_on_any_one_included_scan_moves_the_fingerprint(raw):
+    seen = set()
+    for scan_id in range(1, 9):  # history scan 1 and the legacy scan 8 are included too
+        moved = attested_fingerprint(raw, {scan_id: {"cert_in_cbom": {"8.4.1.1": upload_record()}}})
+        records = [(scan_id, "cert_in_cbom", "8.4.1.1", STAMP)]
+        assert moved == a2_fingerprint(raw["scans"], range(1, 9), records)
+        seen.add(moved)
+    assert len(seen) == 8 and PRE_A2_FINGERPRINT not in seen
+
+
+def test_an_identical_rebuild_is_stable_and_every_change_of_the_record_set_moves_it(raw):
+    first = {2: {"cert_in_cbom": {"8.4.1.1": upload_record("2026-10-18T09:00:00Z")}}}
+    uploaded = attested_fingerprint(raw, first)
+    assert attested_fingerprint(raw, copy.deepcopy(first)) == uploaded != PRE_A2_FINGERPRINT
+    changed = {
+        "re-upload, same slot, later": {2: {"cert_in_cbom": {
+            "8.4.1.1": upload_record("2026-10-19T10:00:00Z")}}},
+        "second requirement": {2: {"cert_in_cbom": {
+            "8.4.1.1": upload_record("2026-10-18T09:00:00Z"),
+            "8.4.1.2": upload_record("2026-10-18T09:05:00Z")}}},
+        "same record, other scan": {3: {"cert_in_cbom": {
+            "8.4.1.1": upload_record("2026-10-18T09:00:00Z")}}},
+        "other framework": {2: {"bsi_tr_02102": {
+            "8.4.1.1": upload_record("2026-10-18T09:00:00Z")}}},
+    }  # fmt: skip
+    variants = {name: attested_fingerprint(raw, uploads) for name, uploads in changed.items()}
+    everything = [PRE_A2_FINGERPRINT, uploaded, *variants.values()]
+    assert len(set(everything)) == len(everything), variants  # each change is its own value
+    # the DELETE route drops the record again: the fingerprint returns to the attestation-free value
+    assert attested_fingerprint(raw, {2: {}}) == PRE_A2_FINGERPRINT
+
+
+def test_record_fields_cannot_blur_into_each_other_or_break_the_hash_input(raw):
+    one = attested_fingerprint(raw, {2: {"a:b": {"c": upload_record("t")}}})
+    two = attested_fingerprint(raw, {2: {"a": {"b:c": upload_record("t")}}})
+    three = attested_fingerprint(raw, {2: {"a": {"b": upload_record("c:t")}}})
+    assert len({one, two, three}) == 3  # a naive "id:framework:req:at" join would merge them
+    hostile = {2: {'fw",["x': {"r|attestations|9\n": upload_record('2026"\u2028\ud800\U0001f512')}}}
+    moved = attested_fingerprint(raw, hostile)
+    assert len(moved) == 12 and moved != PRE_A2_FINGERPRINT
+
+
 def test_two_hundred_twenty_scan_fold_stays_fast(raw):
     template = scan_by_id(raw, 2)["scan_data"]  # a real ~110 KB run-object, shared read-only
     scans = [

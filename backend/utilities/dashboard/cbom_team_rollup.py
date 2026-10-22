@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import math
 import re
 from collections import Counter, deque
@@ -74,7 +75,8 @@ MAX_LOCATIONS = 12
 
 # Digest namespace of ``TeamCbomView.fingerprint``.  Plan 4.8 writes ``sha256(slug + '|' + ...)``
 # but ``fold_scans`` (and ``document_id(view, number)``) carry no per-document slug, so the view
-# uses this constant; the per-document part of a Document ID is its ``D{nn}`` number.
+# uses this constant; the per-document part of a Document ID is its ``D{nn}`` number.  The text
+# hashed after the namespace also covers the attestation records (addendum A-2): see ``fold_scans``.
 FINGERPRINT_NAMESPACE = "cbom-team-rollup"
 
 # ---------------------------------------------------------------------------------------------
@@ -1547,6 +1549,41 @@ def _bounded(value: Any, default: int, minimum: int) -> int:
     return max(minimum, default if number is None else number)
 
 
+def _attestation_stamps(scan_id: int, scan_data: Any) -> list[tuple[int, str, str, str]]:
+    """``(scan_id, framework, req_id, uploaded_at)`` of every attestation record of ONE scan.
+
+    Reads ``scan_data["attestations"][framework][req_id]``, the ``{filename, note, uploaded_at}``
+    dict the upload route stores.  TOTAL: anything that is not a dict (or a text key) at one of
+    the three levels is skipped, so a malformed entry never counts and never raises.  A dict
+    record whose ``uploaded_at`` is missing or unusable still counts, with ``""``, because the
+    register prints that record.
+    """
+    attestations = scan_data.get("attestations") if isinstance(scan_data, dict) else None
+    if not isinstance(attestations, dict):
+        return []
+    stamps: list[tuple[int, str, str, str]] = []
+    for framework, records in attestations.items():
+        if not (isinstance(framework, str) and isinstance(records, dict)):
+            continue
+        for req_id, record in records.items():
+            if isinstance(req_id, str) and isinstance(record, dict):
+                stamps.append((scan_id, framework, req_id, _text(record.get("uploaded_at")) or ""))
+    return stamps
+
+
+def _attestation_suffix(stamps: Sequence[tuple[int, str, str, str]]) -> str:
+    """Tail of the fingerprint text: ``""`` without records, so the old formula is untouched.
+
+    Each record is one compact ASCII JSON array, so no value can blur into its neighbour
+    whatever characters a framework key, requirement id or timestamp contains.
+    """
+    if not stamps:
+        return ""
+    return "|attestations|" + ",".join(
+        json.dumps(stamp, separators=(",", ":")) for stamp in sorted(stamps)
+    )
+
+
 def fold_scans(
     heads: Sequence[ScanHead],
     load_blobs: Callable[[Sequence[int]], Mapping[int, Any]],
@@ -1566,11 +1603,17 @@ def fold_scans(
     loaded).  Selection, source identity, dedupe keys, latest-scan-wins, the failed-latest rule,
     compliance pooling, requirement roll-up, caps and degradation follow plan 4.1-4.6 exactly.
 
-    ``view.fingerprint`` = ``sha256((FINGERPRINT_NAMESPACE + "|" + ",".join(
-    f"{scan_id}:{last_updated.isoformat()}" for each INCLUDED scan sorted by scan_id)
-    ).encode("utf-8")).hexdigest()[:12]`` (``last_updated`` tz-aware UTC).  The same scan set
-    gives the same fingerprint; a re-scan or an attestation upload moves ``last_updated`` and
-    therefore the fingerprint.  Every date derives from ``now``.
+    ``view.fingerprint`` = ``sha256(text.encode("utf-8")).hexdigest()[:12]`` with ``text`` =
+    ``FINGERPRINT_NAMESPACE + "|" + ",".join(f"{scan_id}:{last_updated.isoformat()}" for each
+    INCLUDED scan sorted by scan_id)`` (``last_updated`` tz-aware UTC).  A re-scan is a new scan
+    id, so it moves the fingerprint.  An attestation upload (or delete) does NOT: the route
+    rewrites ``scan_data`` and leaves ``Scan.last_updated`` alone.  So when at least one
+    INCLUDED scan holds an attestation record, ``text`` also gets ``"|attestations|"`` + the
+    records ``[scan_id, framework, req_id, uploaded_at]`` of all INCLUDED scans, each as compact
+    ASCII JSON, sorted and joined with ``","`` (addendum A-2).  A scan set without attestation
+    records keeps the previous text and therefore the previous value.  The same scan set and the
+    same records give the same fingerprint whatever the order of ``heads`` or ``batch_size``.
+    Every date derives from ``now``.
     """
     moment = _utc(now) or _EPOCH
     hard = _bounded(hard_max, HARD_MAX_SCANS, 0)
@@ -1609,6 +1652,7 @@ def fold_scans(
     source_of: dict[int, str] = {}
     folded: list[ScanFacts] = []  # data-bearing scans
     loaded: list[ScanFacts] = []  # data-bearing + success-but-empty scans
+    stamps: list[tuple[int, str, str, str]] = []  # attestation records of the folded scans
 
     def fold_into(rank: Rank, facts: ScanFacts) -> None:
         folded.append(facts)
@@ -1633,12 +1677,14 @@ def fold_scans(
         found = load_blobs([facts.scan_id for _rank, facts in group])
         blobs = found if isinstance(found, Mapping) else {}
         for rank, facts in sorted(group, key=lambda entry: entry[0], reverse=True):
-            _safe_fill(facts, blobs.get(facts.scan_id))
+            blob = blobs.get(facts.scan_id)
+            _safe_fill(facts, blob)
             loaded.append(facts)
             if facts.exclusion is not None:
                 excluded[facts.exclusion] += 1  # success but no usable data
             else:
                 fold_into(rank, facts)
+                stamps.extend(_attestation_stamps(facts.scan_id, blob))  # before the blob goes
 
     first_pass = eligible[:window]
     for start in range(0, len(first_pass), batch):
@@ -1737,7 +1783,8 @@ def fold_scans(
     stamped = ",".join(
         f"{f.scan_id}:{f.last_updated.isoformat()}" for f in sorted(folded, key=lambda f: f.scan_id)
     )
-    digest = hashlib.sha256(f"{FINGERPRINT_NAMESPACE}|{stamped}".encode("utf-8", "replace"))
+    text = f"{FINGERPRINT_NAMESPACE}|{stamped}{_attestation_suffix(stamps)}"
+    digest = hashlib.sha256(text.encode("utf-8", "replace"))
     created = [facts.created_at for facts in folded]
 
     return TeamCbomView(

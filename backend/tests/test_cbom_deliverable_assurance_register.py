@@ -874,6 +874,39 @@ def test_attestation_in_scan_2_shows_attested_1_of_5_with_file_note_and_date(raw
         assert expected in text, expected
 
 
+DOCUMENT_ID_RE = re.compile(r"CBOM-D10-T1-20261019-[0-9a-f]{8}")
+
+
+def document_ids(raw_pdf: bytes) -> set[str]:
+    """Every distinct #10 Document ID printed anywhere in the PDF (control table, footers)."""
+    return set(DOCUMENT_ID_RE.findall(norm(pdf_full_text(raw_pdf))))
+
+
+def test_document_id_changes_when_an_attestation_is_uploaded(raw_scans, base_view, base_pdf):
+    # addendum A-2: the upload route never touches Scan.last_updated, so the data fingerprint (and
+    # the Document ID suffix built from it) has to see the attestation record itself
+    before = "CBOM-D10-T1-20261019-6a1e31ae"  # the attestation-free fixture: the pre-A-2 value
+    assert base_view.fingerprint == "6a1e31ae946c"
+    assert document_ids(base_pdf) == {before}
+    scans = copy.deepcopy(raw_scans)
+    done = stamp("payments-policy.pdf", "signed off by the CISO", "2026-10-15T09:30:00Z")
+    attest(scans, 2, {"cert_in_cbom": {"8.4.1.1": done}})  # the real production flow
+    view = make_view(scans)
+    assert view.fingerprint != base_view.fingerprint
+    after = document_ids(register.build_pdf(view))
+    assert len(after) == 1 and after != {before}
+    (after_id,) = after
+    assert after_id == f"CBOM-D10-T1-20261019-{view.fingerprint[:8]}"
+    assert after_id.rsplit("-", 1)[0] == before.rsplit("-", 1)[0]  # only the suffix moved
+    # the same upload, rebuilt from scratch, is the same document; one more record is a new one
+    again = copy.deepcopy(raw_scans)
+    attest(again, 2, {"cert_in_cbom": {"8.4.1.1": done}})
+    assert make_view(again).fingerprint == view.fingerprint
+    minutes = stamp("minutes.pdf", None, "2026-10-17T08:00:00Z")
+    attest(again, 3, {"bsi_tr_02102": {"BSI-4": minutes}})
+    assert make_view(again).fingerprint not in (view.fingerprint, base_view.fingerprint)
+
+
 def test_a_note_equal_to_the_file_name_is_printed_once(raw_scans):
     scans = copy.deepcopy(raw_scans)
     name = "board-minutes-extract.pdf"
