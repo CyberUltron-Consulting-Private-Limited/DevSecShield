@@ -10,6 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from backend.routers.auth import router as auth_router
 from backend.routers.scans import router as scans_router
 from backend.routers.certin import router as certin_router
+from backend.routers.cbom_deliverables import router as cbom_deliverables_router
 from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
 from backend.routers.dast_profiles import router as dast_profiles_router
@@ -116,6 +117,7 @@ app.include_router(auth_router)
 app.include_router(scans_router)
 app.include_router(dast_profiles_router)
 app.include_router(certin_router)
+app.include_router(cbom_deliverables_router)
 # DEPRECATED: Guardrails routers remain for legacy/API callers; product UI no longer exposes Guardrails.
 app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)
