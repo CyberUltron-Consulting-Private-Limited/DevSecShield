@@ -1,0 +1,701 @@
+{
+  "schema": 1,
+  "_provenance": [
+    "Independent oracle for the CBOM team-deliverables E2E (plan sections 7.6, Appendix B).",
+    "Every literal below is HAND- or OPENSSL-derived. None of it was produced by the product aggregator (backend/utilities/dashboard/cbom_team_rollup.py) or by a renderer.",
+    "appendix_b + per_source: plan Appendix B, re-derived with plain stdlib code by e2e/seed/oracle_check.py (python3 e2e/seed/oracle_check.py proves this file against backend/tests/fixtures/cbom_team_rollup_scans.json). The seed runs the same check against the live scan of the E2E trees before it stores anything.",
+    "certificates: `openssl x509 -text` over the 17 certificate FILES of the team-1 trees (14 unique DER SHA-256 fingerprints, `openssl x509 -fingerprint -sha256`), plus the documented finding rules: a SHA-1/MD5 signature => WEAK_CERTIFICATE_SIGNATURE, an RSA key < 2048 bits => WEAK_CERTIFICATE_KEY, self-signed with CA:FALSE => SELF_SIGNED_LEAF, notAfter before the scan date => EXPIRED_CERTIFICATE. Impact follows the crypto-risk-weights.yaml stacking (each 8-point flag = High, 4-point flag = Medium, sum >= 13 = Critical).",
+    "libraries, QSL table, requirement counts: plain counting over the same run-objects (see oracle_check.py).",
+    "Public-source text: NIST/CNSA timeline rows and URLs from plan Appendix C; disclaimer sentences copied from the pre-existing certin_compliance_pdf._CERTIN_DISCLAIMER and rbi_posture._ADVISORY_DISCLAIMER; framework labels from frontend/components/compliance/frameworkLabels.ts.",
+    "Date-relative values (validity of the two authored certificates, 'N days left', first/last seen, ages) are NOT stored here: the specs derive them from seed.json (the seeded created_at values) and from openssl on the files in e2e/.work/trees."
+  ],
+  "freshness": {
+    "oracle_valid_through": "2027-03-30",
+    "reason": "synthetic-crypto-app/cert.pem expires 2027-06-29 and enters the <=90 DAYS validity band on 2027-03-31 (and the register order would change); after that date re-derive bands, order and the cert KPIs with `python3 e2e/seed/oracle_check.py --print`."
+  },
+
+  "appendix_b": {
+    "scans_total": 12,
+    "eligible": 9,
+    "included": 8,
+    "excluded": { "failure": 1, "not_completed": 2, "no_data": 1 },
+    "sources": 7,
+    "cert_files": 17,
+    "cert_raw": 18,
+    "cert_unique": 14,
+    "bands": { "EXPIRED": 1, "LE_30": 1, "LE_90": 0, "VALID": 12 },
+    "dup_app": { "scans": [1, 2, 3, 8], "sources": 3, "locations": 3, "first_scan": 8, "last_scan": 2 },
+    "dup_leaf": { "scans": [2, 3], "sources": 2, "locations": 2, "first_scan": 3, "last_scan": 2 },
+    "occurrences": 68,
+    "impact": { "Critical": 1, "High": 23, "Medium": 5, "Low": 39 },
+    "issue": { "Critical": 1, "High": 23, "Medium": 5 },
+    "risk": { "score": 100, "grade": "F", "weighted_points": 135 },
+    "codes": {
+      "EXPIRED_CERTIFICATE": 1,
+      "HARDCODED_KEY": 1,
+      "QUANTUM_VULNERABLE": 5,
+      "REUSED_NONCE": 1,
+      "SELF_SIGNED_LEAF": 3,
+      "STATIC_IV": 1,
+      "WEAK_ALGORITHM": 8,
+      "WEAK_CERTIFICATE_KEY": 3,
+      "WEAK_CERTIFICATE_SIGNATURE": 3,
+      "WEAK_CIPHER_MODE": 2,
+      "WEAK_PROTOCOL": 2,
+      "WEAK_RNG": 3
+    },
+    "top_critical": ["rsa1024_sha1.pem"],
+    "qv": 5,
+    "safe": 32,
+    "not_gradeable": 0,
+    "readiness": 86.5,
+    "qsl": {
+      "1": { "occurrences": 1, "hybrid": 0 },
+      "2": { "occurrences": 3, "hybrid": 0 },
+      "3": { "occurrences": 2, "hybrid": 1 },
+      "4": { "occurrences": 1, "hybrid": 0 },
+      "5": { "occurrences": 6, "hybrid": 1 },
+      "none": { "occurrences": 19, "hybrid": 0 }
+    },
+    "by_type_impact": {
+      "alg": { "Critical": 0, "High": 10, "Medium": 3, "Low": 24, "total": 37 },
+      "cert": { "Critical": 1, "High": 5, "Medium": 2, "Low": 9, "total": 17 },
+      "proto": { "Critical": 0, "High": 2, "Medium": 0, "Low": 0, "total": 2 },
+      "mat": { "Critical": 0, "High": 6, "Medium": 0, "Low": 6, "total": 12 }
+    },
+    "material_with_misuse": 6,
+    "libs": 23,
+    "libs_multi": ["hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"],
+    "libs_source_level": 28,
+    "pooled": 6,
+    "legacy": 1,
+    "requirements_distinct": 109,
+    "compliance": {
+      "bsi_tr_02102": { "pass": 10, "pass_with_evidence": 0, "fail": 5, "nbe": 5, "oos": 4, "coverage": 0.667 },
+      "cert_in_cbom": { "pass": 114, "pass_with_evidence": 0, "fail": 4, "nbe": 97, "oos": 43, "coverage": 0.966 },
+      "cnsa_2_0": { "pass": 13, "pass_with_evidence": 0, "fail": 2, "nbe": 5, "oos": 4, "coverage": 0.867 },
+      "eu_cra": { "pass": 7, "pass_with_evidence": 0, "fail": 3, "nbe": 5, "oos": 3, "coverage": 0.7 },
+      "eu_dora": { "pass": 8, "pass_with_evidence": 0, "fail": 2, "nbe": 5, "oos": 3, "coverage": 0.8 },
+      "fips_140_3": { "pass": 11, "pass_with_evidence": 0, "fail": 4, "nbe": 5, "oos": 4, "coverage": 0.733 },
+      "nist_1800_38b": { "pass": 13, "pass_with_evidence": 0, "fail": 2, "nbe": 5, "oos": 4, "coverage": 0.867 },
+      "nist_1800_38c": { "pass": 12, "pass_with_evidence": 0, "fail": 3, "nbe": 5, "oos": 4, "coverage": 0.8 },
+      "nist_800_57": { "pass": 22, "pass_with_evidence": 0, "fail": 8, "nbe": 5, "oos": 7, "coverage": 0.733 },
+      "omb_m_23_02": { "pass": 8, "pass_with_evidence": 0, "fail": 2, "nbe": 5, "oos": 3, "coverage": 0.8 },
+      "pci_dss_4": { "pass": 11, "pass_with_evidence": 0, "fail": 4, "nbe": 5, "oos": 4, "coverage": 0.733 },
+      "rbi_free_ai_protection": { "pass": 24, "pass_with_evidence": 0, "fail": 6, "nbe": 10, "oos": 8, "coverage": 0.8 },
+      "sebi_cscrf_cbom": { "pass": 36, "pass_with_evidence": 0, "fail": 4, "nbe": 50, "oos": 18, "coverage": 0.9 }
+    },
+    "ledger": {
+      "pairs": 48, "source_level": 207, "attested_source_level": 0,
+      "per_requirement": {
+        "omb_m_23_02/OMB-3": { "in_scope": 5, "needing": 5 },
+        "nist_1800_38b/PQC-4": { "in_scope": 5, "needing": 5 },
+        "nist_800_57/KM-6": { "in_scope": 5, "needing": 5 },
+        "fips_140_3/FIPS-4": { "in_scope": 5, "needing": 5 },
+        "cert_in_cbom/T9-Protocols-OID": { "in_scope": 5, "needing": 1 },
+        "cert_in_cbom/T9-Algorithms-Mode": { "in_scope": 5, "needing": 2 }
+      }
+    }
+  },
+
+  "per_source": {
+    "github.com/e2e-demo/crypto-misuse-lab (main)": {
+      "kind": "repo", "current_scan": 4, "scans": [4], "fidelity": "full",
+      "alg": 8, "cert": 0, "proto": 0, "mat": 9, "libs": 2, "total": 17,
+      "impact": { "Critical": 0, "High": 6, "Medium": 0, "Low": 11 }
+    },
+    "github.com/e2e-demo/identity-gateway (main)": {
+      "kind": "repo", "current_scan": 3, "scans": [3], "fidelity": "full",
+      "alg": 0, "cert": 12, "proto": 0, "mat": 0, "libs": 0, "total": 12,
+      "impact": { "Critical": 1, "High": 4, "Medium": 1, "Low": 6 }
+    },
+    "github.com/e2e-demo/legacy-billing (main)": {
+      "kind": "repo", "current_scan": 8, "scans": [8], "fidelity": "legacy",
+      "alg": 9, "cert": 1, "proto": 1, "mat": 1, "libs": 4, "total": 12,
+      "impact": { "Critical": 0, "High": 6, "Medium": 1, "Low": 5 }
+    },
+    "github.com/e2e-demo/payments-service (main)": {
+      "kind": "repo", "current_scan": 2, "scans": [1, 2], "fidelity": "full",
+      "alg": 9, "cert": 2, "proto": 1, "mat": 2, "libs": 4, "total": 14,
+      "impact": { "Critical": 0, "High": 6, "Medium": 1, "Low": 7 }
+    },
+    "github.com/e2e-demo/pqc-pilot (release)": {
+      "kind": "repo", "current_scan": 5, "scans": [5], "fidelity": "full",
+      "alg": 11, "cert": 0, "proto": 0, "mat": 0, "libs": 0, "total": 11,
+      "impact": { "Critical": 0, "High": 0, "Medium": 1, "Low": 10 }
+    },
+    "github.com/e2e-demo/vendor-sdk-manifests (main)": {
+      "kind": "repo", "current_scan": 7, "scans": [7], "fidelity": "full",
+      "alg": 0, "cert": 0, "proto": 0, "mat": 0, "libs": 18, "total": 0,
+      "impact": { "Critical": 0, "High": 0, "Medium": 0, "Low": 0 }
+    },
+    "Zip upload: cert-lifecycle-lab": {
+      "kind": "zip", "current_scan": 6, "scans": [6], "fidelity": "full",
+      "alg": 0, "cert": 2, "proto": 0, "mat": 0, "libs": 0, "total": 2,
+      "impact": { "Critical": 0, "High": 1, "Medium": 1, "Low": 0 }
+    }
+  },
+
+  "canary_owner_scan": {
+    "FAILED-SCAN-CANARY": 9,
+    "QUEUED-SCAN-CANARY": 10,
+    "RUNNING-SCAN-CANARY": 11,
+    "SBOM-TYPE-CANARY": 12,
+    "other-team-canary.test": 14
+  },
+
+  "forbidden": {
+    "canaries": [
+      "FAILED-SCAN-CANARY",
+      "QUEUED-SCAN-CANARY",
+      "RUNNING-SCAN-CANARY",
+      "SBOM-TYPE-CANARY",
+      "other-team-canary",
+      "NOT-A-REAL-TOKEN-CANARY",
+      "x-access-token"
+    ],
+    "foreign_identity": ["clinithread", "AI BOM", "FDA", "HIPAA", "Traceback", "[object Object]", "undefined"],
+    "bare_words": ["None", "nan", "NaN", "null"]
+  },
+
+  "common": {
+    "team": { "id": 1, "name": "E2E Demo Team" },
+    "template_line": "1.0 · DevSecShield CBOM engine",
+    "tool": "DevSecShield CBOM engine",
+    "creator_re": "^DevSecShield CBOM engine \\(template 1\\.0\\)$",
+    "basis_rule": "Rule: current state = latest successful scan per source; first/last seen over history; certificates de-duplicated across sources",
+    "disclaimers": [
+      "Advisory mapping to CERT-In Technical Guidelines on SBOM, QBOM & CBOM, AIBOM and HBOM v2.0 (09.07.2025). Does not constitute CERT-In certification or regulatory approval.",
+      "Advisory mapping only. BOM evidence supports but does not satisfy regulatory obligations. Organizational/process controls require attestation.",
+      "Method: static analysis of repositories and uploaded artefacts. It does not include live-network discovery, HSM/KMS custody or data-at-rest encryption."
+    ],
+    "manual_legend": "Cells marked (assessor) are MANUAL: they are intentionally left blank for the assessor to complete and are never pre-filled by the platform.",
+    "fonts_allowed": ["Helvetica", "Helvetica-Bold", "Courier"],
+    "max_clock_skew_minutes": 15
+  },
+
+  "documents": {
+    "scope-baseline-register": {
+      "number": 1, "title": "Scope Baseline & Asset Population Register",
+      "menu_label": "#1 · Scope Baseline & Asset Population Register",
+      "header_label": "CBOM Scope Baseline Register", "orientation": "portrait", "min_pages": 3, "max_pages": 8
+    },
+    "methodology-evidence-plan": {
+      "number": 3, "title": "Cryptographic Discovery Methodology & Evidence Plan",
+      "menu_label": "#3 · Cryptographic Discovery Methodology & Evidence Plan",
+      "header_label": "CBOM Discovery Methodology", "orientation": "portrait", "min_pages": 4, "max_pages": 9
+    },
+    "certificate-estate-register": {
+      "number": 7, "title": "Certificate Estate Register",
+      "menu_label": "#7 · Certificate Estate Register",
+      "header_label": "CBOM Certificate Estate Register", "orientation": "landscape", "min_pages": 4, "max_pages": 8
+    },
+    "third-party-assurance-register": {
+      "number": 10, "title": "Third-Party Cryptographic Assurance & Attestation Register",
+      "menu_label": "#10 · Third-Party Cryptographic Assurance & Attestation Register",
+      "header_label": "CBOM Third-Party Assurance Register", "orientation": "landscape", "min_pages": 5, "max_pages": 10
+    },
+    "pqc-migration-roadmap": {
+      "number": 15, "title": "PQC Migration Roadmap",
+      "menu_label": "#15 · PQC Migration Roadmap",
+      "header_label": "CBOM PQC Migration Roadmap", "orientation": "landscape", "min_pages": 2, "max_pages": 7
+    },
+    "board-executive-report": {
+      "number": 16, "title": "Board / IT Strategy Committee Regulatory & Executive Report",
+      "menu_label": "#16 · Board / IT Strategy Committee Regulatory & Executive Report",
+      "header_label": "CBOM Board Report", "orientation": "portrait", "min_pages": 5, "max_pages": 10
+    }
+  },
+
+  "sources": [
+    { "label": "github.com/e2e-demo/crypto-misuse-lab (main)", "kind": "Repository", "url": "https://github.com/e2e-demo/crypto-misuse-lab", "branch": "main", "scans": [4], "current": 4, "fidelity": "FULL", "last_attempt": { "status": "SUCCESS", "scan": 4 } },
+    { "label": "github.com/e2e-demo/identity-gateway (main)", "kind": "Repository", "url": "https://github.com/e2e-demo/identity-gateway", "branch": "main", "scans": [3], "current": 3, "fidelity": "FULL", "last_attempt": { "status": "SUCCESS", "scan": 3 } },
+    { "label": "github.com/e2e-demo/legacy-billing (main)", "kind": "Repository", "url": "https://github.com/e2e-demo/legacy-billing", "branch": "main", "scans": [8], "current": 8, "fidelity": "LEGACY", "last_attempt": { "status": "SUCCESS", "scan": 8 } },
+    { "label": "github.com/e2e-demo/payments-service (main)", "kind": "Repository", "url": "https://github.com/e2e-demo/payments-service", "branch": "main", "scans": [1, 2], "current": 2, "fidelity": "FULL", "last_attempt": { "status": "FAILED", "scan": 9 } },
+    { "label": "github.com/e2e-demo/pqc-pilot (release)", "kind": "Repository", "url": "https://github.com/e2e-demo/pqc-pilot", "branch": "release", "scans": [5], "current": 5, "fidelity": "FULL", "last_attempt": { "status": "SUCCESS", "scan": 5 } },
+    { "label": "github.com/e2e-demo/vendor-sdk-manifests (main)", "kind": "Repository", "url": "https://github.com/e2e-demo/vendor-sdk-manifests", "branch": "main", "scans": [7], "current": 7, "fidelity": "FULL", "last_attempt": { "status": "SUCCESS", "scan": 7 } },
+    { "label": "Zip upload: cert-lifecycle-lab", "kind": "Zip upload", "url": null, "branch": null, "scans": [6], "current": 6, "fidelity": "FULL", "last_attempt": { "status": "SUCCESS", "scan": 6 } }
+  ],
+
+  "scan_sources": {
+    "1": "github.com/e2e-demo/payments-service (main)",
+    "2": "github.com/e2e-demo/payments-service (main)",
+    "3": "github.com/e2e-demo/identity-gateway (main)",
+    "4": "github.com/e2e-demo/crypto-misuse-lab (main)",
+    "5": "github.com/e2e-demo/pqc-pilot (release)",
+    "6": "Zip upload: cert-lifecycle-lab",
+    "7": "github.com/e2e-demo/vendor-sdk-manifests (main)",
+    "8": "github.com/e2e-demo/legacy-billing (main)",
+    "9": "github.com/e2e-demo/payments-service (main)",
+    "10": "github.com/e2e-demo/queued (main)",
+    "11": "github.com/e2e-demo/running (main)",
+    "13": "github.com/e2e-demo/empty (main)"
+  },
+
+  "scan_titles": {
+    "1": "payments-service #1", "2": "payments-service #2", "3": "identity-gateway", "4": "crypto-misuse-lab",
+    "5": "pqc-pilot", "6": "cert-lifecycle-lab", "7": "vendor-sdk-manifests", "8": "legacy-billing",
+    "9": "payments-service (FAILED)", "10": "queued", "11": "running", "13": "success-but-empty"
+  },
+
+  "rows_per_scan": { "1": 13, "2": 14, "3": 12, "4": 17, "5": 11, "6": 2, "7": 0, "8": 12 },
+
+  "scan_list": [
+    { "id": 11, "disposition": "Excluded: not completed", "fidelity": null, "assets": null },
+    { "id": 10, "disposition": "Excluded: not completed", "fidelity": null, "assets": null },
+    { "id": 9, "disposition": "Excluded: failed", "fidelity": null, "assets": null },
+    { "id": 7, "disposition": "Current for source", "fidelity": "Full", "assets": 0 },
+    { "id": 6, "disposition": "Current for source", "fidelity": "Full", "assets": 2 },
+    { "id": 13, "disposition": "Excluded: no data", "fidelity": null, "assets": null },
+    { "id": 5, "disposition": "Current for source", "fidelity": "Full", "assets": 11 },
+    { "id": 2, "disposition": "Current for source", "fidelity": "Full", "assets": 14 },
+    { "id": 4, "disposition": "Current for source", "fidelity": "Full", "assets": 17 },
+    { "id": 3, "disposition": "Current for source", "fidelity": "Full", "assets": 12 },
+    { "id": 1, "disposition": "History only", "fidelity": "Full", "assets": 13 },
+    { "id": 8, "disposition": "Current for source", "fidelity": "Legacy", "assets": 12 }
+  ],
+
+  "frameworks": [
+    { "key": "nist_1800_38b", "label": "NIST SP 1800-38B" },
+    { "key": "nist_800_57", "label": "NIST SP 800-57" },
+    { "key": "omb_m_23_02", "label": "OMB M-23-02" },
+    { "key": "eu_cra", "label": "EU CRA" },
+    { "key": "eu_dora", "label": "EU DORA" },
+    { "key": "pci_dss_4", "label": "PCI-DSS 4.0" },
+    { "key": "fips_140_3", "label": "FIPS 140-3" },
+    { "key": "bsi_tr_02102", "label": "BSI TR-02102" },
+    { "key": "nist_1800_38c", "label": "NIST SP 1800-38C" },
+    { "key": "cnsa_2_0", "label": "CNSA 2.0" },
+    { "key": "rbi_free_ai_protection", "label": "RBI FREE-AI (Protection)" },
+    { "key": "cert_in_cbom", "label": "CERT-In CBOM (Guidelines v2.0)" },
+    { "key": "sebi_cscrf_cbom", "label": "SEBI CSCRF (CBOM)" }
+  ],
+
+  "finding_labels": {
+    "EXPIRED_CERTIFICATE": "Expired certificate",
+    "SELF_SIGNED_LEAF": "Self-signed leaf certificate",
+    "WEAK_CERTIFICATE_KEY": "Certificate with an undersized key",
+    "WEAK_CERTIFICATE_SIGNATURE": "Certificate signed with a weak hash"
+  },
+
+  "certificates": {
+    "kpis": { "unique": 14, "expired": 1, "le30": 1, "le90": 0, "weak": 5, "self_signed_leaf": 3, "issuer_not_found": 0 },
+    "band_labels": { "EXPIRED": "EXPIRED", "LE_30": "<=30 DAYS", "LE_90": "<=90 DAYS", "VALID": "VALID" },
+    "columns": ["Certificate", "Issuer CN", "Public key", "Signature algorithm", "Valid from", "Valid to", "CA / self-signed / chain", "Findings", "Where found", "Seen (first -> last)", "Owner (assessor)", "Business system (assessor)"],
+    "register_order": [
+      "expired-api.e2e.test",
+      "expiring-soon.e2e.test",
+      "legacy-internal.test",
+      "weak-rsa1024-ca.test",
+      "weak-sha1-ca.test",
+      "weak-keysize.test",
+      "weak-sig.test",
+      "selfsigned-leaf.test",
+      "synthetic-crypto-app.test",
+      "chain.leaf.test",
+      "DevSecShield Test Root CA",
+      "ec-p256-ca.test",
+      "ecdsa-service.test",
+      "strong-control.test"
+    ],
+    "rows": {
+      "expired-api.e2e.test": {
+        "files": ["expired.crt"], "issuer": "expired-api.e2e.test", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "authored": { "tree": "cert-lifecycle-lab", "file": "expired.crt" },
+        "chain": "Self-signed leaf", "impact": "HIGH", "band": "EXPIRED", "findings": ["EXPIRED_CERTIFICATE", "SELF_SIGNED_LEAF"],
+        "locations": [{ "scan": 6, "path": "expired.crt" }]
+      },
+      "expiring-soon.e2e.test": {
+        "files": ["expiring-soon.crt"], "issuer": "expiring-soon.e2e.test", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "authored": { "tree": "cert-lifecycle-lab", "file": "expiring-soon.crt" },
+        "chain": "Self-signed leaf", "impact": "MEDIUM", "band": "LE_30", "findings": ["SELF_SIGNED_LEAF"],
+        "locations": [{ "scan": 6, "path": "expiring-soon.crt" }]
+      },
+      "legacy-internal.test": {
+        "files": ["rsa1024_sha1.pem"], "issuer": "legacy-internal.test", "public_key": "RSA 1024", "signature": "sha1WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2046-06-26",
+        "chain": "Root CA", "impact": "CRITICAL", "band": "VALID", "findings": ["WEAK_CERTIFICATE_KEY", "WEAK_CERTIFICATE_SIGNATURE"],
+        "locations": [{ "scan": 3, "path": "rsa1024_sha1.pem" }]
+      },
+      "weak-rsa1024-ca.test": {
+        "files": ["weak-rsa1024.crt"], "issuer": "weak-rsa1024-ca.test", "public_key": "RSA 1024", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2036-06-28",
+        "chain": "Root CA", "impact": "HIGH", "band": "VALID", "findings": ["WEAK_CERTIFICATE_KEY"],
+        "locations": [{ "scan": 3, "path": "weak-rsa1024.crt" }]
+      },
+      "weak-sha1-ca.test": {
+        "files": ["weak-sha1.crt"], "issuer": "weak-sha1-ca.test", "public_key": "RSA 2048", "signature": "sha1WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2036-06-28",
+        "chain": "Root CA", "impact": "HIGH", "band": "VALID", "findings": ["WEAK_CERTIFICATE_SIGNATURE"],
+        "locations": [{ "scan": 3, "path": "weak-sha1.crt" }]
+      },
+      "weak-keysize.test": {
+        "files": ["rsa1024.pem"], "issuer": "weak-keysize.test", "public_key": "RSA 1024", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2081-04-03",
+        "chain": "Root CA", "impact": "HIGH", "band": "VALID", "findings": ["WEAK_CERTIFICATE_KEY"],
+        "locations": [{ "scan": 3, "path": "rsa1024.pem" }]
+      },
+      "weak-sig.test": {
+        "files": ["sha1.pem"], "issuer": "weak-sig.test", "public_key": "RSA 2048", "signature": "sha1WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2081-04-03",
+        "chain": "Root CA", "impact": "HIGH", "band": "VALID", "findings": ["WEAK_CERTIFICATE_SIGNATURE"],
+        "locations": [{ "scan": 3, "path": "sha1.pem" }]
+      },
+      "selfsigned-leaf.test": {
+        "files": ["selfsigned-leaf.crt"], "issuer": "selfsigned-leaf.test", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2036-06-28",
+        "chain": "Self-signed leaf", "impact": "MEDIUM", "band": "VALID", "findings": ["SELF_SIGNED_LEAF"],
+        "locations": [{ "scan": 3, "path": "selfsigned-leaf.crt" }]
+      },
+      "synthetic-crypto-app.test": {
+        "files": ["cert.pem", "payments-ca.pem"], "issuer": "synthetic-crypto-app.test", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-06-29", "valid_to": "2027-06-29",
+        "chain": "Root CA", "impact": "LOW", "band": "VALID", "findings": [],
+        "locations": [
+          { "scan": 2, "path": "cert.pem" },
+          { "scan": 3, "path": "certs/imported/payments-ca.pem" },
+          { "scan": 8, "path": "cert.pem" }
+        ],
+        "scans": [1, 2, 3, 8], "latest_scan": 2
+      },
+      "chain.leaf.test": {
+        "files": ["server.crt", "chain-leaf.crt"], "issuer": "DevSecShield Test Root CA", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2036-06-28",
+        "chain": "Signed by chain-root.crt", "impact": "LOW", "band": "VALID", "findings": [],
+        "locations": [
+          { "scan": 2, "path": "deploy/tls/server.crt" },
+          { "scan": 3, "path": "chain-leaf.crt" }
+        ],
+        "scans": [2, 3], "latest_scan": 2
+      },
+      "DevSecShield Test Root CA": {
+        "files": ["chain-root.crt"], "issuer": "DevSecShield Test Root CA", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2036-06-28",
+        "chain": "Root CA", "impact": "LOW", "band": "VALID", "findings": [],
+        "locations": [{ "scan": 3, "path": "chain-root.crt" }]
+      },
+      "ec-p256-ca.test": {
+        "files": ["ec-p256.crt"], "issuer": "ec-p256-ca.test", "public_key": "EC P-256", "signature": "ecdsaWithSHA256",
+        "valid_from": "2026-07-01", "valid_to": "2036-06-28",
+        "chain": "Root CA", "impact": "LOW", "band": "VALID", "findings": [],
+        "locations": [{ "scan": 3, "path": "ec-p256.crt" }]
+      },
+      "ecdsa-service.test": {
+        "files": ["ec_p256.pem"], "issuer": "ecdsa-service.test", "public_key": "EC P-256", "signature": "ecdsaWithSHA256",
+        "valid_from": "2026-07-01", "valid_to": "2046-06-26",
+        "chain": "Root CA", "impact": "LOW", "band": "VALID", "findings": [],
+        "locations": [{ "scan": 3, "path": "ec_p256.pem" }]
+      },
+      "strong-control.test": {
+        "files": ["strong.pem"], "issuer": "strong-control.test", "public_key": "RSA 2048", "signature": "sha256WithRSAEncryption",
+        "valid_from": "2026-07-01", "valid_to": "2081-04-03",
+        "chain": "Root CA", "impact": "LOW", "band": "VALID", "findings": [],
+        "locations": [{ "scan": 3, "path": "strong.pem" }]
+      }
+    },
+    "sections": [
+      "1. Summary",
+      "2. Validity bands as of",
+      "3. Certificate register",
+      "4. Discovery limits and manual-field guidance",
+      "5. Reviewer sign-off"
+    ],
+    "kpi_labels": ["Certificates", "Expired", "<=30 DAYS", "<=90 DAYS", "Weak crypto", "Self-signed leaf", "Issuer not found"],
+    "sign_off_rows": ["Prepared by", "Reviewed by", "Approved by"]
+  },
+
+  "scope": {
+    "sections": ["A. Assessment boundary", "B. Sources assessed", "C. Asset population", "D. Exclusions and data quality", "E. Outside static visibility", "F. Sign-off"],
+    "intro": "Register of the sources assessed and the cryptographic asset population found across all completed CBOM scans of the team.",
+    "boundary_items": ["In-scope applications", "In-scope infrastructure", "In-scope APIs", "Cloud accounts and subscriptions", "Third parties and service providers"],
+    "source_columns": ["Source", "Repository (sanitised)", "Scans", "First scanned", "Last scanned (age)", "Last attempt", "Fidelity", "Assets", "Owner (assessor)", "Business system (assessor)"],
+    "limits_lines": [
+      "Limits: the same repository on two branches is two sources; two uploaded archives with the same title are one source.",
+      "Assets: algorithms / certificates / protocols / key material / libraries, counted in the source's current scan."
+    ],
+    "type_rows": [
+      { "label": "Algorithms", "klass": "alg" },
+      { "label": "Certificates", "klass": "cert" },
+      { "label": "Protocols", "klass": "proto" },
+      { "label": "Key material", "klass": "mat" }
+    ],
+    "treatment_labels": {
+      "total": "CBOM scans of the team",
+      "eligible": "Eligible: completed successfully",
+      "included": "Included in this register",
+      "failed": "Excluded: failed",
+      "not_completed": "Excluded: not completed (queued, running or retrying)",
+      "no_data": "Excluded: completed without usable data",
+      "history": "Older scans not folded (history window)"
+    },
+    "not_included": [
+      { "id": 11, "status": "started", "reason": "The scan had not completed, so no data was read." },
+      { "id": 10, "status": "NOT_STARTED", "reason": "The scan had not completed, so no data was read." },
+      { "id": 9, "status": "failure", "reason": "The scan failed, so no data was read." },
+      { "id": 13, "status": "success", "reason": "The scan completed but its result holds no usable data." }
+    ],
+    "data_quality": [
+      { "label": "Sources represented by a legacy-format scan", "value": "1: github.com/e2e-demo/legacy-billing (main)" },
+      { "label": "Asset occurrences seen only in older scans", "value": "0" },
+      { "label": "Certificates identified without X.509 fields", "value": "0" },
+      { "label": "Input records skipped or corrected", "value": "0" }
+    ],
+    "outside_visibility": ["HSM and KMS key custody", "Live TLS endpoints", "Data-at-rest encryption", "SaaS and third-party services", "OT, IoT and embedded devices", "Key generation and rotation ceremonies"],
+    "sign_off_rows": ["Prepared by", "Reviewed by", "Approved by"]
+  },
+
+  "methodology": {
+    "sections": [
+      "1. Purpose and scope", "2. Automated discovery", "3. Manual discovery checklist", "4. Evidence sources and traceability",
+      "5. Validation approach", "6. Coverage methodology", "7. Confidence classification", "8. Ownership and responsibilities (RACI)",
+      "9. Evidence retention and versioning", "10. Limits of the method", "11. Sign-off", "Appendix A. Scans considered"
+    ],
+    "scanners": [
+      { "name": "crypto_ast", "order": 8 },
+      { "name": "crypto_algorithm", "order": 10 },
+      { "name": "crypto_certificate", "order": 20 },
+      { "name": "crypto_misuse", "order": 25 },
+      { "name": "crypto_protocol", "order": 30 },
+      { "name": "crypto_policy", "order": 35 },
+      { "name": "crypto_weakness", "order": 40 },
+      { "name": "crypto_pqc", "order": 50 },
+      { "name": "crypto_strength", "order": 55 }
+    ],
+    "unwired_scanner_modules": ["jvm_go_crypto_scan", "native_crypto_scan", "web_native_crypto_scan", "jvm_go", "native_crypto", "web_native"],
+    "kpi_labels": ["Sources", "Scans included", "Crypto assets", "Unique certificates", "Frameworks", "Requirements"],
+    "kpis": { "frameworks": 13, "requirements": 109 },
+    "type_rows": [
+      { "label": "Algorithm", "klass": "alg" },
+      { "label": "Certificate", "klass": "cert" },
+      { "label": "Protocol", "klass": "proto" },
+      { "label": "Related crypto material", "klass": "mat" }
+    ],
+    "manual_items": ["HSM and KMS key custody", "Live TLS endpoints", "Data-at-rest encryption", "SaaS and third-party services", "OT, IoT and embedded devices", "Key generation and rotation ceremonies"],
+    "evidence_rows": [
+      { "label": "Repository-relative location of each asset occurrence", "present": 68, "out_of": 68, "share": "100.0%" },
+      { "label": "Certificates identified from parsed X.509 fields", "present": 14, "out_of": 14, "share": "100.0%" },
+      { "label": "Algorithm occurrences graded for quantum exposure", "present": 37, "out_of": 37, "share": "100.0%" },
+      { "label": "Sources whose latest scan carries compliance results", "present": 6, "out_of": 7, "share": "85.7%" }
+    ],
+    "validation_sentence": "No machine-learning or large-language-model component is used.",
+    "coverage_formula": "Coverage = (Pass + Pass with evidence) / (Pass + Pass with evidence + Fail). Not evidenceable and out-of-scope requirements are shown as their own counts and are never counted as passes.",
+    "pooled_line": "Pooled over 6 of 7 sources whose latest scan is full-fidelity; 1 legacy-format source is excluded because it carries no compliance results.",
+    "totals_row": { "label": "All frameworks", "pass": 289, "pass_with_evidence": 0, "fail": 49, "nbe": 207, "oos": 109 },
+    "confidence_rows": ["Parsed artefact", "Rule-bound API call", "Literal pattern"],
+    "confidence_note": "Per-asset confidence is not stored by the current engine.",
+    "raci_rows": ["Run and schedule CBOM scans", "Review findings and assign remediation", "Maintain the manual discovery register", "Approve this methodology"],
+    "retention_rows": ["Retention period", "Evidence store location"],
+    "limits": [
+      "Static analysis only: source code, configuration and certificate or key files are inspected; running systems are not.",
+      "No live-network discovery: TLS endpoints, load balancers and appliances are not probed.",
+      "No visibility into hardware security modules, key-management services or key custody.",
+      "No assessment of data-at-rest encryption in databases, object stores or disks."
+    ],
+    "sign_off_rows": ["Prepared by", "Reviewed by (CISO)", "Approved by"]
+  },
+
+  "assurance": {
+    "sections": ["A. Third-party cryptographic components", "B. Control attestation ledger", "C. Attestation summary", "D. Vendor attestation register", "E. Sign-off"],
+    "library_columns": ["Library", "#Sources", "Sources", "First seen", "Last seen", "Version (not captured) (assessor)", "Vendor (assessor)", "FIPS 140-3 / CMVP cert # (assessor)", "SOC 2 / ISO 27001 ref (assessor)", "PQC statement (assessor)", "Attestation status (assessor)"],
+    "libraries_line": "23 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source.",
+    "libraries": [
+      { "name": "Bouncy Castle", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "CIRCL (PQC)", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "Conscrypt", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "golang-jwt", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "golang.org/x/crypto", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "Google Tink", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "hashlib (stdlib)", "sources": ["github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
+      { "name": "jBCrypt", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "JJWT", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "jsonwebtoken", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "Konscious Argon2", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "libsodium", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "noble-hashes", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "node-forge", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "NSec", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "pyca/cryptography", "sources": ["github.com/e2e-demo/crypto-misuse-lab (main)", "github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
+      { "name": "pyOpenSSL", "sources": ["github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
+      { "name": "ring (Rust)", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "RustCrypto", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "Rustls", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "secrets (stdlib)", "sources": ["github.com/e2e-demo/crypto-misuse-lab (main)"] },
+      { "name": "ssl (stdlib)", "sources": ["github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
+      { "name": "TweetNaCl", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] }
+    ],
+    "ledger_columns": ["Framework", "Req ID", "Title", "Source citation", "Sources in scope", "Attested k/n", "Latest attestation (file · note · date)"],
+    "ledger_intro": "Pooled over 6 current full-fidelity sources; legacy-format sources not pooled (they carry no compliance results): 1.",
+    "ledger_rows_spot": [
+      { "framework": "OMB M-23-02", "req": "OMB-3", "title": "Agency PQC migration plan submitted to OMB", "citation": "OMB M-23-02", "in_scope": 5, "n": 5 },
+      { "framework": "NIST SP 1800-38B", "req": "PQC-4", "title": "Crypto-agile / hybrid deployment architecture", "citation": "NIST SP 1800-38B", "in_scope": 5, "n": 5 },
+      { "framework": "NIST SP 800-57", "req": "KM-6", "title": "Key rotation + HSM-backed custody policy", "citation": "NIST SP 800-57 Pt.1 / SP 800-131A", "in_scope": 5, "n": 5 },
+      { "framework": "FIPS 140-3", "req": "FIPS-4", "title": "CMVP-validated cryptographic module (certificate)", "citation": "FIPS 140-3 / SP 800-140C / SP 800-131A", "in_scope": 5, "n": 5 },
+      { "framework": "CERT-In CBOM (Guidelines v2.0)", "req": "T9-Protocols-OID", "title": "Protocol OID", "citation": "Table 9 / Protocols / OID", "in_scope": 5, "n": 1 },
+      { "framework": "CERT-In CBOM (Guidelines v2.0)", "req": "T9-Algorithms-Mode", "title": "Algorithm Mode", "citation": "Table 9 / Algorithms / Mode", "in_scope": 5, "n": 2 }
+    ],
+    "summary_before": { "needing": 48, "fully": 0, "partly": 0, "source_level": 0, "of": 207, "percent": "0.0%" },
+    "vendor_columns": ["Vendor", "Service", "Crypto function", "Evidence ref", "Valid until", "Owner"],
+    "sign_off_rows": ["Prepared by", "Reviewed by", "Approved by"]
+  },
+
+  "pqc": {
+    "sections": ["1 Summary", "2 Regulatory timeline", "3 Target families", "4 Per-asset roadmap", "5 Already quantum-safe and hybrid", "6 Notes"],
+    "kpi_labels": ["Quantum-vulnerable", "Distinct kinds", "Quantum readiness", "Quantum-safe", "Hybrid", "Not gradeable"],
+    "kpis": { "distinct_kinds": 2, "hybrid": 2 },
+    "timeline": [
+      { "when": "Aug 2024", "status": "FINAL", "source": "NIST post-quantum cryptography project", "url": "https://www.nist.gov/pqcrypto", "text": "FIPS 203 (ML-KEM), FIPS 204 (ML-DSA) and FIPS 205 (SLH-DSA)" },
+      { "when": "Nov 2024", "status": "DRAFT", "source": "NIST IR 8547 (initial public draft)", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "text": "NIST IR 8547 initial public draft published" },
+      { "when": "After 2030", "status": "DRAFT", "source": "NIST IR 8547 (initial public draft)", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "text": "112 bits of security strength (for example RSA-2048) are deprecated" },
+      { "when": "After 2035", "status": "DRAFT", "source": "NIST IR 8547 (initial public draft)", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "text": "All quantum-vulnerable public-key algorithms are disallowed" },
+      { "when": "2025 to 2035", "status": "ADVISORY", "source": "NSA CNSA 2.0 advisory", "url": "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF", "text": "CNSA 2.0 NSS milestones" }
+    ],
+    "timeline_note": "NIST IR 8547 remains an initial public draft and its dates may change in the final publication. FIPS 203, 204 and 205 are final.",
+    "target_family": { "family": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)", "primitive": "pke", "occurrences": 5, "sources": 3 },
+    "roadmap_group": "pke · Public-key encryption and key transport (for example RSA) · 5 occurrences",
+    "roadmap_columns": ["Algorithm", "Key/curve", "Classical strength (bits)", "NIST QSL", "Target family", "Sized target", "Impact", "Where found", "Seen", "Wave (assessor)", "Target date (assessor)", "Owner / status (assessor)"],
+    "sized_target": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)",
+    "legacy_target": "not available — legacy scan",
+    "rows": [
+      { "n": 1, "algorithm": "RSA-1024", "key": "1024 bits", "strength": "—", "qsl": "0", "impact": "HIGH", "scan": 8, "legacy": true, "path": "crypto_app.py" },
+      { "n": 2, "algorithm": "RSA-1024", "key": "1024 bits", "strength": "80", "qsl": "0", "impact": "HIGH", "scan": 2, "scans": [1, 2], "legacy": false, "path": "crypto_app.py" },
+      { "n": 3, "algorithm": "RSA-2048", "key": "2048 bits", "strength": "—", "qsl": "0", "impact": "MEDIUM", "scan": 8, "legacy": true, "path": "crypto_app.py" },
+      { "n": 4, "algorithm": "RSA-2048", "key": "2048 bits", "strength": "112", "qsl": "0", "impact": "MEDIUM", "scan": 2, "scans": [1, 2], "legacy": false, "path": "crypto_app.py" },
+      { "n": 5, "algorithm": "RSA-2048", "key": "2048 bits", "strength": "112", "qsl": "0", "impact": "MEDIUM", "scan": 5, "legacy": false, "path": "pqc_app.py" }
+    ],
+    "qsl_total_row": "Total quantum-safe",
+    "note_order": "Order = current scanner impact, not a migration sequence.",
+    "note_manual": "Wave, target date and owner / status are for the assessor to complete."
+  },
+
+  "board": {
+    "sections": [
+      "1. Executive summary", "2. Material risks (top 10)", "3. Quantum readiness", "4. Certificate and key-material posture",
+      "5. Regulatory exposure", "6. Remediation priorities", "7. Post-quantum roadmap summary", "8. Governance actions and decisions required",
+      "9. Sign-off", "Appendix A. Grade formula", "Appendix B. Scans included", "Appendix C. Disclaimers and limits"
+    ],
+    "grade_label": "Critical risk",
+    "grade_note": "It is a platform posture grade, not a regulatory rating.",
+    "top_risk_first": { "asset": "rsa1024_sha1.pem", "impact": "Critical", "findings": ["Certificate with an undersized key", "Certificate signed with a weak hash"] },
+    "top_risk_count_line": "Top 10 of 29 issue assets, ordered by impact, then scanner risk score, then name.",
+    "certificate_posture_rows": [
+      { "label": "Unique certificates in the estate", "count": 14 },
+      { "label": "Expired", "count": 1 },
+      { "label": "Expiring within 30 days", "count": 1 },
+      { "label": "Expiring in 31 to 90 days", "count": 0 },
+      { "label": "Valid for more than 90 days", "count": 12 },
+      { "label": "Validity date not recorded", "count": 0 },
+      { "label": "Weak signature hash or undersized key", "count": 5 },
+      { "label": "Self-signed leaf certificates", "count": 3 },
+      { "label": "Key and secret material occurrences", "count": 12 },
+      { "label": "With a key-misuse finding", "count": 6 }
+    ],
+    "regulatory_pooled_line": "6 of 7 sources pooled (1 legacy excluded).",
+    "regulatory_note": "RBI rows show the RBI FREE-AI protection mapping only",
+    "remediation": [
+      { "finding": "Certificate signed with a weak hash", "assets": 3, "impact": "Critical" },
+      { "finding": "Certificate with an undersized key", "assets": 3, "impact": "Critical" },
+      { "finding": "Weak or deprecated algorithm", "assets": 8, "impact": "High" },
+      { "finding": "Quantum-vulnerable public-key algorithm", "assets": 5, "impact": "High" },
+      { "finding": "Non-cryptographic random number generator", "assets": 3, "impact": "High" },
+      { "finding": "Self-signed leaf certificate", "assets": 3, "impact": "High" },
+      { "finding": "Weak cipher mode (ECB)", "assets": 2, "impact": "High" },
+      { "finding": "Weak protocol version", "assets": 2, "impact": "High" },
+      { "finding": "Expired certificate", "assets": 1, "impact": "High" },
+      { "finding": "Hard-coded key material", "assets": 1, "impact": "High" },
+      { "finding": "Reused nonce", "assets": 1, "impact": "High" },
+      { "finding": "Static or predictable IV", "assets": 1, "impact": "High" }
+    ],
+    "pqc_summary_row": { "family": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)", "occurrences": 5, "sources": 3 },
+    "governance": [
+      { "action": "Assign an accountable owner to each of the 14 unique certificates in the estate.", "metric": "14 unique certificates" },
+      { "action": "Collect attestation evidence for the 48 requirements that a bill of materials cannot evidence.", "metric": "48 requirements outstanding" },
+      { "action": "Approve a post-quantum migration plan covering the 5 quantum-vulnerable asset occurrences.", "metric": "5 quantum-vulnerable occurrences" },
+      { "action": "Re-scan the 1 source whose latest scan is in legacy format.", "metric": "1 source in legacy format" }
+    ],
+    "grade_formula": "Weighted points = 10 x Critical + 5 x High + 2 x Medium + 1 x Low. Score = min(100, 4 x weighted points).",
+    "grade_result": "Weighted points: 135. Score = min(100, 4 x 135) = 100. Grade F (Critical risk).",
+    "sign_off_rows": ["Prepared by", "CISO review", "Board IT Strategy Committee approval"]
+  },
+
+  "empty_team": {
+    "team": { "id": 3, "name": "Empty Team" },
+    "banner": "NO COMPLETED CBOM SCANS",
+    "banner_text": "This document is empty because no scan has completed; it is not evidence that no cryptographic assets exist.",
+    "basis_line": "Scans: 0 included of 0 eligible · excluded: 0 failed, 0 not completed, 0 without data",
+    "data_window": "Data window No completed CBOM scans",
+    "ui_enabled": ["scope-baseline-register", "methodology-evidence-plan", "third-party-assurance-register"],
+    "ui_disabled": ["certificate-estate-register", "pqc-migration-roadmap", "board-executive-report"],
+    "disabled_reason": "No completed CBOM scans yet. Run a CBOM scan to populate this document.",
+    "per_document": {
+      "scope-baseline-register": ["No sources have been assessed: no completed CBOM scan exists for this team, so there is nothing to list."],
+      "methodology-evidence-plan": ["No completed CBOM scan is available for this team yet, so this edition reports no live figures."],
+      "certificate-estate-register": ["No certificates were found in the current scans."],
+      "third-party-assurance-register": [],
+      "pqc-migration-roadmap": ["No CBOM scan has completed, so no asset has been assessed and no roadmap rows are listed."],
+      "board-executive-report": ["NOT ASSESSED", "No data: no completed CBOM scans."]
+    },
+    "board_forbidden": ["Low risk", "Posture grade A", "Critical risk"],
+    "manifest_basis": { "eligible": 0, "sources": 0 }
+  },
+
+  "manifest": {
+    "demo_basis": { "eligible": 9, "sources": 8, "excluded": { "failure": 1, "not_completed": 2 } },
+    "_note": "eligible/sources come from scan heads only, so the success-but-empty scan (#13) still counts here (9 and 8) while the PDFs fold 8 scans of 7 sources.",
+    "order": ["scope-baseline-register", "methodology-evidence-plan", "certificate-estate-register", "third-party-assurance-register", "pqc-migration-roadmap", "board-executive-report"],
+    "numbers": [1, 3, 7, 10, 15, 16]
+  },
+
+  "http": {
+    "headers_pdf": {
+      "content_type": "application/pdf",
+      "cache_control": "no-store",
+      "nosniff": "nosniff",
+      "x_cbom_scans_included": "8",
+      "x_cbom_sources": "7",
+      "x_cbom_fidelity": "mixed"
+    },
+    "filename_re": "^cbom-([a-z-]+)-team([0-9]+)-([0-9]{8})\\.pdf$",
+    "unknown_slug_detail": "Unknown deliverable",
+    "forbidden_status": 403,
+    "unauthorised_status": 401,
+    "generic_500_detail": "Error generating deliverable, please try again later"
+  },
+
+  "attestation": {
+    "scan": 2,
+    "framework": "omb_m_23_02",
+    "framework_label": "OMB M-23-02",
+    "requirement_id": "OMB-3",
+    "filename": "omb-pqc-migration-plan-e2e.txt",
+    "note": "E2E attestation: PQC migration plan filed with OMB",
+    "sources_in_scope": 5,
+    "before": { "attested": "Attested 0/5", "latest": "—" },
+    "after": { "attested": "Attested 1/5", "partly": 1, "fully": 0, "source_level": 1, "of": 207, "percent": "0.5%" }
+  },
+
+  "style_parity": {
+    "existing_scan": 2,
+    "existing_fonts_superset_of": ["Helvetica", "Helvetica-Bold", "Courier"],
+    "new_fonts_allowed": ["Helvetica", "Helvetica-Bold", "Courier"]
+  },
+
+  "perf": {
+    "budget_ms": { "demo": 3000, "perf_team": 10000, "row_cap": 15000 },
+    "perf_team_id": 4,
+    "demo_slugs_measured": ["scope-baseline-register", "methodology-evidence-plan", "certificate-estate-register", "third-party-assurance-register", "pqc-migration-roadmap", "board-executive-report"],
+    "repeat": 3,
+    "unique_certs_over_row_cap": 2000
+  },
+
+  "egress": {
+    "allowed_ports": [43000, 43080],
+    "expected_api_base_log": "api base url :  http://127.0.0.1:43080"
+  },
+
+  "login_ui": {
+    "heading": "DevSec Shield",
+    "submit": "Login",
+    "landing_path": "/home",
+    "negative_otp": "000000"
+  }
+}

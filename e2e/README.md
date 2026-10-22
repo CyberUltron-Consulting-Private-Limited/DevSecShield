@@ -5,9 +5,9 @@ Everything needed to build the product images from this worktree, bring up a thr
 Playwright (video + screenshots), and collect machine-indexed evidence. It is dev tooling only: it
 is never shipped and no product code imports it.
 
-Scope of this directory (work package WP6a): the **infrastructure**. The seed code
-(`e2e/seed/*.py`), the specs (`e2e/specs/*.spec.ts`), `e2e/lib/*`, `e2e/fixtures.ts` and
-`e2e/fixtures/expected.json` belong to WP6b; the full run and its evidence belong to WP7.
+Scope of this directory: WP6a is the **infrastructure** (compose, images, scripts); WP6b is the **seed and the
+specs** (`seed/`, `fixtures/expected.json`, `fixtures.ts`, `lib/`, `specs/`, `selftest/`, described in
+"Seed, oracle and specs (WP6b)" below); the full run and its evidence belong to WP7.
 
 Status when WP6a landed: `preflight.sh`, `build.sh`, `fixtures/build_trees.sh`, `teardown.sh`,
 `collect-evidence.sh` and the compose policy check were run and their failure paths exercised. The
@@ -26,7 +26,11 @@ e2e/
   docker/*.Dockerfile              backend + frontend are verbatim copies of the production Dockerfiles; aibom-scan is E2E-only
   docker/*.Dockerfile.dockerignore per-Dockerfile ignore files (BuildKit prefers them over a context-root .dockerignore)
   fixtures/build_trees.sh          assembles the ephemeral scan trees (Appendix B of the plan) under .work/trees
+  fixtures/expected.json           the hand-/openssl-derived oracle every spec judges the PDFs against (WP6b)
   scripts/                         preflight build up seed run-specs collect-evidence teardown all (+ lib.sh and two python helpers)
+  seed/                            scan_trees.py, seed_team.py, plan.py, oracle_check.py, check_determinism.sh, dryrun_world.py (WP6b)
+  fixtures.ts, lib/, specs/        Playwright fixtures, evidence + oracle libraries, the eleven specs (WP6b)
+  selftest/oracle.spec.ts          offline proof that the oracle accepts real PDFs and rejects corrupted ones (WP6b)
   package.json, package-lock.json  @playwright/test pinned EXACTLY to 1.62.0
   playwright.config.ts             workers 1, retries 0, 1440x900 viewport and video, screenshots on, downloads accepted
   .work/                           git-ignored scratch (trees, scan outputs, seed.json); removed by teardown.sh
@@ -153,7 +157,7 @@ Environment given to the one-shot containers (`docker-compose.e2e.yml`):
 | service | mounts | env | command |
 |---|---|---|---|
 | `aibom-scan` | `.work/trees` -> `/work/trees` (ro), `.work/out` -> `/work/out`, `e2e/seed` -> `/e2e/seed` (ro) | `E2E_TREES_DIR=/work/trees`, `E2E_OUT_DIR=/work/out` | `python /e2e/seed/scan_trees.py` (writes `<tree>.scan_data.json`) |
-| `seed` (backend image) | `.work` -> `/work`, `e2e/seed` -> `/e2e/seed` (ro), `backend/tests/fixtures` -> `/e2e/backend-fixtures` (ro) | `E2E_WORK_DIR=/work`, `E2E_LEGACY_SCAN_DATA=/e2e/backend-fixtures/cbom_export_scandata.json`, `E2E_SEED_PERF=1` with `seed.sh --perf`, plus `.env.e2e` | `/backend/.venv/bin/python /e2e/seed/seed_team.py` (writes `/work/seed.json`) |
+| `seed` (backend image) | `.work` -> `/work`, `e2e/seed` -> `/e2e/seed` (ro), `e2e/fixtures` -> `/e2e/fixtures` (ro, added by WP6b: `expected.json`), `backend/tests/fixtures` -> `/e2e/backend-fixtures` (ro) | `E2E_WORK_DIR=/work`, `E2E_LEGACY_SCAN_DATA=/e2e/backend-fixtures/cbom_export_scandata.json`, `E2E_SEED_PERF=1` with `seed.sh --perf`, plus `.env.e2e` | `/backend/.venv/bin/python /e2e/seed/seed_team.py` (writes `/work/seed.json`) |
 
 Trees produced by `fixtures/build_trees.sh` (all dated relative to the run day): `payments-service-v1`,
 `payments-service-v2`, `identity-gateway`, `crypto-misuse-lab`, `pqc-pilot`, `vendor-sdk-manifests`,
@@ -172,6 +176,92 @@ sent), `RABBIT_ADMIN_USERNAME/PASSWORD` (dummy), `AWS_ACCESS_KEY_ID/SECRET_ACCES
 `E2E_WORK_DIR` (host path of `.work`) and `E2E_SEED_JSON` (`.work/seed.json`). `playwright.config.ts`
 also honours `E2E_TEST_DIR` (spec directory override, for local debugging). The backend rate limiter
 allows 30 PDF requests per 60 s per token, so specs must pace downloads (>= 1.5 s apart).
+
+## Seed, oracle and specs (WP6b)
+
+### The world that is seeded
+
+`seed/plan.py` writes plan Appendix B down as data and `seed/seed_team.py` stores it through the product's own
+code: users with `get_hashed_password`, teams and memberships, 14 scans with **explicit ids equal to the
+Appendix-B numbers** (the PDFs print "scan #4"), `created_at = now - age_days`, `task_id = None`,
+`scan_metadata` shaped like `metadata.py`, and the real `create_findings_in_mongo_db` for every success scan.
+`scan_data` is what `seed/scan_trees.py` produced in the `aibom-scan` container with
+`scan_crypto_to_devsecshield(path, level=4)`; the Tier-B legacy scan is the committed
+`cbom_export_scandata.json`. Teams: 1 "E2E Demo Team" (admin persona), 2 "Other Team" (canary certificate,
+other persona), 3 "Empty Team" (empty persona), 4 "Perf Team" (`seed.sh --perf`: 200 scans, 40 sources,
+1 007 unique certificates). The stack must start from fresh volumes; the seed refuses a database that already
+holds teams, users or scans (exit 3).
+
+Before it stores anything, the seed verifies Appendix B with an **independent oracle**
+(`seed/oracle_check.py`, plain code, no product aggregator, plus the DER SHA-256 of the certificate files).
+A drifting scanner, fixture or date therefore fails at seed time (exit 4) with the differing quantity named.
+`seed.json` (mode 600) is the hand-over to the specs: ids, personas with their throw-away credentials, and
+every scan's `created_at`.
+
+Personas log in through the real `POST /login`. The admin's one-time code is the backend's
+`LOCAL_DEV_VERIFICATION_CODE`; the other two get a 24-hour one-time-code row in `verificationcode`. A login
+consumes it, so `lib/api.ts` caches the tokens in `.work/auth-cache.json` (mode 600, keyed by `seeded_at`) and
+renews them through `POST /refresh`.
+
+### `fixtures/expected.json`
+
+Every literal is hand- or openssl-derived: Appendix B's numbers re-derived by `oracle_check.py`; the 14
+certificates from `openssl x509 -text` over the 17 files; the library table, QSL table and requirement counts
+by plain counting; public text (NIST / CNSA timeline, URLs, disclaimers, framework labels) from plan
+Appendix C and the pre-existing product constants. Date-relative values are **not** stored: first/last seen, ages
+and the data window come from `seed.json`, the two authored certificates' validity from `openssl` on the files in
+`.work/trees`, the report date from the PDF's own "Generated" line. `freshness.oracle_valid_through`
+(2027-03-30) is the day `synthetic-crypto-app/cert.pem` enters the <=90-day band; both the seed and the
+certificate check fail with that explanation afterwards.
+
+`python3 e2e/seed/oracle_check.py` proves `expected.json` against `backend/tests/fixtures/
+cbom_team_rollup_scans.json` (the real scanner output at its frozen date); run it whenever the scanner, the
+fixture trees or the file change.
+
+### The specs (`specs/`, sorted so the one that changes data runs last)
+
+| spec | proves |
+|---|---|
+| `00-login-ui` | the real form: wrong one-time code refused (400), right code lands on `/home` with both tokens, the session opens `/1/cbom`; the bundle logs the E2E backend URL |
+| `01`, `03`, `07`, `10`, `15`, `16` | one deliverable each, **runnable alone** (`npx playwright test specs/07-certificate-estate-register.spec.ts`): menu -> download -> `X-Cbom-*` headers -> poppler -> the pages shown in the recorded page -> every expected string and count matched in the **PDF text** -> canaries absent |
+| `17-style-parity` | the existing single-scan "PDF Report" next to the six new PDFs: page-1 contact sheet, `pdffonts` of every new PDF is a subset of the existing report's, same brand header |
+| `90-negative-isolation` | 401 (no / bad / wrong-scheme token), 403 (another tenant), own-team 200 with its own canary and none of team 1, 404 / 422, canaries and URL credentials absent, empty team in the UI (disabled items, inert click, banner PDFs) and over the API |
+| `91-attestation-before-after` | the #10 ledger moves from "Attested 0/5" to "Attested 1/5" with file, note and date after an upload to scan #2; #3 and #16 pool the new verdict (OMB 80.0% -> 81.8%). **Changes the seeded data once** (see its header); reseed to repeat |
+| `92-perf` | every PDF within its budget: demo team 3 s (x3), perf team 10 s, 15 s for a register beyond the 2 000-row cap |
+
+Each spec writes its evidence under `E2E_EVIDENCE_DIR` with the number prefix the collector looks for
+(`screenshots/07-...-NN-label.png`, `downloads/07-<slug>.pdf`, `logs/07-api.json`, `07-pdfinfo.txt`,
+`07-pdftotext.txt`, `07-pdffonts.txt`, `07-oracle.json`, `07-console.json`, `07-egress.json`,
+`pdf-pages/07-<slug>-pNN.png`, `viewer-07.html`). The `egressGuard` fixture aborts and fails on any request
+outside `127.0.0.1:43000` / `127.0.0.1:43080` (plus `data:`, `blob:` and the local evidence viewer);
+the `consoleLog` fixture fails a spec on an uncaught page error or an HTTP 5xx.
+
+### Offline rehearsal (no Docker)
+
+`selftest/oracle.spec.ts` runs the very oracle the specs use against PDFs produced by
+`seed/dryrun_world.py` (the real seed code against a SQLite file, the real renderers) and then proves the
+oracle can fail: 15 corrupted copies must each be rejected.
+
+```bash
+WT=$PWD; bash e2e/fixtures/build_trees.sh                              # trees under e2e/.work
+E2E_TREES_DIR=$WT/e2e/.work/trees E2E_OUT_DIR=$WT/e2e/.work/out PYTHONPATH=$WT/aibom/src \
+  <aibom venv>/bin/python e2e/seed/scan_trees.py
+PYTHONPATH=$WT <backend venv>/bin/python e2e/seed/dryrun_world.py --out /tmp/dss-dryrun
+cd e2e && E2E_SELFTEST_DIR=/tmp/dss-dryrun E2E_SEED_JSON=/tmp/dss-dryrun/seed.json \
+  E2E_EVIDENCE_DIR=/tmp/dss-selftest E2E_TEST_DIR=$PWD/selftest npx playwright test
+```
+
+`dryrun_world.py --serve PORT` additionally serves the real FastAPI app (all routers) over HTTP from that SQLite
+file, so the browser specs can be rehearsed against a `next dev` frontend on other ports
+(`E2E_BASE_URL`, `E2E_API_URL`) without the stack. That is a debugging aid only; the proof is the Docker run.
+
+### Known behaviours of the product worth knowing when a spec fails
+
+* `DELETE .../attestations/...` removes the record but leaves the verdict at "pass with evidence"
+  (`recompute_compliance_for_scan` only ever flips verdicts forward), so spec 91 cannot undo itself.
+* The attestation routes do not touch `Scan.last_updated`; the data fingerprint hashes it, so the fingerprint
+  stays the same after an upload although the methodology (#3) says it changes. Spec 91 records both values.
+* `POST /login` accepts passwords of 5 to 24 characters; the WP6a generator produced 28 (fixed in `lib.sh`).
 
 ## Troubleshooting
 

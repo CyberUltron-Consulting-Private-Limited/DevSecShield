@@ -245,11 +245,12 @@ ensure_env_file() {
     printf 'AWS_SECRET_ACCESS_KEY=%s\n' "$(openssl rand -hex 20)"
     printf 'AWS_DEFAULT_REGION=us-east-1\n'
     printf 'E2E_ADMIN_EMAIL=%s\n' "${E2E_ADMIN_EMAIL_DEFAULT}"
-    printf 'E2E_ADMIN_PASSWORD=%sAa1!\n' "$(openssl rand -hex 12)"
+    # POST /login accepts passwords of 5 to 24 characters (UserLogin): 16 random hex + "Aa1!" = 20.
+    printf 'E2E_ADMIN_PASSWORD=%sAa1!\n' "$(openssl rand -hex 8)"
     printf 'E2E_OTHER_EMAIL=%s\n' "${E2E_OTHER_EMAIL_DEFAULT}"
-    printf 'E2E_OTHER_PASSWORD=%sAa1!\n' "$(openssl rand -hex 12)"
+    printf 'E2E_OTHER_PASSWORD=%sAa1!\n' "$(openssl rand -hex 8)"
     printf 'E2E_EMPTY_EMAIL=%s\n' "${E2E_EMPTY_EMAIL_DEFAULT}"
-    printf 'E2E_EMPTY_PASSWORD=%sAa1!\n' "$(openssl rand -hex 12)"
+    printf 'E2E_EMPTY_PASSWORD=%sAa1!\n' "$(openssl rand -hex 8)"
   } >"${E2E_ENV_FILE}"
   umask "${old_umask}"
   log "generated ${E2E_ENV_FILE#"${REPO_ROOT}"/} (mode 600; values not printed)"

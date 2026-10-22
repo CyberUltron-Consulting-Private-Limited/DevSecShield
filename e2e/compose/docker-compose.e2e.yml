@@ -185,7 +185,8 @@ services:
 
   # Creates users / teams / scans through the real backend models and the real
   # create_findings_in_mongo_db. Contract for e2e/seed/seed_team.py:
-  #   reads  $E2E_WORK_DIR/out/*.scan_data.json (/work/out) and $E2E_LEGACY_SCAN_DATA
+  #   reads  $E2E_WORK_DIR/out/*.scan_data.json (/work/out), $E2E_WORK_DIR/trees (certificate files, for the
+  #          independent oracle), $E2E_LEGACY_SCAN_DATA and /e2e/fixtures/expected.json
   #   writes $E2E_WORK_DIR/seed.json (/work/seed.json) for the Playwright specs
   #   $E2E_SEED_PERF=1 is set by `seed.sh --perf`
   # The image ENTRYPOINT (alembic + gunicorn) is bypassed: the backend service already migrated.
@@ -226,6 +227,13 @@ services:
       - type: bind
         source: ../../backend/tests/fixtures
         target: /e2e/backend-fixtures
+        read_only: true
+        bind:
+          create_host_path: false
+      # fixtures/expected.json: seed_team.py verifies Appendix B against it before storing anything.
+      - type: bind
+        source: ../fixtures
+        target: /e2e/fixtures
         read_only: true
         bind:
           create_host_path: false
