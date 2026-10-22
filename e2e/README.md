@@ -259,8 +259,12 @@ file, so the browser specs can be rehearsed against a `next dev` frontend on oth
 
 * `DELETE .../attestations/...` removes the record but leaves the verdict at "pass with evidence"
   (`recompute_compliance_for_scan` only ever flips verdicts forward), so spec 91 cannot undo itself.
-* The attestation routes do not touch `Scan.last_updated`; the data fingerprint hashes it, so the fingerprint
-  stays the same after an upload although the methodology (#3) says it changes. Spec 91 records both values.
+* The attestation routes do not touch `Scan.last_updated`, so the data fingerprint also hashes the attestation
+  records of the included scans (addendum A-2): one `(scan_id, framework, req_id, uploaded_at)` entry per record,
+  sorted, appended after the `scan_id:last_updated` list only when at least one record exists. An upload therefore
+  moves the fingerprint, and with it the Document ID suffix of all six documents of the team (the fingerprint is
+  team-wide), as the methodology (#3) says. A scan set without attestations keeps its old value (`6a1e31ae946c`
+  for the unit fixture). Spec 91 asserts that the value changes and records both values.
 * `POST /login` accepts passwords of 5 to 24 characters; the WP6a generator produced 28 (fixed in `lib.sh`).
 
 ## Troubleshooting
