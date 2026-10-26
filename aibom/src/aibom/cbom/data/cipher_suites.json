@@ -1,5 +1,469 @@
 {
   "data_version": 1,
-  "rows": [],
+  "keywords": {
+    "3DES": {
+      "enc": [
+        "3DES"
+      ]
+    },
+    "ADH": {
+      "classes": [
+        "ADH"
+      ]
+    },
+    "AECDH": {
+      "classes": [
+        "AECDH"
+      ]
+    },
+    "AES": {
+      "enc": [
+        "AES"
+      ]
+    },
+    "AES128": {
+      "enc": [
+        "AES"
+      ],
+      "enc_bits": [
+        128
+      ]
+    },
+    "AES256": {
+      "enc": [
+        "AES"
+      ],
+      "enc_bits": [
+        256
+      ]
+    },
+    "AESCCM": {
+      "enc": [
+        "AES"
+      ],
+      "enc_mode": [
+        "CCM"
+      ]
+    },
+    "AESCCM8": {
+      "enc": [
+        "AES"
+      ],
+      "enc_mode": [
+        "CCM8"
+      ]
+    },
+    "AESGCM": {
+      "enc": [
+        "AES"
+      ],
+      "enc_mode": [
+        "GCM"
+      ]
+    },
+    "ALL": {
+      "classes": [
+        "ALL"
+      ]
+    },
+    "ARIA": {
+      "enc": [
+        "ARIA"
+      ]
+    },
+    "ARIA128": {
+      "enc": [
+        "ARIA"
+      ],
+      "enc_bits": [
+        128
+      ]
+    },
+    "ARIA256": {
+      "enc": [
+        "ARIA"
+      ],
+      "enc_bits": [
+        256
+      ]
+    },
+    "CAMELLIA": {
+      "enc": [
+        "CAMELLIA"
+      ]
+    },
+    "CAMELLIA128": {
+      "enc": [
+        "CAMELLIA"
+      ],
+      "enc_bits": [
+        128
+      ]
+    },
+    "CAMELLIA256": {
+      "enc": [
+        "CAMELLIA"
+      ],
+      "enc_bits": [
+        256
+      ]
+    },
+    "CBC": {
+      "enc_mode": [
+        "CBC"
+      ]
+    },
+    "CHACHA20": {
+      "enc": [
+        "CHACHA20"
+      ]
+    },
+    "COMPLEMENTOFALL": {
+      "classes": [
+        "COMPLEMENTOFALL"
+      ]
+    },
+    "COMPLEMENTOFDEFAULT": {
+      "classes": [
+        "COMPLEMENTOFDEFAULT"
+      ]
+    },
+    "DES": {
+      "enc": [
+        "DES"
+      ]
+    },
+    "DH": {
+      "classes": [
+        "DH"
+      ]
+    },
+    "DHE": {
+      "kx": [
+        "DHE"
+      ]
+    },
+    "DSS": {
+      "au": [
+        "DSS"
+      ]
+    },
+    "ECDH": {
+      "classes": [
+        "ECDH"
+      ]
+    },
+    "ECDHE": {
+      "kx": [
+        "ECDHE"
+      ]
+    },
+    "EDH": {
+      "kx": [
+        "DHE"
+      ]
+    },
+    "EECDH": {
+      "kx": [
+        "ECDHE"
+      ]
+    },
+    "GOST": {
+      "enc": [
+        "GOST"
+      ]
+    },
+    "HIGH": {
+      "classes": [
+        "HIGH"
+      ]
+    },
+    "IDEA": {
+      "enc": [
+        "IDEA"
+      ]
+    },
+    "LOW": {
+      "classes": [
+        "LOW"
+      ]
+    },
+    "MD5": {
+      "mac": [
+        "MD5"
+      ]
+    },
+    "MEDIUM": {
+      "classes": [
+        "MEDIUM"
+      ]
+    },
+    "NULL": {
+      "classes": [
+        "eNULL"
+      ]
+    },
+    "PSK": {
+      "classes": [
+        "PSK"
+      ]
+    },
+    "RC2": {
+      "enc": [
+        "RC2"
+      ]
+    },
+    "RC4": {
+      "enc": [
+        "RC4"
+      ]
+    },
+    "RSA": {
+      "classes": [
+        "RSA"
+      ]
+    },
+    "SEED": {
+      "enc": [
+        "SEED"
+      ]
+    },
+    "SHA": {
+      "mac": [
+        "SHA1"
+      ]
+    },
+    "SHA1": {
+      "mac": [
+        "SHA1"
+      ]
+    },
+    "SHA256": {
+      "mac": [
+        "SHA256"
+      ]
+    },
+    "SHA384": {
+      "mac": [
+        "SHA384"
+      ]
+    },
+    "SRP": {
+      "classes": [
+        "SRP"
+      ]
+    },
+    "SUITEB128": {
+      "classes": [
+        "SUITEB128"
+      ]
+    },
+    "SUITEB128ONLY": {
+      "classes": [
+        "SUITEB128ONLY"
+      ]
+    },
+    "SUITEB192": {
+      "classes": [
+        "SUITEB192"
+      ]
+    },
+    "TLSv1.0": {
+      "min": [
+        "SSLv3",
+        "1.0"
+      ]
+    },
+    "TLSv1.2": {
+      "min": [
+        "1.2"
+      ]
+    },
+    "aDSS": {
+      "au": [
+        "DSS"
+      ]
+    },
+    "aECDSA": {
+      "au": [
+        "ECDSA"
+      ]
+    },
+    "aNULL": {
+      "classes": [
+        "aNULL"
+      ]
+    },
+    "aPSK": {
+      "au": [
+        "PSK"
+      ]
+    },
+    "aRSA": {
+      "au": [
+        "RSA"
+      ]
+    },
+    "aSRP": {
+      "au": [
+        "SRP"
+      ]
+    },
+    "eNULL": {
+      "classes": [
+        "eNULL"
+      ]
+    },
+    "kDHE": {
+      "kx": [
+        "DHE"
+      ]
+    },
+    "kECDHE": {
+      "kx": [
+        "ECDHE"
+      ]
+    },
+    "kEDH": {
+      "kx": [
+        "DHE"
+      ]
+    },
+    "kEECDH": {
+      "kx": [
+        "ECDHE"
+      ]
+    },
+    "kPSK": {
+      "kx": [
+        "PSK"
+      ]
+    },
+    "kRSA": {
+      "kx": [
+        "RSA"
+      ]
+    },
+    "kSRP": {
+      "kx": [
+        "SRP"
+      ]
+    }
+  },
+  "rows": [
+    {"au": "RSA", "bits": 0, "classes": ["COMPLEMENTOFALL", "MD5", "RSA", "eNULL"], "code": 1, "enc": "NULL", "enc_bits": 0, "enc_mode": "NULL", "export": false, "fs": false, "iana": "TLS_RSA_WITH_NULL_MD5", "id": "TLS_RSA_WITH_NULL_MD5", "kx": "RSA", "mac": "MD5", "min": "SSLv3", "openssl": ["NULL-MD5", "SSL_RSA_WITH_NULL_MD5"], "tls13": false},
+    {"au": "RSA", "bits": 0, "classes": ["COMPLEMENTOFALL", "RSA", "SHA1", "eNULL"], "code": 2, "enc": "NULL", "enc_bits": 0, "enc_mode": "NULL", "export": false, "fs": false, "iana": "TLS_RSA_WITH_NULL_SHA", "id": "TLS_RSA_WITH_NULL_SHA", "kx": "RSA", "mac": "SHA1", "min": "SSLv3", "openssl": ["NULL-SHA", "SSL_RSA_WITH_NULL_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 40, "classes": ["ALL", "COMPLEMENTOFDEFAULT", "EXPORT", "LOW", "MD5", "NOFS", "RC4", "RSA"], "code": 3, "enc": "RC4", "enc_bits": 40, "enc_mode": "STREAM", "export": true, "fs": false, "iana": "TLS_RSA_EXPORT_WITH_RC4_40_MD5", "id": "TLS_RSA_EXPORT_WITH_RC4_40_MD5", "kx": "RSA", "mac": "MD5", "min": "SSLv3", "openssl": ["EXP-RC4-MD5", "SSL_RSA_EXPORT_WITH_RC4_40_MD5"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "COMPLEMENTOFDEFAULT", "MD5", "MEDIUM", "NOFS", "RC4", "RSA"], "code": 4, "enc": "RC4", "enc_bits": 128, "enc_mode": "STREAM", "export": false, "fs": false, "iana": "TLS_RSA_WITH_RC4_128_MD5", "id": "TLS_RSA_WITH_RC4_128_MD5", "kx": "RSA", "mac": "MD5", "min": "1.0", "openssl": ["RC4-MD5", "SSL_RSA_WITH_RC4_128_MD5"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "COMPLEMENTOFDEFAULT", "MEDIUM", "NOFS", "RC4", "RSA", "SHA1"], "code": 5, "enc": "RC4", "enc_bits": 128, "enc_mode": "STREAM", "export": false, "fs": false, "iana": "TLS_RSA_WITH_RC4_128_SHA", "id": "TLS_RSA_WITH_RC4_128_SHA", "kx": "RSA", "mac": "SHA1", "min": "1.0", "openssl": ["RC4-SHA", "SSL_RSA_WITH_RC4_128_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 40, "classes": ["ALL", "EXPORT", "LOW", "NOFS", "RSA", "SHA1"], "code": 8, "enc": "DES", "enc_bits": 40, "enc_mode": "CBC", "export": true, "fs": false, "iana": "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA", "id": "TLS_RSA_EXPORT_WITH_DES40_CBC_SHA", "kx": "RSA", "mac": "SHA1", "min": "SSLv3", "openssl": ["EXP-DES-CBC-SHA", "SSL_RSA_EXPORT_WITH_DES40_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 56, "classes": ["ALL", "LOW", "NOFS", "RSA", "SHA1"], "code": 9, "enc": "DES", "enc_bits": 56, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_RSA_WITH_DES_CBC_SHA", "id": "TLS_RSA_WITH_DES_CBC_SHA", "kx": "RSA", "mac": "SHA1", "min": "SSLv3", "openssl": ["DES-CBC-SHA", "SSL_RSA_WITH_DES_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 112, "classes": ["ALL", "MEDIUM", "NOFS", "RSA", "SHA1"], "code": 10, "enc": "3DES", "enc_bits": 168, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_RSA_WITH_3DES_EDE_CBC_SHA", "id": "TLS_RSA_WITH_3DES_EDE_CBC_SHA", "kx": "RSA", "mac": "SHA1", "min": "1.0", "openssl": ["DES-CBC3-SHA", "SSL_RSA_WITH_3DES_EDE_CBC_SHA"], "tls13": false},
+    {"au": "None", "bits": 128, "classes": ["ADH", "ALL", "COMPLEMENTOFDEFAULT", "DH", "MD5", "MEDIUM", "RC4", "aNULL"], "code": 24, "enc": "RC4", "enc_bits": 128, "enc_mode": "STREAM", "export": false, "fs": true, "iana": "TLS_DH_anon_WITH_RC4_128_MD5", "id": "TLS_DH_anon_WITH_RC4_128_MD5", "kx": "DHE", "mac": "MD5", "min": "1.0", "openssl": ["ADH-RC4-MD5", "SSL_DH_anon_WITH_RC4_128_MD5"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "HIGH", "NOFS", "RSA", "SHA1"], "code": 47, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_128_CBC_SHA", "id": "TLS_RSA_WITH_AES_128_CBC_SHA", "kx": "RSA", "mac": "SHA1", "min": "1.0", "openssl": ["AES128-SHA", "SSL_RSA_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "DH", "HIGH", "RSA", "SHA1"], "code": 51, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA", "id": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA", "kx": "DHE", "mac": "SHA1", "min": "1.0", "openssl": ["DHE-RSA-AES128-SHA", "EDH-RSA-AES128-SHA", "SSL_DHE_RSA_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "None", "bits": 128, "classes": ["ADH", "ALL", "COMPLEMENTOFDEFAULT", "DH", "HIGH", "SHA1", "aNULL"], "code": 52, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_DH_anon_WITH_AES_128_CBC_SHA", "id": "TLS_DH_anon_WITH_AES_128_CBC_SHA", "kx": "DHE", "mac": "SHA1", "min": "1.0", "openssl": ["ADH-AES128-SHA", "SSL_DH_anon_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "HIGH", "NOFS", "RSA", "SHA1"], "code": 53, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_256_CBC_SHA", "id": "TLS_RSA_WITH_AES_256_CBC_SHA", "kx": "RSA", "mac": "SHA1", "min": "1.0", "openssl": ["AES256-SHA", "SSL_RSA_WITH_AES_256_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "DH", "HIGH", "RSA", "SHA1"], "code": 57, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA", "id": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA", "kx": "DHE", "mac": "SHA1", "min": "1.0", "openssl": ["DHE-RSA-AES256-SHA", "EDH-RSA-AES256-SHA", "SSL_DHE_RSA_WITH_AES_256_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 0, "classes": ["COMPLEMENTOFALL", "RSA", "SHA256", "eNULL"], "code": 59, "enc": "NULL", "enc_bits": 0, "enc_mode": "NULL", "export": false, "fs": false, "iana": "TLS_RSA_WITH_NULL_SHA256", "id": "TLS_RSA_WITH_NULL_SHA256", "kx": "RSA", "mac": "SHA256", "min": "SSLv3", "openssl": ["NULL-SHA256", "SSL_RSA_WITH_NULL_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "HIGH", "NOFS", "RSA", "SHA256"], "code": 60, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_128_CBC_SHA256", "id": "TLS_RSA_WITH_AES_128_CBC_SHA256", "kx": "RSA", "mac": "SHA256", "min": "1.2", "openssl": ["AES128-SHA256", "SSL_RSA_WITH_AES_128_CBC_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "HIGH", "NOFS", "RSA", "SHA256"], "code": 61, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_256_CBC_SHA256", "id": "TLS_RSA_WITH_AES_256_CBC_SHA256", "kx": "RSA", "mac": "SHA256", "min": "1.2", "openssl": ["AES256-SHA256", "SSL_RSA_WITH_AES_256_CBC_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "DH", "HIGH", "RSA", "SHA256"], "code": 103, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256", "id": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256", "kx": "DHE", "mac": "SHA256", "min": "1.2", "openssl": ["DHE-RSA-AES128-SHA256", "EDH-RSA-AES128-SHA256", "SSL_DHE_RSA_WITH_AES_128_CBC_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "DH", "HIGH", "RSA", "SHA256"], "code": 107, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256", "id": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256", "kx": "DHE", "mac": "SHA256", "min": "1.2", "openssl": ["DHE-RSA-AES256-SHA256", "EDH-RSA-AES256-SHA256", "SSL_DHE_RSA_WITH_AES_256_CBC_SHA256"], "tls13": false},
+    {"au": "PSK", "bits": 128, "classes": ["ALL", "HIGH", "NOFS", "PSK", "SHA1"], "code": 140, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": false, "iana": "TLS_PSK_WITH_AES_128_CBC_SHA", "id": "TLS_PSK_WITH_AES_128_CBC_SHA", "kx": "PSK", "mac": "SHA1", "min": "1.0", "openssl": ["PSK-AES128-CBC-SHA", "SSL_PSK_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "HIGH", "NOFS", "RSA"], "code": 156, "enc": "AES", "enc_bits": 128, "enc_mode": "GCM", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_128_GCM_SHA256", "id": "TLS_RSA_WITH_AES_128_GCM_SHA256", "kx": "RSA", "mac": "AEAD", "min": "1.2", "openssl": ["AES128-GCM-SHA256", "SSL_RSA_WITH_AES_128_GCM_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "HIGH", "NOFS", "RSA"], "code": 157, "enc": "AES", "enc_bits": 256, "enc_mode": "GCM", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_256_GCM_SHA384", "id": "TLS_RSA_WITH_AES_256_GCM_SHA384", "kx": "RSA", "mac": "AEAD", "min": "1.2", "openssl": ["AES256-GCM-SHA384", "SSL_RSA_WITH_AES_256_GCM_SHA384"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "DH", "HIGH", "RSA"], "code": 158, "enc": "AES", "enc_bits": 128, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256", "id": "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256", "kx": "DHE", "mac": "AEAD", "min": "1.2", "openssl": ["DHE-RSA-AES128-GCM-SHA256", "EDH-RSA-AES128-GCM-SHA256", "SSL_DHE_RSA_WITH_AES_128_GCM_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "DH", "HIGH", "RSA"], "code": 159, "enc": "AES", "enc_bits": 256, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384", "id": "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384", "kx": "DHE", "mac": "AEAD", "min": "1.2", "openssl": ["DHE-RSA-AES256-GCM-SHA384", "EDH-RSA-AES256-GCM-SHA384", "SSL_DHE_RSA_WITH_AES_256_GCM_SHA384"], "tls13": false},
+    {"au": "any", "bits": 128, "classes": [], "code": 4865, "enc": "AES", "enc_bits": 128, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_AES_128_GCM_SHA256", "id": "TLS_AES_128_GCM_SHA256", "kx": "any", "mac": "AEAD", "min": "1.3", "openssl": ["TLS_AES_128_GCM_SHA256"], "tls13": true},
+    {"au": "any", "bits": 256, "classes": [], "code": 4866, "enc": "AES", "enc_bits": 256, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_AES_256_GCM_SHA384", "id": "TLS_AES_256_GCM_SHA384", "kx": "any", "mac": "AEAD", "min": "1.3", "openssl": ["TLS_AES_256_GCM_SHA384"], "tls13": true},
+    {"au": "any", "bits": 256, "classes": [], "code": 4867, "enc": "CHACHA20", "enc_bits": 256, "enc_mode": "POLY1305", "export": false, "fs": true, "iana": "TLS_CHACHA20_POLY1305_SHA256", "id": "TLS_CHACHA20_POLY1305_SHA256", "kx": "any", "mac": "AEAD", "min": "1.3", "openssl": ["TLS_CHACHA20_POLY1305_SHA256"], "tls13": true},
+    {"au": "any", "bits": 128, "classes": [], "code": 4868, "enc": "AES", "enc_bits": 128, "enc_mode": "CCM", "export": false, "fs": true, "iana": "TLS_AES_128_CCM_SHA256", "id": "TLS_AES_128_CCM_SHA256", "kx": "any", "mac": "AEAD", "min": "1.3", "openssl": ["TLS_AES_128_CCM_SHA256"], "tls13": true},
+    {"au": "any", "bits": 128, "classes": [], "code": 4869, "enc": "AES", "enc_bits": 128, "enc_mode": "CCM8", "export": false, "fs": true, "iana": "TLS_AES_128_CCM_8_SHA256", "id": "TLS_AES_128_CCM_8_SHA256", "kx": "any", "mac": "AEAD", "min": "1.3", "openssl": ["TLS_AES_128_CCM_8_SHA256"], "tls13": true},
+    {"au": "ECDSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "SHA1"], "code": 49161, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA", "id": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA", "kx": "ECDHE", "mac": "SHA1", "min": "1.0", "openssl": ["ECDHE-ECDSA-AES128-SHA", "SSL_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "ECDSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "SHA1"], "code": 49162, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA", "id": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA", "kx": "ECDHE", "mac": "SHA1", "min": "1.0", "openssl": ["ECDHE-ECDSA-AES256-SHA", "SSL_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "RSA", "SHA1"], "code": 49171, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "id": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "kx": "ECDHE", "mac": "SHA1", "min": "1.0", "openssl": ["ECDHE-RSA-AES128-SHA", "SSL_ECDHE_RSA_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "RSA", "SHA1"], "code": 49172, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA", "id": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA", "kx": "ECDHE", "mac": "SHA1", "min": "1.0", "openssl": ["ECDHE-RSA-AES256-SHA", "SSL_ECDHE_RSA_WITH_AES_256_CBC_SHA"], "tls13": false},
+    {"au": "None", "bits": 0, "classes": ["AECDH", "COMPLEMENTOFALL", "COMPLEMENTOFDEFAULT", "ECDH", "SHA1", "aNULL", "eNULL"], "code": 49173, "enc": "NULL", "enc_bits": 0, "enc_mode": "NULL", "export": false, "fs": true, "iana": "TLS_ECDH_anon_WITH_NULL_SHA", "id": "TLS_ECDH_anon_WITH_NULL_SHA", "kx": "ECDHE", "mac": "SHA1", "min": "SSLv3", "openssl": ["AECDH-NULL-SHA", "SSL_ECDH_anon_WITH_NULL_SHA"], "tls13": false},
+    {"au": "None", "bits": 128, "classes": ["AECDH", "ALL", "COMPLEMENTOFDEFAULT", "ECDH", "HIGH", "SHA1", "aNULL"], "code": 49176, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDH_anon_WITH_AES_128_CBC_SHA", "id": "TLS_ECDH_anon_WITH_AES_128_CBC_SHA", "kx": "ECDHE", "mac": "SHA1", "min": "1.0", "openssl": ["AECDH-AES128-SHA", "SSL_ECDH_anon_WITH_AES_128_CBC_SHA"], "tls13": false},
+    {"au": "ECDSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "SHA256"], "code": 49187, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "id": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "kx": "ECDHE", "mac": "SHA256", "min": "1.2", "openssl": ["ECDHE-ECDSA-AES128-SHA256", "SSL_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"], "tls13": false},
+    {"au": "ECDSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "SHA384"], "code": 49188, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "id": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "kx": "ECDHE", "mac": "SHA384", "min": "1.2", "openssl": ["ECDHE-ECDSA-AES256-SHA384", "SSL_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "RSA", "SHA256"], "code": 49191, "enc": "AES", "enc_bits": 128, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "id": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "kx": "ECDHE", "mac": "SHA256", "min": "1.2", "openssl": ["ECDHE-RSA-AES128-SHA256", "SSL_ECDHE_RSA_WITH_AES_128_CBC_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "RSA", "SHA384"], "code": 49192, "enc": "AES", "enc_bits": 256, "enc_mode": "CBC", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384", "id": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384", "kx": "ECDHE", "mac": "SHA384", "min": "1.2", "openssl": ["ECDHE-RSA-AES256-SHA384", "SSL_ECDHE_RSA_WITH_AES_256_CBC_SHA384"], "tls13": false},
+    {"au": "ECDSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "SUITEB128", "SUITEB128ONLY"], "code": 49195, "enc": "AES", "enc_bits": 128, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "id": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-ECDSA-AES128-GCM-SHA256", "SSL_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"], "tls13": false},
+    {"au": "ECDSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "SUITEB128", "SUITEB192"], "code": 49196, "enc": "AES", "enc_bits": 256, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "id": "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-ECDSA-AES256-GCM-SHA384", "SSL_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "RSA"], "code": 49199, "enc": "AES", "enc_bits": 128, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "id": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-RSA-AES128-GCM-SHA256", "SSL_ECDHE_RSA_WITH_AES_128_GCM_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "RSA"], "code": 49200, "enc": "AES", "enc_bits": 256, "enc_mode": "GCM", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "id": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-RSA-AES256-GCM-SHA384", "SSL_ECDHE_RSA_WITH_AES_256_GCM_SHA384"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH", "NOFS", "RSA"], "code": 49201, "enc": "AES", "enc_bits": 128, "enc_mode": "GCM", "export": false, "fs": false, "iana": "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256", "id": "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256", "kx": "ECDH", "mac": "AEAD", "min": "1.2", "openssl": ["ECDH-RSA-AES128-GCM-SHA256", "SSL_ECDH_RSA_WITH_AES_128_GCM_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "HIGH", "NOFS", "RSA"], "code": 49308, "enc": "AES", "enc_bits": 128, "enc_mode": "CCM", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_128_CCM", "id": "TLS_RSA_WITH_AES_128_CCM", "kx": "RSA", "mac": "AEAD", "min": "1.2", "openssl": ["AES128-CCM", "SSL_RSA_WITH_AES_128_CCM"], "tls13": false},
+    {"au": "RSA", "bits": 128, "classes": ["ALL", "HIGH", "NOFS", "RSA"], "code": 49312, "enc": "AES", "enc_bits": 128, "enc_mode": "CCM8", "export": false, "fs": false, "iana": "TLS_RSA_WITH_AES_128_CCM_8", "id": "TLS_RSA_WITH_AES_128_CCM_8", "kx": "RSA", "mac": "AEAD", "min": "1.2", "openssl": ["AES128-CCM8", "SSL_RSA_WITH_AES_128_CCM_8"], "tls13": false},
+    {"au": "ECDSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH"], "code": 49324, "enc": "AES", "enc_bits": 128, "enc_mode": "CCM", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_128_CCM", "id": "TLS_ECDHE_ECDSA_WITH_AES_128_CCM", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-ECDSA-AES128-CCM", "SSL_ECDHE_ECDSA_WITH_AES_128_CCM"], "tls13": false},
+    {"au": "ECDSA", "bits": 128, "classes": ["ALL", "ECDH", "HIGH"], "code": 49326, "enc": "AES", "enc_bits": 128, "enc_mode": "CCM8", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8", "id": "TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-ECDSA-AES128-CCM8", "SSL_ECDHE_ECDSA_WITH_AES_128_CCM_8"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH", "RSA"], "code": 52392, "enc": "CHACHA20", "enc_bits": 256, "enc_mode": "POLY1305", "export": false, "fs": true, "iana": "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "id": "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-RSA-CHACHA20-POLY1305", "SSL_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"], "tls13": false},
+    {"au": "ECDSA", "bits": 256, "classes": ["ALL", "ECDH", "HIGH"], "code": 52393, "enc": "CHACHA20", "enc_bits": 256, "enc_mode": "POLY1305", "export": false, "fs": true, "iana": "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "id": "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "kx": "ECDHE", "mac": "AEAD", "min": "1.2", "openssl": ["ECDHE-ECDSA-CHACHA20-POLY1305", "SSL_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"], "tls13": false},
+    {"au": "RSA", "bits": 256, "classes": ["ALL", "DH", "HIGH", "RSA"], "code": 52394, "enc": "CHACHA20", "enc_bits": 256, "enc_mode": "POLY1305", "export": false, "fs": true, "iana": "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "id": "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "kx": "DHE", "mac": "AEAD", "min": "1.2", "openssl": ["DHE-RSA-CHACHA20-POLY1305", "EDH-RSA-CHACHA20-POLY1305", "SSL_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256"], "tls13": false},
+    {"id": "cloudfront-tlsv1", "kind": "suite_set", "members": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA", "TLS_RSA_WITH_AES_128_GCM_SHA256", "TLS_RSA_WITH_AES_256_GCM_SHA384", "TLS_RSA_WITH_AES_128_CBC_SHA256", "TLS_RSA_WITH_AES_256_CBC_SHA", "TLS_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_3DES_EDE_CBC_SHA"]},
+    {"id": "cloudfront-tlsv12-2021", "kind": "suite_set", "members": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"]},
+    {"id": "elbv2-2016-08", "kind": "suite_set", "members": ["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384", "TLS_RSA_WITH_AES_128_GCM_SHA256", "TLS_RSA_WITH_AES_128_CBC_SHA256", "TLS_RSA_WITH_AES_256_GCM_SHA384", "TLS_RSA_WITH_AES_256_CBC_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA", "TLS_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_256_CBC_SHA"]},
+    {"id": "elbv2-tls12-2017-01", "kind": "suite_set", "members": ["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384", "TLS_RSA_WITH_AES_128_GCM_SHA256", "TLS_RSA_WITH_AES_128_CBC_SHA256", "TLS_RSA_WITH_AES_256_GCM_SHA384", "TLS_RSA_WITH_AES_256_CBC_SHA256"]},
+    {"id": "elbv2-tls13-1-2", "kind": "suite_set", "members": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"]},
+    {"id": "gcp-fips-202205", "kind": "suite_set", "members": ["TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"]},
+    {"id": "tls13-three", "kind": "suite_set", "members": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256"]}
+  ],
+  "seclevels": {
+    "0": {
+      "deny": [],
+      "min_bits": 0
+    },
+    "1": {
+      "deny": [
+        "EXPORT",
+        "MD5",
+        "eNULL"
+      ],
+      "min_bits": 80
+    },
+    "2": {
+      "deny": [
+        "EXPORT",
+        "MD5",
+        "RC4",
+        "eNULL"
+      ],
+      "min_bits": 112
+    },
+    "3": {
+      "deny": [
+        "EXPORT",
+        "MD5",
+        "NOFS",
+        "RC4",
+        "eNULL"
+      ],
+      "min_bits": 128
+    },
+    "4": {
+      "deny": [
+        "EXPORT",
+        "MD5",
+        "NOFS",
+        "RC4",
+        "SHA1",
+        "eNULL"
+      ],
+      "min_bits": 192
+    },
+    "5": {
+      "deny": [
+        "EXPORT",
+        "MD5",
+        "NOFS",
+        "RC4",
+        "SHA1",
+        "eNULL"
+      ],
+      "min_bits": 256
+    }
+  },
   "valid_as_of": "2026-10-25"
 }

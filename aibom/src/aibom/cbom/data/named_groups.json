@@ -1,5 +1,23 @@
 {
   "data_version": 1,
-  "rows": [],
+  "rows": [
+    {"aliases": ["K-163"], "bits": 163, "class": "ec", "code": 1, "id": "sect163k1", "name": "sect163k1"},
+    {"aliases": ["P-192", "prime192v1"], "bits": 192, "class": "ec", "code": 19, "id": "secp192r1", "name": "secp192r1"},
+    {"aliases": ["P-224"], "bits": 224, "class": "ec", "code": 21, "id": "secp224r1", "name": "secp224r1"},
+    {"aliases": [], "bits": 256, "class": "ec", "code": 22, "id": "secp256k1", "name": "secp256k1"},
+    {"aliases": ["P-256", "prime256v1"], "bits": 256, "class": "ec", "code": 23, "id": "secp256r1", "name": "secp256r1"},
+    {"aliases": ["P-384"], "bits": 384, "class": "ec", "code": 24, "id": "secp384r1", "name": "secp384r1"},
+    {"aliases": ["P-521"], "bits": 521, "class": "ec", "code": 25, "id": "secp521r1", "name": "secp521r1"},
+    {"aliases": ["X25519"], "bits": 256, "class": "ec", "code": 29, "id": "x25519", "name": "x25519"},
+    {"aliases": ["X448"], "bits": 448, "class": "ec", "code": 30, "id": "x448", "name": "x448"},
+    {"aliases": [], "bits": 2048, "class": "ffdhe", "code": 256, "id": "ffdhe2048", "name": "ffdhe2048"},
+    {"aliases": [], "bits": 3072, "class": "ffdhe", "code": 257, "id": "ffdhe3072", "name": "ffdhe3072"},
+    {"aliases": [], "bits": 4096, "class": "ffdhe", "code": 258, "id": "ffdhe4096", "name": "ffdhe4096"},
+    {"aliases": [], "bits": 6144, "class": "ffdhe", "code": 259, "id": "ffdhe6144", "name": "ffdhe6144"},
+    {"aliases": [], "bits": 8192, "class": "ffdhe", "code": 260, "id": "ffdhe8192", "name": "ffdhe8192"},
+    {"aliases": ["x25519_mlkem768"], "bits": 768, "class": "hybrid", "code": 4587, "id": "X25519MLKEM768", "name": "X25519MLKEM768"},
+    {"aliases": [], "bits": 768, "class": "hybrid", "code": 4588, "id": "SecP256r1MLKEM768", "name": "SecP256r1MLKEM768"},
+    {"aliases": [], "bits": 1024, "class": "hybrid", "code": 4589, "id": "SecP384r1MLKEM1024", "name": "SecP384r1MLKEM1024"}
+  ],
   "valid_as_of": "2026-10-25"
 }
