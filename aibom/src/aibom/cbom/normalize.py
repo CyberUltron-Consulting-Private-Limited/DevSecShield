@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from aibom.cbom.posture.assemble import build_posture_block
+from aibom.cbom.posture.context import CbomScanResult
 from aibom.cbom.pqc import QUANTUM_VULNERABLE
 from aibom.cbom.weakness import (
     CERT_NEAR_EXPIRY,
@@ -366,6 +368,13 @@ def _iter_crypto_refs(node: Any) -> Any:
             yield from _iter_crypto_refs(item)
 
 
+def _is_fact_component(component: AIComponent) -> bool:
+    """An encryption fact (``infra`` + ``crypto:factId``), not a crypto asset."""
+    if component.kind != "infra":
+        return False
+    return "crypto:factId" in (component.properties or {})
+
+
 def _crypto_graph(
     result: ScanResult, bom: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
@@ -405,6 +414,7 @@ def _crypto_graph(
             ),
         }
         for c in result.components
+        if not _is_fact_component(c)
     ]
     node_ids = {n["id"] for n in nodes}
     edges: list[dict[str, Any]] = []
@@ -452,7 +462,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     full_graph = _crypto_graph(result, bom)
     # Additive compact/expanded projections — full ``cbom_graph`` stays intact
     # for contracts; FE prefers compact for Card, expanded for Dialog.
-    return {
+    payload = {
         # --- inventory rows (every crypto asset, carrying its chart fields) ---
         "results": findings,
         # --- carried-through, never flattened ---
@@ -489,6 +499,9 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         ),
         "duration_of_scan": duration_of_scan,
     }
+    if isinstance(result, CbomScanResult):
+        payload["cbom_posture"] = build_posture_block(result)
+    return payload
 
 
 __all__ = ["normalize_crypto"]

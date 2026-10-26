@@ -23,11 +23,14 @@ from pathlib import Path
 # Importing the CBOM scanners package self-registers every CBOM scanner.
 import aibom.cbom.scanners  # noqa: F401
 from aibom.cbom.compliance import run_cbom_compliance
+from aibom.cbom.posture.assemble import discard_posture, finalize_posture
+from aibom.cbom.posture.context import CbomScanContext, CbomScanResult
 from aibom.cbom.registry import ordered_cbom_scanners
 from aibom.cbom.scorer import score_crypto
 from aibom.model.component import AIComponent, MetadataComponent
 from aibom.model.result import ScanResult
-from aibom.scan.registry import ScanContext
+
+_TIME_LIMITS = frozenset({"SoftTimeLimitExceeded", "TimeLimitExceeded"})
 
 
 def _dedup_by_ref(components: list[AIComponent]) -> list[AIComponent]:
@@ -61,18 +64,35 @@ def scan_crypto(path: str | Path, level: int = 1) -> ScanResult:
     if not root.is_dir():
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
-    ctx = ScanContext(root)
+    ctx = CbomScanContext(root)
     for scanner in ordered_cbom_scanners():
         if scanner.level <= level and scanner.matches(root):
             scanner.scan(ctx)
 
     components = _dedup_by_ref(ctx.components)
-    result = ScanResult(
+    edges = ctx.edges
+    flags = ctx.flags
+    properties = ctx.properties
+    assembly_failed = False
+    try:
+        components, edges, flags, properties = finalize_posture(
+            components, edges, flags, properties, ctx.posture
+        )
+    except Exception as exc:
+        if type(exc).__name__ in _TIME_LIMITS:
+            raise
+        ctx.posture.diagnostics.add("internal_error", "", 0)
+        components, edges, flags, properties = discard_posture(
+            components, edges, flags, properties
+        )
+        assembly_failed = True
+    result = CbomScanResult(
         subject=ctx.subject or MetadataComponent(name=root.name),
         components=sorted(components, key=lambda c: (c.kind, c.bom_ref)),
-        edges=ctx.edges,
-        flags=ctx.flags,
-        properties=ctx.properties,
+        edges=edges,
+        flags=flags,
+        properties=properties,
+        posture=ctx.posture.freeze(assembly_failed=assembly_failed),
     )
     result.sort()
     score_crypto(result)  # C8: weight crypto flags -> result.scores (stacked severity)
