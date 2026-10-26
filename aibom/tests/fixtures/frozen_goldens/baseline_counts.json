@@ -1,0 +1,445 @@
+{
+  "base_commit": "f7385517523212e50b20ec6f1947831a5ef19872",
+  "files": {
+    "tests/test_bedrock_llm.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_benchmark_gate.py": {
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0
+    },
+    "tests/test_cbom_algorithm_scan.py": {
+      "failed": 0,
+      "passed": 6,
+      "skipped": 0
+    },
+    "tests/test_cbom_ast_crypto_scan.py": {
+      "failed": 0,
+      "passed": 11,
+      "skipped": 0
+    },
+    "tests/test_cbom_benchmark_gate.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_cbom_cert_weakness.py": {
+      "failed": 14,
+      "passed": 4,
+      "skipped": 0
+    },
+    "tests/test_cbom_certificate_depth.py": {
+      "failed": 0,
+      "passed": 12,
+      "skipped": 0
+    },
+    "tests/test_cbom_certificate_inline.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_cbom_certificate_scan.py": {
+      "failed": 0,
+      "passed": 14,
+      "skipped": 0
+    },
+    "tests/test_cbom_certs_harden.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0
+    },
+    "tests/test_cbom_chart_data_contract.py": {
+      "failed": 0,
+      "passed": 21,
+      "skipped": 0
+    },
+    "tests/test_cbom_cipher_suite_weakness.py": {
+      "failed": 0,
+      "passed": 12,
+      "skipped": 0
+    },
+    "tests/test_cbom_compliance.py": {
+      "failed": 0,
+      "passed": 15,
+      "skipped": 0
+    },
+    "tests/test_cbom_compliance_cnsa.py": {
+      "failed": 0,
+      "passed": 14,
+      "skipped": 0
+    },
+    "tests/test_cbom_compliance_expanded.py": {
+      "failed": 0,
+      "passed": 23,
+      "skipped": 0
+    },
+    "tests/test_cbom_crypto_misuse.py": {
+      "failed": 0,
+      "passed": 14,
+      "skipped": 0
+    },
+    "tests/test_cbom_crypto_policy.py": {
+      "failed": 0,
+      "passed": 10,
+      "skipped": 0
+    },
+    "tests/test_cbom_cyclonedx_emit.py": {
+      "failed": 0,
+      "passed": 13,
+      "skipped": 0
+    },
+    "tests/test_cbom_cyclonedx_graph.py": {
+      "failed": 0,
+      "passed": 11,
+      "skipped": 0
+    },
+    "tests/test_cbom_detect.py": {
+      "failed": 0,
+      "passed": 11,
+      "skipped": 0
+    },
+    "tests/test_cbom_detect_jvm_go.py": {
+      "failed": 0,
+      "passed": 9,
+      "skipped": 0
+    },
+    "tests/test_cbom_detect_native_apis.py": {
+      "failed": 0,
+      "passed": 13,
+      "skipped": 0
+    },
+    "tests/test_cbom_devsecshield_adapter.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 0
+    },
+    "tests/test_cbom_jvm_go_crypto_scan.py": {
+      "failed": 13,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_cbom_manifest_libraries.py": {
+      "failed": 0,
+      "passed": 15,
+      "skipped": 0
+    },
+    "tests/test_cbom_native_crypto_scan.py": {
+      "failed": 16,
+      "passed": 1,
+      "skipped": 0
+    },
+    "tests/test_cbom_normalize.py": {
+      "failed": 0,
+      "passed": 13,
+      "skipped": 0
+    },
+    "tests/test_cbom_oid_enrichment.py": {
+      "failed": 0,
+      "passed": 12,
+      "skipped": 0
+    },
+    "tests/test_cbom_pqc_readiness.py": {
+      "failed": 0,
+      "passed": 19,
+      "skipped": 0
+    },
+    "tests/test_cbom_pqc_scan.py": {
+      "failed": 0,
+      "passed": 14,
+      "skipped": 0
+    },
+    "tests/test_cbom_protocol_ipsec.py": {
+      "failed": 0,
+      "passed": 12,
+      "skipped": 0
+    },
+    "tests/test_cbom_protocol_scan.py": {
+      "failed": 0,
+      "passed": 9,
+      "skipped": 0
+    },
+    "tests/test_cbom_scorer.py": {
+      "failed": 0,
+      "passed": 9,
+      "skipped": 0
+    },
+    "tests/test_cbom_security_strength.py": {
+      "failed": 0,
+      "passed": 18,
+      "skipped": 0
+    },
+    "tests/test_cbom_weak_algorithm_scan.py": {
+      "failed": 0,
+      "passed": 16,
+      "skipped": 0
+    },
+    "tests/test_cbom_weak_padding.py": {
+      "failed": 0,
+      "passed": 15,
+      "skipped": 0
+    },
+    "tests/test_cbom_web_native_crypto_scan.py": {
+      "failed": 12,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_cedar.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_certin_aibom_compliance.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_certin_cbom_compliance.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 0
+    },
+    "tests/test_certin_common.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_certin_ledger_sync.py": {
+      "failed": 0,
+      "passed": 6,
+      "skipped": 0
+    },
+    "tests/test_certin_rollup_yaml_covers_ledger.py": {
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0
+    },
+    "tests/test_certin_sbom_compliance.py": {
+      "failed": 0,
+      "passed": 12,
+      "skipped": 0
+    },
+    "tests/test_certin_sign.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_certin_vex.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_chart_contract_severity.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_chart_data_contract.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 1
+    },
+    "tests/test_chart_data_contract_full.py": {
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0
+    },
+    "tests/test_compliance.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 0
+    },
+    "tests/test_compliance_na.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 0
+    },
+    "tests/test_compliance_tristate.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 1
+    },
+    "tests/test_crypto_fixture_manifest.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_deliverables.py": {
+      "failed": 7,
+      "passed": 0,
+      "skipped": 0
+    },
+    "tests/test_differential.py": {
+      "failed": 0,
+      "passed": 6,
+      "skipped": 3
+    },
+    "tests/test_dimension_parity.py": {
+      "failed": 0,
+      "passed": 2,
+      "skipped": 1
+    },
+    "tests/test_discover.py": {
+      "failed": 0,
+      "passed": 14,
+      "skipped": 0
+    },
+    "tests/test_emit.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 0
+    },
+    "tests/test_graph_view.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_hardening.py": {
+      "failed": 2,
+      "passed": 15,
+      "skipped": 0
+    },
+    "tests/test_integration_devsecshield.py": {
+      "failed": 0,
+      "passed": 11,
+      "skipped": 0
+    },
+    "tests/test_license_resolver.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 2
+    },
+    "tests/test_model_aware.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0
+    },
+    "tests/test_model_cards.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_model_file_discovery_source.py": {
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0
+    },
+    "tests/test_model_recall.py": {
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0
+    },
+    "tests/test_model_ref_scan.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 1
+    },
+    "tests/test_owasp.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 1
+    },
+    "tests/test_parity.py": {
+      "failed": 0,
+      "passed": 1,
+      "skipped": 0
+    },
+    "tests/test_rbi_free_ai_compliance.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0
+    },
+    "tests/test_rbi_rollup_contract.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0
+    },
+    "tests/test_registry.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0
+    },
+    "tests/test_result.py": {
+      "failed": 0,
+      "passed": 6,
+      "skipped": 0
+    },
+    "tests/test_review_fixes.py": {
+      "failed": 0,
+      "passed": 10,
+      "skipped": 0
+    },
+    "tests/test_sarif.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_sbom_rbi_compliance.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_sbom_supply_compliance.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_scan.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_score.py": {
+      "failed": 0,
+      "passed": 5,
+      "skipped": 0
+    },
+    "tests/test_scorer.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 1
+    },
+    "tests/test_scorer_severity.py": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 1
+    },
+    "tests/test_sebi_cscrf_adapters.py": {
+      "failed": 0,
+      "passed": 3,
+      "skipped": 0
+    },
+    "tests/test_sebi_cscrf_aibom_compliance.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_sebi_cscrf_cbom_compliance.py": {
+      "failed": 0,
+      "passed": 6,
+      "skipped": 0
+    },
+    "tests/test_sebi_cscrf_common.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    },
+    "tests/test_sebi_cscrf_sbom_compliance.py": {
+      "failed": 0,
+      "passed": 8,
+      "skipped": 0
+    },
+    "tests/test_secret_scan.py": {
+      "failed": 0,
+      "passed": 2,
+      "skipped": 0
+    },
+    "tests/test_spdx.py": {
+      "failed": 0,
+      "passed": 7,
+      "skipped": 0
+    }
+  }
+}
