@@ -1,0 +1,3253 @@
+{
+  "data_version": 1,
+  "rows": [
+    {
+      "id": "aws.rds.instance",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "default_row": "aws.rds.instance.storage_encrypted",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "StorageEncrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.rds.instance.storage_encrypted",
+              "tf": "storage_encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::RDS::DBInstance"
+        ],
+        "terraform": [
+          "aws_db_instance"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.rds.cluster",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "default_row": "aws.rds.cluster.storage_encrypted.provisioned",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "StorageEncrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.rds.cluster.storage_encrypted.provisioned",
+              "tf": "storage_encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::RDS::DBCluster"
+        ],
+        "terraform": [
+          "aws_rds_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.docdb",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "default_row": "aws.docdb.storage_encrypted",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "StorageEncrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.docdb.storage_encrypted",
+              "tf": "storage_encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::DocDB::DBCluster"
+        ],
+        "terraform": [
+          "aws_docdb_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.neptune",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "default_row": "aws.neptune.storage_encrypted",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "StorageEncrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.neptune.storage_encrypted",
+              "tf": "storage_encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::Neptune::DBCluster"
+        ],
+        "terraform": [
+          "aws_neptune_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.elasticache",
+      "kind": "cache",
+      "layers": {
+        "transport": {
+          "default_row": "aws.elasticache.transit.redis",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "TransitEncryptionEnabled",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.elasticache.transit.redis",
+              "tf": "transit_encryption_enabled"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::ElastiCache::ReplicationGroup"
+        ],
+        "terraform": [
+          "aws_elasticache_replication_group"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.kinesis",
+      "kind": "data_stream",
+      "layers": {
+        "service": {
+          "default_row": "aws.kinesis.encryption_type",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "EncryptionType",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.kinesis.encryption_type",
+              "tf": "encryption_type"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::Kinesis::Stream"
+        ],
+        "terraform": [
+          "aws_kinesis_stream"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.firehose",
+      "kind": "data_stream",
+      "layers": {
+        "service": {
+          "default_row": "aws.firehose.sse",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "ServerSideEncryption",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.firehose.sse",
+              "tf": "server_side_encryption.enabled"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::KinesisFirehose::DeliveryStream"
+        ],
+        "terraform": [
+          "aws_kinesis_firehose_delivery_stream"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.s3",
+      "kind": "object_store",
+      "layers": {
+        "service": {
+          "default_row": "aws.s3.sse_default",
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "BucketEncryption",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "aws.s3.sse_default",
+              "tf": "server_side_encryption_configuration"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::S3::Bucket"
+        ],
+        "terraform": [
+          "aws_s3_bucket"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.kms.key",
+      "key": [
+        {
+          "tf": "enable_key_rotation"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "cloudformation": [
+          "AWS::KMS::Key"
+        ],
+        "terraform": [
+          "aws_kms_key"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.kms.external",
+      "key": [
+        {
+          "tf": "enabled"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "aws_kms_external_key"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.kms.replica",
+      "key": [
+        {
+          "tf": "enabled"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "aws_kms_replica_key"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.kms.alias",
+      "key": [
+        {
+          "tf": "name"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "cloudformation": [
+          "AWS::KMS::Alias"
+        ],
+        "terraform": [
+          "aws_kms_alias"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.kms.grant",
+      "key": [
+        {
+          "tf": "operations"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "aws_kms_grant"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.s3.sse",
+      "kind": "object_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "rule"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_s3_bucket_server_side_encryption_configuration"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.s3.policy",
+      "kind": "object_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "PolicyDocument",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "policy"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::S3::BucketPolicy"
+        ],
+        "terraform": [
+          "aws_s3_bucket_policy"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ebs.volume",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Encrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::EC2::Volume"
+        ],
+        "terraform": [
+          "aws_ebs_volume"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ebs.default",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "enabled"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_ebs_encryption_by_default"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ebs.default_key",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "key_arn"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_ebs_default_kms_key"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ec2.instance",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "EbsOptimized",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "ebs_optimized"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::EC2::Instance"
+        ],
+        "terraform": [
+          "aws_instance"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ec2.launch_template",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "LaunchTemplateName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::EC2::LaunchTemplate"
+        ],
+        "terraform": [
+          "aws_launch_template"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ec2.launch_configuration",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "LaunchConfigurationName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::AutoScaling::LaunchConfiguration"
+        ],
+        "terraform": [
+          "aws_launch_configuration"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.efs",
+      "kind": "file_system",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Encrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::EFS::FileSystem"
+        ],
+        "terraform": [
+          "aws_efs_file_system"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.memorydb",
+      "kind": "cache",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "TLSEnabled",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "tls_enabled"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::MemoryDB::Cluster"
+        ],
+        "terraform": [
+          "aws_memorydb_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.opensearch",
+      "kind": "search_index",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "DomainName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "domain_name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::OpenSearchService::Domain"
+        ],
+        "terraform": [
+          "aws_opensearch_domain"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.elasticsearch",
+      "kind": "search_index",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "DomainName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "domain_name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::Elasticsearch::Domain"
+        ],
+        "terraform": [
+          "aws_elasticsearch_domain"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.dynamodb",
+      "kind": "nosql_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "TableName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::DynamoDB::Table"
+        ],
+        "terraform": [
+          "aws_dynamodb_table"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.sqs",
+      "kind": "message_queue",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "QueueName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::SQS::Queue"
+        ],
+        "terraform": [
+          "aws_sqs_queue"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.sns",
+      "kind": "message_topic",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "TopicName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::SNS::Topic"
+        ],
+        "terraform": [
+          "aws_sns_topic"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.mq",
+      "kind": "message_queue",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "EngineType",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "engine_type"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::AmazonMQ::Broker"
+        ],
+        "terraform": [
+          "aws_mq_broker"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.msk",
+      "kind": "data_stream",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "ClusterName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "cluster_name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::MSK::Cluster"
+        ],
+        "terraform": [
+          "aws_msk_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.redshift",
+      "kind": "data_warehouse",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Encrypted",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::Redshift::Cluster"
+        ],
+        "terraform": [
+          "aws_redshift_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.redshift.serverless",
+      "kind": "data_warehouse",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "NamespaceName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "namespace_name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::RedshiftServerless::Namespace"
+        ],
+        "terraform": [
+          "aws_redshiftserverless_namespace"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.backup.vault",
+      "kind": "backup",
+      "layers": {
+        "backup": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "BackupVaultName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::Backup::BackupVault"
+        ],
+        "terraform": [
+          "aws_backup_vault"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ebs.snapshot_copy",
+      "kind": "backup",
+      "layers": {
+        "backup": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_ebs_snapshot_copy"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.db.snapshot_copy",
+      "kind": "backup",
+      "layers": {
+        "backup": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_db_snapshot_copy"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ami.copy",
+      "kind": "backup",
+      "layers": {
+        "backup": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "encrypted"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_ami_copy"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.secretsmanager",
+      "kind": "secret_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Name",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::SecretsManager::Secret"
+        ],
+        "terraform": [
+          "aws_secretsmanager_secret"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.ssm",
+      "kind": "secret_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Name",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::SSM::Parameter"
+        ],
+        "terraform": [
+          "aws_ssm_parameter"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.logs",
+      "kind": "log_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "LogGroupName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::Logs::LogGroup"
+        ],
+        "terraform": [
+          "aws_cloudwatch_log_group"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.cloudtrail",
+      "kind": "log_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "TrailName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::CloudTrail::Trail"
+        ],
+        "terraform": [
+          "aws_cloudtrail"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.eks",
+      "kind": "k8s_secrets_etcd",
+      "layers": {
+        "database": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Name",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::EKS::Cluster"
+        ],
+        "terraform": [
+          "aws_eks_cluster"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.lb.listener",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Protocol",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "protocol"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::ElasticLoadBalancingV2::Listener"
+        ],
+        "terraform": [
+          "aws_lb_listener"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.alb.listener",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "protocol"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_alb_listener"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.elb",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "LoadBalancerName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::ElasticLoadBalancing::LoadBalancer"
+        ],
+        "terraform": [
+          "aws_elb"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.lb.ssl_policy",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "aws_lb_ssl_negotiation_policy"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.cloudfront",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "Comment",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "comment"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::CloudFront::Distribution"
+        ],
+        "terraform": [
+          "aws_cloudfront_distribution"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.apigw",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "DomainName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "domain_name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::ApiGateway::DomainName"
+        ],
+        "terraform": [
+          "aws_api_gateway_domain_name"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.apigwv2",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "cfn": "DomainName",
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "domain_name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "cloudformation": [
+          "AWS::ApiGatewayV2::DomainName"
+        ],
+        "terraform": [
+          "aws_apigatewayv2_domain_name"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.acm",
+      "key": [
+        {
+          "tf": "domain_name"
+        }
+      ],
+      "kind": "certificate_policy",
+      "native": {
+        "cloudformation": [
+          "AWS::CertificateManager::Certificate"
+        ],
+        "terraform": [
+          "aws_acm_certificate"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "aws.acmpca",
+      "key": [
+        {
+          "tf": "type"
+        }
+      ],
+      "kind": "certificate_policy",
+      "native": {
+        "cloudformation": [
+          "AWS::ACMPCA::CertificateAuthority"
+        ],
+        "terraform": [
+          "aws_acmpca_certificate_authority"
+        ]
+      },
+      "provider": "aws",
+      "role": "resource"
+    },
+    {
+      "id": "azure.vault",
+      "kind": "kms_key",
+      "layers": {
+        "service": {
+          "default_row": "azure.keyvault.purge_protection",
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "azure.keyvault.purge_protection",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_key_vault"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.vault.key",
+      "key": [
+        {
+          "tf": "name"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "azurerm_key_vault_key"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.vault.hsm",
+      "kind": "kms_key",
+      "layers": {
+        "service": {
+          "default_row": "azure.keyvault_hsm.purge_protection",
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "azure.keyvault_hsm.purge_protection",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_key_vault_managed_hardware_security_module"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.storage",
+      "kind": "object_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_storage_account"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.storage.cmk",
+      "kind": "object_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "storage_account_id"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_storage_account_customer_managed_key"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.disk",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_managed_disk"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.disk.set",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_disk_encryption_set"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.vm.linux",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_linux_virtual_machine"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.vm.windows",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_windows_virtual_machine"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.mssql",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_mssql_server"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.mssql.db",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_mssql_database"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.mssql.tde",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "server_id"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_mssql_server_transparent_data_encryption"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.pg",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_postgresql_flexible_server"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.mysql",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_mysql_flexible_server"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.cosmos",
+      "kind": "nosql_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_cosmosdb_account"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.redis",
+      "kind": "cache",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_redis_cache"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.sb",
+      "kind": "message_queue",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_servicebus_namespace"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.eh",
+      "kind": "data_stream",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_eventhub_namespace"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.synapse",
+      "kind": "data_warehouse",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_synapse_workspace"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.recovery",
+      "kind": "backup",
+      "layers": {
+        "backup": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_recovery_services_vault"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.kv.secret",
+      "kind": "secret_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_key_vault_secret"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.aks",
+      "kind": "k8s_secrets_etcd",
+      "layers": {
+        "database": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_kubernetes_cluster"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.appgw",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_application_gateway"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.frontdoor",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_cdn_frontdoor_custom_domain"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.apim",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_api_management"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.web.linux",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "default_row": "azure.webapp.https_only",
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "azure.webapp.https_only",
+              "tf": "https_only"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_linux_web_app"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.web.windows",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "default_row": "azure.webapp.https_only",
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "azure.webapp.https_only",
+              "tf": "https_only"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "azurerm_windows_web_app"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "azure.cert",
+      "key": [
+        {
+          "tf": "name"
+        }
+      ],
+      "kind": "certificate_policy",
+      "native": {
+        "terraform": [
+          "azurerm_key_vault_certificate"
+        ]
+      },
+      "provider": "azure",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.kms.ring",
+      "key": [
+        {
+          "tf": "name"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "google_kms_key_ring"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "attrs": [
+        {
+          "name": "rotation",
+          "tf": "name"
+        }
+      ],
+      "id": "gcp.kms.key",
+      "key": [
+        {
+          "tf": "name"
+        }
+      ],
+      "kind": "kms_key",
+      "layers": {},
+      "native": {
+        "terraform": [
+          "google_kms_crypto_key"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.kms.binding",
+      "key": [
+        {
+          "tf": "role"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "google_kms_crypto_key_iam_binding"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.kms.member",
+      "key": [
+        {
+          "tf": "role"
+        }
+      ],
+      "kind": "kms_key",
+      "native": {
+        "terraform": [
+          "google_kms_crypto_key_iam_member"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.gcs",
+      "kind": "object_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_storage_bucket"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.disk",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_compute_disk"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.instance",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_compute_instance"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.snapshot",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_compute_snapshot"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.filestore",
+      "kind": "file_system",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_filestore_instance"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.sql",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_sql_database_instance"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.spanner",
+      "kind": "relational_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_spanner_database"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.bigtable",
+      "kind": "nosql_db",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_bigtable_instance"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.redis",
+      "kind": "cache",
+      "layers": {
+        "transport": {
+          "default_row": "gcp.redis.transit_mode",
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "row": "gcp.redis.transit_mode",
+              "tf": "transit_encryption_mode"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_redis_instance"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.pubsub",
+      "kind": "message_topic",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_pubsub_topic"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.bq",
+      "kind": "data_warehouse",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "dataset_id"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_bigquery_dataset"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.sm",
+      "kind": "secret_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_secret_manager_secret"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.logging",
+      "kind": "log_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "location"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_logging_project_bucket_config"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.gke",
+      "kind": "k8s_secrets_etcd",
+      "layers": {
+        "database": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_container_cluster"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.ssl",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_compute_ssl_policy"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.https",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [
+                "false"
+              ],
+              "enabling": [
+                "true"
+              ],
+              "from": "attr",
+              "tf": "name"
+            }
+          ]
+        }
+      },
+      "native": {
+        "terraform": [
+          "google_compute_target_https_proxy"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "gcp.ca",
+      "key": [
+        {
+          "tf": "name"
+        }
+      ],
+      "kind": "certificate_policy",
+      "native": {
+        "terraform": [
+          "google_privateca_certificate_authority"
+        ]
+      },
+      "provider": "gcp",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.storageclass",
+      "kind": "k8s_storage_class",
+      "layers": {
+        "volume": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "provisioner"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "storage.k8s.io",
+            "kind": "StorageClass"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.pvc",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "storageClassName"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "",
+            "kind": "PersistentVolumeClaim"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.statefulset",
+      "kind": "block_volume",
+      "layers": {
+        "volume": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "serviceName"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "apps",
+            "kind": "StatefulSet"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.secret",
+      "kind": "secret_store",
+      "layers": {
+        "service": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "type"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "",
+            "kind": "Secret"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.encryptionconfig",
+      "kind": "k8s_secrets_etcd",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "resources"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "apiserver.config.k8s.io",
+            "kind": "EncryptionConfiguration"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.apiserver",
+      "kind": "k8s_secrets_etcd",
+      "layers": {
+        "database": {
+          "default_row": "k8s.apiserver.encryption_flag",
+          "self_hosted": true,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "encryption-provider-config",
+              "row": "k8s.apiserver.encryption_flag"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "",
+            "kind": "Pod"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.ingress",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "tls"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "networking.k8s.io",
+            "kind": "Ingress"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "k8s.service",
+      "kind": "tls_endpoint",
+      "layers": {
+        "transport": {
+          "self_hosted": false,
+          "sources": [
+            {
+              "disabling": [],
+              "enabling": [],
+              "from": "attr",
+              "k8s": "type"
+            }
+          ]
+        }
+      },
+      "native": {
+        "kubernetes": [
+          {
+            "group": "",
+            "kind": "Service"
+          }
+        ]
+      },
+      "provider": "k8s",
+      "role": "resource"
+    },
+    {
+      "id": "compose.postgres",
+      "kind": "relational_db",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "postgres"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.mysql",
+      "kind": "relational_db",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "mysql"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.mongo",
+      "kind": "nosql_db",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "mongo"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.cassandra",
+      "kind": "nosql_db",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "cassandra"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.redis",
+      "kind": "cache",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "redis"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.memcached",
+      "kind": "cache",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "memcached"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.elastic",
+      "kind": "search_index",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "elasticsearch"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.opensearch",
+      "kind": "search_index",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "opensearch"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.rabbitmq",
+      "kind": "message_queue",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "rabbitmq"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    },
+    {
+      "id": "compose.kafka",
+      "kind": "data_stream",
+      "layers": {
+        "database": {
+          "self_hosted": true,
+          "sources": [
+            {
+              "cfg": "image",
+              "disabling": [],
+              "enabling": [],
+              "from": "attr"
+            }
+          ]
+        }
+      },
+      "native": {
+        "compose": [
+          "kafka"
+        ]
+      },
+      "provider": "compose",
+      "role": "resource"
+    }
+  ],
+  "valid_as_of": "2026-10-25"
+}
