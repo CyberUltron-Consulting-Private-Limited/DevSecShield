@@ -1,0 +1,31 @@
+name: CBOM posture
+# Hermetic engine gate for the configuration-encryption posture lane.
+on:
+  push:
+    branches: [main, develop, ansh]
+    paths:
+      - "aibom/src/aibom/cbom/posture/**"
+      - "aibom/src/aibom/cbom/scanners/posture_*.py"
+      - "aibom/src/aibom/cbom/data/**"
+      - "aibom/tests/test_cbom_posture_*.py"
+      - ".github/workflows/cbom-posture-gates.yml"
+  pull_request:
+    branches: [main, develop, ansh]
+    paths:
+      - "aibom/src/aibom/cbom/posture/**"
+      - "aibom/src/aibom/cbom/scanners/posture_*.py"
+      - "aibom/src/aibom/cbom/data/**"
+      - "aibom/tests/test_cbom_posture_*.py"
+      - ".github/workflows/cbom-posture-gates.yml"
+jobs:
+  posture:
+    name: CBOM posture engine
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aibom
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Posture tests
+        run: uv run python -m pytest tests/test_cbom_posture_wiring.py tests/test_cbom_posture_fixture_scan.py tests/test_cbom_posture_frozen_goldens.py tests/test_cbom_posture_wp_graph.py -q --tb=line

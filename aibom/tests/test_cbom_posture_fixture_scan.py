@@ -1,0 +1,29 @@
+"""A committed Terraform tree is scanned by the registered posture lane."""
+
+import json
+from pathlib import Path
+
+from aibom.cbom.pipeline import scan_crypto
+
+TREE = Path(__file__).resolve().parent / "fixtures" / "synthetic-config-aws-tf"
+
+
+def test_committed_terraform_tree_matches_the_oracle() -> None:
+    expected = json.loads((TREE / "expected_config_aws_tf.json").read_text())
+    result = scan_crypto(TREE)
+    found = []
+    for comp in result.components:
+        props = comp.properties or {}
+        if comp.kind != "infra" or "crypto:factId" not in props:
+            continue
+        found.append(
+            {
+                "native_type": props.get("crypto:factNativeType"),
+                "verdict": props.get("crypto:factVerdict"),
+            }
+        )
+    found.sort(key=lambda row: row["native_type"] or "")
+    wanted = sorted(expected["facts"], key=lambda row: row["native_type"])
+    assert found == wanted
+    codes = {flag.code for flag in result.flags}
+    assert "UNENCRYPTED_AT_REST" in codes

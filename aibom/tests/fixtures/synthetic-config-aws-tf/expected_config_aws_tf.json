@@ -1,0 +1,12 @@
+{
+  "facts": [
+    {
+      "native_type": "aws_db_instance",
+      "verdict": "NOT_ENCRYPTED"
+    },
+    {
+      "native_type": "aws_s3_bucket",
+      "verdict": "ENCRYPTED_PROVIDER_DEFAULT"
+    }
+  ]
+}
