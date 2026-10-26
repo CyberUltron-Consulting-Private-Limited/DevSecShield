@@ -1,0 +1,84 @@
+{
+  "data_version": 1,
+  "rows": [
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "ssl_protocols",
+      "caveat": "Software default; the host TLS library policy may disable older protocols further.",
+      "documented_default": "TLSv1 TLSv1.1 TLSv1.2",
+      "effect": "UNKNOWN",
+      "id": "sw.nginx.ssl_protocols.legacy",
+      "provider": "software",
+      "type": "nginx",
+      "url": "https://nginx.org/en/docs/http/ngx_http_ssl_module.html",
+      "valid_as_of": "2026-10-25",
+      "versions": {
+        "max_exclusive": "1.23.4",
+        "min": "1.9.1"
+      }
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "ssl_protocols",
+      "caveat": "Software default; the host TLS library policy may disable older protocols further.",
+      "documented_default": "TLSv1 TLSv1.1 TLSv1.2 TLSv1.3",
+      "effect": "UNKNOWN",
+      "id": "sw.nginx.ssl_protocols.tls13",
+      "provider": "software",
+      "type": "nginx",
+      "url": "https://nginx.org/en/docs/http/ngx_http_ssl_module.html",
+      "valid_as_of": "2026-10-25",
+      "versions": {
+        "max_exclusive": "1.27.3",
+        "min": "1.23.4"
+      }
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "ssl_protocols",
+      "caveat": "Software default; the host TLS library policy may disable older protocols further.",
+      "documented_default": "TLSv1.2 TLSv1.3",
+      "effect": "UNKNOWN",
+      "id": "sw.nginx.ssl_protocols.current",
+      "provider": "software",
+      "type": "nginx",
+      "url": "https://nginx.org/en/docs/http/ngx_http_ssl_module.html",
+      "valid_as_of": "2026-10-25",
+      "versions": {
+        "min": "1.27.3"
+      }
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "SSLProtocol",
+      "caveat": "Software default; the host TLS library policy may disable older protocols further.",
+      "documented_default": "all",
+      "effect": "UNKNOWN",
+      "id": "sw.apache.ssl_protocol.early",
+      "provider": "software",
+      "type": "apache",
+      "url": "https://httpd.apache.org/docs/2.4/mod/mod_ssl.html",
+      "valid_as_of": "2026-10-25",
+      "versions": {
+        "max_exclusive": "2.4.17",
+        "min": "2.4.0"
+      }
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "SSLProtocol",
+      "caveat": "Software default; the host TLS library policy may disable older protocols further.",
+      "documented_default": "all -SSLv3",
+      "effect": "UNKNOWN",
+      "id": "sw.apache.ssl_protocol.current",
+      "provider": "software",
+      "type": "apache",
+      "url": "https://httpd.apache.org/docs/2.4/mod/mod_ssl.html",
+      "valid_as_of": "2026-10-25",
+      "versions": {
+        "min": "2.4.17"
+      }
+    }
+  ],
+  "valid_as_of": "2026-10-25"
+}

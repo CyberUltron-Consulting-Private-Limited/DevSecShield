@@ -1,0 +1,56 @@
+{
+  "data_version": 1,
+  "rows": [
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "https_only",
+      "caveat": "Provider documents default false: HTTP is served unless the flag is true.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "azure.webapp.https_only",
+      "provider": "azure",
+      "type": [
+        "azurerm_linux_web_app",
+        "azurerm_windows_web_app"
+      ],
+      "url": "https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/linux_web_app",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "purge_protection_enabled",
+      "caveat": "Microsoft documents purge protection as off unless enabled.",
+      "documented_default": "false",
+      "effect": "UNKNOWN",
+      "finding_default": {
+        "code": "KMS_KEY_DELETION_UNPROTECTED",
+        "when_absent": true
+      },
+      "id": "azure.keyvault.purge_protection",
+      "provider": "azure",
+      "type": "azurerm_key_vault",
+      "url": "https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "purge_protection_enabled",
+      "caveat": "Microsoft documents purge protection as off unless enabled.",
+      "documented_default": "false",
+      "effect": "UNKNOWN",
+      "finding_default": {
+        "code": "KMS_KEY_DELETION_UNPROTECTED",
+        "when_absent": true
+      },
+      "id": "azure.keyvault_hsm.purge_protection",
+      "provider": "azure",
+      "type": "azurerm_key_vault_managed_hardware_security_module",
+      "url": "https://learn.microsoft.com/en-us/azure/key-vault/managed-hsm/soft-delete-overview",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    }
+  ],
+  "valid_as_of": "2026-10-25"
+}

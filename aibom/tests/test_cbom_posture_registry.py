@@ -155,14 +155,16 @@ def test_reviewed_and_url_checks_take_the_test_lists() -> None:
     assert "https://example.com" in _prefixes()
 
 
-def test_allowlist_files_are_text_and_have_no_absence_rows() -> None:
+def test_allowlist_files_are_text_and_list_reviewed_rows() -> None:
     assert "https://example.com" in ALLOW.read_text(encoding="utf-8")
     data = [
         line.strip()
         for line in REVIEWED.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    assert data == []
+    kinds = [line.split("|", 2)[1] for line in data]
+    assert kinds.count("assessable") == 10
+    assert kinds.count("finding_default") == 3
 
 
 def test_finding_default_is_closed() -> None:

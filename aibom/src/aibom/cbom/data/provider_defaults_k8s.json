@@ -1,0 +1,19 @@
+{
+  "data_version": 1,
+  "rows": [
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "encryption-provider-config",
+      "caveat": "Kubernetes documents no at-rest encryption unless an encryption provider config is supplied.",
+      "documented_default": "plaintext",
+      "effect": "NOT_ENCRYPTED",
+      "id": "k8s.apiserver.encryption_flag",
+      "provider": "k8s",
+      "type": "Pod",
+      "url": "https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    }
+  ],
+  "valid_as_of": "2026-10-25"
+}

@@ -1,4 +1,16 @@
 # Reviewed finding-from-absence rows.
 # One data row per line: <row id>|<kind>|<evidence>
 # kind is assessable or finding_default.
-# No finding-from-absence rows yet. A second reviewer adds them with the row.
+aws.rds.instance.storage_encrypted|assessable|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance read 2026-10-25
+aws.rds.cluster.storage_encrypted.provisioned|assessable|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/rds_cluster read 2026-10-25
+aws.docdb.storage_encrypted|assessable|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/docdb_cluster read 2026-10-25
+aws.neptune.storage_encrypted|assessable|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/neptune_cluster read 2026-10-25
+aws.elasticache.transit.redis|assessable|https://docs.aws.amazon.com/AmazonElastiCache/latest/APIReference/API_CreateReplicationGroup.html read 2026-10-25
+aws.kinesis.encryption_type|assessable|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_stream read 2026-10-25
+aws.firehose.sse|assessable|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_firehose_delivery_stream read 2026-10-25
+azure.webapp.https_only|assessable|https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/linux_web_app read 2026-10-25
+gcp.redis.transit_mode|assessable|https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/redis_instance read 2026-10-25
+k8s.apiserver.encryption_flag|assessable|https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/ read 2026-10-25
+aws.kms.enable_key_rotation|finding_default|https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key read 2026-10-25
+azure.keyvault.purge_protection|finding_default|https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview read 2026-10-25
+azure.keyvault_hsm.purge_protection|finding_default|https://learn.microsoft.com/en-us/azure/key-vault/managed-hsm/soft-delete-overview read 2026-10-25

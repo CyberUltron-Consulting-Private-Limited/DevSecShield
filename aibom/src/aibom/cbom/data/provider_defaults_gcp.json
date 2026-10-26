@@ -1,0 +1,32 @@
+{
+  "data_version": 1,
+  "rows": [
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "transit_encryption_mode",
+      "caveat": "Provider documents TLS disabled when the argument is omitted.",
+      "documented_default": "DISABLED",
+      "effect": "NOT_ENCRYPTED",
+      "id": "gcp.redis.transit_mode",
+      "provider": "gcp",
+      "type": "google_redis_instance",
+      "url": "https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/redis_instance",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "rotation_period",
+      "caveat": "No Google page read on 2026-10-25 states the meaning of an omitted rotation_period.",
+      "documented_default": "",
+      "effect": "UNKNOWN",
+      "id": "gcp.kms.rotation_period",
+      "provider": "gcp",
+      "type": "google_kms_crypto_key",
+      "url": "https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/kms_crypto_key",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    }
+  ],
+  "valid_as_of": "2026-10-25"
+}

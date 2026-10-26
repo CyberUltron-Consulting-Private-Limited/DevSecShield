@@ -1,0 +1,302 @@
+{
+  "data_version": 1,
+  "rows": [
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "storage_encrypted",
+      "caveat": "Provider documents default false; a replica is encrypted through kms_key_id.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.rds.instance.storage_encrypted",
+      "provider": "aws",
+      "type": "aws_db_instance",
+      "unless_attrs": {
+        "cloudformation": [
+          "SourceDBInstanceIdentifier",
+          "DBSnapshotIdentifier",
+          "RestoreTime",
+          "UseLatestRestorableTime",
+          "SourceDBInstanceAutomatedBackupsArn",
+          "SourceDbiResourceId"
+        ],
+        "terraform": [
+          "replicate_source_db",
+          "snapshot_identifier",
+          "restore_to_point_in_time",
+          "s3_import"
+        ]
+      },
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "storage_encrypted",
+      "caveat": "Provider documents default false for provisioned clusters.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.rds.cluster.storage_encrypted.provisioned",
+      "provider": "aws",
+      "type": "aws_rds_cluster",
+      "unless_attrs": {
+        "cloudformation": [
+          "SnapshotIdentifier",
+          "ReplicationSourceIdentifier",
+          "RestoreToTime",
+          "RestoreType",
+          "SourceDBClusterIdentifier",
+          "UseLatestRestorableTime",
+          "SourceDbClusterResourceId",
+          "GlobalClusterIdentifier"
+        ],
+        "terraform": [
+          "snapshot_identifier",
+          "replication_source_identifier",
+          "restore_to_point_in_time",
+          "global_cluster_identifier"
+        ]
+      },
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/rds_cluster",
+      "valid_as_of": "2026-10-25",
+      "versions": "all",
+      "when": {
+        "cloudformation": {
+          "EngineMode": [
+            "provisioned",
+            null
+          ]
+        },
+        "terraform": {
+          "engine_mode": [
+            "provisioned",
+            null
+          ]
+        }
+      }
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "storage_encrypted",
+      "caveat": "Provider documents default true for serverless engine mode.",
+      "documented_default": "true",
+      "effect": "ENCRYPTED",
+      "id": "aws.rds.cluster.storage_encrypted.serverless",
+      "provider": "aws",
+      "type": "aws_rds_cluster",
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/rds_cluster",
+      "valid_as_of": "2026-10-25",
+      "versions": "all",
+      "when": {
+        "cloudformation": {
+          "EngineMode": [
+            "serverless"
+          ]
+        },
+        "terraform": {
+          "engine_mode": [
+            "serverless"
+          ]
+        }
+      }
+    },
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "storage_encrypted",
+      "caveat": "Provider documents default false.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.docdb.storage_encrypted",
+      "provider": "aws",
+      "type": "aws_docdb_cluster",
+      "unless_attrs": {
+        "cloudformation": [
+          "SnapshotIdentifier",
+          "RestoreToTime",
+          "RestoreType",
+          "SourceDBClusterIdentifier",
+          "UseLatestRestorableTime"
+        ],
+        "terraform": [
+          "snapshot_identifier",
+          "global_cluster_identifier",
+          "restore_to_point_in_time"
+        ]
+      },
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/docdb_cluster",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "storage_encrypted",
+      "caveat": "Provider documents default false.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.neptune.storage_encrypted",
+      "provider": "aws",
+      "type": "aws_neptune_cluster",
+      "unless_attrs": {
+        "cloudformation": [
+          "SnapshotIdentifier",
+          "RestoreToTime",
+          "RestoreType",
+          "SourceDBClusterIdentifier",
+          "UseLatestRestorableTime"
+        ],
+        "terraform": [
+          "snapshot_identifier",
+          "replication_source_identifier",
+          "global_cluster_identifier"
+        ]
+      },
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/neptune_cluster",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "at_rest_encryption_enabled",
+      "caveat": "AWS documents that at-rest encryption can be on even when the flag is false.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.elasticache.at_rest.redis",
+      "provider": "aws",
+      "type": "aws_elasticache_replication_group",
+      "url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/APIReference/API_CreateReplicationGroup.html",
+      "valid_as_of": "2026-10-25",
+      "versions": "all",
+      "when": {
+        "cloudformation": {
+          "Engine": [
+            "redis",
+            null
+          ]
+        },
+        "terraform": {
+          "engine": [
+            "redis",
+            null
+          ]
+        }
+      }
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "at_rest_encryption_enabled",
+      "caveat": "AWS documents default true for Valkey.",
+      "documented_default": "true",
+      "effect": "ENCRYPTED",
+      "id": "aws.elasticache.at_rest.valkey",
+      "provider": "aws",
+      "type": "aws_elasticache_replication_group",
+      "url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/APIReference/API_CreateReplicationGroup.html",
+      "valid_as_of": "2026-10-25",
+      "versions": "all",
+      "when": {
+        "cloudformation": {
+          "Engine": [
+            "valkey"
+          ]
+        },
+        "terraform": {
+          "engine": [
+            "valkey"
+          ]
+        }
+      }
+    },
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "transit_encryption_enabled",
+      "caveat": "AWS documents default false for the Redis OSS engine.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.elasticache.transit.redis",
+      "provider": "aws",
+      "type": "aws_elasticache_replication_group",
+      "url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/APIReference/API_CreateReplicationGroup.html",
+      "valid_as_of": "2026-10-25",
+      "versions": "all",
+      "when": {
+        "cloudformation": {
+          "Engine": [
+            "redis",
+            null
+          ]
+        },
+        "terraform": {
+          "engine": [
+            "redis",
+            null
+          ]
+        }
+      }
+    },
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "encryption_type",
+      "caveat": "Provider documents NONE when the argument is omitted.",
+      "documented_default": "NONE",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.kinesis.encryption_type",
+      "provider": "aws",
+      "type": "aws_kinesis_stream",
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_stream",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": true,
+      "attribute": "server_side_encryption.enabled",
+      "caveat": "Provider documents default false for Direct PUT streams.",
+      "documented_default": "false",
+      "effect": "NOT_ENCRYPTED",
+      "id": "aws.firehose.sse",
+      "provider": "aws",
+      "type": "aws_kinesis_firehose_delivery_stream",
+      "unless_attrs": {
+        "cloudformation": [
+          "KinesisStreamSourceConfiguration"
+        ],
+        "terraform": [
+          "kinesis_source_configuration"
+        ]
+      },
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_firehose_delivery_stream",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "server_side_encryption_configuration",
+      "caveat": "Applies to objects uploaded since 2023-01-05; existing objects are not re-encrypted.",
+      "documented_default": "SSE-S3",
+      "effect": "ENCRYPTED",
+      "id": "aws.s3.sse_default",
+      "provider": "aws",
+      "type": "aws_s3_bucket",
+      "url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/default-encryption-faq.html",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    },
+    {
+      "assessable_as_unencrypted": false,
+      "attribute": "enable_key_rotation",
+      "caveat": "Provider documents rotation off when the argument is omitted.",
+      "documented_default": "false",
+      "effect": "UNKNOWN",
+      "finding_default": {
+        "code": "KMS_KEY_ROTATION_DISABLED",
+        "when_absent": true
+      },
+      "id": "aws.kms.enable_key_rotation",
+      "provider": "aws",
+      "type": "aws_kms_key",
+      "url": "https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key",
+      "valid_as_of": "2026-10-25",
+      "versions": "all"
+    }
+  ],
+  "valid_as_of": "2026-10-25"
+}
