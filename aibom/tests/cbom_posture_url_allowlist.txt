@@ -1,0 +1,36 @@
+# Reviewed URL prefixes for posture registry rows. One prefix per line.
+# https://example.com is the synthetic prefix the WP3 loader tests use.
+https://example.com
+https://registry.terraform.io/providers/hashicorp/aws/
+https://registry.terraform.io/providers/hashicorp/azurerm/
+https://registry.terraform.io/providers/hashicorp/google/
+https://docs.aws.amazon.com/
+https://learn.microsoft.com/
+https://cloud.google.com/
+https://kubernetes.io/docs/
+https://nginx.org/en/docs/
+https://httpd.apache.org/docs/
+https://docs.haproxy.org/
+https://man.openbsd.org/
+https://www.postgresql.org/docs/
+https://dev.mysql.com/doc/
+https://mariadb.com/kb/
+https://www.mongodb.com/docs/
+https://www.elastic.co/guide/
+https://redis.io/docs/
+https://www.envoyproxy.io/docs/
+https://istio.io/latest/docs/
+https://doc.traefik.io/
+https://tomcat.apache.org/
+https://docs.spring.io/
+https://jetty.org/docs/
+https://www.iana.org/assignments/
+https://docs.openssl.org/
+https://datatracker.ietf.org/doc/
+https://nmap.org/
+https://testssl.sh/
+https://nabla-c0d3.github.io/sslyze/
+https://cwe.mitre.org/
+https://nvd.nist.gov/
+https://csrc.nist.gov/
+https://docs.github.com/

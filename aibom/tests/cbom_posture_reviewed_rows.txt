@@ -1,0 +1,4 @@
+# Reviewed finding-from-absence rows.
+# One data row per line: <row id>|<kind>|<evidence>
+# kind is assessable or finding_default.
+# No finding-from-absence rows yet. A second reviewer adds them with the row.
