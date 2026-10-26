@@ -28,6 +28,17 @@ flags:
   # ── quantum-vulnerable / trust smell -> MEDIUM (a future/latent risk; SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
   SELF_SIGNED_LEAF: 4     # self-signed end-entity cert — a production trust smell (C4)
+  # ── posture findings (config and IaC). Weights follow the SARIF bands. ──
+  UNENCRYPTED_AT_REST: 8
+  UNENCRYPTED_IN_TRANSIT: 8
+  PLAINTEXT_LISTENER: 4
+  TLS_VERIFICATION_DISABLED: 8
+  DOWNGRADE_PROTECTION_MISSING: 4
+  KNOWN_TLS_VULNERABILITY: 8
+  KMS_KEY_ROTATION_DISABLED: 4
+  KMS_KEY_POLICY_PUBLIC: 8
+  KMS_KEY_DELETION_UNPROTECTED: 1
+  AT_REST_ENCRYPTION_WEAK: 4
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A crypto asset with no flags scores 0 -> low (the inventory floor; a strong
@@ -42,6 +53,7 @@ severity:
 #   risk_normalized = min(100, round(risk_total / max_raw * 100, 1))
 # `max_raw` omitted -> auto-computed as the sum of the flag weights above.
 scale:
+  max_raw: 112      # Base_Commit weight sum. Do not let new flags rescore old scans.
   bands:
     low: 33         # 0-33  -> low
     medium: 66      # 34-66 -> medium;  67-100 -> high
