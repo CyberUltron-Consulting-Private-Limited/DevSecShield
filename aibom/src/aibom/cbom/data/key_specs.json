@@ -1,5 +1,36 @@
 {
   "data_version": 1,
-  "rows": [],
+  "rows": [
+    {
+      "algorithm": "AES",
+      "id": "aws.SYMMETRIC_DEFAULT",
+      "key_size": 256,
+      "usage": "ENCRYPT_DECRYPT"
+    },
+    {
+      "algorithm": "RSA",
+      "id": "aws.RSA_2048",
+      "key_size": 2048,
+      "usage": "SIGN_VERIFY"
+    },
+    {
+      "algorithm": "RSA",
+      "id": "azure.RSA",
+      "key_size": 2048,
+      "usage": "encrypt"
+    },
+    {
+      "algorithm": "EC",
+      "id": "azure.EC",
+      "key_size": 256,
+      "usage": "sign"
+    },
+    {
+      "algorithm": "GOOGLE_SYMMETRIC",
+      "id": "gcp.GOOGLE_SYMMETRIC_ENCRYPTION",
+      "key_size": 256,
+      "usage": "ENCRYPT_DECRYPT"
+    }
+  ],
   "valid_as_of": "2026-10-25"
 }

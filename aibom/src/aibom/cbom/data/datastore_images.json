@@ -1,5 +1,71 @@
 {
   "data_version": 1,
-  "rows": [],
+  "rows": [
+    {
+      "id": "postgres",
+      "image": "postgres",
+      "kind": "relational_db"
+    },
+    {
+      "id": "mysql",
+      "image": "mysql",
+      "kind": "relational_db"
+    },
+    {
+      "id": "mariadb",
+      "image": "mariadb",
+      "kind": "relational_db"
+    },
+    {
+      "id": "mongo",
+      "image": "mongo",
+      "kind": "nosql_db"
+    },
+    {
+      "id": "cassandra",
+      "image": "cassandra",
+      "kind": "nosql_db"
+    },
+    {
+      "id": "redis",
+      "image": "redis",
+      "kind": "cache"
+    },
+    {
+      "id": "memcached",
+      "image": "memcached",
+      "kind": "cache"
+    },
+    {
+      "id": "elasticsearch",
+      "image": "elasticsearch",
+      "kind": "search_index"
+    },
+    {
+      "id": "opensearch",
+      "image": "opensearch",
+      "kind": "search_index"
+    },
+    {
+      "id": "rabbitmq",
+      "image": "rabbitmq",
+      "kind": "message_queue"
+    },
+    {
+      "id": "kafka",
+      "image": "kafka",
+      "kind": "data_stream"
+    },
+    {
+      "id": "nats",
+      "image": "nats",
+      "kind": "message_queue"
+    },
+    {
+      "id": "minio",
+      "image": "minio",
+      "kind": "object_store"
+    }
+  ],
   "valid_as_of": "2026-10-25"
 }

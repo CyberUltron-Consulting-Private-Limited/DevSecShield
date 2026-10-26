@@ -1,5 +1,22 @@
 {
   "data_version": 1,
-  "rows": [],
+  "rows": [
+    {
+      "id": "aws.SourceVpc",
+      "key": "aws:SourceVpc"
+    },
+    {
+      "id": "aws.SourceVpce",
+      "key": "aws:SourceVpce"
+    },
+    {
+      "id": "aws.PrincipalArn",
+      "key": "aws:PrincipalArn"
+    },
+    {
+      "id": "kms.ViaService",
+      "key": "kms:ViaService"
+    }
+  ],
   "valid_as_of": "2026-10-25"
 }

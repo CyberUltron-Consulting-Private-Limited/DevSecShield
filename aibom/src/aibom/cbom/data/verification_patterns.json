@@ -1,5 +1,33 @@
 {
   "data_version": 1,
-  "rows": [],
+  "rows": [
+    {
+      "id": "py.insecure",
+      "matcher": "literal",
+      "pattern": "CERT_NONE"
+    },
+    {
+      "id": "go.skip",
+      "matcher": "literal",
+      "pattern": "InsecureSkipVerify"
+    },
+    {
+      "id": "dotnet.invalid",
+      "matcher": "literal",
+      "pattern": "allowInvalidCertificates"
+    },
+    {
+      "command": "curl",
+      "id": "curl.insecure",
+      "long_flags": [
+        "insecure"
+      ],
+      "matcher": "command_flag",
+      "max_tokens": 1,
+      "short_flags": [
+        "k"
+      ]
+    }
+  ],
   "valid_as_of": "2026-10-25"
 }

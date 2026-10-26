@@ -1,5 +1,34 @@
 {
   "data_version": 1,
-  "rows": [],
+  "rows": [
+    {
+      "id": "HEARTBLEED",
+      "scored": true
+    },
+    {
+      "id": "POODLE",
+      "scored": true
+    },
+    {
+      "id": "ROBOT",
+      "scored": true
+    },
+    {
+      "id": "BEAST",
+      "scored": false
+    },
+    {
+      "id": "LUCKY13",
+      "scored": false
+    },
+    {
+      "id": "CRIME",
+      "scored": false
+    },
+    {
+      "id": "BREACH",
+      "scored": false
+    }
+  ],
   "valid_as_of": "2026-10-25"
 }
