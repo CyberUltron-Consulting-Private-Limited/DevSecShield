@@ -1,0 +1,21 @@
+{
+  "facts": [
+    {
+      "address": "aws_db_instance.plain",
+      "finding_codes": "[\"UNENCRYPTED_AT_REST\"]",
+      "kind": "relational_db",
+      "native_type": "aws_db_instance",
+      "verdict": "NOT_ENCRYPTED"
+    },
+    {
+      "address": "aws_s3_bucket.logs",
+      "finding_codes": "[]",
+      "kind": "object_store",
+      "native_type": "aws_s3_bucket",
+      "verdict": "ENCRYPTED_PROVIDER_DEFAULT"
+    }
+  ],
+  "posture_flags": [
+    "UNENCRYPTED_AT_REST"
+  ]
+}

@@ -27,3 +27,21 @@ def test_committed_terraform_tree_matches_the_oracle() -> None:
     assert found == wanted
     codes = {flag.code for flag in result.flags}
     assert "UNENCRYPTED_AT_REST" in codes
+    locked = json.loads((TREE / "cbom_posture_scan.json").read_text(encoding="utf-8"))
+    detailed = []
+    for comp in result.components:
+        props = comp.properties or {}
+        if comp.kind != "infra" or "crypto:factId" not in props:
+            continue
+        detailed.append(
+            {
+                "address": props.get("crypto:factAddress"),
+                "finding_codes": props.get("crypto:factFindingCodes"),
+                "kind": props.get("crypto:factKind"),
+                "native_type": props.get("crypto:factNativeType"),
+                "verdict": props.get("crypto:factVerdict"),
+            }
+        )
+    detailed.sort(key=lambda row: (str(row["native_type"]), str(row["address"])))
+    assert detailed == locked["facts"]
+    assert locked["posture_flags"] == ["UNENCRYPTED_AT_REST"]
