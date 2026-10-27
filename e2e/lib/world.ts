@@ -21,6 +21,12 @@ export function loadDoc(slug: string, file: string): DocInput {
   };
 }
 
+export const POSTURE_SLUGS = [
+  'infrastructure-cloud-encryption-posture',
+  'network-tls-protocol-assessment',
+  'data-at-rest-encryption-assessment',
+] as const;
+
 export const SLUGS = [
   'scope-baseline-register',
   'methodology-evidence-plan',

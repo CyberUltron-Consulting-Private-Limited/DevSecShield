@@ -29,7 +29,7 @@ import { checkEmptyDocument } from '../lib/oracle';
 import { evidencePath } from '../lib/paths';
 import { closeMenu, downloadViaMenu, expectMenu, menuItem, openLanding, openMenu } from '../lib/ui';
 import { showPdf, writeViewer } from '../lib/viewer';
-import { makeWorld, SLUGS } from '../lib/world';
+import { makeWorld, POSTURE_SLUGS, SLUGS } from '../lib/world';
 
 interface Row {
   actor: string;
@@ -54,7 +54,11 @@ test('90 negative paths: 401, 403, 404, 422, tenant isolation, canaries, empty t
   const rows: Row[] = [];
   const manifest = (team: number): string => `/${team}/cbom/deliverables`;
   const pdfRoute = (team: number, slug: string): string => `/${team}/cbom/deliverables/${slug}`;
-  const routes = (team: number): string[] => [manifest(team), ...SLUGS.map((slug) => pdfRoute(team, slug))];
+  const routes = (team: number): string[] => [
+    manifest(team),
+    ...SLUGS.map((slug) => pdfRoute(team, slug)),
+    ...POSTURE_SLUGS.map((slug) => pdfRoute(team, slug)),
+  ];
 
   async function expectStatus(actor: string, route: string, wanted: number, options: Parameters<typeof apiGet>[2], note?: string) {
     const res = await apiGet(request, route, { retryOn429: false, ...options });

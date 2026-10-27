@@ -41,6 +41,10 @@ def env_keys(service: dict) -> set[str]:
     return set(env)
 
 
+def _airgap() -> bool:
+    return "--airgap" in sys.argv[1:]
+
+
 def main() -> int:
     try:
         cfg = json.load(sys.stdin)
@@ -49,12 +53,20 @@ def main() -> int:
         return 1
 
     services: dict[str, dict] = cfg.get("services") or {}
+    airgap = _airgap()
+    expected = set(EXPECTED_SERVICES)
+    ports = set(EXPECTED_PORTS)
+    images = set(ALLOWED_THIRD_PARTY_IMAGES)
+    if airgap:
+        expected |= {"rabbitmq", "object-store", "scan-worker"}
+        ports = set()
+        images |= {"rabbitmq:3.13-alpine", "minio/minio:RELEASE.2024-10-02T17-50-41Z"}
 
     check(
         cfg.get("name") == EXPECTED_PROJECT, f"project name is exactly {EXPECTED_PROJECT!r} (got {cfg.get('name')!r})"
     )
-    missing = EXPECTED_SERVICES - set(services)
-    extra = set(services) - EXPECTED_SERVICES
+    missing = expected - set(services)
+    extra = set(services) - expected
     check(not missing, f"all expected services defined (missing: {sorted(missing) or 'none'})")
     check(not extra, f"no unexpected services (extra: {sorted(extra) or 'none'})")
 
@@ -72,7 +84,7 @@ def main() -> int:
             else:
                 published.add((str(port), "", ""))
     check(
-        published == EXPECTED_PORTS,
+        published == ports,
         f"published ports are exactly 127.0.0.1:43000->3000 and 127.0.0.1:43080->8080 (got {sorted(published)})",
     )
     for name in ("postgres", "mongo"):
@@ -108,7 +120,9 @@ def main() -> int:
         {
             str(svc.get("image"))
             for svc in services.values()
-            if not (str(svc.get("image", "")).startswith("dss-e2e/") or svc.get("image") in ALLOWED_THIRD_PARTY_IMAGES)
+            if not (
+                str(svc.get("image", "")).startswith("dss-e2e/") or svc.get("image") in images
+            )
         }
     )
     check(not bad_images, f"images are dss-e2e/* or the pinned postgres/mongo (unexpected: {bad_images or 'none'})")
@@ -154,6 +168,17 @@ def main() -> int:
             if "docker.sock" in source or source == "/":
                 escapes.append(f"{name}: mounts {source}")
     check(not escapes, f"no privileged / host-namespace / docker.sock / root-bind escapes (found: {escapes or 'none'})")
+    if airgap:
+        internals = [
+            name
+            for name, net in (cfg.get("networks") or {}).items()
+            if (net or {}).get("internal") is True
+        ]
+        check(bool(internals), f"at least one network is internal (got {internals or 'none'})")
+        for name in ("backend", "frontend", "rabbitmq", "object-store"):
+            check(not (services.get(name) or {}).get("ports"), f"{name} publishes no host port")
+        worker = services.get("scan-worker") or {}
+        check(worker.get("network_mode") == "none", "scan-worker runs with network_mode: none")
 
     # Mongo is no-auth by design: MONGO_INITDB_* must never be set on any service, mongo gets no env.
     leaked = sorted(
