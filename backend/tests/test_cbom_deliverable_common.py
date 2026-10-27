@@ -73,6 +73,9 @@ NEW_KEYS = (
     "cbom_assurance_register",
     "cbom_pqc_roadmap",
     "cbom_board_report",
+    "cbom_infra_posture",
+    "cbom_network_tls",
+    "cbom_data_at_rest",
 )
 ORIGINAL_FOOTERS = {
     "sast": "SAST Report",

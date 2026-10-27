@@ -849,7 +849,12 @@ def _control_table(
     return table
 
 
-def _basis_box(view: TeamCbomView, styles: Styles, width: float) -> Table:
+def _basis_box(
+    view: TeamCbomView,
+    styles: Styles,
+    width: float,
+    extra: Sequence[str] | None = None,
+) -> Table:
     excluded = view.excluded or {}
 
     def count(key: str) -> int:
@@ -875,25 +880,27 @@ def _basis_box(view: TeamCbomView, styles: Styles, width: float) -> Table:
         ]
     )
     body = styles["box_text"]
-    return _box(
-        [
-            Paragraph(pdf_text(authored.BASIS_HEADING), styles["box_title"]),
-            Paragraph(pdf_text(scans), body),
-            Paragraph(pdf_text(second), body),
-            Paragraph(pdf_text(authored.BASIS_RULE), body),
-        ],
-        width,
-        accent=BRAND_TEAL,
-    )
+    rows: list[Flowable] = [
+        Paragraph(pdf_text(authored.BASIS_HEADING), styles["box_title"]),
+        Paragraph(pdf_text(scans), body),
+        Paragraph(pdf_text(second), body),
+        Paragraph(pdf_text(authored.BASIS_RULE), body),
+    ]
+    for line in extra or ():
+        if line:
+            rows.append(Paragraph(pdf_text(line, limit=600), body))
+    return _box(rows, width, accent=BRAND_TEAL)
 
 
-def _disclaimer_box(styles: Styles, width: float) -> Table:
+def _disclaimer_box(
+    styles: Styles, width: float, paragraphs: Sequence[str] | None = None
+) -> Table:
+    chosen = authored.DISCLAIMER_PARAGRAPHS if paragraphs is None else paragraphs
     rows: list[Flowable] = [
         Paragraph(pdf_text(authored.DISCLAIMER_HEADING), styles["box_title"])
     ]
     rows += [
-        Paragraph(pdf_text(paragraph, limit=600), styles["box_text"])
-        for paragraph in authored.DISCLAIMER_PARAGRAPHS
+        Paragraph(pdf_text(paragraph, limit=600), styles["box_text"]) for paragraph in chosen
     ]
     return _box(rows, width, accent=BAR_UNKNOWN)
 
@@ -905,6 +912,9 @@ def _front_matter(
     meta: dict[str, str],
     styles: Styles,
     width: float,
+    basis_extra: Sequence[str] | None = None,
+    disclaimer_paragraphs: Sequence[str] | None = None,
+    extra_banners: Sequence[tuple[str, str]] | None = None,
 ) -> list[Flowable]:
     gap = Spacer(1, 6)
     story: list[Flowable] = [_masthead(title, meta, styles, width), Spacer(1, 8)]
@@ -916,12 +926,14 @@ def _front_matter(
             authored.BANNER_REDUCED_TITLE, authored.BANNER_REDUCED_TEXT, styles, width
         )
         story += [banner, gap]
+    for banner_title, banner_message in extra_banners or ():
+        story += [_banner(banner_title, banner_message, styles, width), gap]
     story += [
         _control_table(view, number, title, styles, width),
         gap,
-        _basis_box(view, styles, width),
+        _basis_box(view, styles, width, basis_extra),
         gap,
-        _disclaimer_box(styles, width),
+        _disclaimer_box(styles, width, disclaimer_paragraphs),
         Spacer(1, 4),
         Paragraph(pdf_text(authored.MANUAL_LEGEND, limit=400), styles["muted"]),
         Spacer(1, 8),
@@ -937,6 +949,9 @@ def build_document(
     title: str,
     landscape: bool,
     body: Callable[[Styles, float], Iterable[Flowable]],
+    basis_extra: Sequence[str] | None = None,
+    disclaimer_paragraphs: Sequence[str] | None = None,
+    extra_banners: Sequence[tuple[str, str]] | None = None,
 ) -> bytes:
     """Build one deliverable PDF in memory and return its bytes.
 
@@ -947,6 +962,11 @@ def build_document(
     reduced-fidelity banner when it applies, and the "(assessor)" legend.  PDF metadata
     (Title, Author, Subject, Keywords, Creator, language, creation date) is set from the view,
     and the output is byte-identical for the same view and body.
+
+    ``basis_extra`` lines are appended to the Basis box. ``disclaimer_paragraphs`` replaces
+    the default disclaimer tuple when it is not ``None``. ``extra_banners`` is a sequence of
+    ``(title, message)`` pairs drawn under the masthead. All three default to ``None``, which
+    leaves the six existing documents unchanged.
 
     Raises ``ValueError`` for a ``report_key`` that has no ``REPORT_META`` entry (an unknown
     key would silently print the SAST header and footer).
@@ -977,7 +997,17 @@ def build_document(
         lang="en-US",
     )
     width = float(doc.width)
-    story = _front_matter(view, number, title, meta, styles, width)
+    story = _front_matter(
+        view,
+        number,
+        title,
+        meta,
+        styles,
+        width,
+        basis_extra,
+        disclaimer_paragraphs,
+        extra_banners,
+    )
     story.extend(body(styles, width))
 
     stamp = _pdf_date(view.generated_at)

@@ -243,6 +243,50 @@ REPORT_META: Dict[str, Dict[str, str]] = {
             "and sign-offs are completed by the named owners."
         ),
     },
+    # Posture deliverables (#5, #6, #9). Appended after the six regulatory documents so their
+    # headers and footers stay on the entries above.
+    "cbom_infra_posture": {
+        "title": "Infrastructure & Cloud Encryption Posture",
+        "subtitle": "Cryptographic Bill of Materials · Declared infrastructure encryption",
+        "footer_label": "CBOM Infrastructure Posture",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Declared encryption settings for cloud and infrastructure resources across "
+            "the team's completed CBOM scans."
+        ),
+        "how_to_read": (
+            "Read the KPI strip and the key and resource registers first, then complete "
+            "the cells marked (assessor). A declared setting is not proof of operation."
+        ),
+    },
+    "cbom_network_tls": {
+        "title": "Network, TLS & Crypto Protocol Assessment",
+        "subtitle": "Cryptographic Bill of Materials · Declared and imported TLS evidence",
+        "footer_label": "CBOM Network TLS Assessment",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Declared listeners and imported TLS result files across the team's "
+            "completed CBOM scans. The platform does not probe any endpoint."
+        ),
+        "how_to_read": (
+            "Read the endpoint register and the protocol matrix first, then complete "
+            "the cells marked (assessor). Imported rows reflect the tool's own run."
+        ),
+    },
+    "cbom_data_at_rest": {
+        "title": "Data-at-Rest Encryption Assessment",
+        "subtitle": "Cryptographic Bill of Materials · Declared storage encryption",
+        "footer_label": "CBOM Data-at-Rest Assessment",
+        "kicker": "Regulatory Deliverable",
+        "intro": (
+            "Declared encryption of stores, backups and disks across the team's "
+            "completed CBOM scans. Stored data was not inspected."
+        ),
+        "how_to_read": (
+            "Read the store and backup registers first, then complete the cells marked "
+            "(assessor). A declared setting is not proof that stored data is protected."
+        ),
+    },
 }
 
 SEVERITY_MEANING = {
