@@ -29,7 +29,7 @@ def fact_component(fact: EncryptionFact) -> InfraComponent:
     """One ``infra`` component. Every fact value is a ``crypto:fact*`` string."""
     label = fact.address or fact.native_type or fact.id
     return InfraComponent(
-        bom_ref=f"crypto-cfg-{fact.id}",
+        bom_ref=f"crypto-cfg_{fact.id}",
         name=f"{fact.kind}:{label}",
         properties=encode_fact(fact),
     )
