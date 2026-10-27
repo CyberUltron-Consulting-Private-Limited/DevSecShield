@@ -2233,7 +2233,7 @@ FROZEN_FIELDS = {
     "ScanFacts": (
         "scan_id title status created_at last_updated source_key source_label source_kind "
         "repo_url branch exclusion is_current tier fidelity fidelity_reasons asset_count "
-        "cert_count lib_count assets certs libs frameworks requirements warnings"
+        "cert_count lib_count assets certs libs frameworks requirements warnings posture"
     ),
     "SourceAgg": (
         "key label kind repo_url branch scan_ids scan_count first_scanned last_scanned "
@@ -2271,7 +2271,7 @@ FROZEN_FIELDS = {
         "scans sources assets certs libs frameworks requirements asset_occurrences "
         "assets_by_type assets_by_impact issue_by_impact finding_counts pqc_vulnerable pqc_safe "
         "pqc_hybrid pqc_ungraded readiness_pct compliance_sources_pooled "
-        "compliance_legacy_excluded warnings"
+        "compliance_legacy_excluded warnings posture"
     ),
 }
 

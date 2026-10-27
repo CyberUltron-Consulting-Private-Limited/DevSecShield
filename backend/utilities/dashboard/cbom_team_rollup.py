@@ -1,9 +1,9 @@
 """Team-wide CBOM roll-up: the aggregation core behind the six regulatory PDF deliverables.
 
-STATUS - WP1b implemented (test-first; ``backend/tests/test_cbom_team_rollup.py``).  The *types*
-and *function signatures* are the WP1a interface freeze and are unchanged: WP2 / WP3a-f / WP4
-code against them in parallel.  If a downstream package needs a type to change, it asks for a
-new interface freeze - it does not edit this file ad hoc.
+STATUS - WP1b implemented (test-first; ``backend/tests/test_cbom_team_rollup.py``).  WP10 appends
+``ScanFacts.posture`` and ``TeamCbomView.posture`` with empty defaults.  Existing field order,
+function signatures, the fingerprint formula, ``HISTORY_WINDOW``, ``HARD_MAX_SCANS`` and
+``BATCH_SIZE`` are unchanged.
 
 Conventions the bodies guarantee (renderers may rely on them):
 
@@ -66,6 +66,11 @@ from urllib.parse import urlsplit
 HISTORY_WINDOW = 200  # newest eligible scans folded for first/last-seen history
 HARD_MAX_SCANS = 1000  # absolute ceiling, even while chasing every source's latest scan
 BATCH_SIZE = 20  # blobs loaded per ``load_blobs`` call
+MAX_POSTURE_ACCS = 100_000  # distinct (source, fact) posture rows kept per team
+POSTURE_REGISTER_CAP = 2_000  # rows kept per posture register; the excess is ``omitted``
+POSTURE_SCHEMA = 1  # highest cbom_posture schema_version this roll-up understands
+POSTURE_DIAGNOSTIC_CAP = 50
+POSTURE_CLASSIFICATION_CAP = 50
 NEAR_EXPIRY_DAYS = 90  # mirrors aibom weakness._NEAR_EXPIRY_DAYS (weakness.py:38)
 
 # Per-entity list caps (plan 4.5: "newest 12 (+N more)").  ``scan_count`` / ``*_total`` keep the
@@ -221,6 +226,8 @@ class ScanFacts:
     # one entry per requirement, a single source in ``verdicts``
     requirements: list[RequirementAgg] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)  # skipped rows, coerced types, ...
+    # None until a blob is read.  Absent / malformed blocks stay Not_Assessed (never a zero pass).
+    posture: PostureScan | None = None
 
     @property
     def included(self) -> bool:
@@ -433,6 +440,185 @@ class FrameworkPool:
 
 
 # ---------------------------------------------------------------------------------------------
+# Configuration posture (WP10).  Additive: every new field on the frozen types has a default.
+# ---------------------------------------------------------------------------------------------
+_AT_REST_LAYERS = ("application", "database", "volume", "service", "backup")
+_TRANSPORT_KINDS = frozenset({"tls_endpoint", "ssh_service"})
+_NO_TRI_KINDS = frozenset({"kms_key", "certificate_policy"})
+_PASS_VERDICTS = frozenset({"ENCRYPTED_DECLARED", "ENCRYPTED_PROVIDER_DEFAULT"})
+_POSTURE_CODE_SEVERITY = {
+    "UNENCRYPTED_AT_REST": "High",
+    "UNENCRYPTED_IN_TRANSIT": "High",
+    "PLAINTEXT_LISTENER": "Medium",
+    "TLS_VERIFICATION_DISABLED": "High",
+    "DOWNGRADE_PROTECTION_MISSING": "Medium",
+    "KNOWN_TLS_VULNERABILITY": "High",
+    "KMS_KEY_ROTATION_DISABLED": "Medium",
+    "KMS_KEY_POLICY_PUBLIC": "High",
+    "KMS_KEY_DELETION_UNPROTECTED": "Low",
+    "AT_REST_ENCRYPTION_WEAK": "Medium",
+}
+_TLS_RANK = {
+    "sslv3": 0,
+    "ssl3": 0,
+    "1.0": 1,
+    "tls1.0": 1,
+    "tlsv1.0": 1,
+    "1.1": 2,
+    "tls1.1": 2,
+    "tlsv1.1": 2,
+    "1.2": 3,
+    "tls1.2": 3,
+    "tlsv1.2": 3,
+    "1.3": 4,
+    "tls1.3": 4,
+    "tlsv1.3": 4,
+}
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_SEVERITY_LEVELS = ("High", "Medium", "Low")
+
+
+def _zero_severity() -> dict[str, int]:
+    return {level: 0 for level in _SEVERITY_LEVELS}
+
+
+def _zero_impact() -> dict[str, int]:
+    return {level: 0 for level in IMPACT_LEVELS}
+
+
+def _zero_tri() -> dict[str, TriState]:
+    return {"at_rest": TriState(), "transport": TriState()}
+
+
+@dataclass
+class TriState:
+    """One axis of the configuration tri-state.  ``coverage`` is None when nothing was judged."""
+
+    pass_: int = 0
+    fail: int = 0
+    not_bom_evidenceable: int = 0
+    out_of_scope: int = 0
+    coverage: float | None = None
+
+
+@dataclass
+class KmsCounts:
+    keys: int = 0
+    rotation_enabled: int = 0
+    rotation_disabled: int = 0
+    rotation_not_applicable: int = 0
+    rotation_unknown: int = 0
+
+
+@dataclass
+class PostureCounts:
+    """Headline posture counts from current facts of assessed sources.  ``zero()`` is empty."""
+
+    facts: int = 0
+    by_kind_provider_verdict: dict[tuple[str, str, str], int] = field(default_factory=dict)
+    tri_state: dict[str, TriState] = field(default_factory=_zero_tri)
+    findings_by_code: dict[str, int] = field(default_factory=dict)
+    findings_by_severity: dict[str, int] = field(default_factory=_zero_severity)
+    facts_with_findings_by_impact: dict[str, int] = field(default_factory=_zero_impact)
+    kms: KmsCounts = field(default_factory=KmsCounts)
+    by_classification: dict[str, int] = field(default_factory=dict)
+    declared_resources: dict[tuple[str, str], int] = field(default_factory=dict)
+    out_of_scope_resources: int = 0
+    disabled_resources: int = 0
+
+    @classmethod
+    def zero(cls) -> PostureCounts:
+        return cls()
+
+
+@dataclass
+class PostureScan:
+    """Posture block of one scan.  Heavy lists are cleared once the fold has merged them."""
+
+    state: str = "absent"  # assessed|partial|absent|malformed|failed|newer_engine
+    schema_version: int | None = None
+    lanes: tuple[str, ...] = ()
+    failed_lanes: tuple[str, ...] = ()
+    facts: list[dict[str, Any]] = field(default_factory=list)
+    imports: list[dict[str, Any]] = field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    diagnostic_totals: dict[str, int] = field(default_factory=dict)
+    data_tables: list[dict[str, str]] = field(default_factory=list)
+    counts: dict[str, Any] = field(default_factory=dict)
+    truncated: bool = False
+    dropped: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class PostureFactAgg:
+    """One fact of one source.  ``fact`` is compact when the fact is not current."""
+
+    source_key: str
+    fact_id: str
+    current: bool
+    first_seen: datetime
+    last_seen: datetime
+    scan_count: int
+    last_scan_id: int
+    fact: Mapping[str, Any]
+    paired_with: str | None = None
+    discrepancy: bool = False
+
+
+@dataclass
+class PostureSourceAgg:
+    """One row of the per-source posture status table."""
+
+    key: str
+    label: str
+    state: str  # assessed|partial|not_assessed|newer_engine|malformed
+    reason: str | None
+    current_scan_id: int
+    last_scanned: datetime
+    zero_facts: bool
+    truncated: bool
+    dropped: int
+    lanes: tuple[str, ...]
+    failed_lanes: tuple[str, ...]
+
+
+@dataclass
+class PostureView:
+    """Team posture.  Exactly one field has a default, and it is the last."""
+
+    state: str  # none|assessed|mixed|not_assessed
+    sources: tuple[PostureSourceAgg, ...]
+    facts: tuple[PostureFactAgg, ...]
+    previously_seen: tuple[PostureFactAgg, ...]
+    previously_seen_total: int
+    imports: tuple[Mapping[str, Any], ...]
+    diagnostic_totals: dict[str, int]
+    diagnostics: tuple[Mapping[str, Any], ...]
+    data_tables: tuple[Mapping[str, str], ...]
+    counts: PostureCounts
+    omitted: dict[str, int]
+    warnings: tuple[str, ...]
+    previously_seen_exact: bool = True
+
+    @classmethod
+    def empty(cls) -> PostureView:
+        return cls(
+            state="none",
+            sources=(),
+            facts=(),
+            previously_seen=(),
+            previously_seen_total=0,
+            imports=(),
+            diagnostic_totals={},
+            diagnostics=(),
+            data_tables=(),
+            counts=PostureCounts.zero(),
+            omitted={},
+            warnings=(),
+        )
+
+
+# ---------------------------------------------------------------------------------------------
 # The view
 # ---------------------------------------------------------------------------------------------
 @dataclass
@@ -495,6 +681,7 @@ class TeamCbomView:
     compliance_sources_pooled: int = 0  # current full-fidelity sources (Appendix B: 6)
     compliance_legacy_excluded: int = 0  # current reduced-fidelity sources left out (Appendix B: 1)
     warnings: tuple[str, ...] = ()  # skipped / coerced inputs; capped (renderers may print count)
+    posture: PostureView = field(default_factory=PostureView.empty)
 
     @property
     def is_empty(self) -> bool:
@@ -1218,6 +1405,7 @@ def _fill_from_blob(facts: ScanFacts, scan_data: Any) -> ScanFacts:
     facts.tier = tier
     facts.fidelity = FIDELITY_REDUCED if reasons else FIDELITY_FULL
     facts.fidelity_reasons = reasons
+    _read_posture(scan_data, facts, warnings)
     facts.warnings.extend(warnings)
     return facts
 
@@ -1231,6 +1419,7 @@ def _safe_fill(facts: ScanFacts, scan_data: Any) -> ScanFacts:
         facts.asset_count = facts.cert_count = facts.lib_count = 0
         facts.tier, facts.fidelity, facts.fidelity_reasons = TIER_NONE, FIDELITY_NONE, ()
         facts.exclusion = EXCLUDED_NO_DATA
+        facts.posture = None
         facts.warnings.append("scan_data could not be read (unexpected structure)")
         return facts
 
@@ -1584,6 +1773,894 @@ def _attestation_suffix(stamps: Sequence[tuple[int, str, str, str]]) -> str:
     )
 
 
+class _PostureAcc:
+    """One ``(source_key, fact_id)`` while the fold is running."""
+
+    __slots__ = (
+        "best_rank",
+        "fact",
+        "fact_id",
+        "first_seen",
+        "full",
+        "last_scan_id",
+        "last_seen",
+        "scan_count",
+        "source_key",
+    )
+
+    def __init__(
+        self, source_key: str, fact_id: str, fact: dict[str, Any], rank: Rank, full: bool
+    ) -> None:
+        self.source_key = source_key
+        self.fact_id = fact_id
+        self.fact = fact
+        self.best_rank = rank
+        self.full = full
+        self.first_seen = rank[0]
+        self.last_seen = rank[0]
+        self.scan_count = 1
+        self.last_scan_id = rank[1]
+
+
+class _PostureAccs(dict):
+    """Accumulator map plus the 'previously seen count is exact' flag."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.exact = True
+
+
+def _compact_posture_fact(fact: Mapping[str, Any]) -> dict[str, str]:
+    """Identity fields only.  Scanned prose and finding text stay off the appendix row."""
+    return {
+        "id": str(fact.get("id") or ""),
+        "kind": str(fact.get("kind") or ""),
+        "native_type": str(fact.get("native_type") or ""),
+        "address": str(fact.get("address") or ""),
+        "path": str(fact.get("path") or ""),
+        "verdict": str(fact.get("verdict") or ""),
+    }
+
+
+def _string_list(value: Any) -> tuple[str, ...] | None:
+    """A list of strings, or None when the shape is wrong.  Never reads the element text out."""
+    if not isinstance(value, list):
+        return None
+    if any(not isinstance(item, str) for item in value):
+        return None
+    return tuple(value)
+
+
+def _posture_state(block: Mapping[str, Any]) -> tuple[str, str | None]:
+    """``(state, warning)``.  The warning is a fixed sentence and never quotes the blob."""
+    version = block.get("schema_version")
+    if isinstance(version, bool) or not isinstance(version, int):
+        return "malformed", "cbom_posture.schema_version is not an integer (skipped)"
+    lanes = _string_list(block.get("lanes"))
+    failed = _string_list(block.get("failed_lanes"))
+    if lanes is None or failed is None:
+        return "malformed", "cbom_posture.lanes is not a list of strings (skipped)"
+    for key in ("facts", "imports", "diagnostics"):
+        if not isinstance(block.get(key), list):
+            return "malformed", f"cbom_posture.{key} is not a list (skipped)"
+    if version > POSTURE_SCHEMA:
+        return "newer_engine", "cbom_posture.schema_version is newer than this renderer (skipped)"
+    if not lanes:
+        if failed:
+            return "failed", None
+        return "malformed", "cbom_posture.lanes is empty (skipped)"
+    if failed:
+        names = ", ".join(sorted(set(failed)))
+        return "partial", f"cbom_posture lanes failed: {names}"
+    return "assessed", None
+
+
+def _safe_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _data_table_row(item: Any) -> dict[str, str] | None:
+    if not isinstance(item, dict):
+        return None
+    name = item.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    version = item.get("data_version")
+    version_text = version.strip() if isinstance(version, str) else ""
+    raw_date = item.get("valid_as_of")
+    if not isinstance(raw_date, str) or _DATE_RE.match(raw_date[:10]) is None:
+        return None
+    return {
+        "name": " ".join(name.split())[:128],
+        "data_version": version_text[:64],
+        "valid_as_of": raw_date[:10],
+    }
+
+
+def _copy_import(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    kept: dict[str, Any] = {}
+    for key in (
+        "path",
+        "tool",
+        "variant",
+        "tool_version",
+        "scan_started",
+        "scan_finished",
+        "scan_started_iso",
+        "scan_finished_iso",
+        "status",
+    ):
+        value = item.get(key)
+        if isinstance(value, str):
+            kept[key] = " ".join(value.split())[:512]
+    endpoints = _safe_int(item.get("endpoints"))
+    if endpoints is not None:
+        kept["endpoints"] = endpoints
+    return kept or None
+
+
+def _copy_diagnostic(item: Any) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    code = item.get("code")
+    path = item.get("path")
+    if not isinstance(code, str) or not isinstance(path, str):
+        return None
+    line = _safe_int(item.get("line"))
+    row: dict[str, Any] = {
+        "code": code[:64],
+        "path": " ".join(path.split())[:512],
+        "line": 0 if line is None else line,
+    }
+    value = _safe_int(item.get("value"))
+    if value is not None:
+        row["value"] = value
+    return row
+
+
+def _read_posture(scan_data: Any, facts: ScanFacts, warnings: list[str]) -> None:
+    """Attach ``facts.posture``.  A bad block is Not_Assessed and adds one fixed warning."""
+    try:
+        _read_posture_inner(scan_data, facts, warnings)
+    except Exception:  # noqa: BLE001 - one scan must not fail the document
+        facts.posture = PostureScan(state="malformed")
+        warnings.append("cbom_posture could not be read (skipped)")
+
+
+def _read_posture_inner(scan_data: Any, facts: ScanFacts, warnings: list[str]) -> None:
+    blob = scan_data if isinstance(scan_data, dict) else {}
+    if "cbom_posture" not in blob:
+        facts.posture = PostureScan(state="absent")
+        return
+    block = blob.get("cbom_posture")
+    if not isinstance(block, dict):
+        facts.posture = PostureScan(state="malformed")
+        warnings.append("cbom_posture is not an object (skipped)")
+        return
+    state, warning = _posture_state(block)
+    if warning is not None:
+        warnings.append(warning)
+    if state == "malformed":
+        # Lane strings are scanned text. A block that already failed validation must not
+        # carry them onto the status row.
+        facts.posture = PostureScan(
+            state="malformed",
+            schema_version=_safe_int(block.get("schema_version")),
+        )
+        return
+    if state in ("newer_engine", "failed"):
+        failed = _string_list(block.get("failed_lanes")) or ()
+        lanes = _string_list(block.get("lanes")) or ()
+        facts.posture = PostureScan(
+            state=state,
+            schema_version=_safe_int(block.get("schema_version")),
+            lanes=tuple(sorted(set(lanes))),
+            failed_lanes=tuple(sorted(set(failed))),
+        )
+        return
+    kept: list[dict[str, Any]] = []
+    raw_facts = block.get("facts")
+    if isinstance(raw_facts, list):
+        for index, item in enumerate(raw_facts):
+            if not isinstance(item, dict):
+                warnings.append(f"cbom_posture.facts[{index}] is not an object (skipped)")
+                continue
+            fact_id = item.get("id")
+            kind = item.get("kind")
+            if (
+                not isinstance(fact_id, str)
+                or fact_id == ""
+                or not isinstance(kind, str)
+                or kind == ""
+            ):
+                warnings.append(f"cbom_posture.facts[{index}] has no usable id (skipped)")
+                continue
+            kept.append(dict(item))
+    imports = [
+        row
+        for item in block.get("imports") or []
+        if (row := _copy_import(item)) is not None
+    ]
+    diagnostics = [
+        row
+        for item in block.get("diagnostics") or []
+        if (row := _copy_diagnostic(item)) is not None
+    ]
+    tables = [
+        row
+        for item in block.get("data_tables") or []
+        if (row := _data_table_row(item)) is not None
+    ]
+    totals_raw = block.get("diagnostic_totals")
+    totals: dict[str, int] = {}
+    if isinstance(totals_raw, dict):
+        for key, value in totals_raw.items():
+            number = _safe_int(value)
+            if isinstance(key, str) and number is not None:
+                totals[key] = number
+    counts = block.get("counts") if isinstance(block.get("counts"), dict) else {}
+    dropped_raw = block.get("dropped")
+    dropped: dict[str, int] = {}
+    if isinstance(dropped_raw, dict):
+        for key, value in dropped_raw.items():
+            number = _safe_int(value)
+            if isinstance(key, str) and number is not None and number > 0:
+                dropped[key] = number
+    lanes = _string_list(block.get("lanes")) or ()
+    failed = _string_list(block.get("failed_lanes")) or ()
+    version = _safe_int(block.get("schema_version"))
+    facts.posture = PostureScan(
+        state=state,
+        schema_version=version,
+        lanes=tuple(sorted(set(lanes))),
+        failed_lanes=tuple(sorted(set(failed))),
+        facts=kept,
+        imports=imports,
+        diagnostics=diagnostics,
+        diagnostic_totals=totals,
+        data_tables=tables,
+        counts=dict(counts),
+        truncated=block.get("truncated") is True,
+        dropped=dropped,
+    )
+
+
+def _merge_posture(
+    accs: dict[tuple[str, str], _PostureAcc],
+    source_acc: _SourceAcc,
+    facts: ScanFacts,
+    rank: Rank,
+) -> None:
+    """Latest scan of a source keeps full fact dicts.  Older observations are compact."""
+    posture = facts.posture
+    if posture is None or posture.state not in ("assessed", "partial"):
+        if posture is not None:
+            posture.facts = []
+        return
+    source_key = facts.source_key
+    newest = source_acc.newest_rank == rank
+    if newest:
+        for key, acc in accs.items():
+            if key[0] == source_key and acc.full and acc.best_rank < rank:
+                acc.fact = _compact_posture_fact(acc.fact)
+                acc.full = False
+    cap = MAX_POSTURE_ACCS
+    for item in posture.facts:
+        fact_id = item.get("id")
+        if not isinstance(fact_id, str) or fact_id == "":
+            continue
+        key = (source_key, fact_id)
+        current = accs.get(key)
+        if current is None:
+            if not newest and len(accs) >= cap:
+                if isinstance(accs, _PostureAccs):
+                    accs.exact = False
+                continue
+            stored = dict(item) if newest else _compact_posture_fact(item)
+            accs[key] = _PostureAcc(source_key, fact_id, stored, rank, newest)
+            continue
+        current.scan_count += 1
+        if rank[0] < current.first_seen:
+            current.first_seen = rank[0]
+        if rank > current.best_rank:
+            current.best_rank = rank
+            current.last_seen = rank[0]
+            current.last_scan_id = rank[1]
+            current.full = newest
+            current.fact = dict(item) if newest else _compact_posture_fact(item)
+    posture.facts = []
+    if facts is not source_acc.newest:
+        posture.imports = []
+        posture.diagnostics = []
+        posture.data_tables = []
+
+
+def _evidence_only(fact: Mapping[str, Any]) -> bool:
+    if fact.get("evidence_only") is True:
+        return True
+    attrs = fact.get("attrs")
+    return isinstance(attrs, dict) and attrs.get("evidence_only") is True
+
+
+def _layer_map(fact: Mapping[str, Any]) -> dict[str, str]:
+    raw = fact.get("layers")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): value for key, value in raw.items() if isinstance(value, str)}
+
+
+def _axis_verdict(fact: Mapping[str, Any], axis: str) -> str | None:
+    """Resource verdict for one tri-state axis, or None when the fact is outside that axis."""
+    if _evidence_only(fact):
+        return None
+    native = fact.get("native_type")
+    if axis == "transport" and isinstance(native, str) and native.startswith("verification:"):
+        return None
+    layers = _layer_map(fact)
+    kind = fact.get("kind")
+    if axis == "at_rest":
+        found = [layers[name] for name in _AT_REST_LAYERS if name in layers]
+        if not found and "at_rest" in layers:
+            found = [layers["at_rest"]]
+        if not found:
+            if layers or kind in _TRANSPORT_KINDS or kind in _NO_TRI_KINDS:
+                return None
+            verdict = fact.get("verdict")
+            return verdict if isinstance(verdict, str) else None
+    else:
+        if "transport" in layers:
+            return layers["transport"]
+        if layers or kind not in _TRANSPORT_KINDS:
+            return None
+        verdict = fact.get("verdict")
+        return verdict if isinstance(verdict, str) else None
+    if "ENCRYPTED_DECLARED" in found:
+        return "ENCRYPTED_DECLARED"
+    if "ENCRYPTED_PROVIDER_DEFAULT" in found:
+        return "ENCRYPTED_PROVIDER_DEFAULT"
+    if "UNKNOWN" in found:
+        return "UNKNOWN"
+    return "NOT_ENCRYPTED"
+
+
+def _tri_bucket(verdict: str) -> str | None:
+    if verdict in _PASS_VERDICTS:
+        return "pass_"
+    if verdict == "NOT_ENCRYPTED":
+        return "fail"
+    if verdict == "UNKNOWN":
+        return "not_bom_evidenceable"
+    return None
+
+
+def _finding_codes(fact: Mapping[str, Any]) -> tuple[str, ...]:
+    raw = fact.get("finding_codes")
+    if not isinstance(raw, list):
+        return ()
+    return tuple(dict.fromkeys(code for code in raw if isinstance(code, str) and code))
+
+
+def _fact_impact(fact: Mapping[str, Any], codes: Sequence[str]) -> str:
+    raw = fact.get("impact")
+    if isinstance(raw, str):
+        mapped = _IMPACT_BY_FOLD.get(raw.casefold())
+        if mapped is not None:
+            return mapped
+    best = "Low"
+    rank = {level: index for index, level in enumerate(IMPACT_LEVELS)}
+    for code in codes:
+        severity = _POSTURE_CODE_SEVERITY.get(code, "Medium")
+        if rank[severity] < rank[best]:
+            best = severity
+    return best
+
+
+def _rotation_of(fact: Mapping[str, Any]) -> str:
+    signals = fact.get("signals") if isinstance(fact.get("signals"), dict) else {}
+    attrs = fact.get("attrs") if isinstance(fact.get("attrs"), dict) else {}
+    raw = signals.get("rotation", attrs.get("rotation"))
+    text = raw.strip().casefold() if isinstance(raw, str) else ""
+    if text in ("enabled", "true", "yes"):
+        return "enabled"
+    if text in ("disabled", "false", "no"):
+        return "disabled"
+    if text in ("not_applicable", "not applicable", "n/a", "na"):
+        return "not_applicable"
+    return "unknown"
+
+
+def _classification_of(fact: Mapping[str, Any]) -> str | None:
+    linkage = fact.get("linkage") if isinstance(fact.get("linkage"), dict) else {}
+    raw = linkage.get("data_classification")
+    if not isinstance(raw, str):
+        return None
+    cleaned = "".join(ch if ch >= " " and ch != "\x7f" else " " for ch in raw)
+    text = " ".join(cleaned.split())[:128]
+    return text or None
+
+
+def _nested_out_of_scope(counts: Mapping[str, Any], axis: str) -> int | None:
+    tri = counts.get("tri_state")
+    if not isinstance(tri, dict):
+        return None
+    block = tri.get(axis)
+    if not isinstance(block, dict):
+        return None
+    return _safe_int(block.get("out_of_scope"))
+
+
+def _declared_from_block(counts: Mapping[str, Any]) -> dict[tuple[str, str], int] | None:
+    raw = counts.get("declared_resources")
+    if not isinstance(raw, list):
+        return None
+    found: dict[tuple[str, str], int] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        fmt = item.get("format")
+        provider = item.get("provider")
+        count = _safe_int(item.get("count"))
+        if isinstance(fmt, str) and isinstance(provider, str) and count is not None and count > 0:
+            key = (fmt[:64], provider[:64])
+            found[key] = found.get(key, 0) + count
+    return found
+
+
+def _coverage_fraction(passed: int, failed: int) -> float | None:
+    total = passed + failed
+    if total == 0:
+        return None
+    return round(passed / total, 3)
+
+
+def _posture_counts(
+    facts: Sequence[PostureFactAgg], scans: Sequence[ScanFacts]
+) -> PostureCounts:
+    """Recompute the team tri-state from current facts.  A missing axis is not a pass."""
+    counts = PostureCounts.zero()
+    counts.facts = len(facts)
+    kind_counts: Counter[tuple[str, str, str]] = Counter()
+    code_counts: Counter[str] = Counter()
+    severity = _zero_severity()
+    impact = _zero_impact()
+    kms = KmsCounts()
+    classes: Counter[str] = Counter()
+    declared: Counter[tuple[str, str]] = Counter()
+    saw_declared = False
+    out_of_scope = 0
+    disabled = 0
+    axis_out = {"at_rest": 0, "transport": 0}
+    saw_axis_out = {"at_rest": False, "transport": False}
+    buckets = {
+        "at_rest": {"pass_": 0, "fail": 0, "not_bom_evidenceable": 0},
+        "transport": {"pass_": 0, "fail": 0, "not_bom_evidenceable": 0},
+    }
+    for agg in facts:
+        fact = agg.fact
+        kind = str(fact.get("kind") or "")
+        provider = str(fact.get("provider") or "")
+        verdict = str(fact.get("verdict") or "")
+        kind_counts[(kind, provider, verdict)] += 1
+        codes = _finding_codes(fact)
+        for code in codes:
+            code_counts[code] += 1
+            severity[_POSTURE_CODE_SEVERITY.get(code, "Medium")] += 1
+        if codes:
+            impact[_fact_impact(fact, codes)] += 1
+        if kind == "kms_key":
+            kms.keys += 1
+            slot = _rotation_of(fact)
+            setattr(kms, f"rotation_{slot}", getattr(kms, f"rotation_{slot}") + 1)
+        label = _classification_of(fact)
+        if label is not None:
+            classes[label] += 1
+        fmt = fact.get("format")
+        if isinstance(fmt, str) and fmt:
+            declared[(fmt[:64], provider[:64])] += 1
+        for axis in ("at_rest", "transport"):
+            axis_verdict = _axis_verdict(fact, axis)
+            if axis_verdict is None:
+                continue
+            bucket = _tri_bucket(axis_verdict)
+            if bucket is not None:
+                buckets[axis][bucket] += 1
+    for scan in scans:
+        block = scan.posture.counts if scan.posture is not None else {}
+        if not isinstance(block, dict):
+            continue
+        number = _safe_int(block.get("out_of_scope_resources"))
+        if number is not None:
+            out_of_scope += number
+        number = _safe_int(block.get("disabled_resources"))
+        if number is not None:
+            disabled += number
+        from_block = _declared_from_block(block)
+        if from_block is not None:
+            saw_declared = True
+            for key, count in from_block.items():
+                declared[key] += count
+        for axis in ("at_rest", "transport"):
+            extra = _nested_out_of_scope(block, axis)
+            if extra is not None:
+                saw_axis_out[axis] = True
+                axis_out[axis] += extra
+    if saw_declared:
+        declared = Counter(
+            {
+                key: count
+                for key, count in declared.items()
+                if any(
+                    key in (_declared_from_block(scan.posture.counts) or {})
+                    for scan in scans
+                    if scan.posture is not None
+                )
+            }
+        )
+    ranked = sorted(classes.items(), key=lambda item: (-item[1], item[0]))
+    classified: dict[str, int] = {}
+    if len(ranked) <= POSTURE_CLASSIFICATION_CAP:
+        classified = dict(ranked)
+    else:
+        classified = dict(ranked[:POSTURE_CLASSIFICATION_CAP])
+        rest = sum(count for _, count in ranked[POSTURE_CLASSIFICATION_CAP:])
+        classified["other"] = classified.get("other", 0) + rest
+    tri: dict[str, TriState] = {}
+    for axis in ("at_rest", "transport"):
+        passed = buckets[axis]["pass_"]
+        failed = buckets[axis]["fail"]
+        scope = axis_out[axis] if saw_axis_out[axis] else (out_of_scope if axis == "at_rest" else 0)
+        tri[axis] = TriState(
+            pass_=passed,
+            fail=failed,
+            not_bom_evidenceable=buckets[axis]["not_bom_evidenceable"],
+            out_of_scope=scope,
+            coverage=_coverage_fraction(passed, failed),
+        )
+    counts.by_kind_provider_verdict = dict(sorted(kind_counts.items()))
+    counts.tri_state = tri
+    counts.findings_by_code = dict(sorted(code_counts.items()))
+    counts.findings_by_severity = severity
+    counts.facts_with_findings_by_impact = impact
+    counts.kms = kms
+    counts.by_classification = classified
+    counts.declared_resources = dict(sorted(declared.items()))
+    counts.out_of_scope_resources = out_of_scope
+    counts.disabled_resources = disabled
+    return counts
+
+
+def _register_names(fact: Mapping[str, Any]) -> tuple[str, ...]:
+    kind = str(fact.get("kind") or "")
+    names: list[str] = []
+    if kind == "kms_key":
+        names.append("kms_keys")
+    if kind == "tls_endpoint":
+        names.append("tls_endpoints")
+    if kind == "ssh_service":
+        names.append("ssh")
+    if kind in ("secret", "certificate_policy"):
+        names.append("secrets")
+    if kind == "backup":
+        names.append("backups")
+    if kind in (
+        "object_store",
+        "relational_db",
+        "document_db",
+        "cache",
+        "block_volume",
+        "disk_encryption",
+        "volume",
+        "database",
+    ):
+        names.append("data_stores")
+    native = fact.get("native_type")
+    verification = isinstance(native, str) and native.startswith("verification:")
+    if (
+        kind not in _TRANSPORT_KINDS
+        and kind not in _NO_TRI_KINDS
+        and kind != "secret"
+        and not _evidence_only(fact)
+        and not verification
+    ):
+        names.append("resources")
+    if _finding_codes(fact):
+        names.append("findings")
+    if fact.get("verdict") == "UNKNOWN":
+        names.append("unknown")
+    return tuple(names)
+
+
+def _omitted_counts(facts: Sequence[PostureFactAgg], previous_total: int) -> dict[str, int]:
+    cap = POSTURE_REGISTER_CAP
+    tallies: Counter[str] = Counter()
+    for agg in facts:
+        for name in _register_names(agg.fact):
+            tallies[name] += 1
+    omitted = {name: count - cap for name, count in sorted(tallies.items()) if count > cap}
+    if previous_total > cap:
+        omitted["previously_seen"] = previous_total - cap
+    return omitted
+
+
+def _source_posture_row(facts: ScanFacts, live: int) -> PostureSourceAgg:
+    posture = facts.posture if facts.posture is not None else PostureScan(state="absent")
+    state = posture.state
+    reason: str | None
+    row_state = state
+    if state == "assessed":
+        reason = None
+    elif state == "partial":
+        reason = None
+    elif state == "failed":
+        row_state = "not_assessed"
+        reason = "lanes_failed"
+    elif state == "malformed":
+        row_state = "malformed"
+        reason = "malformed"
+    elif state == "newer_engine":
+        row_state = "newer_engine"
+        reason = "newer_engine"
+    elif facts.source_kind == SOURCE_FILE:
+        row_state = "not_assessed"
+        reason = "uploaded_bom_file"
+    else:
+        row_state = "not_assessed"
+        reason = "rescan_needed"
+    totals = posture.diagnostic_totals or {}
+    internal = _safe_int(totals.get("internal_error")) or 0
+    zero_facts = state == "assessed" and live == 0 and internal == 0
+    return PostureSourceAgg(
+        key=facts.source_key,
+        label=facts.source_label,
+        state=row_state,
+        reason=reason,
+        current_scan_id=facts.scan_id,
+        last_scanned=facts.created_at,
+        zero_facts=zero_facts,
+        truncated=posture.truncated,
+        dropped=sum(posture.dropped.values()),
+        lanes=posture.lanes,
+        failed_lanes=posture.failed_lanes,
+    )
+
+
+def _finish_posture(
+    accs: dict[tuple[str, str], _PostureAcc],
+    sources: Mapping[str, _SourceAcc],
+    attempt: Mapping[str, ScanFacts],
+    now: datetime,
+) -> PostureView:
+    """Current facts are those in the newest assessed scan.  Older-only facts are an appendix."""
+    del attempt, now  # failed-latest stays on SourceAgg; the clock belongs to the renderer
+    current_facts: list[PostureFactAgg] = []
+    previous: list[PostureFactAgg] = []
+    rows: list[PostureSourceAgg] = []
+    assessed: list[ScanFacts] = []
+    for key, acc in sources.items():
+        newest = acc.newest
+        if newest is None or acc.newest_rank is None:
+            continue
+        posture = newest.posture if newest.posture is not None else PostureScan(state="absent")
+        live = sum(
+            1
+            for ident, item in accs.items()
+            if ident[0] == key and item.best_rank == acc.newest_rank
+        )
+        if posture.state not in ("assessed", "partial"):
+            live = 0
+        rows.append(_source_posture_row(newest, live))
+        if posture.state in ("assessed", "partial"):
+            assessed.append(newest)
+    assessed_keys = {facts.source_key for facts in assessed}
+    newest_rank = {
+        key: acc.newest_rank
+        for key, acc in sources.items()
+        if acc.newest_rank is not None and key in assessed_keys
+    }
+    for ident, item in accs.items():
+        source_key = ident[0]
+        if source_key not in assessed_keys:
+            continue
+        is_current = item.best_rank == newest_rank.get(source_key)
+        payload: Mapping[str, Any] = item.fact if is_current else _compact_posture_fact(item.fact)
+        agg = PostureFactAgg(
+            source_key=source_key,
+            fact_id=item.fact_id,
+            current=is_current,
+            first_seen=item.first_seen,
+            last_seen=item.last_seen,
+            scan_count=item.scan_count,
+            last_scan_id=item.last_scan_id,
+            fact=payload,
+        )
+        if is_current:
+            current_facts.append(agg)
+        else:
+            previous.append(agg)
+    current_facts.sort(
+        key=lambda agg: (
+            agg.source_key,
+            str(agg.fact.get("kind") or ""),
+            str(agg.fact.get("path") or ""),
+            _safe_int(agg.fact.get("line")) or 0,
+            str(agg.fact.get("address") or ""),
+            agg.fact_id,
+        )
+    )
+    previous.sort(key=lambda agg: (agg.source_key, agg.fact_id))
+    previous.sort(key=lambda agg: agg.last_seen, reverse=True)
+    previous_total = len(previous)
+    capped = tuple(previous[:POSTURE_REGISTER_CAP])
+    rows.sort(key=lambda row: (row.label.casefold(), row.key))
+    if not rows:
+        state = "none"
+    elif all(row.state in ("assessed", "partial") for row in rows):
+        state = "assessed"
+    elif any(row.state in ("assessed", "partial") for row in rows):
+        state = "mixed"
+    else:
+        state = "not_assessed"
+    tables: dict[str, tuple[str, str]] = {}
+    diag_totals: Counter[str] = Counter()
+    diagnostics: list[dict[str, Any]] = []
+    imports: list[dict[str, Any]] = []
+    for facts in assessed:
+        posture = facts.posture
+        if posture is None:
+            continue
+        for row in posture.data_tables:
+            stamp = (row["valid_as_of"], row["data_version"])
+            held = tables.get(row["name"])
+            if held is None or stamp < held:
+                tables[row["name"]] = stamp
+        diag_totals.update(posture.diagnostic_totals)
+        for item in posture.diagnostics:
+            copied = dict(item)
+            copied["source_label"] = facts.source_label
+            diagnostics.append(copied)
+        imports.extend(posture.imports)
+    diagnostics.sort(
+        key=lambda item: (
+            str(item.get("source_label") or "").casefold(),
+            str(item.get("path") or ""),
+            _safe_int(item.get("line")) or 0,
+            str(item.get("code") or ""),
+        )
+    )
+    imports.sort(key=lambda item: (str(item.get("path") or ""), str(item.get("tool") or "")))
+    data_tables = tuple(
+        {"name": name, "data_version": version, "valid_as_of": day}
+        for name, (day, version) in sorted(tables.items())
+    )
+    exact = accs.exact if isinstance(accs, _PostureAccs) else True
+    return PostureView(
+        state=state,
+        sources=tuple(rows),
+        facts=tuple(current_facts),
+        previously_seen=capped,
+        previously_seen_total=previous_total,
+        imports=tuple(imports),
+        diagnostic_totals=dict(sorted(diag_totals.items())),
+        diagnostics=tuple(diagnostics[:POSTURE_DIAGNOSTIC_CAP]),
+        data_tables=data_tables,
+        counts=_posture_counts(current_facts, assessed),
+        omitted=_omitted_counts(current_facts, previous_total),
+        warnings=(),
+        previously_seen_exact=exact,
+    )
+
+
+def _tls_rank(label: str) -> int | None:
+    token = label.strip().casefold().replace(" ", "").replace("_", "").replace("-", "")
+    token = token.removeprefix("tls").removeprefix("v") if token.startswith("tls") else token
+    if token in ("sslv3", "ssl3"):
+        return 0
+    return _TLS_RANK.get(token) or _TLS_RANK.get(label.strip().casefold().replace(" ", ""))
+
+
+def _lowest_offered(protocols: Any) -> int | None:
+    pairs: list[tuple[Any, Any]] = []
+    if isinstance(protocols, dict):
+        pairs = list(protocols.items())
+    elif isinstance(protocols, list):
+        for row in protocols:
+            if isinstance(row, dict):
+                pairs.append((row.get("version") or row.get("protocol"), row.get("status")))
+            elif isinstance(row, str):
+                pairs.append((row, "offered"))
+    ranks = []
+    for label, status in pairs:
+        if not isinstance(label, str):
+            continue
+        if isinstance(status, str) and status.casefold() != "offered":
+            continue
+        rank = _tls_rank(label)
+        if rank is not None:
+            ranks.append(rank)
+    return min(ranks) if ranks else None
+
+
+def _floor_is_higher(static_net: Mapping[str, Any], imported_net: Mapping[str, Any]) -> bool:
+    floor = static_net.get("min")
+    if not isinstance(floor, str):
+        return False
+    floor_rank = _tls_rank(floor)
+    offered = _lowest_offered(imported_net.get("protocols"))
+    if floor_rank is None or offered is None:
+        return False
+    return floor_rank > offered
+
+
+def pair_endpoints(view: PostureView) -> None:
+    """Link a static TLS fact to an imported result that names the same host:port string."""
+    static: list[PostureFactAgg] = []
+    imported: list[PostureFactAgg] = []
+    for agg in view.facts:
+        if agg.fact.get("kind") != "tls_endpoint":
+            continue
+        net = agg.fact.get("net")
+        if not isinstance(net, dict):
+            continue
+        endpoints = net.get("endpoints")
+        if isinstance(endpoints, list) and any(isinstance(item, str) for item in endpoints):
+            static.append(agg)
+        elif isinstance(net.get("endpoint"), str) or isinstance(net.get("endpoint_alt"), str):
+            imported.append(agg)
+    static.sort(key=lambda agg: (agg.source_key, agg.fact_id))
+    index: dict[str, list[PostureFactAgg]] = {}
+    for agg in static:
+        net = agg.fact.get("net")
+        if not isinstance(net, dict):
+            continue
+        for endpoint in net.get("endpoints") or []:
+            if isinstance(endpoint, str):
+                index.setdefault(endpoint, []).append(agg)
+    for agg in imported:
+        net = agg.fact.get("net")
+        if not isinstance(net, dict):
+            continue
+        match: PostureFactAgg | None = None
+        for key in ("endpoint", "endpoint_alt"):
+            endpoint = net.get(key)
+            if isinstance(endpoint, str) and endpoint in index:
+                match = index[endpoint][0]
+                break
+        if match is None:
+            continue
+        agg.paired_with = f"{match.source_key}|{match.fact_id}"
+        if match.paired_with is None:
+            match.paired_with = f"{agg.source_key}|{agg.fact_id}"
+        match_net = match.fact.get("net")
+        if isinstance(match_net, dict) and _floor_is_higher(match_net, net):
+            agg.discrepancy = True
+            match.discrepancy = True
+
+
+def posture_active(view: TeamCbomView) -> bool:
+    """True when an assessed source has a current fact that carries a finding of its own."""
+    posture = view.posture
+    if posture.state not in ("assessed", "mixed"):
+        return False
+    return any(_finding_codes(agg.fact) for agg in posture.facts)
+
+
+def _posture_warnings(scans: Sequence[ScanFacts]) -> tuple[str, ...]:
+    lines = [
+        f"scan #{facts.scan_id}: {text}"
+        for facts in scans
+        for text in facts.warnings
+        if text.startswith("cbom_posture")
+    ]
+    if len(lines) > _MAX_WARNINGS:
+        omitted = len(lines) - (_MAX_WARNINGS - 1)
+        lines = [*lines[: _MAX_WARNINGS - 1], f"{omitted} further warnings omitted"]
+    return tuple(lines)
+
+
 def fold_scans(
     heads: Sequence[ScanHead],
     load_blobs: Callable[[Sequence[int]], Mapping[int, Any]],
@@ -1648,6 +2725,7 @@ def fold_scans(
     certs: dict[str, _CertAcc] = {}
     libs: dict[str, _LibAcc] = {}
     sources: dict[str, _SourceAcc] = {}
+    posture_accs = _PostureAccs()
     rank_of: dict[int, Rank] = {}
     source_of: dict[int, str] = {}
     folded: list[ScanFacts] = []  # data-bearing scans
@@ -1671,6 +2749,7 @@ def fold_scans(
             _merge_cert(certs, cert, rank)
         for lib in facts.libs:
             _merge_lib(libs, lib, rank)
+        _merge_posture(posture_accs, acc, facts, rank)
         facts.assets, facts.certs, facts.libs = [], [], []
 
     def load(group: list[tuple[Rank, ScanFacts]]) -> None:
@@ -1759,6 +2838,10 @@ def fold_scans(
     hybrid = sum(1 for a in algorithms if a.quantum_vulnerable is False and a.hybrid is True)
     codes = Counter(code for asset in live for code in asset.finding_codes)
 
+    posture_view = _finish_posture(posture_accs, sources, attempt, moment)
+    pair_endpoints(posture_view)
+    posture_view = replace(posture_view, warnings=_posture_warnings(folded))
+
     # 5. slim per-scan facts (no payload survives), warnings, fingerprint
     loaded_ids = {facts.scan_id for facts in loaded}
     in_view = [
@@ -1780,6 +2863,11 @@ def fold_scans(
         facts.is_current = facts.scan_id in current_ids
         facts.assets, facts.certs, facts.libs = [], [], []
         facts.frameworks, facts.requirements, facts.warnings = {}, [], []
+        if facts.posture is not None:
+            facts.posture.facts = []
+            facts.posture.imports = []
+            facts.posture.diagnostics = []
+            facts.posture.data_tables = []
     stamped = ",".join(
         f"{f.scan_id}:{f.last_updated.isoformat()}" for f in sorted(folded, key=lambda f: f.scan_id)
     )
@@ -1824,6 +2912,7 @@ def fold_scans(
         compliance_sources_pooled=len(full),
         compliance_legacy_excluded=legacy_excluded,
         warnings=tuple(warning_text),
+        posture=posture_view,
     )
 
 
