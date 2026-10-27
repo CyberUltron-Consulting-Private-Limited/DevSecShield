@@ -170,10 +170,11 @@ check_playwright_cache() {
 }
 
 check_openssl() {
-  if openssl req -help 2>&1 | grep -q -- '-not_before'; then
-    pass "openssl req supports -not_before/-not_after (needed to author the expired / near-expiry certs)"
+  if openssl req -help 2>&1 | grep -q -- '-not_before' ||
+    openssl ca -help 2>&1 | grep -q -- '-startdate'; then
+    pass "openssl can set certificate notBefore/notAfter"
   else
-    fail "openssl req lacks -not_before/-not_after (OpenSSL >= 3.4 needed)"
+    fail "openssl cannot set certificate notBefore/notAfter"
   fi
 }
 

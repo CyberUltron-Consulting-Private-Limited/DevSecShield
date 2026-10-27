@@ -52,12 +52,50 @@ date_stamp() { date -u -d "${TODAY} $1" +%Y%m%d000000Z; }
 # author_cert <outfile> <CN> <not_before> <not_after>
 # Self-signed leaf: RSA-2048, sha256WithRSAEncryption, O=DevSecShield-E2E, CA:FALSE (openssl defaults
 # to CA:TRUE, which would hide SELF_SIGNED_LEAF). The private key goes to a temp dir that is wiped on
-# exit; it is never written into a tree.
+# exit; it is never written into a tree. OpenSSL 3.4 sets the dates on `req`. Older 3.x builds use
+# `ca -selfsign -startdate/-enddate`, which accepts YYMMDDHHMMSSZ.
 author_cert() {
-  openssl req -x509 -newkey rsa:2048 -sha256 -noenc -keyout "${KEY_TMP}/k.pem" \
-    -subj "/O=DevSecShield-E2E/CN=$2" \
-    -addext "basicConstraints=critical,CA:FALSE" \
-    -not_before "$3" -not_after "$4" -out "$1" 2>/dev/null
+  if openssl req -help 2>&1 | grep -q -- '-not_before'; then
+    openssl req -x509 -newkey rsa:2048 -sha256 -noenc -keyout "${KEY_TMP}/k.pem" \
+      -subj "/O=DevSecShield-E2E/CN=$2" \
+      -addext "basicConstraints=critical,CA:FALSE" \
+      -not_before "$3" -not_after "$4" -out "$1" 2>/dev/null
+    return
+  fi
+  local work start end out
+  work="$(mktemp -d "${KEY_TMP}/ca.XXXXXX")"
+  start="${3:2}"
+  end="${4:2}"
+  out="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+  mkdir -p "${work}/certs"
+  : >"${work}/index.txt"
+  echo 01 >"${work}/serial"
+  cat >"${work}/openssl.cnf" <<EOF
+[ca]
+default_ca = CA_default
+[CA_default]
+database = ${work}/index.txt
+new_certs_dir = ${work}/certs
+certificate = ${work}/dummy.pem
+private_key = ${work}/k.pem
+serial = ${work}/serial
+policy = policy_any
+default_md = sha256
+x509_extensions = v3_leaf
+copy_extensions = none
+unique_subject = no
+[policy_any]
+commonName = supplied
+organizationName = supplied
+[v3_leaf]
+basicConstraints = critical,CA:FALSE
+EOF
+  openssl req -new -newkey rsa:2048 -sha256 -noenc -keyout "${work}/k.pem" \
+    -subj "/O=DevSecShield-E2E/CN=$2" -out "${work}/r.pem" \
+    -config "${work}/openssl.cnf"
+  openssl ca -selfsign -config "${work}/openssl.cnf" -in "${work}/r.pem" \
+    -keyfile "${work}/k.pem" -startdate "${start}" -enddate "${end}" \
+    -batch -notext -out "${out}"
 }
 
 # cert_band <file> -> expired | le30 | le90 | valid   (relative to now, via openssl -checkend)
@@ -75,7 +113,13 @@ cert_band() {
 
 main() {
   need_cmd openssl tar date find sha256sum sort awk
-  openssl req -help 2>&1 | grep -q -- '-not_before' || die "openssl req lacks -not_before/-not_after (OpenSSL >= 3.4 needed)"
+  if openssl req -help 2>&1 | grep -q -- '-not_before'; then
+    :
+  elif openssl ca -help 2>&1 | grep -q -- '-startdate'; then
+    :
+  else
+    die "openssl cannot set certificate notBefore/notAfter"
+  fi
   [[ -d "${FIXTURES}" ]] || die "aibom fixtures not found: ${FIXTURES}"
 
   TODAY="$(date -u +%F)"
