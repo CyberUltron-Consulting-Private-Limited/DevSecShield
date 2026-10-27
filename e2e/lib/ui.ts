@@ -61,7 +61,7 @@ export async function readMenu(page: Page, slugs: string[]): Promise<MenuItemSta
   return out;
 }
 
-/** The menu must list the six items, in this order, with these labels (all enabled unless told otherwise). */
+/** The menu must list manifest.order, in that order, with those labels. */
 export async function expectMenu(
   page: Page,
   exp: Expected,
