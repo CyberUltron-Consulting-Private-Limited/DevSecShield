@@ -453,8 +453,9 @@ def test_assets_by_type_table_reconciles_with_appendix_b(text):
 def test_scanner_table_equals_the_registry_fixture_names_and_orders(text):
     two = section(text, 2)
     registry = _registry()["scanners"]
-    assert len(registry) == 9
-    assert re.findall(r"\bcrypto_[a-z]+\b", two) == [s["name"] for s in registry]
+    assert len(registry) == 16
+    crypto = [s["name"] for s in registry if s["name"].startswith("crypto_")]
+    assert re.findall(r"\bcrypto_[a-z]+\b", two) == crypto
     assert "Scanner Order Discovers Evidence recorded" in two
     for scanner in registry:
         assert f"{scanner['name']} {scanner['order']} " in two, scanner
@@ -739,7 +740,11 @@ def test_every_view_builds_a_valid_pdf_with_all_eleven_sections(any_pdf):
 
 def test_every_view_pins_the_scanner_table_to_the_registry(any_pdf):
     two = section(body_text(any_pdf), 2)
-    assert re.findall(r"\bcrypto_[a-z]+\b", two) == [s["name"] for s in _registry()["scanners"]]
+    scanners = _registry()["scanners"]
+    crypto = [s["name"] for s in scanners if s["name"].startswith("crypto_")]
+    assert re.findall(r"\bcrypto_[a-z]+\b", two) == crypto
+    for scanner in scanners:
+        assert f"{scanner['name']} {scanner['order']} " in two
 
 
 def test_every_view_prints_thirteen_framework_rows(any_pdf):

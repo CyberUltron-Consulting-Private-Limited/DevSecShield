@@ -130,6 +130,36 @@ def test_internal_error_is_not_reported_as_zero_facts():
     assert view.posture.counts.facts == 0
 
 
+def test_the_board_counts_facts_that_carry_findings_and_prints_the_line():
+    from backend.utilities.pdf.cbom_board_report_pdf import (
+        configuration_posture_line,
+        posture_grade,
+    )
+
+    marked = marker(
+        [
+            fact("one"),
+            fact(
+                "two",
+                finding_codes=["UNENCRYPTED_AT_REST", "UNENCRYPTED_IN_TRANSIT"],
+            ),
+        ]
+    )
+    view, _seen = fold(
+        [
+            (head(1, repo="https://github.com/o/live"), blob(marked)),
+            (head(2, repo="https://github.com/o/old"), blob(present=False)),
+        ]
+    )
+    assert configuration_posture_line(view) == (
+        "Configuration posture findings: 3 (2 resources, 1 sources not assessed)"
+    )
+    grade = posture_grade(view)
+    assert grade.assessed is True
+    assert grade.high == 2
+    assert grade.critical == 0
+
+
 def test_a_newer_engine_is_not_assessed():
     block = marker(schema_version=2)
     view, _seen = fold([(head(1), blob(block))])

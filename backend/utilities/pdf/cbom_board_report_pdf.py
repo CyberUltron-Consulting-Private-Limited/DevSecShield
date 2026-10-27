@@ -58,6 +58,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     VALID,
     AssetAgg,
     TeamCbomView,
+    posture_active,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf.cbom_deliverable_common import (
@@ -201,18 +202,47 @@ class PostureGrade:
 def _not_assessed_reason(view: TeamCbomView) -> str | None:
     if view.is_empty:
         return REASON_NO_SCANS
-    if view.asset_occurrences <= 0:
+    # Posture facts with findings are enough to grade, even with no crypto assets.
+    if view.asset_occurrences <= 0 and not posture_active(view):
         return REASON_NO_ASSETS
-    if view.compliance_sources_pooled == 0 and not view.issue_by_impact:
+    if (
+        view.compliance_sources_pooled == 0
+        and not view.issue_by_impact
+        and not posture_active(view)
+    ):
         return REASON_LEGACY_ONLY  # only legacy rows: they carry no finding codes to grade
     return None
 
 
+def _posture_issue_counts(view: TeamCbomView) -> tuple[int, int, int, int]:
+    counts = view.posture.counts.facts_with_findings_by_impact
+    return tuple(int(counts.get(level, 0) or 0) for level in IMPACT_LEVELS)
+
+
+def configuration_posture_line(view: TeamCbomView) -> str | None:
+    """Printed only when posture findings enter the grade. ``None`` keeps the old text."""
+    if not posture_active(view):
+        return None
+    resources = sum(_posture_issue_counts(view))
+    findings = sum(int(count) for count in view.posture.counts.findings_by_code.values())
+    sources = sum(
+        1 for row in view.posture.sources if row.state not in ("assessed", "partial")
+    )
+    return (
+        f"Configuration posture findings: {findings} "
+        f"({resources} resources, {sources} sources not assessed)"
+    )
+
+
 def posture_grade(view: TeamCbomView) -> PostureGrade:
     """Grade of the current issue assets via ``compute_risk_score``; NOT ASSESSED without data."""
-    critical, high, medium, low = (
-        int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS
-    )
+    asset_counts = [int(view.issue_by_impact.get(level, 0) or 0) for level in IMPACT_LEVELS]
+    if posture_active(view):
+        asset_counts = [
+            base + extra
+            for base, extra in zip(asset_counts, _posture_issue_counts(view), strict=True)
+        ]
+    critical, high, medium, low = asset_counts
     weights = authored.GRADE_WEIGHTS
     weighted = sum(
         count * weights[level]
@@ -586,7 +616,7 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
         return [f"{posture.reason} {NOT_ASSESSED_EXPLANATION}"]
     total, breakdown = _issue_breakdown(view)
     findings = breakdown.replace(" \u00b7 ", ", ")
-    return [
+    paragraphs = [
         (
             f"Across {_count(len(view.sources), 'source')} and "
             f"{_count(view.included, 'completed scan')}, the platform inventoried "
@@ -600,6 +630,10 @@ def _summary_paragraphs(view: TeamCbomView, posture: PostureGrade) -> list[str]:
         ),
         f"{_quantum_sentence(view)} {_certificate_sentence(certificate_posture(view))}",
     ]
+    line = configuration_posture_line(view)
+    if line is not None:
+        paragraphs.append(line)
+    return paragraphs
 
 
 # ---------------------------------------------------------------------------------------------
@@ -852,14 +886,23 @@ def _signoff_section(styles: Styles, width: float):
     ]
 
 
-def _grade_appendix(posture: PostureGrade, styles: Styles):
+def _grade_input_text(view: TeamCbomView) -> str:
+    if not posture_active(view):
+        return authored.GRADE_INPUT
+    return authored.GRADE_INPUT + " plus configuration posture findings by impact."
+
+
+def _grade_appendix(view: TeamCbomView, posture: PostureGrade, styles: Styles):
     story: list[Flowable] = [
         *section_heading(H_APP_GRADE, styles, min_space=280),
         _para(authored.GRADE_FORMULA, styles),
         _gap(3),
-        _para(authored.GRADE_INPUT, styles),
+        _para(_grade_input_text(view), styles),
         _gap(6),
     ]
+    line = configuration_posture_line(view)
+    if line is not None:
+        story += [_para(line, styles), _gap(4)]
     if posture.assessed:
         counts = (posture.critical, posture.high, posture.medium, posture.low)
         weights = authored.GRADE_WEIGHTS
@@ -928,7 +971,7 @@ def _body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     story += _pqc_section(view, styles)
     story += _governance_section(view, styles)
     story += _signoff_section(styles, width)
-    story += _grade_appendix(posture, styles)
+    story += _grade_appendix(view, posture, styles)
     story += _scans_appendix(view, styles)
     story += _disclaimers_appendix(styles)
     return story

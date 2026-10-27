@@ -373,7 +373,12 @@ def _automated(styles: Styles) -> list[Flowable]:
         [84, 30, 236, 190],
         cell_limit=_CELL_LIMIT,
     )
-    content = [_para(authored.CBOM_SCANNER_INTRO, styles["body"]), table, Spacer(1, 4)]
+    content = [
+        _para(authored.CBOM_SCANNER_INTRO, styles["body"]),
+        table,
+        Spacer(1, 4),
+        _para(authored.POSTURE_LANES_NOTE, styles["body"]),
+    ]
     return _section(2, styles, content, together=False)
 
 

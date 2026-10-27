@@ -2487,7 +2487,10 @@ const reinitializeCBOMScanWithPayload = async (
 export const CBOM_DELIVERABLES = [
   { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
+  { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
+  { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
   { slug: "certificate-estate-register", number: 7, title: "Certificate Estate Register" },
+  { slug: "data-at-rest-encryption-assessment", number: 9, title: "Data-at-Rest Encryption Assessment" },
   { slug: "third-party-assurance-register", number: 10, title: "Third-Party Cryptographic Assurance & Attestation Register" },
   { slug: "pqc-migration-roadmap", number: 15, title: "PQC Migration Roadmap" },
   { slug: "board-executive-report", number: 16, title: "Board / IT Strategy Committee Regulatory & Executive Report" },

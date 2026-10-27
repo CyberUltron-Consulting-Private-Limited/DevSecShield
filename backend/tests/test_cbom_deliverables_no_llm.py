@@ -57,7 +57,10 @@ _ROUTERS = _BACKEND / "routers"
 SLUGS = (
     "scope-baseline-register",
     "methodology-evidence-plan",
+    "infrastructure-cloud-encryption-posture",
+    "network-tls-protocol-assessment",
     "certificate-estate-register",
+    "data-at-rest-encryption-assessment",
     "third-party-assurance-register",
     "pqc-migration-roadmap",
     "board-executive-report",

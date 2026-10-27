@@ -130,8 +130,10 @@ RBI_BOM_DISCLAIMER = (
 # Product text: the scanners are static (aibom/src/aibom/cbom/scanners/); nothing probes a
 # live network, a key-management system or stored data.
 SCOPE_OF_METHOD = (
-    "Method: static analysis of repositories and uploaded artefacts. It does not include "
-    "live-network discovery, HSM/KMS custody or data-at-rest encryption."
+    "Method: static analysis of repositories and uploaded artefacts, including declared "
+    "infrastructure and server configuration (documents #5, #6 and #9) and offline import "
+    "of TLS result files. It does not include live-network discovery, inspection of HSM "
+    "or KMS custody, or inspection of stored data."
 )
 DISCLAIMER_PARAGRAPHS = (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, SCOPE_OF_METHOD)
 
@@ -532,12 +534,51 @@ CBOM_SCANNERS = (
         "Protocol type, version and cipher suites; source path.",
     ),
     ScannerSpec(
+        "posture_iac",
+        31,
+        "Declared encryption settings in Terraform, CloudFormation, Kubernetes, "
+        "docker-compose and Dockerfile files.",
+        "One encryption fact per declared resource, with a verdict for each layer "
+        "and the source path.",
+    ),
+    ScannerSpec(
+        "posture_server",
+        32,
+        "Declared listeners and protocol floors in web, proxy and SSH server "
+        "configuration.",
+        "One encryption fact per listener, with the protocol floor and the source path.",
+    ),
+    ScannerSpec(
+        "posture_database",
+        33,
+        "Declared transport and at-rest settings in database, disk and SQL files.",
+        "One encryption fact per declared store or disk setting, with the source path.",
+    ),
+    ScannerSpec(
+        "posture_tls_import",
+        34,
+        "Offline import of TLS result files the customer's own tools produced.",
+        "One endpoint fact per imported result. The platform does not probe the endpoint.",
+    ),
+    ScannerSpec(
         "crypto_policy",
         35,
         "Crypto policy files: java.security (disabled-algorithm lists and JCE policy) and "
         "openssl.cnf (minimum and maximum protocol, cipher strings).",
         "Policy-source protocol asset with the protocol floor and ceiling and the "
         "disabled-algorithm list; source path.",
+    ),
+    ScannerSpec(
+        "posture_verification",
+        36,
+        "Source that disables certificate verification.",
+        "One verification fact per disabled check, with the source path.",
+    ),
+    ScannerSpec(
+        "posture_linkage",
+        38,
+        "Business mapping files that name an owner or a data classification for a fact.",
+        "Linkage fields stamped on an existing fact. The scanner emits no new asset.",
     ),
     ScannerSpec(
         "crypto_weakness",
@@ -547,6 +588,12 @@ CBOM_SCANNERS = (
         "padding, key-material misuse, and certificates that are expired, signed with a "
         "broken hash, undersized or self-signed leaves.",
         "Finding code and severity per asset; no new asset.",
+    ),
+    ScannerSpec(
+        "posture_findings",
+        45,
+        "Raises posture finding flags from the declared facts already inventoried.",
+        "Finding code and severity on each fact. The scanner emits no new asset.",
     ),
     ScannerSpec(
         "crypto_pqc",
@@ -567,6 +614,18 @@ CBOM_SCANNERS = (
 CBOM_SCANNER_INTRO = (
     "The engine runs its registered scanners in a fixed order. Earlier scanners inventory "
     "assets; later scanners evaluate and enrich that inventory. Detection is deterministic."
+)
+POSTURE_LANES_NOTE = (
+    "Configuration posture lanes: posture_iac, posture_server, posture_database, "
+    "posture_tls_import, posture_verification, posture_linkage and posture_findings. "
+    "They read provider_defaults_aws.json, provider_defaults_azure.json, "
+    "provider_defaults_gcp.json, provider_defaults_k8s.json, "
+    "provider_defaults_software.json, coverage_table.json, key_specs.json, "
+    "key_policy_conditions.json, named_vulnerabilities.json, cipher_suites.json, "
+    "named_groups.json, tls_policies.json, verification_patterns.json, "
+    "tls_import_formats.json and datastore_images.json. A configuration file is "
+    "capped at 5 MiB, a TLS result file at 20 MiB and a scan at 50,000 facts. "
+    "Result files are imported offline. The platform does not probe any endpoint."
 )
 
 METHOD_PURPOSE = (
@@ -629,8 +688,10 @@ METHOD_LIMITS = (
     "Static analysis only: source code, configuration and certificate or key files are "
     "inspected; running systems are not.",
     "No live-network discovery: TLS endpoints, load balancers and appliances are not probed.",
-    "No visibility into hardware security modules, key-management services or key custody.",
-    "No assessment of data-at-rest encryption in databases, object stores or disks.",
+    "Declared KMS and HSM settings in configuration are assessed. Live HSM firmware, "
+    "custodianship, and escrow are not inspected.",
+    "Data-at-rest encryption is assessed from declared configuration only (document #9); "
+    "the live state of databases, object stores and disks is not inspected.",
     "Third-party and SaaS services are visible only through the libraries and configuration "
     "that scanned code references.",
     "Outside Python, Java and Go, algorithm detection relies on literal patterns and can miss "
@@ -657,7 +718,8 @@ MANUAL_DISCOVERY_ITEMS = (
     ),
     (
         "Data-at-rest encryption",
-        "Database, object-store and disk encryption is runtime configuration.",
+        "Whether stored data is actually encrypted. Declared settings are assessed in "
+        "document #9 and are not proof of operation.",
     ),
     (
         "SaaS and third-party services",
@@ -774,6 +836,7 @@ __all__ = [
     "BASIS_SOURCES",
     "CBOM_SCANNERS",
     "CBOM_SCANNER_INTRO",
+    "POSTURE_LANES_NOTE",
     "CERTIN_DISCLAIMER",
     "CERT_CHAIN_LABELS",
     "CERT_CHAIN_NOTE",

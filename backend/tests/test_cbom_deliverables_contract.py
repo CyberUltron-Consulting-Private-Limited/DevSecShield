@@ -38,7 +38,10 @@ from backend.utilities.pdf import (  # noqa: E402
     cbom_assurance_register_pdf,
     cbom_board_report_pdf,
     cbom_cert_register_pdf,
+    cbom_data_at_rest_pdf,
+    cbom_infra_posture_pdf,
     cbom_methodology_pdf,
+    cbom_network_tls_pdf,
     cbom_pqc_roadmap_pdf,
     cbom_scope_register_pdf,
 )
@@ -58,12 +61,27 @@ UTC = timezone.utc
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 NOW = datetime(2026, 10, 19, 12, 28, tzinfo=UTC)
 
-# The six documents, in menu order.  Literals on purpose: the registry must not be able to
+# The nine documents, in menu order.  Literals on purpose: the registry must not be able to
 # "agree with itself" after an accidental edit.
 EXPECTED = [
     ("scope-baseline-register", 1, "Scope Baseline & Asset Population Register"),
     ("methodology-evidence-plan", 3, "Cryptographic Discovery Methodology & Evidence Plan"),
+    (
+        "infrastructure-cloud-encryption-posture",
+        5,
+        "Infrastructure & Cloud Encryption Posture",
+    ),
+    (
+        "network-tls-protocol-assessment",
+        6,
+        "Network, TLS & Crypto Protocol Assessment",
+    ),
     ("certificate-estate-register", 7, "Certificate Estate Register"),
+    (
+        "data-at-rest-encryption-assessment",
+        9,
+        "Data-at-Rest Encryption Assessment",
+    ),
     (
         "third-party-assurance-register",
         10,
@@ -79,12 +97,22 @@ EXPECTED = [
 RENDERERS = {
     "scope-baseline-register": (cbom_scope_register_pdf, "DELIVERABLE_NUMBER"),
     "methodology-evidence-plan": (cbom_methodology_pdf, "NUMBER"),
+    "infrastructure-cloud-encryption-posture": (cbom_infra_posture_pdf, "DOCUMENT_NUMBER"),
+    "network-tls-protocol-assessment": (cbom_network_tls_pdf, "DOCUMENT_NUMBER"),
     "certificate-estate-register": (cbom_cert_register_pdf, "NUMBER"),
+    "data-at-rest-encryption-assessment": (cbom_data_at_rest_pdf, "DOCUMENT_NUMBER"),
     "third-party-assurance-register": (cbom_assurance_register_pdf, "DOCUMENT_NUMBER"),
     "pqc-migration-roadmap": (cbom_pqc_roadmap_pdf, "NUMBER"),
     "board-executive-report": (cbom_board_report_pdf, "DELIVERABLE_NUMBER"),
 }
-DATA_DEPENDENT = {"certificate-estate-register", "pqc-migration-roadmap", "board-executive-report"}
+DATA_DEPENDENT = {
+    "infrastructure-cloud-encryption-posture",
+    "network-tls-protocol-assessment",
+    "certificate-estate-register",
+    "data-at-rest-encryption-assessment",
+    "pqc-migration-roadmap",
+    "board-executive-report",
+}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -158,8 +186,8 @@ def test_registry_keys_are_the_slugs_and_slugs_are_url_safe():
     for key, spec in DELIVERABLES.items():
         assert key == spec.slug
         assert re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", key), key
-    assert len({s.number for s in DELIVERABLES.values()}) == 6
-    assert len({s.title for s in DELIVERABLES.values()}) == 6
+    assert len({s.number for s in DELIVERABLES.values()}) == 9
+    assert len({s.title for s in DELIVERABLES.values()}) == 9
 
 
 @pytest.mark.parametrize("slug", [e[0] for e in EXPECTED])
@@ -278,6 +306,18 @@ def test_disclaimers_equal_the_existing_product_constants():
     )
     scope = authored.SCOPE_OF_METHOD.lower()
     assert "static analysis" in scope and "live-network" in scope
+    assert authored.METHOD_LIMITS[2] == (
+        "Declared KMS and HSM settings in configuration are assessed. Live HSM firmware, "
+        "custodianship, and escrow are not inspected."
+    )
+    assert authored.METHOD_LIMITS[3].startswith(
+        "Data-at-rest encryption is assessed from declared configuration only"
+    )
+    assert authored.MANUAL_DISCOVERY_ITEMS[2] == (
+        "Data-at-rest encryption",
+        "Whether stored data is actually encrypted. Declared settings are assessed in "
+        "document #9 and are not proof of operation.",
+    )
 
 
 def test_no_ai_bom_disclaimer_leaks_into_the_authored_text():
@@ -415,7 +455,7 @@ def test_authored_scanner_list_equals_the_registry_fixture():
     assert [(s.name, s.order) for s in authored.CBOM_SCANNERS] == [
         (s["name"], s["order"]) for s in registry["scanners"]
     ]
-    assert len(authored.CBOM_SCANNERS) == 9
+    assert len(authored.CBOM_SCANNERS) == 16
     described = (s.discovers for s in authored.CBOM_SCANNERS)
     printed = " ".join([authored.CBOM_SCANNER_INTRO, *described])
     unwired_names = (
@@ -433,7 +473,7 @@ def test_scanner_registry_fixture_equals_the_engine_source():
     wired = re.search(r"from aibom\.cbom\.scanners import \((.*?)\)", scanners, re.S)
     assert wired, "scanners/__init__.py no longer imports its modules in one block"
     modules = re.findall(r"^\s+(\w+),", wired.group(1), re.M)
-    assert len(modules) == 9
+    assert len(modules) == 16
     found: list[tuple[str, int]] = []
     for module in modules:
         text = _read(f"aibom/src/aibom/cbom/scanners/{module}.py", needs_engine=True)
@@ -460,12 +500,15 @@ def test_all_six_report_meta_keys_exist_and_belong_to_the_registry():
     assert keys == [
         "cbom_scope_register",
         "cbom_methodology",
+        "cbom_infra_posture",
+        "cbom_network_tls",
         "cbom_cert_register",
+        "cbom_data_at_rest",
         "cbom_assurance_register",
         "cbom_pqc_roadmap",
         "cbom_board_report",
     ]
-    assert len(set(keys)) == 6
+    assert len(set(keys)) == 9
     labels = []
     for spec in DELIVERABLES.values():
         meta = REPORT_META[spec.report_key]
@@ -474,7 +517,7 @@ def test_all_six_report_meta_keys_exist_and_belong_to_the_registry():
         assert spec.title == meta["title"]
         assert spec.description == meta["intro"]
         labels.append(meta["footer_label"])
-    assert len(set(labels)) == 6, "every document must print its own footer label"
+    assert len(set(labels)) == 9, "every document must print its own footer label"
     assert "SAST" not in " ".join(labels)
 
 

@@ -76,12 +76,15 @@ PDF_PATH = "/{team_id}/cbom/deliverables/{slug}"
 SLUGS = [
     "scope-baseline-register",
     "methodology-evidence-plan",
+    "infrastructure-cloud-encryption-posture",
+    "network-tls-protocol-assessment",
     "certificate-estate-register",
+    "data-at-rest-encryption-assessment",
     "third-party-assurance-register",
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 3, 7, 10, 15, 16], strict=True))
+NUMBERS = dict(zip(SLUGS, [1, 3, 5, 6, 7, 9, 10, 15, 16], strict=True))
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).
@@ -375,6 +378,7 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     assert response.headers["x-cbom-sources"] == "7"
     assert response.headers["x-cbom-fidelity"] == "mixed"
     assert response.headers["x-cbom-fingerprint"] == fingerprint
+    assert response.headers["x-cbom-posture"] == "not_assessed"
     assert int(response.headers["content-length"]) == len(body)
 
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape
@@ -434,6 +438,7 @@ def test_an_empty_team_gets_a_200_pdf_with_the_banner(api, slug):
     assert response.headers["x-cbom-scans-included"] == "0"
     assert response.headers["x-cbom-sources"] == "0"
     assert response.headers["x-cbom-fidelity"] == "none"
+    assert response.headers["x-cbom-posture"] == "none"
     text = full_text(response.content)
     assert "NO COMPLETED CBOM SCANS" in text
     assert "Empty Team (ID 3)" in text

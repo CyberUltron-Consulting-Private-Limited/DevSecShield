@@ -1,4 +1,4 @@
-"""Registry of the six team-wide CBOM regulatory deliverables (WP4, plan 5.1 item 11).
+"""Registry of the nine team-wide CBOM regulatory deliverables (WP4, plan 5.1 item 11).
 
 ``DELIVERABLES`` is the ONE place that knows which documents exist, in which order they are
 offered and which function renders each of them.  Adding a seventh deliverable is one new
@@ -37,7 +37,10 @@ from backend.utilities.pdf import (
     cbom_assurance_register_pdf,
     cbom_board_report_pdf,
     cbom_cert_register_pdf,
+    cbom_data_at_rest_pdf,
+    cbom_infra_posture_pdf,
     cbom_methodology_pdf,
+    cbom_network_tls_pdf,
     cbom_pqc_roadmap_pdf,
     cbom_scope_register_pdf,
 )
@@ -77,11 +80,29 @@ def _spec(
     )
 
 
-# Menu order is the order of this tuple: documents #1, #3, #7, #10, #15, #16.
+# Menu order: documents #1, #3, #5, #6, #7, #9, #10, #15, #16.
 _SPECS = (
     _spec("scope-baseline-register", 1, cbom_scope_register_pdf),
     _spec("methodology-evidence-plan", 3, cbom_methodology_pdf),
+    _spec(
+        "infrastructure-cloud-encryption-posture",
+        5,
+        cbom_infra_posture_pdf,
+        data_dependent=True,
+    ),
+    _spec(
+        "network-tls-protocol-assessment",
+        6,
+        cbom_network_tls_pdf,
+        data_dependent=True,
+    ),
     _spec("certificate-estate-register", 7, cbom_cert_register_pdf, data_dependent=True),
+    _spec(
+        "data-at-rest-encryption-assessment",
+        9,
+        cbom_data_at_rest_pdf,
+        data_dependent=True,
+    ),
     _spec("third-party-assurance-register", 10, cbom_assurance_register_pdf),
     _spec("pqc-migration-roadmap", 15, cbom_pqc_roadmap_pdf, data_dependent=True),
     _spec("board-executive-report", 16, cbom_board_report_pdf, data_dependent=True),

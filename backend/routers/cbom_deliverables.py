@@ -165,7 +165,7 @@ TeamId = Annotated[int, Path(ge=1, le=_MAX_TEAM_ID, description="Team id")]
     "/{team_id}/cbom/deliverables",
     summary="List the team-wide CBOM regulatory deliverables",
     description=(
-        "Manifest for the Deliverables menu: the six documents in menu order and whether each "
+        "Manifest for the Deliverables menu: the nine documents in menu order and whether each "
         "has anything to show. Reads only scan heads (no scan data), so it is cheap. "
         "`available` is a UI hint; the PDF route always answers 200."
     ),
@@ -195,6 +195,14 @@ async def list_cbom_deliverables(
     return JSONResponse(manifest, headers=_PRIVATE)
 
 
+def _posture_header(view: Any) -> str:
+    """``assessed``, ``mixed``, ``not_assessed`` or ``none``."""
+    state = getattr(getattr(view, "posture", None), "state", "none")
+    if state in ("assessed", "mixed", "not_assessed", "none"):
+        return state
+    return "none"
+
+
 @router.get(
     "/{team_id}/cbom/deliverables/{slug}",
     summary="Download one team-wide CBOM regulatory deliverable (PDF)",
@@ -202,8 +210,8 @@ async def list_cbom_deliverables(
         "Builds the document in memory from every completed CBOM scan of the team. Always 200 "
         "for a member and a known slug: a team without completed scans gets a PDF with a "
         "'NO COMPLETED CBOM SCANS' banner. Response headers X-Cbom-Scans-Included, "
-        "X-Cbom-Sources, X-Cbom-Fidelity (full, mixed, reduced or none) and X-Cbom-Fingerprint "
-        "are informational."
+        "X-Cbom-Sources, X-Cbom-Fidelity (full, mixed, reduced or none), X-Cbom-Fingerprint "
+        "and X-Cbom-Posture (assessed, mixed, not_assessed or none) are informational."
     ),
     dependencies=[Depends(limiter)],
     response_model=None,
@@ -244,6 +252,7 @@ async def download_cbom_deliverable(
         "X-Cbom-Sources": str(len(view.sources)),
         "X-Cbom-Fidelity": view.fidelity_summary,
         "X-Cbom-Fingerprint": view.fingerprint,
+        "X-Cbom-Posture": _posture_header(view),
     }
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     console.print(
