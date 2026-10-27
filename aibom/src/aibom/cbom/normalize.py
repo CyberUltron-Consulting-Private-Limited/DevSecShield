@@ -22,6 +22,7 @@ from typing import Any
 
 from aibom.cbom.posture.assemble import build_posture_block
 from aibom.cbom.posture.context import CbomScanResult
+from aibom.cbom.posture.findings import POSTURE_CODES
 from aibom.cbom.pqc import QUANTUM_VULNERABLE
 from aibom.cbom.weakness import (
     CERT_NEAR_EXPIRY,
@@ -70,7 +71,8 @@ def _risk_score_for(comp: AIComponent, result: ScanResult) -> float:
     """0–10 differentiated risk from stacked flag weight + impact floor."""
     impact = _impact_for(comp, result)
     base = {"Critical": 7.5, "High": 5.5, "Medium": 3.5, "Low": 1.2}.get(impact, 1.2)
-    raw = float((result.scores or {}).get("by_component", {}).get(comp.bom_ref, 0.0) or 0.0)
+    by_component = (result.scores or {}).get("by_component", {})
+    raw = float(by_component.get(comp.bom_ref, 0.0) or 0.0)
     # raw weights typically land 0–16; fold into remaining headroom above the floor.
     score = base + raw * 0.25
     return round(min(10.0, max(0.0, score)), 1)
@@ -375,6 +377,18 @@ def _is_fact_component(component: AIComponent) -> bool:
     return "crypto:factId" in (component.properties or {})
 
 
+def _flagged_facts(result: ScanResult) -> list[AIComponent]:
+    """Facts that carry a posture finding. Facts with no finding stay out of results."""
+    found: list[AIComponent] = []
+    for component in result.components:
+        if not _is_fact_component(component):
+            continue
+        codes = {flag.code for flag in result.flags_for(component.bom_ref)}
+        if codes & POSTURE_CODES:
+            found.append(component)
+    return found
+
+
 def _crypto_graph(
     result: ScanResult, bom: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
@@ -454,7 +468,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     scores through verbatim, so no chart can be starved by a flattened payload.
     """
     assets = _crypto_assets(result)
-    findings = [_finding(c, result) for c in assets]
+    findings = [_finding(c, result) for c in (*assets, *_flagged_facts(result))]
     findings.sort(
         key=lambda f: (_IMPACT_RANK.get(f["impact"], 9), str(f["title"]))
     )

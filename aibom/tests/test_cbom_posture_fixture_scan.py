@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from aibom.cbom.normalize import normalize_crypto
 from aibom.cbom.pipeline import scan_crypto
 
 TREE = Path(__file__).resolve().parent / "fixtures" / "synthetic-config-aws-tf"
@@ -27,6 +28,14 @@ def test_committed_terraform_tree_matches_the_oracle() -> None:
     assert found == wanted
     codes = {flag.code for flag in result.flags}
     assert "UNENCRYPTED_AT_REST" in codes
+    run = normalize_crypto(result, duration_of_scan=0.0)
+    rows = [
+        row
+        for row in run["results"]
+        if str(row["bom_ref"]).startswith("crypto-cfg_")
+    ]
+    assert len(rows) == 1
+    assert rows[0]["finding_codes"] == ["UNENCRYPTED_AT_REST"]
     locked = json.loads((TREE / "cbom_posture_scan.json").read_text(encoding="utf-8"))
     detailed = []
     for comp in result.components:
