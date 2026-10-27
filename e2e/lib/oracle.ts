@@ -98,7 +98,16 @@ export function checkCommon(doc: DocInput, w: World, f: Findings): DocMeta | nul
     `${label}: Basis - sources / fidelity line`,
   );
   f.contains(doc.raw, common.basis_rule, `${label}: Basis - rule line`);
-  for (const sentence of common.disclaimers as string[]) f.contains(doc.raw, sentence, `${label}: disclaimer sentence`);
+  const postureMethod =
+    'Method: analysis of declared configuration in repositories and uploaded artefacts (infrastructure-as-code, container and cluster definitions, server and database configuration) and offline import of result files that the customer\'s own tools produced. The platform does not probe any endpoint, call any cloud API, inspect a KMS or HSM, or inspect stored data. A declared setting is not proof that it is in operation.';
+  const postureSlug =
+    doc.slug === 'infrastructure-cloud-encryption-posture' ||
+    doc.slug === 'network-tls-protocol-assessment' ||
+    doc.slug === 'data-at-rest-encryption-assessment';
+  const disclaimers = postureSlug
+    ? [...(common.disclaimers as string[]).slice(0, 2), postureMethod]
+    : (common.disclaimers as string[]);
+  for (const sentence of disclaimers) f.contains(doc.raw, sentence, `${label}: disclaimer sentence`);
   f.contains(doc.raw, common.manual_legend, `${label}: manual-cell legend`);
 
   // --- brand footer with page number on every page ---
@@ -146,6 +155,15 @@ export function checkDocument(doc: DocInput, w: World): Findings {
       break;
     case 'board-executive-report':
       checkBoard(doc, w, meta, f);
+      break;
+    case 'infrastructure-cloud-encryption-posture':
+      f.contains(doc.raw, 'declared configuration is not proof of operation', '#5 limit sentence');
+      break;
+    case 'network-tls-protocol-assessment':
+      f.contains(doc.raw, 'The platform did not probe any endpoint', '#6 no live probe');
+      break;
+    case 'data-at-rest-encryption-assessment':
+      f.contains(doc.raw, 'stored data was not inspected', '#9 stored data not inspected');
       break;
     default:
       f.check(false, `unknown deliverable slug ${doc.slug}`);

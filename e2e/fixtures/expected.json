@@ -167,7 +167,7 @@
     "disclaimers": [
       "Advisory mapping to CERT-In Technical Guidelines on SBOM, QBOM & CBOM, AIBOM and HBOM v2.0 (09.07.2025). Does not constitute CERT-In certification or regulatory approval.",
       "Advisory mapping only. BOM evidence supports but does not satisfy regulatory obligations. Organizational/process controls require attestation.",
-      "Method: static analysis of repositories and uploaded artefacts. It does not include live-network discovery, HSM/KMS custody or data-at-rest encryption."
+      "Method: static analysis of repositories and uploaded artefacts, including declared infrastructure and server configuration (documents #5, #6 and #9) and offline import of TLS result files. It does not include live-network discovery, inspection of HSM or KMS custody, or inspection of stored data."
     ],
     "manual_legend": "Cells marked (assessor) are MANUAL: they are intentionally left blank for the assessor to complete and are never pre-filled by the platform.",
     "fonts_allowed": ["Helvetica", "Helvetica-Bold", "Courier"],
@@ -198,17 +198,17 @@
     "infrastructure-cloud-encryption-posture": {
       "number": 5, "title": "Infrastructure & Cloud Encryption Posture",
       "menu_label": "#5 · Infrastructure & Cloud Encryption Posture",
-      "header_label": "CBOM Infrastructure Posture", "orientation": "portrait", "min_pages": 1, "max_pages": 20
+      "header_label": "CBOM Infrastructure Posture", "orientation": "landscape", "min_pages": 1, "max_pages": 20
     },
     "network-tls-protocol-assessment": {
       "number": 6, "title": "Network, TLS & Crypto Protocol Assessment",
       "menu_label": "#6 · Network, TLS & Crypto Protocol Assessment",
-      "header_label": "CBOM Network TLS Assessment", "orientation": "portrait", "min_pages": 1, "max_pages": 20
+      "header_label": "CBOM Network TLS Assessment", "orientation": "landscape", "min_pages": 1, "max_pages": 20
     },
     "data-at-rest-encryption-assessment": {
       "number": 9, "title": "Data-at-Rest Encryption Assessment",
       "menu_label": "#9 · Data-at-Rest Encryption Assessment",
-      "header_label": "CBOM Data-at-Rest Assessment", "orientation": "portrait", "min_pages": 1, "max_pages": 20
+      "header_label": "CBOM Data-at-Rest Assessment", "orientation": "landscape", "min_pages": 1, "max_pages": 20
     },
     "pqc-migration-roadmap": {
       "number": 15, "title": "PQC Migration Roadmap",
