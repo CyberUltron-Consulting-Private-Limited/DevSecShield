@@ -182,3 +182,21 @@
 - CBOM DELIVERABLES GOTCHA F-09: a clean git worktree/CI build bakes the WRONG env and misses migrations: the four `.env` files are tracked and HEAD holds the old deactivated key (suffix `4I25`) while the main checkout holds the rotated key as uncommitted edits; `backend/_migrations/` is fully gitignored but `backend/Dockerfile` does `COPY _migrations /prod_database_migrations`, so populate it first: `rsync -a --exclude .env --exclude __pycache__ prod_database_migrations/ backend/_migrations/`. Never commit `.env`; `frontend/.env.local` / `.env.production.local` are ignored too.
 - CBOM DELIVERABLES GOTCHA R-07: `cert_scan` ignores `vendor/` (`certificate_scan.py` `_IGNORE_DIRS`), so a cert placed under `vendor/` is silently skipped. Keep seeds/fixtures for certificate scans out of `vendor/`.
 - CBOM DELIVERABLES GOTCHA R-08: a manifest-only repo yields `results=[]` but still has library components in `cbom_json` (e.g. 18 in `synthetic-crypto-manifests`). That is a VALID in-scope scan: the aggregator reads libraries from `cbom_json` and counts the scan in scope; never treat empty `results` as out-of-scope or failed.
+
+## CBOM configuration posture
+- Posture scanners are `posture_iac` 31, `posture_server` 32, `posture_database` 33, `posture_tls_import` 34, `posture_verification` 36, `posture_linkage` 38, `posture_findings` 45. Each module has one `name` line and one `order` line, and `level = 1`.
+- `scale.max_raw` stays 112. The pin is what keeps existing scores on the old divisor.
+- `cbom_posture` lives on the run-object in `scan_data`. Backend readers take it from there. `get_scan_metadata` does not surface it.
+- `CbomScanContext` and `CbomScanResult` carry the lane. Fact components are `infra` components with `crypto:fact*` properties. Their bom-ref prefix is `crypto-cfg_`.
+- Data files live in `aibom/src/aibom/cbom/data/` and load only through `importlib.resources`. Properties stay in the `crypto:` namespace.
+- YAML uses a pure-Python loader. Constructors are registered with `add_constructor`. A document over its cap is drained to `DocumentEndEvent`. Posture code does not call `detect.strip_noncode`.
+- Included files are read by `PostureSink.read_included`. A classified file included by another file is analysed in the includer's context.
+- An attribute path is hidden when any dotted segment contains one of `password`, `passwd`, `secret`, `token`, `api_key`, `access_key`, `private_key`, `credential`, `connection_string`, `encryption_key`, `key_material`.
+- `non_production_hint` is a label only. It does not change severity.
+- Only reviewed rows raise a finding from an absent attribute. A Google Cloud KMS key with no `rotation_period` is UNKNOWN and does not raise `KMS_KEY_ROTATION_DISABLED`. Every `azurerm_key_vault_key` rotation is `not_applicable`.
+- The dashboard card counts every component, including facts. Do not edit `backend/utilities/dashboard/scan.py` for this lane.
+- Posture PDF registers use `posture_table`. Do not change `dense_table` for them.
+- Tests are named `test_cbom_posture_*`. Fixture trees are `synthetic-config-*`. Their oracles are hand-derived.
+- `POSTURE_BLOCK_BYTES` is 8388608. `bomcheck.py` is not in the tree. The hatchling wheel still fails on duplicate `force-include` entries (K-1); do not edit `pyproject.toml` to hide that.
+- Zip upload still needs `AWS_ENDPOINT_URL_S3` for the product stack. The posture scanners themselves do not open a network connection.
+- Do not write `bedrock`, `anthropic`, `openai`, `get_llm`, or `chatbedrock` in new backend posture text, including comments.
