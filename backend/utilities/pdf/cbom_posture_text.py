@@ -68,7 +68,12 @@ FINDING_ANCHORS = {
 # Source: CVE-2014-0160, one scored TLS defect: https://www.cve.org/CVERecord?id=CVE-2014-0160
 # Source: NIST SP 800-57 Part 1 Rev 5, cryptoperiod and key destruction: https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final
 # Source: CWE-284, improper access control: https://cwe.mitre.org/data/definitions/284.html
+# Source: CWE-295, improper certificate validation: https://cwe.mitre.org/data/definitions/295.html
+# Source: CWE-311, missing encryption: https://cwe.mitre.org/data/definitions/311.html
+# Source: CWE-312, cleartext storage: https://cwe.mitre.org/data/definitions/312.html
+# Source: CWE-319, cleartext transmission: https://cwe.mitre.org/data/definitions/319.html
 # Source: CWE-326, inadequate encryption strength: https://cwe.mitre.org/data/definitions/326.html
+# Source: RFC 7507, TLS fallback SCSV: https://www.rfc-editor.org/rfc/rfc7507
 FINDING_ACTIONS = {
     "UNENCRYPTED_AT_REST": "Enable encryption at rest with an approved algorithm and a managed key.",
     "UNENCRYPTED_IN_TRANSIT": "Require TLS 1.2 or later on this path and reject a plaintext listener.",
