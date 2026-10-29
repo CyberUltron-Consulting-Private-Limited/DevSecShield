@@ -507,6 +507,20 @@ CBOM_SCANNERS = (
         "class; quantum-vulnerability flag; library name; source path.",
     ),
     ScannerSpec(
+        "crypto_advisory",
+        16,
+        "Direct and lockfile-transitive library versions matched against a shipped advisory "
+        "file. The scan does not download package metadata.",
+        "Library name, version, direct or transitive scope, advisory id, and source path.",
+    ),
+    ScannerSpec(
+        "crypto_custom",
+        17,
+        "Private cipher or hash implementations recognized by well-known algorithm constants "
+        "in source. Comments are ignored.",
+        "Algorithm asset marked as a custom implementation; source path.",
+    ),
+    ScannerSpec(
         "crypto_certificate",
         20,
         "X.509 certificates (.pem, .crt, .cer, .cert, .der, .ca-bundle and inline PEM blocks) "

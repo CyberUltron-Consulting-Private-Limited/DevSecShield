@@ -421,8 +421,8 @@ async def create_cicd_integration(
         user = await get_user_from_header_or_raise_exception(engine , Authorization)
         if data.title is None or data.scan_type is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Title and scan type are required")
-        if data.scan_type not in ("sast", "dast"):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan type must be sast or dast")
+        if data.scan_type not in ("sast", "dast", "cbom"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan type must be sast, dast, or cbom")
 
 
         # STEP [ 2 ] : ======================================== Check if user is in team ====================================

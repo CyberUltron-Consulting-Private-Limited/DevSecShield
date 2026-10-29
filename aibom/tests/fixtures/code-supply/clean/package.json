@@ -1,0 +1,6 @@
+{
+  "name": "clean-app",
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2"
+  }
+}

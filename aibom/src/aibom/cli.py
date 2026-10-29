@@ -147,6 +147,54 @@ def emit(
         _eprint(f"# advisory: {ADVISORY_DISCLAIMER}")
 
 
+@app.command()
+def cbom(
+    path: pathlib.Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        help="Repository directory to scan. Nothing is installed there.",
+    ),
+    output: pathlib.Path = typer.Option(
+        None,
+        "--output",
+        "-o",
+        dir_okay=False,
+        writable=True,
+        help="Write the CycloneDX CBOM here instead of stdout.",
+    ),
+    no_fail: bool = typer.Option(
+        False,
+        "--no-fail",
+        help="Exit 0 even when high findings are present.",
+    ),
+) -> None:
+    """Scan a repository for cryptography and print a CycloneDX 1.6 CBOM.
+
+    Exits 1 when a high finding is present (weak algorithm, ECB, weak key,
+    hard-coded key, static IV, weak RNG, weak padding, disabled certificate
+    verification, or a vulnerable crypto library). Reads only the tree and
+    the shipped advisory file.
+    """
+    from aibom.cbom.gate import failing_flags
+    from aibom.cbom.pipeline import scan_crypto
+    from aibom.emit.cyclonedx import emit_cyclonedx
+
+    result = scan_crypto(path, level=4)
+    _write(json.dumps(emit_cyclonedx(result), indent=2) + "\n", output)
+    failed = failing_flags(result.flags)
+    if not failed:
+        _eprint("# cbom: no high findings")
+        return
+    _eprint(f"# cbom: {len(failed)} high finding(s)")
+    for flag in failed:
+        _eprint(f"# {flag.code} {flag.message}")
+    if not no_fail:
+        raise typer.Exit(code=1)
+
+
 # --------------------------------------------------------------------------- #
 # validate -- the schema gate (auto-detect format)
 # --------------------------------------------------------------------------- #

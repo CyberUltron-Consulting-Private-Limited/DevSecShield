@@ -1,0 +1,64 @@
+{
+  "data_version": 1,
+  "valid_as_of": "2026-10-29",
+  "note": "Curated offline subset of published crypto-library advisories. A scan reads only this file.",
+  "advisories": [
+    {
+      "id": "CVE-2022-29217",
+      "ecosystem": "pypi",
+      "name": "pyjwt",
+      "introduced": "1.5.0",
+      "fixed": "2.4.0",
+      "summary": "Key confusion through non-blocklisted public key formats",
+      "source": "https://github.com/jpadilla/pyjwt/security/advisories/GHSA-ffqj-6fqr-9h24"
+    },
+    {
+      "id": "CVE-2022-23540",
+      "ecosystem": "npm",
+      "name": "jsonwebtoken",
+      "fixed": "9.0.0",
+      "summary": "Insecure default algorithm in jwt.verify can bypass signature validation",
+      "source": "https://github.com/auth0/node-jsonwebtoken/blob/master/CHANGELOG.md"
+    },
+    {
+      "id": "CVE-2022-24771",
+      "ecosystem": "npm",
+      "name": "node-forge",
+      "fixed": "1.3.0",
+      "summary": "RSA PKCS#1 signature verification accepts crafted signatures",
+      "source": "https://nvd.nist.gov/vuln/detail/CVE-2022-24771"
+    },
+    {
+      "id": "CVE-2023-48795",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.17.0",
+      "summary": "SSH Terrapin prefix truncation",
+      "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
+    },
+    {
+      "id": "CVE-2023-33201",
+      "ecosystem": "maven",
+      "name": "org.bouncycastle:bcprov-jdk15on",
+      "fixed": "1.74",
+      "summary": "Bouncy Castle LDAP certificate parsing flaw",
+      "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-33201"
+    },
+    {
+      "id": "RUSTSEC-2022-0093",
+      "ecosystem": "cargo",
+      "name": "ed25519-dalek",
+      "fixed": "2.0.0",
+      "summary": "Double public key signing oracle in ed25519-dalek 1.x",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2022-0093.html"
+    },
+    {
+      "id": "CVE-2023-33201",
+      "ecosystem": "nuget",
+      "name": "bouncycastle.cryptography",
+      "fixed": "2.2.1",
+      "summary": "Bouncy Castle .NET certificate processing flaw",
+      "source": "https://github.com/bcgit/bc-csharp/releases/tag/2.2.1"
+    }
+  ]
+}

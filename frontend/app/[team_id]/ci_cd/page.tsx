@@ -65,7 +65,7 @@ export default function CicdPage() {
   const [newName, setNewName] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
   const [formTitle, setFormTitle] = useState("");
-  const [formScanType, setFormScanType] = useState<"sast" | "dast" | "">("");
+  const [formScanType, setFormScanType] = useState<"sast" | "dast" | "cbom" | "">("");
   const [searchQuery, setSearchQuery] = useState("");
   const [createdAtSort, setCreatedAtSort] = useState<"none" | "asc" | "desc">("none");
   const router = useRouter();
@@ -493,7 +493,7 @@ export default function CicdPage() {
                   if (e.key === "Enter" && formTitle.trim() && formScanType) {
                     createCicdIntegrationMutation.mutate({
                       title: formTitle.trim(),
-                      scan_type: formScanType as "sast" | "dast",
+                      scan_type: formScanType as "sast" | "dast" | "cbom",
                     });
                   }
                 }}
@@ -504,7 +504,7 @@ export default function CicdPage() {
               <Label htmlFor="scan_type" className="cursor-pointer">Scan Type *</Label>
               <Select
                 value={formScanType}
-                onValueChange={(value) => setFormScanType(value as "sast" | "dast")}
+                onValueChange={(value) => setFormScanType(value as "sast" | "dast" | "cbom")}
               >
                 <SelectTrigger id="scan_type" className="cursor-pointer">
                   <SelectValue placeholder="Select scan type" />
@@ -512,6 +512,7 @@ export default function CicdPage() {
                 <SelectContent>
                   <SelectItem value="sast" className="cursor-pointer">SAST</SelectItem>
                   <SelectItem value="dast" className="cursor-pointer">DAST</SelectItem>
+                  <SelectItem value="cbom" className="cursor-pointer">CBOM</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -542,7 +543,7 @@ export default function CicdPage() {
                 
                 createCicdIntegrationMutation.mutate({
                   title: formTitle.trim(),
-                  scan_type: formScanType as "sast" | "dast",
+                  scan_type: formScanType as "sast" | "dast" | "cbom",
                 });
               }}
               disabled={!formTitle.trim() || !formScanType || createCicdIntegrationMutation.isPending}

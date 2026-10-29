@@ -4,7 +4,7 @@ from typing import Literal
 
 class CreateCicdIntegrationData(BaseModel):
     title: str | None = None
-    scan_type: Literal["sast", "dast"] | None = None
+    scan_type: Literal["sast", "dast", "cbom"] | None = None
 
 class JiraCICDSettingsData(BaseModel):
     jira_project_id: str | None = None

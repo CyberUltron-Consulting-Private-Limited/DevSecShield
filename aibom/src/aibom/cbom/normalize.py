@@ -389,6 +389,18 @@ def _flagged_facts(result: ScanResult) -> list[AIComponent]:
     return found
 
 
+def _flagged_libraries(result: ScanResult) -> list[AIComponent]:
+    """Vulnerable library components. Safe libraries stay out of the finding list."""
+    found: list[AIComponent] = []
+    for component in result.components:
+        if component.kind != "framework":
+            continue
+        codes = {flag.code for flag in result.flags_for(component.bom_ref)}
+        if "VULNERABLE_CRYPTO_LIBRARY" in codes:
+            found.append(component)
+    return found
+
+
 def _crypto_graph(
     result: ScanResult, bom: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
@@ -468,7 +480,10 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
     scores through verbatim, so no chart can be starved by a flattened payload.
     """
     assets = _crypto_assets(result)
-    findings = [_finding(c, result) for c in (*assets, *_flagged_facts(result))]
+    findings = [
+        _finding(c, result)
+        for c in (*assets, *_flagged_facts(result), *_flagged_libraries(result))
+    ]
     findings.sort(
         key=lambda f: (_IMPACT_RANK.get(f["impact"], 9), str(f["title"]))
     )

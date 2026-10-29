@@ -3866,7 +3866,7 @@ export interface CicdIntegration {
     title: string
     created_at: string
     last_updated: string
-    scan_type: "sast" | "dast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    scan_type: "sast" | "dast" | "cbom" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
     api_key: string
 }
 
@@ -3892,7 +3892,7 @@ const getCicdIntegrations = async (team_id: number): Promise<CicdIntegrationsRes
 
 export interface CreateCicdIntegrationData {
     title: string
-    scan_type: "sast" | "dast"
+    scan_type: "sast" | "dast" | "cbom"
 }
 
 const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData) => {
@@ -3932,7 +3932,7 @@ export interface CicdIntegrationDashboard {
     title: string
     created_at: string
     last_updated: string
-    scan_type: "sast" | "dast" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    scan_type: "sast" | "dast" | "cbom" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
     api_key: string
     integration_active?: boolean
     integration_settings?: Record<string, { jira_project_id?: string | null; auto_create_tickets?: boolean | null } | null> | null

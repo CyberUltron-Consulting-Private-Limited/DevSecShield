@@ -7,6 +7,11 @@
       "pattern": "CERT_NONE"
     },
     {
+      "id": "py.requests.verify",
+      "matcher": "literal",
+      "pattern": "verify=False"
+    },
+    {
       "id": "go.skip",
       "matcher": "literal",
       "pattern": "InsecureSkipVerify"
@@ -27,6 +32,41 @@
       "short_flags": [
         "k"
       ]
+    },
+    {
+      "command": "wget",
+        "id": "wget.insecure",
+      "long_flags": [
+        "no-check-certificate"
+      ],
+      "matcher": "command_flag",
+      "max_tokens": 1,
+      "short_flags": []
+    },
+    {
+      "id": "py.unverified_context",
+      "matcher": "literal",
+      "pattern": "_create_unverified_context"
+    },
+    {
+      "id": "node.reject_unauthorized",
+      "matcher": "literal",
+      "pattern": "rejectUnauthorized:false"
+    },
+    {
+      "id": "node.reject_unauthorized_spaced",
+      "matcher": "literal",
+      "pattern": "rejectUnauthorized: false"
+    },
+    {
+      "id": "node.tls_reject_env",
+      "matcher": "literal",
+      "pattern": "NODE_TLS_REJECT_UNAUTHORIZED"
+    },
+    {
+      "id": "java.trustall",
+      "matcher": "literal",
+      "pattern": "TrustAll"
     }
   ],
   "valid_as_of": "2026-10-25"

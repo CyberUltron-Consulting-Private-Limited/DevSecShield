@@ -455,7 +455,7 @@ def test_authored_scanner_list_equals_the_registry_fixture():
     assert [(s.name, s.order) for s in authored.CBOM_SCANNERS] == [
         (s["name"], s["order"]) for s in registry["scanners"]
     ]
-    assert len(authored.CBOM_SCANNERS) == 16
+    assert len(authored.CBOM_SCANNERS) == 18
     described = (s.discovers for s in authored.CBOM_SCANNERS)
     printed = " ".join([authored.CBOM_SCANNER_INTRO, *described])
     unwired_names = (
@@ -473,7 +473,7 @@ def test_scanner_registry_fixture_equals_the_engine_source():
     wired = re.search(r"from aibom\.cbom\.scanners import \((.*?)\)", scanners, re.S)
     assert wired, "scanners/__init__.py no longer imports its modules in one block"
     modules = re.findall(r"^\s+(\w+),", wired.group(1), re.M)
-    assert len(modules) == 16
+    assert len(modules) == 18
     found: list[tuple[str, int]] = []
     for module in modules:
         text = _read(f"aibom/src/aibom/cbom/scanners/{module}.py", needs_engine=True)

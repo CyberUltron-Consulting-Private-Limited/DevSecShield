@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "BouncyCastle.Cryptography": {
+        "type": "Direct",
+        "resolved": "2.2.0"
+      }
+    }
+  }
+}
