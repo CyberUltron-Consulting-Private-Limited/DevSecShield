@@ -132,7 +132,8 @@ class ServersConfig(_Strict):
     @field_validator("login_user")
     @classmethod
     def _login(cls, v: str) -> str:
-        return check_login(v) or "zs-cbom"
+        # An empty login falls back to the kind's own default (zs-cbom on Linux, svc-zscbom on Windows/AD).
+        return check_login(v) or cls.model_fields["login_user"].default
 
     @model_validator(mode="after")
     def _check(self) -> "ServersConfig":
