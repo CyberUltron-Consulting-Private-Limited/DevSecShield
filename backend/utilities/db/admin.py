@@ -1,6 +1,7 @@
 from backend.new_models import Scan, CicdIntegration, GuardrailsIntegration
 from sqlmodel import Session, select
 from backend.get_db import get_db, get_mongo_client_db
+from backend.utilities.cbom_sources.cleanup import delete_cbom_sources_for_team
 from rich.console import Console
 console = Console()
 
@@ -9,6 +10,10 @@ def delete_team_associated_data(team_id: int ):
     engine = get_db()
     mongo_db = get_mongo_client_db()
     
+    # STEP [ 0 ] : ======================= Delete CBOM Sources rows (scan nodes, sources, runs, evidence) =====
+    cbom_counts = delete_cbom_sources_for_team(engine, team_id)
+    console.print(f"CBOM sources rows deleted for team {team_id}: {cbom_counts}", style="bold orange3")
+
     # STEP [ 1 ] : ======================= Delete all the scans associated with the team ==============================
     scan_ids_list = []
     with Session(engine) as session:

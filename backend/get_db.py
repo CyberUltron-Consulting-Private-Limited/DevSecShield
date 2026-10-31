@@ -33,7 +33,8 @@ def get_db():
         postgres_db = os.environ['PG_DB']
         postgres_url = f"postgresql://{postgres_username}:{postgres_password}@{PG_HOST}:{PG_PORT}/{postgres_db}"
 
-        _pg_engine = create_engine(postgres_url, pool_size=10, max_overflow=20, pool_pre_ping=True)
+        # hide_parameters: SQL errors in logs never include bound values (credentials, configs).
+        _pg_engine = create_engine(postgres_url, pool_size=10, max_overflow=20, pool_pre_ping=True, hide_parameters=True)
         return _pg_engine
 
     except Exception as e:

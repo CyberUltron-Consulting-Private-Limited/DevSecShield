@@ -24,6 +24,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { RepositoryCard } from "@/components/repository-card";
+import Link from "next/link";
+import { LinkedSourcesRun, SourcesAccordionItems, SourcesBreakdown, useSourcesOverview } from "@/components/cbom/sources/SidebarSources";
+import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
+import { newRequestId } from "@/components/cbom/sources/logic";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import {
   CBOMConversationResponse,
@@ -31,8 +35,13 @@ import {
   reinitializeCBOMScanWithPayload,
   estimateCreditsForScan,
   startScan,
+  estimateCbomSources,
+  startCbomRun,
   type StartScanPayload,
   type RepoMode,
+  type CbomEstimate,
+  type CbomInclude,
+  type CbomIncludeKey,
 } from "@/utils/backend_api";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
@@ -79,6 +88,13 @@ export function CBOMOptionsSidebar({
   const [uploaded_file, setUploadedFile] = useState<File | null>(null);
   const [uploaded_cbom_file, setUploadedCbomFile] = useState<File | null>(null);
 
+  // CBOM Sources (servers, clusters, network) included in this scan: off by default, opt-in per group.
+  const [sourceInclude, setSourceInclude] = useState<CbomInclude>({});
+  const [socAck, setSocAck] = useState(false);
+  const [sourcesEstimate, setSourcesEstimate] = useState<{ key: string; estimate: CbomEstimate; requestId: string } | null>(null);
+  const includedGroups = (Object.keys(sourceInclude) as CbomIncludeKey[]).filter((k) => sourceInclude[k]);
+  const anySourceIncluded = includedGroups.length > 0;
+
   const zip_file_used = uploaded_file !== null;
   const cbom_file_used = uploaded_cbom_file !== null;
 
@@ -87,6 +103,11 @@ export function CBOMOptionsSidebar({
   const params = useParams();
   const team_id = parseInt(params?.team_id as string, 10);
   const scan_id = parseInt(params?.scan_id as string, 10);
+  const sourcesOverview = useSourcesOverview(team_id);
+  // The sources estimate belongs to one exact set of inputs; any change makes it stale (derived, no effect).
+  const estimateKey = JSON.stringify([mode, repo_url, PAT, branch, uploaded_file?.name ?? null, uploaded_cbom_file?.name ?? null, scan_binaries, includedGroups]);
+  const currentSourcesEstimate = sourcesEstimate && sourcesEstimate.key === estimateKey ? sourcesEstimate : null;
+  const toggleSource = (key: CbomIncludeKey, on: boolean) => setSourceInclude((prev) => ({ ...prev, [key]: on }));
 
   const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
     if (uploaded_file) return { valid: true };
@@ -131,13 +152,22 @@ export function CBOMOptionsSidebar({
   };
 
   const estimateCreditsMutation = useMutation({
-    mutationFn: () =>
-      estimateCreditsForScan(team_id, "cbom", scan_id, buildStartScanPayloadString(), getUploadedFileForApi()),
-    onSuccess: (data) => {
+    mutationFn: async () => {
+      const key = estimateKey;
+      const [code, sources] = await Promise.all([
+        estimateCreditsForScan(team_id, "cbom", scan_id, buildStartScanPayloadString(), getUploadedFileForApi()),
+        anySourceIncluded ? estimateCbomSources(team_id, sourceInclude) : Promise.resolve(null),
+      ]);
+      return { code, sources, key };
+    },
+    onSuccess: ({ code, sources, key }) => {
+      const data = code;
       setEstimatedCredits(data.credits_required);
       setEstimationProcessDone(true);
+      setSourcesEstimate(sources ? { key, estimate: sources, requestId: newRequestId() } : null);
       if (data.credits_required !== -1) {
-        toast.success(`This scan will use ${data.credits_required} credits`);
+        const total = Math.round((data.credits_required + (sources?.total_credits ?? 0)) * 100) / 100;
+        toast.success(`This scan will use ${total} credits`);
       } else {
         toast.error("Invalid Input from user");
       }
@@ -148,14 +178,34 @@ export function CBOMOptionsSidebar({
     },
   });
 
+  const startSourcesRunMutation = useMutation({
+    mutationFn: (snapshot: { estimate: CbomEstimate; requestId: string }) =>
+      startCbomRun(team_id, {
+        include: sourceInclude,
+        scan_id,
+        client_request_id: snapshot.requestId,
+        expected_credits: snapshot.estimate.total_credits,
+        soc_ack: socAck,
+      }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(team_id) });
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+    },
+  });
+
   const startScanMutation = useMutation({
     mutationFn: () =>
       startScan(team_id, "cbom", scan_id, buildStartScanPayloadString(), getUploadedFileForApi()),
     onSuccess: () => {
+      const snapshot = currentSourcesEstimate;
       setEstimatedCredits(null);
       setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data", team_id, scan_id] });
+      // The code scan is running; queue the included sources as a linked run (its failure only toasts).
+      if (snapshot && snapshot.estimate.items.some((i) => i.status === "queued")) {
+        startSourcesRunMutation.mutate(snapshot);
+      }
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
@@ -178,6 +228,20 @@ export function CBOMOptionsSidebar({
       toast.error(validation.message);
       return;
     }
+    if (anySourceIncluded && !currentSourcesEstimate) {
+      toast.error("Sources changed since the estimate; run the estimate again.");
+      return;
+    }
+    if (sourceInclude.network && !socAck) {
+      toast.error("Confirm that your SOC has agreed the network ranges and scan windows.");
+      return;
+    }
+    const balance = currentSourcesEstimate?.estimate.credit_balance;
+    if (balance != null && estimatedCredits != null && estimatedCredits >= 0 &&
+        estimatedCredits + (currentSourcesEstimate?.estimate.total_credits ?? 0) > balance) {
+      toast.error(`Not enough credits: this scan needs ${Math.round((estimatedCredits + (currentSourcesEstimate?.estimate.total_credits ?? 0)) * 100) / 100}, the team has ${balance}.`);
+      return;
+    }
     startScanMutation.mutate();
   };
 
@@ -186,11 +250,14 @@ export function CBOMOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
-  }, [mode, repo_url, PAT, uploaded_file, uploaded_cbom_file, scan_binaries]);
+  }, [mode, repo_url, PAT, branch, uploaded_file, uploaded_cbom_file, scan_binaries]);
 
-  const displayCredits = estimatedCredits;
   const creditsInvalid = estimatedCredits === -1;
-  const canRunScan = estimationProcessDone && !creditsInvalid;
+  const displayCredits =
+    estimatedCredits != null && !creditsInvalid
+      ? Math.round((estimatedCredits + (currentSourcesEstimate?.estimate.total_credits ?? 0)) * 100) / 100
+      : estimatedCredits;
+  const canRunScan = estimationProcessDone && !creditsInvalid && (!anySourceIncluded || !!currentSourcesEstimate);
 
   useEffect(() => {
     if (query.data?.scan_status === "success") {
@@ -285,7 +352,7 @@ export function CBOMOptionsSidebar({
           <ScanLine className="h-5 w-5 text-blue-400 shrink-0" />
         </div>
         <p className="text-sm text-zinc-400">
-          Analyze cryptographic assets: connect a repository (or upload zip) or upload an existing CBOM file.
+          Analyze cryptographic assets across code, servers, clusters, cloud and network, or upload an existing CBOM file.
         </p>
       </div>
 
@@ -317,6 +384,14 @@ export function CBOMOptionsSidebar({
                   />
                 </AccordionContent>
               </AccordionItem>
+              <SourcesAccordionItems
+                teamId={team_id}
+                overview={sourcesOverview.data}
+                include={sourceInclude}
+                onToggle={toggleSource}
+                socAck={socAck}
+                setSocAck={setSocAck}
+              />
               <AccordionItem value="cbom-file" className="border-zinc-700 border rounded-lg px-3 mt-2 data-[state=open]:border-blue-500/50">
                 <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer py-4 hover:no-underline [&[data-state=open]>svg]:rotate-180">
                   <div className="flex items-center gap-2">
@@ -395,6 +470,9 @@ export function CBOMOptionsSidebar({
                 )}
               </p>
             )}
+            {displayCredits != null && !creditsInvalid && (
+              <SourcesBreakdown estimate={currentSourcesEstimate?.estimate ?? null} codeCredits={estimatedCredits} />
+            )}
           </div>
 
           <Separator className="bg-zinc-800" />
@@ -428,6 +506,9 @@ export function CBOMOptionsSidebar({
             ) : (
               <p className="text-sm text-zinc-500">Run estimate above to enable starting the scan.</p>
             )}
+            <Link href={`/${team_id}/cbom/sources?tab=review`} className="inline-block mt-3 text-sm text-blue-400 hover:text-blue-300">
+              Review what will be scanned
+            </Link>
           </div>
         </>
       )}
@@ -436,6 +517,9 @@ export function CBOMOptionsSidebar({
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-300 text-center">Scan has started, this might take a while</p>
+          <div className="w-full">
+            <LinkedSourcesRun teamId={team_id} scanId={scan_id} />
+          </div>
         </div>
       )}
 
@@ -463,6 +547,9 @@ export function CBOMOptionsSidebar({
               <Download className="size-4" />
               <span className="ml-1">Download Scan Report</span>
             </Button>
+            <div className="w-full">
+              <LinkedSourcesRun teamId={team_id} scanId={scan_id} />
+            </div>
           </div>
         </div>
       )}

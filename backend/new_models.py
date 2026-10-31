@@ -1,6 +1,7 @@
 import datetime
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
+from sqlalchemy import Text, UniqueConstraint
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
@@ -211,3 +212,209 @@ class CicdIntegration(SQLModel,table=True):
     
     class Config:
         arbitrary_types_allowed = True
+
+# ========================================= CBOM collection sources =========================================
+# Scan nodes, servers, clusters, databases, cloud accounts, network scope and evidence for the CBOM
+# scanner beyond code.  Rules that every model below follows:
+#   * every row carries team_id and every query filters on it;
+#   * times are naive UTC (``_cbom_utcnow``) and are serialised with a trailing "Z";
+#   * user and scan references are plain ints (no foreign key) so team, user and scan deletes are never
+#     blocked; foreign keys only link these tables to each other and to ``team``;
+#   * secrets live only in ``CbomCollectionSource.secret_encrypted`` (Fernet, see
+#     ``backend/utilities/cbom_sources/crypto.py``) and are never serialised to a browser;
+#   * ``row_version`` is bumped on every write so a stale form gets a 409 instead of a silent overwrite.
+# No Relationship attributes are declared on Team/User on purpose (no implicit cascades).
+
+
+def _cbom_utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+class CbomScanNode(SQLModel, table=True):
+    """A customer-run collector that reaches servers, clusters and networks from inside a segment."""
+    __tablename__ = "cbomscannode"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    owner_user_id: int
+    updated_by_user_id: int | None = Field(default=None)
+    name: str = Field(max_length=64)
+    segment: str = Field(default="", max_length=64)
+    timezone: str = Field(default="UTC", max_length=64)
+    deployment: str = Field(default="docker", max_length=16)
+    proxy_url: str | None = Field(default=None, max_length=512)
+    proxy_ca_pem: str | None = Field(default=None, sa_type=Text)
+    proxy_tls_inspect: bool = Field(default=False)
+    registration_token_hash: str | None = Field(default=None, max_length=64, index=True)
+    registration_issued_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    registration_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    enrolled_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    node_token_hash: str | None = Field(default=None, max_length=64, unique=True, index=True)
+    hostname: str | None = Field(default=None, max_length=255)
+    node_version: str | None = Field(default=None, max_length=32)
+    source_ips: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    ssh_public_key: str | None = Field(default=None, sa_type=Text)
+    capabilities: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    clock_skew_s: int | None = Field(default=None)
+    last_heartbeat_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_claim_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_seen_ip: str | None = Field(default=None, max_length=64)
+    last_node_error: str | None = Field(default=None, max_length=512)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomCollectionSource(SQLModel, table=True):
+    """One configured source: a server group, cluster, database, cloud account, CA/IdP or network range."""
+    __tablename__ = "cbomcollectionsource"
+    __table_args__ = (UniqueConstraint("team_id", "kind", "name_lower", name="uq_cbomcollectionsource_team_kind_name"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    owner_user_id: int
+    updated_by_user_id: int | None = Field(default=None)
+    kind: str = Field(max_length=32, index=True)
+    name: str = Field(max_length=64)
+    name_lower: str = Field(max_length=64)
+    node_id: int | None = Field(default=None, foreign_key="cbomscannode.id", index=True)
+    enabled: bool = Field(default=True)
+    config: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    secret_encrypted: str | None = Field(default=None, sa_type=Text)
+    secret_fields: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    last_test_status: str = Field(default="never", max_length=16)
+    last_test_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_test_summary: str | None = Field(default=None, max_length=512)
+    last_test_job_id: int | None = Field(default=None)
+    last_test_result: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomCollectionRun(SQLModel, table=True):
+    """A user-started collection over the configured sources; credits are charged per queued job."""
+    __tablename__ = "cbomcollectionrun"
+    __table_args__ = (UniqueConstraint("team_id", "client_request_id", name="uq_cbomcollectionrun_team_request"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    owner_user_id: int
+    scan_id: int | None = Field(default=None, index=True)
+    client_request_id: str = Field(max_length=64)
+    status: str = Field(default="queued", max_length=16)
+    include: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    breakdown: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    credits_charged_c: int = Field(default=0)
+    credits_refunded_c: int = Field(default=0)
+    soc_ack_by: int | None = Field(default=None)
+    soc_ack_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    cancelled_by: int | None = Field(default=None)
+    cancelled_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomCollectionJob(SQLModel, table=True):
+    """A unit of work for one scan node: test a connection, collect a source, or run a discovery sweep."""
+    __tablename__ = "cbomcollectionjob"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
+    source_id: int | None = Field(default=None, foreign_key="cbomcollectionsource.id", index=True)
+    node_id: int | None = Field(default=None, foreign_key="cbomscannode.id", index=True)
+    kind: str = Field(max_length=16)
+    status: str = Field(default="pending", max_length=16, index=True)
+    params: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    source_version: int | None = Field(default=None)
+    weight_c: int = Field(default=0)
+    refunded: bool = Field(default=False)
+    attempts: int = Field(default=0)
+    lease_id: str | None = Field(default=None, max_length=32)
+    lease_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    created_by_user_id: int | None = Field(default=None)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    claimed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    finished_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    result: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    error: str | None = Field(default=None, max_length=1024)
+
+
+class CbomCollectionSettings(SQLModel, table=True):
+    """Team-wide settings: AWS external ID, certificate domains, network scope and safety, SOC contacts."""
+    __tablename__ = "cbomcollectionsettings"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", unique=True, index=True)
+    aws_external_id: str = Field(max_length=40)
+    cert_domains: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    network_exclusions: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    sni_hostnames: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    ports: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    zeek_span: bool = Field(default=False)
+    scan_window: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    window_timezone: str = Field(default="Asia/Kolkata", max_length=64)
+    rate_conn_per_s: int = Field(default=20)
+    rate_parallel_per_server: int = Field(default=2)
+    rate_handshakes_per_endpoint: int = Field(default=12)
+    soc_email: str | None = Field(default=None, max_length=254)
+    emergency_contact: str | None = Field(default=None, max_length=64)
+    stop_all_network: bool = Field(default=False)
+    stop_all_changed_by: int | None = Field(default=None)
+    stop_all_changed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    updated_by_user_id: int | None = Field(default=None)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomEvidenceArea(SQLModel, table=True):
+    """An area that cannot be scanned (key hierarchy, HSM firmware, ...) answered by its owner."""
+    __tablename__ = "cbomevidencearea"
+    __table_args__ = (UniqueConstraint("team_id", "area_key", name="uq_cbomevidencearea_team_area"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    area_key: str = Field(max_length=32)
+    owner: str | None = Field(default=None, max_length=128)
+    confidence: str = Field(default="Q0", max_length=2)
+    confidence_set_by: int | None = Field(default=None)
+    answers: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    evidence_title: str | None = Field(default=None, max_length=200)
+    evidence_url: str | None = Field(default=None, max_length=1000)
+    evidence_date: str | None = Field(default=None, max_length=10)
+    due_date: str | None = Field(default=None, max_length=10)
+    updated_by_user_id: int | None = Field(default=None)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomEvidenceVendor(SQLModel, table=True):
+    """A third party asked to answer a questionnaire through a single-use link (no login)."""
+    __tablename__ = "cbomevidencevendor"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    name: str = Field(max_length=128)
+    contact_email: str | None = Field(default=None, max_length=254)
+    area_key: str = Field(default="third_party_vendors", max_length=32)
+    link_token_hash: str | None = Field(default=None, max_length=64, unique=True, index=True)
+    link_created_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    link_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    answered_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    answers: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    confidence: str = Field(default="Q0", max_length=2)
+    evidence_url: str | None = Field(default=None, max_length=1000)
+    created_by_user_id: int | None = Field(default=None)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomCollectionAuditEvent(SQLModel, table=True):
+    """Who changed what in CBOM Sources and when; field names only, never values."""
+    __tablename__ = "cbomcollectionauditevent"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    actor_type: str = Field(max_length=8)
+    actor_id: int | None = Field(default=None)
+    action: str = Field(max_length=48)
+    object_type: str = Field(max_length=24)
+    object_id: int | None = Field(default=None)
+    changed_fields: list | None = Field(default_factory=list, sa_column=Column(JSON))

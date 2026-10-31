@@ -11,6 +11,9 @@ from backend.routers.auth import router as auth_router
 from backend.routers.scans import router as scans_router
 from backend.routers.certin import router as certin_router
 from backend.routers.cbom_deliverables import router as cbom_deliverables_router
+from backend.routers.cbom_sources import router as cbom_sources_router
+from backend.routers.cbom_node import router as cbom_node_router
+from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
 from backend.routers.dast_profiles import router as dast_profiles_router
@@ -118,6 +121,10 @@ app.include_router(scans_router)
 app.include_router(dast_profiles_router)
 app.include_router(certin_router)
 app.include_router(cbom_deliverables_router)
+# CBOM Sources: team UI routes, the scan-node API and public vendor questionnaire links.
+app.include_router(cbom_sources_router)
+app.include_router(cbom_node_router)
+app.include_router(cbom_vendor_public_router)
 # DEPRECATED: Guardrails routers remain for legacy/API callers; product UI no longer exposes Guardrails.
 app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)

@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText } from "lucide-react";
+import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, Network } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CBOM_DELIVERABLES,
@@ -676,7 +676,12 @@ export default function CBOMPage() {
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">CBOM Scans</h1>
               <p className="text-zinc-600 dark:text-zinc-400">Cryptography Bill of Materials — analyze cryptographic assets across your codebase.</p>
             </div>
-            <div className="flex flex-row items-center gap-2">
+            <div className="flex flex-row flex-wrap items-center gap-2">
+              <Button asChild variant="outline" className="cursor-pointer" data-testid="cbom-sources-link">
+                <Link href={`/${team_id}/cbom/sources`}>
+                  <Network className="h-4 w-4 mr-2" />CBOM Sources
+                </Link>
+              </Button>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>

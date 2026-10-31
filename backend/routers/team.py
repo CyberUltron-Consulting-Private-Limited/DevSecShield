@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from typing import Annotated
 from rich.console import Console
 from fastapi_throttle import RateLimiter
+from backend.utilities.cbom_sources.cleanup import delete_cbom_sources_for_team
 from backend.utilities.db.schemas import CreateTeamData , UpdateTeamData , RemoveOrAddMembersToTeamData
 from backend.utilities.team.validation import check_if_user_is_in_team , check_if_user_is_admin_of_team
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
@@ -287,6 +288,10 @@ async def delete_team(
         check_if_user_is_admin_of_team(user.id, team_id, engine)
 
 
+
+        # STEP [ 2b ] : ====================== Delete CBOM Sources rows (scan nodes, sources, runs, evidence) =====
+        cbom_counts = delete_cbom_sources_for_team(engine, team_id)
+        console.print(f"CBOM sources rows deleted for team {team_id}: {cbom_counts}", style="bold orange3")
 
         # STEP [ 3 ] : ======================= Delete all the scans associated with the team ==============================
         scan_ids_list = []

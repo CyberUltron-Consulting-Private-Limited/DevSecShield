@@ -4014,3 +4014,642 @@ export {
     updateCicdIntegration,
     renameCicdIntegration
 }
+
+// ---------------------------------------------------------------------------------- CBOM Sources API Routes ----------------------------------------------------------------------------------
+// Scan nodes, servers, clusters, databases, cloud accounts, network scope and evidence for the CBOM
+// scanner (backend/routers/cbom_sources.py).  Secrets are write-only: send them in `secrets`, read back
+// only `secrets_set`.  Pollers and list fetchers never toast (they run every few seconds); mutations do.
+
+export type CbomSourceKind =
+    | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
+    | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
+export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
+export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
+export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
+export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
+export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
+export type CbomConfidence = "Q0" | "Q1" | "Q2" | "Q3"
+export type CbomIncludeKey = "servers" | "kubernetes" | "databases" | "cloud" | "network"
+export type CbomInclude = Partial<Record<CbomIncludeKey, boolean>>
+
+export interface CbomScanNode {
+    id: number
+    team_id: number
+    owner_user_id: number
+    name: string
+    segment: string
+    timezone: string
+    deployment: "docker" | "ova" | "ami" | "helm"
+    proxy_url: string | null
+    has_proxy_ca: boolean
+    proxy_tls_inspect: boolean
+    status: CbomNodeStatus
+    registration_issued_at: string | null
+    registration_expires_at: string | null
+    enrolled_at: string | null
+    hostname: string | null
+    node_version: string | null
+    source_ips: string[]
+    ssh_public_key: string | null
+    capabilities: Record<string, unknown>
+    clock_skew_s: number | null
+    clock_in_sync: boolean | null
+    last_heartbeat_at: string | null
+    last_claim_at: string | null
+    last_seen_ip: string | null
+    last_node_error: string | null
+    assigned_targets: number
+    sources: number
+    row_version: number
+    created_at: string | null
+    last_updated: string | null
+}
+
+export interface CbomNodeWrite {
+    name?: string
+    segment?: string
+    timezone?: string
+    deployment?: CbomScanNode["deployment"]
+    proxy_url?: string | null
+    proxy_ca_pem?: string | null
+    proxy_tls_inspect?: boolean
+    expected_version?: number
+}
+
+export interface CbomTestSample {
+    target: string
+    status: string
+    reachable?: boolean
+    login?: boolean
+    privilege?: boolean
+    note?: string
+}
+
+export interface CbomAwsCheck {
+    check: string
+    status: "pass" | "fail" | "skipped" | "error"
+    detail: string
+}
+
+export interface CbomSource {
+    id: number
+    team_id: number
+    owner_user_id: number
+    kind: CbomSourceKind
+    kind_label: string
+    group: CbomSourceGroup
+    name: string
+    node_id: number | null
+    node_name: string | null
+    node_status: CbomNodeStatus | "missing" | null
+    enabled: boolean
+    config: Record<string, any>
+    secrets_set: string[]
+    target_count: number
+    target_unit: string
+    last_test_status: CbomTestStatus
+    last_test_at: string | null
+    last_test_summary: string | null
+    last_test_job_id: number | null
+    last_test_result: { samples?: CbomTestSample[]; checks?: CbomAwsCheck[]; member_accounts?: number; summary?: string; status?: string }
+    row_version: number
+    created_at: string | null
+    last_updated: string | null
+}
+
+export interface CbomSourceWrite {
+    kind?: CbomSourceKind
+    name?: string
+    node_id?: number | null
+    clear_node?: boolean
+    enabled?: boolean
+    config?: Record<string, any>
+    secrets?: Record<string, string>
+    clear_secrets?: string[]
+    expected_version?: number
+    test_after_save?: boolean
+}
+
+export interface CbomJob {
+    id: number
+    run_id: number | null
+    source_id: number | null
+    source_name: string | null
+    node_id: number | null
+    node_name: string | null
+    kind: "test_connection" | "collect" | "discovery"
+    status: CbomJobStatus
+    waiting_reason: string | null
+    attempts: number
+    credits: number
+    refunded: boolean
+    created_at: string | null
+    claimed_at: string | null
+    finished_at: string | null
+    result: Record<string, any>
+    error: string | null
+    samples: string[]
+    server_time: string
+}
+
+export interface CbomTestResponse {
+    status: "queued" | "not_available" | "passed" | "failed" | "error"
+    job?: CbomJob
+    message?: string
+    checks?: CbomAwsCheck[]
+    member_accounts?: number | null
+    validated_at?: string
+}
+
+export interface CbomSourceSaveResponse {
+    source: CbomSource
+    test: { job_id: number } | CbomTestResponse | null
+}
+
+export interface CbomPortItem { port: number; protocol: string; label: string }
+export interface CbomExclusionItem { cidr: string; reason: string }
+
+export interface CbomSourcesSettings {
+    aws_external_id: string
+    cert_domains: string[]
+    network_exclusions: CbomExclusionItem[]
+    sni_hostnames: string[]
+    ports: CbomPortItem[]
+    zeek_span: boolean
+    scan_window: boolean[][]
+    window_timezone: string
+    rate_conn_per_s: number
+    rate_parallel_per_server: number
+    rate_handshakes_per_endpoint: number
+    soc_email: string | null
+    emergency_contact: string | null
+    stop_all_network: boolean
+    stop_all_changed_by: number | null
+    stop_all_changed_at: string | null
+    next_window_start: string | null
+    in_window_now: boolean
+    row_version: number
+    last_updated: string | null
+}
+
+export type CbomSettingsWrite = Partial<Omit<CbomSourcesSettings,
+    "aws_external_id" | "stop_all_network" | "stop_all_changed_by" | "stop_all_changed_at" | "next_window_start" |
+    "in_window_now" | "row_version" | "last_updated">> & { expected_version?: number }
+
+export interface CbomPlanItem {
+    source_id?: number
+    name: string
+    kind: string
+    group?: CbomSourceGroup
+    node_id?: number | null
+    node_name?: string | null
+    units?: number
+    unit?: string
+    credits?: number
+    status: "queued" | "skipped" | "waiting" | "gap"
+    reason: string | null
+    waiting_for_node?: boolean
+    area_key?: string
+}
+
+export interface CbomPlanGroup { credits: number; queued: number; skipped: number; units: number }
+
+export interface CbomEstimate {
+    total_credits: number
+    groups: Partial<Record<CbomSourceGroup, CbomPlanGroup>>
+    items: CbomPlanItem[]
+    skipped: CbomPlanItem[]
+    credit_balance?: number
+    server_time?: string
+}
+
+export interface CbomSourcesOverview {
+    server_time: string
+    credit_balance: number
+    rates: Record<string, number>
+    nodes: { total: number; online: number; offline: number; pending: number }
+    groups: Partial<Record<CbomSourceGroup, { sources: number; units: number; by_kind: Record<string, number>; failed_tests: number }>>
+    plan: CbomEstimate
+    evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number }
+    code: { cbom_scans: number }
+    settings: {
+        stop_all_network: boolean
+        next_window_start: string | null
+        in_window_now: boolean
+        window_timezone: string
+        aws_external_id: string
+        network_exclusions: number
+        ports: number
+        sni_hostnames: number
+        cert_domains: number
+    }
+}
+
+export interface CbomRun {
+    id: number
+    team_id: number
+    owner_user_id: number
+    scan_id: number | null
+    status: CbomRunStatus
+    include: CbomInclude
+    breakdown: { groups?: Record<string, CbomPlanGroup>; skipped?: CbomPlanItem[] }
+    credits: { charged: number; refunded: number; net: number }
+    soc_ack_by: number | null
+    soc_ack_at: string | null
+    cancelled_by: number | null
+    cancelled_at: string | null
+    created_at: string | null
+    last_updated: string | null
+    jobs?: CbomJob[]
+    job_counts?: Partial<Record<CbomJobStatus, number>>
+}
+
+export interface CbomEvidenceQuestion { id: string; prompt: string; type: "text" | "choice" }
+
+export interface CbomEvidenceArea {
+    id: number
+    area_key: string
+    title: string
+    owner_hint: string | null
+    questions: CbomEvidenceQuestion[]
+    owner: string | null
+    confidence: CbomConfidence
+    effective_confidence: CbomConfidence
+    confidence_label: string
+    confidence_set_by: number | null
+    answers: Record<string, string>
+    evidence_title: string | null
+    evidence_url: string | null
+    evidence_date: string | null
+    due_date: string | null
+    overdue: boolean
+    row_version: number
+    last_updated: string | null
+}
+
+export interface CbomEvidenceAreaWrite {
+    owner?: string | null
+    confidence?: CbomConfidence
+    answers?: Record<string, string>
+    evidence_title?: string | null
+    evidence_url?: string | null
+    evidence_date?: string | null
+    due_date?: string | null
+    expected_version?: number
+}
+
+export interface CbomVendor {
+    id: number
+    name: string
+    contact_email: string | null
+    area_key: string
+    status: "not_sent" | "link_created" | "overdue" | "answered" | "expired"
+    link_created_at: string | null
+    link_expires_at: string | null
+    answered_at: string | null
+    answers: Record<string, string>
+    confidence: CbomConfidence
+    evidence_url: string | null
+    row_version: number
+    created_at: string | null
+}
+
+export interface CbomEvidenceResponse {
+    server_time: string
+    areas: CbomEvidenceArea[]
+    vendors: CbomVendor[]
+    by_confidence: Record<CbomConfidence, number>
+    answered: number
+}
+
+export interface CbomTargetCount {
+    valid: boolean
+    error: string | null
+    count: number | null
+    lines?: number
+    samples?: string[]
+}
+
+export interface CbomAuditEvent {
+    id: number
+    at: string
+    actor_type: "user" | "node" | "vendor" | "system"
+    actor_id: number | null
+    action: string
+    object_type: string
+    object_id: number | null
+    changed_fields: string[]
+}
+
+const cbomSourcesBase = (team_id: number) => `/${team_id}/cbom/sources`
+
+// ---------- reads (no toasts: these run on page load and on polling intervals)
+const getCbomSourcesOverview = async (team_id: number): Promise<CbomSourcesOverview> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/overview`)
+    return response.data as CbomSourcesOverview
+}
+
+const listCbomScanNodes = async (team_id: number): Promise<{ nodes: CbomScanNode[]; server_time: string }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/nodes`)
+    return response.data
+}
+
+const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promise<{ sources: CbomSource[]; server_time: string }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
+    return response.data
+}
+
+const getCbomSource = async (team_id: number, source_id: number): Promise<CbomSource> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items/${source_id}`)
+    return response.data.source as CbomSource
+}
+
+const getCbomJob = async (team_id: number, job_id: number): Promise<CbomJob> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/jobs/${job_id}`)
+    return response.data.job as CbomJob
+}
+
+const getCbomSourcesSettings = async (team_id: number): Promise<CbomSourcesSettings> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/settings`)
+    return response.data.settings as CbomSourcesSettings
+}
+
+const getCbomEvidence = async (team_id: number): Promise<CbomEvidenceResponse> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/evidence`)
+    return response.data as CbomEvidenceResponse
+}
+
+const listCbomRuns = async (team_id: number, scan_id?: number): Promise<{ runs: CbomRun[]; server_time: string }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs`, { params: scan_id ? { scan_id } : {} })
+    return response.data
+}
+
+const getCbomRun = async (team_id: number, run_id: number): Promise<CbomRun> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}`)
+    return response.data.run as CbomRun
+}
+
+const estimateCbomSources = async (team_id: number, include: CbomInclude, source_ids?: number[]): Promise<CbomEstimate> => {
+    const response = await api.post(`${cbomSourcesBase(team_id)}/estimate`, { include, ...(source_ids ? { source_ids } : {}) })
+    return response.data as CbomEstimate
+}
+
+/** Live target count for a textarea; never toasts (it runs while the user types). */
+const countCbomTargets = async (team_id: number, targets: string[], exclusions: string[]): Promise<CbomTargetCount> => {
+    const response = await api.post(`${cbomSourcesBase(team_id)}/targets/count`, { targets, exclusions })
+    return response.data as CbomTargetCount
+}
+
+/** Text templates: sudoers, k8s-tier1, k8s-tier2, grant-<engine>. */
+const getCbomTemplate = async (team_id: number, name: string): Promise<string> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/templates/${name}`, { responseType: "text", transformResponse: (d) => d })
+    return response.data as string
+}
+
+const getCbomAwsTemplate = async (team_id: number, scope: "account" | "organization"): Promise<string> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/aws/template`, { params: { scope }, responseType: "text", transformResponse: (d) => d })
+    return response.data as string
+}
+
+const getCbomAudit = async (team_id: number, limit = 100): Promise<{ events: CbomAuditEvent[] }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/audit`, { params: { limit } })
+    return response.data
+}
+
+// ---------- writes (toast on success; errors toast through showErrorToast and are rethrown)
+const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string }> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/nodes`, body)
+        toast.success("Scan node added")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error adding the scan node")
+        throw error
+    }
+}
+
+const updateCbomScanNode = async (team_id: number, node_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode }> => {
+    try {
+        const response = await api.patch(`${cbomSourcesBase(team_id)}/nodes/${node_id}`, body)
+        toast.success("Scan node saved")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error saving the scan node")
+        throw error
+    }
+}
+
+const deleteCbomScanNode = async (team_id: number, node_id: number): Promise<void> => {
+    try {
+        await api.delete(`${cbomSourcesBase(team_id)}/nodes/${node_id}`)
+        toast.success("Scan node deleted")
+    } catch (error) {
+        showErrorToast(error, "Error deleting the scan node")
+        throw error
+    }
+}
+
+/** reset=false: new token for a node that never registered; reset=true: revoke and register again. */
+const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string }> => {
+    try {
+        const path = reset ? "reset" : "registration-token"
+        const response = await api.post(`${cbomSourcesBase(team_id)}/nodes/${node_id}/${path}`)
+        toast.success(reset ? "Node credential revoked; register the node again" : "New registration token issued")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error issuing a registration token")
+        throw error
+    }
+}
+
+const createCbomSource = async (team_id: number, body: CbomSourceWrite): Promise<CbomSourceSaveResponse> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items`, body)
+        toast.success(body.test_after_save ? "Saved; connection test queued" : "Source saved")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error saving the source")
+        throw error
+    }
+}
+
+const updateCbomSource = async (team_id: number, source_id: number, body: CbomSourceWrite): Promise<CbomSourceSaveResponse> => {
+    try {
+        const response = await api.patch(`${cbomSourcesBase(team_id)}/items/${source_id}`, body)
+        toast.success(body.test_after_save ? "Saved; connection test queued" : "Source saved")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error saving the source")
+        throw error
+    }
+}
+
+const deleteCbomSource = async (team_id: number, source_id: number): Promise<void> => {
+    try {
+        await api.delete(`${cbomSourcesBase(team_id)}/items/${source_id}`)
+        toast.success("Source deleted")
+    } catch (error) {
+        showErrorToast(error, "Error deleting the source")
+        throw error
+    }
+}
+
+const testCbomSource = async (team_id: number, source_id: number): Promise<CbomTestResponse> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/test`)
+        const data = response.data as CbomTestResponse
+        if (data.status === "queued") toast.success("Connection test queued for the scan node")
+        else if (data.status === "passed") toast.success("All checks passed")
+        else if (data.status === "not_available") toast.info(data.message || "Validation is not available yet for this source")
+        else toast.error("Some checks did not pass; see the results")
+        return data
+    } catch (error) {
+        showErrorToast(error, "Error testing the source")
+        throw error
+    }
+}
+
+const updateCbomSourcesSettings = async (team_id: number, body: CbomSettingsWrite): Promise<CbomSourcesSettings> => {
+    try {
+        const response = await api.patch(`${cbomSourcesBase(team_id)}/settings`, body)
+        toast.success("Settings saved")
+        return response.data.settings as CbomSourcesSettings
+    } catch (error) {
+        showErrorToast(error, "Error saving settings")
+        throw error
+    }
+}
+
+const setCbomNetworkStop = async (team_id: number, on: boolean): Promise<CbomSourcesSettings> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/settings/stop-all`, { on })
+        toast.success(on ? "All network scanning stopped" : "Network scanning resumed")
+        return response.data.settings as CbomSourcesSettings
+    } catch (error) {
+        showErrorToast(error, "Error changing network scanning")
+        throw error
+    }
+}
+
+const startCbomDiscovery = async (team_id: number): Promise<{ jobs: CbomJob[] }> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/discovery`)
+        toast.success("Discovery sweep queued")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error starting the discovery sweep")
+        throw error
+    }
+}
+
+const updateCbomEvidenceArea = async (team_id: number, area_key: string, body: CbomEvidenceAreaWrite): Promise<CbomEvidenceArea> => {
+    try {
+        const response = await api.patch(`${cbomSourcesBase(team_id)}/evidence/${area_key}`, body)
+        toast.success("Evidence saved")
+        return response.data.area as CbomEvidenceArea
+    } catch (error) {
+        showErrorToast(error, "Error saving evidence")
+        throw error
+    }
+}
+
+const createCbomVendor = async (team_id: number, body: { name: string; contact_email?: string | null }): Promise<CbomVendor> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/evidence/vendors`, body)
+        toast.success("Vendor added")
+        return response.data.vendor as CbomVendor
+    } catch (error) {
+        showErrorToast(error, "Error adding the vendor")
+        throw error
+    }
+}
+
+const updateCbomVendor = async (team_id: number, vendor_id: number, body: { name?: string; contact_email?: string | null; confidence?: CbomConfidence; expected_version?: number }): Promise<CbomVendor> => {
+    try {
+        const response = await api.patch(`${cbomSourcesBase(team_id)}/evidence/vendors/${vendor_id}`, body)
+        toast.success("Vendor saved")
+        return response.data.vendor as CbomVendor
+    } catch (error) {
+        showErrorToast(error, "Error saving the vendor")
+        throw error
+    }
+}
+
+const deleteCbomVendor = async (team_id: number, vendor_id: number): Promise<void> => {
+    try {
+        await api.delete(`${cbomSourcesBase(team_id)}/evidence/vendors/${vendor_id}`)
+        toast.success("Vendor deleted")
+    } catch (error) {
+        showErrorToast(error, "Error deleting the vendor")
+        throw error
+    }
+}
+
+const createCbomVendorLink = async (team_id: number, vendor_id: number): Promise<{ vendor: CbomVendor; url: string; path: string }> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/evidence/vendors/${vendor_id}/link`)
+        toast.success("Single-use link created")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error creating the link")
+        throw error
+    }
+}
+
+const startCbomRun = async (team_id: number, body: { include: CbomInclude; source_ids?: number[]; scan_id?: number; client_request_id: string; expected_credits?: number; soc_ack?: boolean }): Promise<{ run: CbomRun; replayed: boolean }> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/runs`, body)
+        toast.success("Collection run queued")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error starting the run")
+        throw error
+    }
+}
+
+const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
+    try {
+        const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/cancel`)
+        const data = response.data as { run: CbomRun; refunded: number }
+        toast.success(data.refunded > 0 ? `Cancelled; ${data.refunded} credits refunded` : "Nothing left to cancel")
+        return data
+    } catch (error) {
+        showErrorToast(error, "Error cancelling the run")
+        throw error
+    }
+}
+
+export {
+    getCbomSourcesOverview,
+    listCbomScanNodes,
+    listCbomSources,
+    getCbomSource,
+    getCbomJob,
+    getCbomSourcesSettings,
+    getCbomEvidence,
+    listCbomRuns,
+    getCbomRun,
+    estimateCbomSources,
+    countCbomTargets,
+    getCbomTemplate,
+    getCbomAwsTemplate,
+    getCbomAudit,
+    createCbomScanNode,
+    updateCbomScanNode,
+    deleteCbomScanNode,
+    newCbomNodeRegistration,
+    createCbomSource,
+    updateCbomSource,
+    deleteCbomSource,
+    testCbomSource,
+    updateCbomSourcesSettings,
+    setCbomNetworkStop,
+    startCbomDiscovery,
+    updateCbomEvidenceArea,
+    createCbomVendor,
+    updateCbomVendor,
+    deleteCbomVendor,
+    createCbomVendorLink,
+    startCbomRun,
+    cancelCbomRun,
+}
