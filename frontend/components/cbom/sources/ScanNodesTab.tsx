@@ -74,9 +74,18 @@ const EMPTY_WIZARD: WizardState = {
 
 function apiHost(): string {
   try {
-    return new URL(apiBaseURL).host;
+    return new URL(apiBaseURL).hostname;
   } catch {
     return apiBaseURL;
+  }
+}
+
+function apiPort(): string {
+  try {
+    const url = new URL(apiBaseURL);
+    return url.port || (url.protocol === "http:" ? "80" : "443");
+  } catch {
+    return "443";
   }
 }
 
@@ -193,7 +202,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard
         title="Registered scan nodes"
-        description="One node per network segment. Each connects out to ZeroShield on port 443 only."
+        description={`One node per network segment. Each connects out to ZeroShield on port ${apiPort()} only.`}
         actions={
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
             <Plus className="h-4 w-4 mr-2" />
@@ -352,7 +361,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                     <TableRow><TableHead>Destination</TableHead><TableHead>Port</TableHead><TableHead>Used for</TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>443</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Jobs in, results out (HTTPS)</TableCell></TableRow>
+                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>{apiPort()}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Jobs in, results out (HTTPS)</TableCell></TableRow>
                     <TableRow><TableCell>Your targets</TableCell><TableCell>22, 5986, 6443, database and TLS ports</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Read-only collection</TableCell></TableRow>
                   </TableBody>
                 </Table>
@@ -420,7 +429,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-          <li>Opens no inbound ports. It only connects out to {apiHost()} on port 443.</li>
+          <li>Opens no inbound ports. It only connects out to {apiHost()} on port {apiPort()}.</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
           <li>Uses each credential only on the targets it was entered with; your never-scan list always wins.</li>
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>

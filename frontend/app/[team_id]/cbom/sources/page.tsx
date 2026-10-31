@@ -93,7 +93,7 @@ function SourcesPage() {
                 ))}
               </TabsList>
             </div>
-            {/* Scan nodes and Evidence stay mounted: they hold one-time tokens and links that a tab switch must not lose. */}
+            {/* Scan nodes, Network and Evidence stay mounted: one-time tokens, links, unsaved scope edits and discovery jobs survive a tab switch. */}
             <TabsContent value="scan-nodes" forceMount className="data-[state=inactive]:hidden">
               <ScanNodesTab teamId={teamId} onNavigate={goTo} />
             </TabsContent>
@@ -106,7 +106,7 @@ function SourcesPage() {
             <TabsContent value="cloud">
               <CloudIdentityTab teamId={teamId} onNavigate={goTo} />
             </TabsContent>
-            <TabsContent value="network">
+            <TabsContent value="network" forceMount className="data-[state=inactive]:hidden">
               <NetworkTab teamId={teamId} onNavigate={goTo} />
             </TabsContent>
             <TabsContent value="evidence" forceMount className="data-[state=inactive]:hidden">

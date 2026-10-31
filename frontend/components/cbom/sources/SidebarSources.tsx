@@ -22,7 +22,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
-import { credits } from "./logic";
+import { credits, pluralize } from "./logic";
 import { RunStatusBadge } from "./shared";
 
 const ITEM = "border-zinc-700 border rounded-lg px-3 mt-2 data-[state=open]:border-blue-500/50";
@@ -102,11 +102,11 @@ export function SourcesAccordionItems({
         <AccordionContent className="pb-5 pt-0">
           <p className="text-xs text-zinc-500 mb-2">Reached through a scan node inside your network. Nothing is installed on your servers.</p>
           <Line label="Scan nodes" value={nodes ? `${nodes.online} online of ${nodes.total}` : "—"} />
-          <Line label="Linux servers" value={kinds.linux_servers ? `${kinds.linux_servers} group(s)` : "Not added"} />
+          <Line label="Linux servers" value={kinds.linux_servers ? pluralize(kinds.linux_servers, "group") : "Not added"} />
           <Line label="Windows / AD" value={(kinds.windows_servers ?? 0) + (kinds.active_directory ?? 0) || "Not added"} />
           <Line label="Server targets" value={serverCount.toLocaleString()} />
-          <Line label="Kubernetes" value={clusters ? `${clusters} cluster(s)` : "Not added"} />
-          <Line label="Databases" value={databases ? `${databases} instance(s)` : "Not added"} />
+          <Line label="Kubernetes" value={clusters ? pluralize(clusters, "cluster") : "Not added"} />
+          <Line label="Databases" value={databases ? pluralize(databases, "instance") : "Not added"} />
           {hasServers && (
             <>
               <IncludeRow id="inc-servers" label="Include servers" checked={!!include.servers} onChange={(v) => onToggle("servers", v)} />
@@ -120,10 +120,12 @@ export function SourcesAccordionItems({
 
       <AccordionItem value="cloud" className={ITEM}>
         <AccordionTrigger className={TRIGGER}>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-left">
             <Cloud className="h-4 w-4 text-zinc-400 shrink-0" />
-            <span>Analyze Cloud, Keys &amp; Identity</span>
-            {cloudAccounts > 0 && <span className="text-xs text-zinc-500 font-normal">({cloudAccounts} accounts)</span>}
+            <span>
+              Analyze Cloud, Keys &amp; Identity
+              {cloudAccounts > 0 && <span className="ml-1.5 text-xs text-zinc-500 font-normal whitespace-nowrap">({pluralize(cloudAccounts, "account")})</span>}
+            </span>
           </div>
         </AccordionTrigger>
         <AccordionContent className="pb-5 pt-0">
@@ -139,7 +141,7 @@ export function SourcesAccordionItems({
           <div className="flex items-center gap-2">
             <Network className="h-4 w-4 text-zinc-400 shrink-0" />
             <span>Analyze Network TLS</span>
-            {ranges > 0 && <span className="text-xs text-zinc-500 font-normal">({ranges} ranges)</span>}
+            {ranges > 0 && <span className="text-xs text-zinc-500 font-normal">({pluralize(ranges, "range")})</span>}
           </div>
         </AccordionTrigger>
         <AccordionContent className="pb-5 pt-0">

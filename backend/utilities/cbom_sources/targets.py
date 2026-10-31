@@ -117,7 +117,8 @@ def parse_line(text: str, *, max_v4_prefix: int = MAX_V4_PREFIX, max_v6_prefix: 
                 f"{text!r} is larger than /{limit} ({network.num_addresses:,} addresses); split it into /{limit} ranges"
             )
         start = int(network.network_address)
-        return ("net", (network.version, start, start + network.num_addresses - 1), str(network))
+        canonical = str(network.network_address) if network.num_addresses == 1 else str(network)  # 10.0.0.1, not 10.0.0.1/32
+        return ("net", (network.version, start, start + network.num_addresses - 1), canonical)
     name = _normalize_hostname(text)
     return ("host", name, name)
 

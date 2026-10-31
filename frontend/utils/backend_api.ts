@@ -4466,7 +4466,8 @@ const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: 
 const createCbomSource = async (team_id: number, body: CbomSourceWrite): Promise<CbomSourceSaveResponse> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/items`, body)
-        toast.success(body.test_after_save ? "Saved; connection test queued" : "Source saved")
+        // AWS accounts are validated inline (the result is already in the response); others queue a node job.
+        toast.success(body.test_after_save && response.data?.source?.kind !== "aws_account" ? "Saved; connection test queued" : "Source saved")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error saving the source")
@@ -4477,7 +4478,8 @@ const createCbomSource = async (team_id: number, body: CbomSourceWrite): Promise
 const updateCbomSource = async (team_id: number, source_id: number, body: CbomSourceWrite): Promise<CbomSourceSaveResponse> => {
     try {
         const response = await api.patch(`${cbomSourcesBase(team_id)}/items/${source_id}`, body)
-        toast.success(body.test_after_save ? "Saved; connection test queued" : "Source saved")
+        // AWS accounts are validated inline (the result is already in the response); others queue a node job.
+        toast.success(body.test_after_save && response.data?.source?.kind !== "aws_account" ? "Saved; connection test queued" : "Source saved")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error saving the source")
