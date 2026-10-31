@@ -158,10 +158,37 @@ class WindowsServersConfig(ServersConfig):
     login_user: str = Field(default="svc-zscbom", max_length=64)
     credential_type: Literal["vault", "password"] = "password"
     host_key_policy: Literal["tofu", "pinned"] = "tofu"
+    # CA that issued the servers' WinRM HTTPS certificates when it is not publicly trusted (an internal CA)
+    ca_pem: str | None = Field(default=None, max_length=MAX_PEM_BYTES)
+
+    @field_validator("ca_pem")
+    @classmethod
+    def _ca(cls, v: str | None) -> str | None:
+        return check_pem_certificates(v)
 
 
 class ActiveDirectoryConfig(WindowsServersConfig):
     port: int = Field(default=636, ge=1, le=65535)
+
+
+def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> str | None:
+    """A password is sent only to a server whose identity the node can check first (product decision, 2026-10-31):
+    SSH passwords need pinned host keys, WinRM needs HTTPS, and MySQL and Redis (whose logins a fake server could
+    read) need TLS with the server's CA.  PostgreSQL without a CA is limited to SCRAM by the node, which never
+    reveals the password.  Checked on the new configuration at save; the scan node enforces the same at run time,
+    including for vault credentials whose type is only known then."""
+    if kind == "linux_servers" and cfg.credential_type == "password" and cfg.host_key_policy != "pinned":
+        return ("host_key_policy: password logins need pinned host keys, so the password only goes to the real "
+                "servers; paste their known_hosts lines, or use the node key")
+    if kind == "windows_servers" and cfg.port == 5985:
+        return "port: WinRM over HTTP (5985) would send the login to a server that is not verified; use HTTPS (5986)"
+    if kind == "database" and cfg.engine in ("mysql", "redis"):
+        uses_password = cfg.credential_type == "vault" or bool(secrets.get("password"))
+        if uses_password and not (cfg.require_tls and cfg.ca_pem):
+            name = "MySQL" if cfg.engine == "mysql" else "Redis"
+            return (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate, so "
+                    "the password only goes to the real server")
+    return None
 
 
 def _server_secrets(cfg: ServersConfig) -> set[str]:
@@ -491,18 +518,23 @@ def _db_collectable(cfg: Any) -> bool:
     return getattr(cfg, "engine", None) in COLLECTABLE_DB_ENGINES
 
 
+# Changing any of these clears the stored secret, so it must be re-entered: where it goes, and how the node checks
+# that it is talking to the right server before sending it (host keys, CA, TLS), must not change behind its back.
+_SERVER_WHERE = ("targets", "port", "login_user", "host_key_policy", "known_hosts", "vault", "ca_pem")
+
 KINDS: dict[str, KindSpec] = {
     "linux_servers": KindSpec("linux_servers", "servers", "Linux servers", ServersConfig, _server_secrets,
-                              frozenset(), _always, _always, ("targets", "port", "login_user")),
+                              frozenset(), _always, _always, _SERVER_WHERE),
     "windows_servers": KindSpec("windows_servers", "servers", "Windows servers", WindowsServersConfig, _server_secrets,
-                                frozenset(), _always, _always, ("targets", "port", "login_user")),
+                                frozenset(), _always, _always, _SERVER_WHERE),
     "active_directory": KindSpec("active_directory", "servers", "Active Directory", ActiveDirectoryConfig, _server_secrets,
-                                 frozenset(), _always, _never, ("targets", "port", "login_user")),
+                                 frozenset(), _always, _never, _SERVER_WHERE),
     "kubernetes": KindSpec("kubernetes", "kubernetes", "Kubernetes cluster", KubernetesConfig,
                            lambda c: {"kubeconfig"} if c.credential_type == "kubeconfig" else set(),
-                           frozenset(), _always, _always, ("api_url", "context")),
+                           frozenset(), _always, _always, ("api_url", "context", "ca_pem", "vault")),
     "database": KindSpec("database", "databases", "Database", DatabaseConfig, _db_secrets,
-                         frozenset({"password"}), _always, _db_collectable, ("host", "port", "login", "engine")),
+                         frozenset({"password"}), _always, _db_collectable,
+                         ("host", "port", "login", "engine", "require_tls", "ca_pem", "vault")),
     "aws_account": KindSpec("aws_account", "cloud", "AWS account", AwsAccountConfig, lambda c: set(),
                             frozenset(), _never, _always, ("role_arn",), node_less=True),
     "azure_subscription": KindSpec("azure_subscription", "cloud", "Azure", AzureConfig, lambda c: {"client_secret"},

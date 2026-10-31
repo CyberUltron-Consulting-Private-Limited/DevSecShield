@@ -32,6 +32,11 @@ from zs_scan_node.tlsprobe import have_openssl
 
 POLL_SECONDS = 5
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
+# A job whose collector has not returned this long after its deadline (a target that stopped answering) is ended
+# so it cannot hold a job slot forever.  Generous: a target started just before the deadline may run its full
+# command list (each command has its own timeout).  After a cancel the job only has to stop, so less is allowed.
+STUCK_GRACE_S = 900
+STUCK_CANCEL_GRACE_S = 120
 
 
 class Running:
@@ -39,13 +44,29 @@ class Running:
         self.job_id, self.lease_id, self.ctx, self.network = job_id, lease_id, ctx, network
         self.scope_never = scope_never
         self.applied_team: list[str] | None = None
+        self.cancel_seen: float | None = None
+        self._finish_lock = threading.Lock()
+        self._finished = False
+
+    def take_finish(self) -> bool:
+        """True exactly once: whoever ends the job (its own thread or the stuck-job watchdog) posts the result."""
+        with self._finish_lock:
+            if self._finished:
+                return False
+            self._finished = True
+            return True
 
 
 class Agent:
     def __init__(self) -> None:
         self.api_url = os.environ.get("ZS_API_URL", "").strip()
-        if not self.api_url.startswith(("https://", "http://")):
-            raise SystemExit("ZS_API_URL must be set to the ZeroShield API URL (https://...)")
+        insecure_ok = os.environ.get("ZS_ALLOW_INSECURE_HTTP") == "1"  # local test labs only
+        if not (self.api_url.startswith("https://") or (insecure_ok and self.api_url.startswith("http://"))):
+            # claim answers carry decrypted credentials: never over plain HTTP in a real deployment
+            raise SystemExit("ZS_API_URL must be the ZeroShield API URL over https://")
+        if self.api_url.startswith("http://"):
+            log("WARNING ZS_ALLOW_INSECURE_HTTP=1: credentials travel unencrypted; use only in a local test lab",
+                level="warn")
         self.state = NodeState.load(os.environ.get("ZS_STATE_DIR", "/var/lib/zs-node"))
         self.max_jobs = max(1, min(int(os.environ.get("ZS_MAX_JOBS", "2") or 2), 8))
         self.vault_prefix = os.environ.get("ZS_VAULT_PATH_PREFIX") or None
@@ -54,6 +75,11 @@ class Agent:
         self.lock = threading.Lock()
         self.team_never: list[str] | None = None  # latest team never-scan list from the heartbeat
         self.stop_network = threading.Event()
+        # When the requests behind the cached stop flag and never-scan list were sent (monotonic).  A claim is
+        # answered from the server's current settings, so heartbeat answers to requests sent before it are older.
+        # Kept apart: only a network claim says anything about the stop flag.
+        self.stop_sent = 0.0
+        self.never_sent = 0.0
         self.shutdown = threading.Event()
         self.heartbeat_interval = 30
         self.last_error: str | None = None
@@ -114,15 +140,11 @@ class Agent:
                 "capabilities": self.capabilities(), "clock": _now_iso(), "running": running}
         if self.last_error:
             body["last_error"] = global_scrubber().text(self.last_error)[:1900]
+        sent = time.monotonic()
         data = self.api.heartbeat(body)
         self.last_error = None
         self.heartbeat_interval = int(data.get("heartbeat_interval_s") or self.heartbeat_interval)
-        if isinstance(data.get("never_scan"), list):
-            self.team_never = [str(x) for x in data["never_scan"]][:10000]
-        if data.get("stop_all_network"):
-            self.stop_network.set()
-        else:
-            self.stop_network.clear()
+        self.apply_control(data, sent)
         cancel = set(int(i) for i in data.get("cancel_job_ids") or [] if str(i).isdigit())
         with self.lock:
             for job_id in cancel:
@@ -131,6 +153,32 @@ class Agent:
                     r.ctx.cancel_reason = "Stopped by ZeroShield (job cancelled, source changed or network stop)"
                     r.ctx.cancel.set()
                     log("cancel requested", job=job_id)
+
+    def apply_control(self, data: dict, sent: float) -> None:
+        """Cache the team's stop-all flag and never-scan list from a heartbeat answer, unless a claim sent after
+        that heartbeat already gave us newer facts (an answer that arrives late must not undo a resume)."""
+        with self.lock:
+            if sent >= self.never_sent and isinstance(data.get("never_scan"), list):
+                self.never_sent = sent
+                self.team_never = [str(x) for x in data["never_scan"]][:10000]
+            if sent >= self.stop_sent:
+                self.stop_sent = sent
+                if data.get("stop_all_network"):
+                    self.stop_network.set()
+                else:
+                    self.stop_network.clear()
+
+    def claimed(self, sent: float, is_network: bool) -> None:
+        """A claim is answered from the server's current settings: its scope carries the current never-scan list,
+        and the server only hands out network work while network scanning is allowed.  So any cached state from
+        a heartbeat sent before this claim is stale; drop it until the next heartbeat."""
+        with self.lock:
+            if sent >= self.never_sent:
+                self.never_sent = sent
+                self.team_never = None
+            if is_network and sent >= self.stop_sent:
+                self.stop_sent = sent
+                self.stop_network.clear()
 
     def heartbeat_loop(self) -> None:
         while not self.shutdown.is_set():
@@ -165,6 +213,7 @@ class Agent:
             if busy:
                 self.shutdown.wait(2)
                 continue
+            sent = time.monotonic()
             try:
                 payload = self.api.claim()
             except Unauthorized:
@@ -183,11 +232,14 @@ class Agent:
                 if job_id in self.running:
                     log("server offered a job that is already running here; ignoring", job=job_id, level="warn")
                     continue
-            self.start_job(payload)
+            self.start_job(payload, sent)
 
-    def start_job(self, payload: dict) -> None:
+    def start_job(self, payload: dict, claim_sent: float | None = None) -> None:
         job, scope, source = payload.get("job") or {}, payload.get("scope") or {}, payload.get("source")
         job_id, attempt = int(job["id"]), int(job.get("attempt") or 1)
+        is_network = job.get("kind") == "discovery" or (source or {}).get("kind") == "network_range"
+        if claim_sent is not None:
+            self.claimed(claim_sent, is_network)
         secrets = [v for v in ((source or {}).get("secrets") or {}).values() if isinstance(v, str)]
         scrubber = Scrubber(secrets)
         for s in (self.state.node_token, os.environ.get("VAULT_TOKEN")):
@@ -196,7 +248,6 @@ class Agent:
         never = NeverScan(scope_never + (self.team_never or []))
         deadline, reason = _deadline(scope, int(job.get("lease_seconds") or 900))
         lease_id = str(job.get("lease_id") or "")
-        is_network = job.get("kind") == "discovery" or (source or {}).get("kind") == "network_range"
 
         def poster(assets: list[dict], batch_id: str) -> dict:
             return self.api.assets(job_id, attempt, lease_id, batch_id, assets)
@@ -224,7 +275,8 @@ class Agent:
             ctx.flush()
         except LeaseLost as exc:
             ctx.log("lease lost; stopping without a result", detail=str(exc), level="warn")
-            self._done(running)
+            if running.take_finish():
+                self._done(running)
             return
         except Exception as exc:
             status, error = "failure", f"scan node error: {exc.__class__.__name__}"
@@ -233,16 +285,24 @@ class Agent:
             try:
                 ctx.flush()
             except LeaseLost:
-                self._done(running)
+                if running.take_finish():
+                    self._done(running)
                 return
             except Exception:
                 pass
+        if not running.take_finish():  # the watchdog already ended this job and freed its slot
+            ctx.log("collector returned after the job was ended as stuck; result discarded", level="warn")
+            return
         if self.shutdown.is_set() and ctx.cancel_reason == SHUTDOWN_REASON:
             # A restart or upgrade is not the customer's cancel: post nothing, so ZeroShield releases the job
             # (it is no longer in this node's heartbeat) and the next attempt runs it from the start.
             ctx.log("node shutting down; leaving the job for ZeroShield to retry", level="warn")
             self._done(running)
             return
+        self._post_result(running, status, error, summary)
+
+    def _post_result(self, running: Running, status: str, error: str | None, summary: str | None) -> None:
+        ctx = running.ctx
         result = ctx.result(summary)
         result["node_version"] = VERSION
         body = {"lease_id": running.lease_id, "status": status, "result": result,
@@ -261,14 +321,34 @@ class Agent:
             self._done(running)
 
     def _watch(self, running: Running) -> None:
-        """Propagate the node-wide never-scan list and stop-all flag into a running job."""
+        """Propagate the node-wide never-scan list and stop-all flag into a running job, and end a job whose
+        collector is stuck on a target that stopped answering, so it cannot hold a job slot forever."""
+        ctx = running.ctx
         while running.job_id in self.running and not self.shutdown.is_set():
             if running.network and self.stop_network.is_set():
-                running.ctx.stop_network.set()
+                ctx.stop_network.set()
             team = self.team_never
             if team is not None and team != running.applied_team:
-                running.ctx.never_scan.update(running.scope_never + team)  # union: never narrower than at claim
+                ctx.never_scan.update(running.scope_never + team)  # union: never narrower than at claim
                 running.applied_team = team
+            now = time.monotonic()
+            if ctx.cancel.is_set() and running.cancel_seen is None:
+                running.cancel_seen = now
+            overdue = now > ctx.deadline + STUCK_GRACE_S
+            stuck_cancel = running.cancel_seen is not None and now > running.cancel_seen + STUCK_CANCEL_GRACE_S
+            if (overdue or stuck_cancel) and running.take_finish():
+                ctx.log("collector did not stop in time; ending the job", level="error")
+                try:
+                    ctx.flush()
+                except Exception:
+                    pass
+                if stuck_cancel:
+                    self._post_result(running, "cancelled", ctx.cancel_reason or "Stopped by ZeroShield", None)
+                else:
+                    self._post_result(running, "failure", f"A target stopped answering: the collector had not returned "
+                                      f"{STUCK_GRACE_S // 60} minutes after the job's time limit, so the job was "
+                                      "ended to free the node for new work", None)
+                return
             self.shutdown.wait(2)
 
     def _done(self, running: Running) -> None:

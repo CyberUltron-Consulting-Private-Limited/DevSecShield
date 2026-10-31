@@ -48,6 +48,7 @@ CANCEL_GRACE = _dt.timedelta(minutes=10)
 MAX_ASSETS_PER_ATTEMPT = 50_000
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
+    "identity_unverified",
     "sudoers_missing", "sudo_denied", "rbac_denied", "tls_unavailable", "not_supported", "error", "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
 })
@@ -288,6 +289,38 @@ def cancel_open_jobs(
     return count
 
 
+def stop_discoveries_using(session: Session, source: CbomCollectionSource, now: _dt.datetime, reason: str) -> int:
+    """A range was edited, disabled or deleted: ask running discovery sweeps that include it to stop.  Pending
+    sweeps are re-checked at claim (``_live_discovery_ranges``), so they only ever sweep ranges that still apply."""
+    if source.kind != "network_range":
+        return 0
+    rows = session.exec(select(CbomCollectionJob).where(
+        CbomCollectionJob.team_id == source.team_id, CbomCollectionJob.kind == "discovery",
+        CbomCollectionJob.status == "claimed", CbomCollectionJob.cancel_requested_at.is_(None))).all()  # type: ignore[union-attr]
+    count = 0
+    for job in rows:
+        if any(isinstance(r, dict) and r.get("source_id") == source.id for r in (job.params or {}).get("ranges") or []):
+            job.cancel_requested_at, job.cancel_reason = now, reason[:255]
+            session.add(job)
+            count += 1
+    return count
+
+
+def _live_discovery_ranges(session: Session, job: CbomCollectionJob) -> list[dict[str, Any]]:
+    """The discovery job's ranges that still exist, are enabled, sit on the job's node and keep the CIDR the SOC
+    agreed to when the sweep was queued (mode follows the range's current setting)."""
+    live = []
+    for r in (job.params or {}).get("ranges") or []:
+        if not isinstance(r, dict):
+            continue
+        src = session.get(CbomCollectionSource, r.get("source_id")) if isinstance(r.get("source_id"), int) else None
+        if (src is None or src.team_id != job.team_id or src.kind != "network_range" or not src.enabled
+                or src.node_id != job.node_id or (src.config or {}).get("cidr") != r.get("cidr")):
+            continue
+        live.append({"source_id": src.id, "cidr": r.get("cidr"), "mode": (src.config or {}).get("mode", "full")})
+    return live
+
+
 def create_discovery_jobs(
     session: Session, team_id: int, settings: CbomCollectionSettings, user_id: int, now: _dt.datetime
 ) -> list[CbomCollectionJob]:
@@ -316,7 +349,7 @@ def create_discovery_jobs(
 
 # ----------------------------------------------------------------------------- claim
 def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, settings: CbomCollectionSettings,
-               now: _dt.datetime | None = None) -> dict[str, Any]:
+               now: _dt.datetime | None = None, live_ranges: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What the node may touch.  Exclusions are the union of those at job creation and now."""
     exclusions = sorted(set((job.params or {}).get("exclusions") or []) | set(_snapshot_exclusions(settings)))
     scope: dict[str, Any] = {"never_scan": exclusions}
@@ -333,7 +366,7 @@ def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, sett
     elif source is not None and source.kind == "network_range":
         scope["ranges"] = [{"cidr": cfg.get("cidr"), "mode": cfg.get("mode", "full")}]
     elif job.kind == "discovery":
-        scope["ranges"] = (job.params or {}).get("ranges") or []
+        scope["ranges"] = live_ranges if live_ranges is not None else (job.params or {}).get("ranges") or []
     if job.kind == "discovery" or (source is not None and source.kind == "network_range"):
         scope["ports"] = settings.ports or []
         scope["sni_hostnames"] = settings.sni_hostnames or []
@@ -398,6 +431,9 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
     for job in session.exec(query).all():
         source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
         reason = _invalid_reason(job, source, node)
+        live_ranges = _live_discovery_ranges(session, job) if job.kind == "discovery" else None
+        if not reason and live_ranges is not None and not live_ranges:
+            reason = "Every range in this discovery was removed, disabled or changed"
         if reason:
             changed = session.exec(
                 update(CbomCollectionJob).where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
@@ -437,7 +473,7 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
         payload: dict[str, Any] = {
             "job": {"id": job.id, "kind": job.kind, "lease_id": lease_id, "lease_seconds": int(LEASE.total_seconds()),
                     "attempt": job.attempts, "run_id": job.run_id},
-            "scope": _scope_for(job, source, settings, now),
+            "scope": _scope_for(job, source, settings, now, live_ranges),
         }
         if source is not None:
             payload["source"] = {
@@ -637,7 +673,9 @@ def finish_job(
         raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     session.refresh(job)
     refunded = 0
-    if job.kind == "collect" and status in ("failure", "cancelled"):
+    # "failed" outcome on a success status with nothing stored = every target was skipped (never-scan, window,
+    # stop, deadline): nothing was collected, so it is refunded like a failure.
+    if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(stored) == 0)):
         refunded = refund_job(session, job, _run_of(session, job))
     _test_result_from_job(session, job, now)
     recompute_run(session, job.run_id, now)
@@ -652,9 +690,11 @@ def finish_job(
 
 
 # ----------------------------------------------------------------------------- assets
-def _asset_key(asset_type: str, location: str, facts: dict[str, Any], name: str | None) -> str:
+def _asset_key(asset_type: str, target: str | None, location: str, facts: dict[str, Any], name: str | None) -> str:
+    """Dedup key within one job attempt.  The target is part of it: host collectors report host-relative locations
+    ("sshd -T", "package:openssl", a file path), so two hosts in one source must never collapse into one row."""
     identity = facts.get("fingerprint_sha256") or facts.get("identity") or name or ""
-    return hashlib.sha256(f"{asset_type}|{location}|{identity}".encode("utf-8", "replace")).hexdigest()
+    return hashlib.sha256(f"{asset_type}|{target or ''}|{location}|{identity}".encode("utf-8", "replace")).hexdigest()
 
 
 def _insert_ignore(session: Session, rows: list[dict[str, Any]]) -> int:
@@ -719,7 +759,8 @@ def add_assets(
         algorithm = clean_text(raw.get("algorithm"), 64) if raw.get("algorithm") else None
         key_size = raw.get("key_size") if isinstance(raw.get("key_size"), int) and 0 < raw.get("key_size") < 1_000_000 else None
         protocol = clean_text(raw.get("protocol"), 32) if raw.get("protocol") else None
-        key = _asset_key(asset_type, location, facts, name)
+        target = clean_text(scrub(raw.get("target"), known), 255) if raw.get("target") else None
+        key = _asset_key(asset_type, target, location, facts, name)
         if key in keys:
             in_batch_dups += 1
             continue
@@ -728,7 +769,7 @@ def add_assets(
         rows.append({
             "team_id": job.team_id, "run_id": job.run_id, "job_id": job.id, "source_id": job.source_id,
             "attempt": job.attempts, "asset_key": key, "asset_type": asset_type, "cdx_type": verdict["cdx_type"],
-            "target": clean_text(scrub(raw.get("target"), known), 255) if raw.get("target") else None,
+            "target": target,
             "location": location, "name": name, "algorithm": algorithm, "key_size": key_size, "protocol": protocol,
             "quantum_vulnerable": verdict["quantum_vulnerable"], "impact": verdict["impact"],
             "finding_codes": verdict["finding_codes"], "finding": verdict["finding"], "facts": facts, "created_at": now,

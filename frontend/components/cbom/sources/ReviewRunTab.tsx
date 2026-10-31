@@ -179,6 +179,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     enabled: Number.isFinite(teamId),
     retry: 1,
     refetchInterval: 30000,
+    // the Start card's defaults come from this data: never from a copy cached before sources were added
+    refetchOnMount: "always",
   });
 
   const runsQuery = useQuery({
@@ -209,7 +211,9 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     },
   });
 
-  if (overviewQuery.isLoading) return <LoadingBlock />;
+  // Wait for this visit's own fetch: other tabs share this cache entry and may have loaded it before the
+  // network ranges or cloud sources existed, and the Start card takes its include defaults from the first data.
+  if (overviewQuery.isLoading || (!overviewQuery.isFetchedAfterMount && overviewQuery.isFetching)) return <LoadingBlock />;
   if (overviewQuery.isError && !overviewQuery.data) return <ErrorBlock onRetry={() => overviewQuery.refetch()} />;
   const overview = overviewQuery.data;
   if (!overview) return <LoadingBlock />;

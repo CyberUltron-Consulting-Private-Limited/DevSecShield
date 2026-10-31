@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createCbomSource,
   deleteCbomSource,
+  getCbomSourcesOverview,
   getCbomTemplate,
   listCbomScanNodes,
   listCbomSources,
@@ -71,13 +72,13 @@ const DB_DEFAULT_LOGIN: Record<Engine, string> = { postgres: "zs_cbom", mysql: "
 const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
-// templates.py DB_READS
+// templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
 const DB_READS: Record<Engine, string[]> = {
   postgres: [
     "TLS on or off, minimum TLS version and ciphers",
-    "Password hashing per role: md5 or scram-sha-256",
+    "Password hashing setting and the method of each HBA rule",
     "TLS used by live client connections",
-    "pgcrypto use and HBA rules",
+    "pgcrypto use",
   ],
   mysql: [
     "require_secure_transport and TLS versions",
@@ -91,9 +92,21 @@ const DB_READS: Record<Engine, string[]> = {
     "Certificates and keys in the master database",
     "Encrypted live connections",
   ],
-  oracle: ["Native network encryption settings", "Transparent Data Encryption and wallet state", "Password versions per user"],
-  mongodb: ["TLS mode and allowed protocols", "SCRAM mechanisms per user", "Encryption at rest status"],
-  redis: ["TLS port and protocols", "ACL users and password hashing", "Persistence encryption hints"],
+  oracle: [
+    "Native network encryption settings",
+    "Transparent Data Encryption and wallet state",
+    "Password versions per user",
+  ],
+  mongodb: [
+    "TLS mode and allowed protocols",
+    "OpenSSL version and whether authorization is on",
+    "Encryption at rest setting",
+  ],
+  redis: [
+    "TLS port, protocols and ciphers (named tls-* settings only; never passwords)",
+    "Whether AUTH is required",
+    "Note: Redis ACLs cannot limit CONFIG GET to tls-* names, so this login could read any setting, including requirepass; the scan node never asks for those",
+  ],
 };
 
 const VAULT_PROVIDERS = [
@@ -676,6 +689,18 @@ function initialCluster(source: CbomSource | null, nodes: CbomScanNode[]): Clust
   };
 }
 
+/** Vault references fetch a secret on the scan node, so only team admins may add or change them (the API enforces it). */
+function useIsTeamAdmin(teamId: number): boolean {
+  const q = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 60_000,
+  });
+  return !!q.data?.viewer?.is_admin;
+}
+
 function ClusterForm({
   teamId,
   source,
@@ -698,6 +723,7 @@ function ClusterForm({
   onNavigate: (tab: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const isAdmin = useIsTeamAdmin(teamId);
   // Mounted with a key per source and save, so it starts from the record without a sync effect.
   const [form, setForm] = useState<ClusterState>(() => initialCluster(source, nodes));
   const [errors, setErrors] = useState<ClusterErrors>({});
@@ -708,7 +734,13 @@ function ClusterForm({
   const sameCredential = !!source && cfg.credential_type === form.credentialType;
   const kubeconfigStored = sameCredential && !!source?.secrets_set.includes("kubeconfig");
   const whereChanged =
-    !!source && (form.apiUrl.trim() !== String(cfg.api_url ?? "") || (form.context.trim() || null) !== (cfg.context ?? null) || form.nodeId !== source.node_id);
+    !!source &&
+    (form.apiUrl.trim() !== String(cfg.api_url ?? "") ||
+      (form.context.trim() || null) !== (cfg.context ?? null) ||
+      form.nodeId !== source.node_id ||
+      (form.caPem.trim() || null) !== ((typeof cfg.ca_pem === "string" && cfg.ca_pem.trim()) || null) ||
+      (form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null) !==
+        (cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null));
   const templateName = form.tier === 2 ? "k8s-tier2" : "k8s-tier1";
   const roleQuery = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, templateName),
@@ -754,6 +786,7 @@ function ClusterForm({
     }
     if (form.context.trim().length > 128) e.context = "128 characters at most";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
+    if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this cluster";
     return e;
   };
@@ -804,8 +837,8 @@ function ClusterForm({
     </span>
   ) : source && kubeconfigStored && whereChanged ? (
     <span className="text-amber-600 dark:text-amber-400">
-      The API server URL, context or scan node changed: upload the kubeconfig again, or the server refuses the save because stored credentials are
-      cleared when the target changes.
+      The API server URL, context, CA certificate, vault path or scan node changed: upload the kubeconfig again, or the server refuses the save
+      because stored credentials are cleared when the target or the way its identity is checked changes.
     </span>
   ) : kubeconfigStored ? (
     "Saved. Upload a new file to replace it. Changing the API server URL, context or scan node clears it unless you upload it again."
@@ -899,10 +932,11 @@ function ClusterForm({
               onChange={(v) => set({ credentialType: v })}
               options={[
                 { value: "kubeconfig", title: "Upload kubeconfig", description: "Encrypted at rest; sent only to the scan node" },
-                { value: "vault", title: "Token from vault", description: "Fetched by the scan node when the job runs" },
+                { value: "vault", title: "Token from vault", description: "Fetched by the scan node when the job runs", disabled: !isAdmin },
               ]}
             />
           </div>
+          {!isAdmin && <p className="text-xs text-zinc-600 dark:text-zinc-400">Only a team admin can add or change a vault reference.</p>}
           {source && !sameCredential && (
             <p className="text-xs text-amber-600 dark:text-amber-400">Changing the credential type replaces the stored credential when you save.</p>
           )}
@@ -1151,13 +1185,21 @@ function DatabaseForm({
   const passwordStored = sameCredential && !!source?.secrets_set.includes("password");
   const loginOptional = LOGIN_OPTIONAL.has(form.engine);
   const passwordRequired = form.credentialType === "password" && form.engine !== "redis" && !!form.login.trim();
+  const isAdmin = useIsTeamAdmin(teamId);
+  // MySQL and Redis logins can be read by whatever answers, so a password needs TLS with the server's CA
+  const usesPassword = form.credentialType === "vault" || !!form.password || passwordStored;
+  const caRequired = (form.engine === "mysql" || form.engine === "redis") && usesPassword;
   const whereChanged =
     !!source &&
     (form.engine !== cfg.engine ||
       form.host.trim() !== String(cfg.host ?? "") ||
       Number(form.port.trim() || DB_DEFAULT_PORTS[form.engine]) !== Number(cfg.port) ||
       (form.login.trim() || null) !== (cfg.login ?? null) ||
-      form.nodeId !== source.node_id);
+      form.nodeId !== source.node_id ||
+      form.requireTls !== (cfg.require_tls !== false) ||
+      (form.caPem.trim() || null) !== ((typeof cfg.ca_pem === "string" && cfg.ca_pem.trim()) || null) ||
+      (form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null) !==
+        (cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null));
   const grantName = `grant-${form.engine}`;
   const grantQuery = useQuery({
     queryKey: cbomSourcesKeys.template(teamId, grantName),
@@ -1212,8 +1254,11 @@ function DatabaseForm({
     if (form.databaseName.trim().length > 128) e.databaseName = "128 characters at most";
     if (passwordRequired && !form.password && !passwordStored) e.password = "Enter the password for this login";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
+    if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     const pemError = checkPem(form.caPem);
     if (pemError) e.caPem = pemError;
+    else if (caRequired && !(form.requireTls && form.caPem.trim()))
+      e.caPem = `${form.engine === "mysql" ? "MySQL" : "Redis"} logins need TLS and the CA that signed the server's certificate, so the password only goes to the real server`;
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this database";
     return e;
   };
@@ -1248,8 +1293,8 @@ function DatabaseForm({
   const passwordHint =
     source && passwordStored && whereChanged ? (
       <span className="text-amber-600 dark:text-amber-400">
-        The engine, host, port, login or scan node changed: enter the password again, or the server refuses the save because stored credentials
-        are cleared when the target changes.
+        The engine, host, port, login, TLS requirement, CA certificate, vault path or scan node changed: enter the password again, or the
+        server refuses the save because stored credentials are cleared when the target or the way its identity is checked changes.
       </span>
     ) : source ? (
       "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job. Changing the engine, host, port, login or scan node clears it unless you enter it again."
@@ -1329,10 +1374,11 @@ function DatabaseForm({
               onChange={(v) => set({ credentialType: v })}
               options={[
                 { value: "password", title: "Password", description: "Encrypted at rest; sent only to the scan node" },
-                { value: "vault", title: "Password from vault", description: "Fetched by the scan node when the job runs" },
+                { value: "vault", title: "Password from vault", description: "Fetched by the scan node when the job runs", disabled: !isAdmin },
               ]}
             />
           </div>
+          {!isAdmin && <p className="text-xs text-zinc-600 dark:text-zinc-400">Only a team admin can add or change a vault reference.</p>}
           {source && !sameCredential && (
             <p className="text-xs text-amber-600 dark:text-amber-400">Changing the credential type replaces the stored credential when you save.</p>
           )}
@@ -1370,7 +1416,16 @@ function DatabaseForm({
             label="Database CA certificate"
             htmlFor="db-ca"
             error={errors.caPem}
-            hint={form.caName ? form.caName : "Optional PEM file, for a private CA"}
+            required={caRequired}
+            hint={
+              form.caName
+                ? form.caName
+                : caRequired
+                  ? "Required with a password: the node checks the server against this CA before sending it"
+                  : form.engine === "postgres"
+                    ? "Optional. Without it, the node allows only SCRAM logins, which never reveal the password"
+                    : "Optional PEM file, for a private CA"
+            }
           >
             <input
               ref={caRef}

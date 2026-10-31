@@ -79,9 +79,12 @@ TIER2: dict[str, list[list[str]]] = {
 }
 
 
+SUDO = "/usr/bin/sudo"  # absolute: a writable directory early in the login user's PATH must not be able to fake sudo
+
+
 def sudo_line(argv: list[str]) -> str:
     """The shell command sent over SSH for a Tier 2 argv (sudo receives exactly ``argv``)."""
-    return "sudo -n " + " ".join(shlex.quote(a) for a in argv)
+    return f"{SUDO} -n " + " ".join(shlex.quote(a) for a in argv)
 
 
 def tier1_line(command: str) -> str:

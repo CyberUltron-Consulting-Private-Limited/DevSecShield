@@ -48,7 +48,7 @@ def test_tier1_commands_have_fixed_path():
 
 def test_sudo_lines_are_exact_argv():
     line = C.sudo_line(C.TIER2["process_executables"][0])
-    assert shlex.split(line) == ["sudo", "-n", "/usr/bin/find", "/proc", "-maxdepth", "2", "-name", "exe", "-printf",
+    assert shlex.split(line) == ["/usr/bin/sudo", "-n", "/usr/bin/find", "/proc", "-maxdepth", "2", "-name", "exe", "-printf",
                                  "%h\\t%l\\n"]
     files = shlex.split(C.sudo_line(C.TIER2["key_and_certificate_files"][0]))
     assert files[-1] == "-print0" and files[-2] == C.KEY_FILE_RE and "\\.pem" in files[-2]
@@ -145,3 +145,172 @@ def test_embedded_private_key_reports_facts_only():
 
 def test_keystore_command_has_no_store_password():
     assert "storepass" not in C.KEYSTORE_LIST and C.tier1_line(C.KEYSTORE_LIST).endswith("</dev/null")
+
+
+def test_oversize_asset_batches_are_split_never_dropped():
+    """Security review 2026-10-31: a body over the server's 1 MB cap (HTTP 413) used to lose the whole batch."""
+    from zs_scan_node.api import ApiError
+
+    calls = []
+
+    def poster(batch, batch_id):
+        calls.append((batch_id, len(batch)))
+        if len(batch) > 2:
+            raise ApiError(413, "Request body too large")
+        return {"accepted": len(batch)}
+
+    ctx = _ctx()
+    ctx.poster = poster
+    for i in range(5):
+        ctx.emit("certificate", "h", f"/etc/{i}.pem", facts={"n": i})
+    ctx.flush()
+    assert ctx.accepted == 5 and ctx.lost == 0 and not ctx.truncated
+    assert ctx.result()["assets_lost"] == 0
+
+
+def test_a_refused_batch_is_reported_not_silently_lost():
+    from zs_scan_node.api import ApiError
+
+    def poster(batch, batch_id):
+        raise ApiError(500, "retries exhausted")
+
+    ctx = _ctx()
+    ctx.poster = poster
+    ctx.emit("certificate", "h", "/etc/a.pem")
+    ctx.flush()
+    r = ctx.result()
+    assert ctx.lost == 1 and r["assets_lost"] == 1 and r["truncated"] is True
+
+
+def test_batches_are_cut_by_size():
+    from zs_scan_node import jobctx as J
+
+    sizes = []
+    ctx = _ctx()
+    ctx.poster = lambda batch, batch_id: sizes.append(len(json.dumps(batch))) or {"accepted": len(batch)}
+    for i in range(120):
+        ctx.emit("certificate", "h", f"/etc/{i}.pem", facts={f"k{j}": "x" * 4000 for j in range(3)})  # ~12 KB each
+    ctx.flush()
+    assert ctx.accepted == 120 and max(sizes) < 1024 * 1024 and len(sizes) >= 2
+    assert J.MAX_BATCH_BYTES < 1024 * 1024
+
+
+def test_passwords_go_only_to_servers_whose_identity_is_checked():
+    """Product decision 2026-10-31 (verified identity only): no password to a first-seen SSH key or to WinRM HTTP."""
+    from zs_scan_node.collectors import linux_ssh as L
+    from zs_scan_node.collectors import windows_winrm as W
+    from zs_scan_node.netutil import Target
+
+    with pytest.raises(L.TargetFail) as err:  # raised before any connection is made (192.0.2.1 is unroutable)
+        L.open_session(_ctx(), Target("192.0.2.1", "192.0.2.1"), {"host_key_policy": "tofu"}, {"password": "pw"})
+    assert err.value.status == "identity_unverified"
+    with pytest.raises(W._Fail) as err:
+        W.endpoint(Target("win01.bank.local", "10.0.0.5"), {"port": 5985})
+    assert err.value.status == "identity_unverified"
+    assert W.endpoint(Target("win01.bank.local", "10.0.0.5"), {"port": 5986}) == "https://win01.bank.local:5986/wsman"
+    assert W.endpoint(Target("10.0.0.5", "10.0.0.5"), {}) == "https://10.0.0.5:5986/wsman"
+    with W._ca_file({"ca_pem": "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n"}) as path:
+        assert path and open(path).read().startswith("-----BEGIN CERTIFICATE-----")
+    assert not __import__("os").path.exists(path)
+
+
+def test_mysql_impostor_that_drops_tls_or_asks_for_clear_text_gets_no_password():
+    """Second review, 2026-10-31: stock PyMySQL continued without TLS when the greeting left it out, and answered
+    a switch to mysql_clear_password with the password."""
+    import socket as _s
+    import struct
+    import threading
+
+    from zs_scan_node.collectors import database as D
+    from zs_scan_node.netutil import Target
+
+    captured = {}
+
+    def pkt(seq, payload):
+        return struct.pack("<I", len(payload))[:3] + bytes([seq]) + payload
+
+    srv = _s.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def serve():
+        c, _ = srv.accept()
+        caps = 0x1 | 0x200 | 0x8000 | 0x80000 | 0x200000  # no CLIENT_SSL
+        salt = b"abcdefghijklmnopqrst"
+        greet = (b"\x0a8.0.36\x00" + struct.pack("<I", 7) + salt[:8] + b"\x00" + struct.pack("<H", caps & 0xFFFF)
+                 + b"\x21" + struct.pack("<H", 2) + struct.pack("<H", caps >> 16) + bytes([21]) + b"\x00" * 10
+                 + salt[8:] + b"\x00" + b"mysql_native_password\x00")
+        c.sendall(pkt(0, greet))
+        c.settimeout(3)
+        try:
+            c.recv(4096)
+            c.sendall(pkt(2, b"\xfe" + b"mysql_clear_password\x00"))
+            captured["data"] = c.recv(4096)
+        except OSError:
+            pass
+        c.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    import datetime as dt
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Customer DB CA")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(1)
+            .not_valid_before(now).not_valid_after(now + dt.timedelta(days=1))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).sign(key, hashes.SHA256()))
+    ca = D._CaFile(cert.public_bytes(serialization.Encoding.PEM).decode())
+    try:
+        with pytest.raises(D.DbFail) as err:
+            D._mysql(_ctx(), Target("db.corp", "127.0.0.1"), {"port": port, "login": "zs_cbom"}, "S3cret-Pa55", ca, tls=True)
+    finally:
+        ca.close()
+    assert err.value.status == "identity_unverified"
+    assert b"S3cret-Pa55" not in captured.get("data", b"")
+
+
+def test_postgres_is_held_to_scram_unless_the_ca_is_actually_checked(monkeypatch):
+    import psycopg
+
+    from zs_scan_node.collectors import database as D
+    from zs_scan_node.netutil import Target
+
+    seen = {}
+
+    def fake_connect(**kw):
+        seen.clear()
+        seen.update(kw)
+        raise psycopg.OperationalError("stop")
+
+    monkeypatch.setattr(psycopg, "connect", fake_connect)
+
+    class Ca:
+        def __init__(self, path):
+            self.path = path
+
+    for cfg, ca, want in [({"require_tls": True}, None, ("require", "scram-sha-256", "require")),
+                          ({"require_tls": False}, None, ("prefer", "scram-sha-256", None)),
+                          ({"require_tls": True}, "/x/ca.pem", ("verify-ca", None, None)),
+                          ({"require_tls": False}, "/x/ca.pem", ("prefer", "scram-sha-256", None))]:
+        with pytest.raises(D.DbFail):
+            D._postgres(None, Target("db", "127.0.0.1"), {**cfg, "login": "u"}, "pw", Ca(ca))
+        assert (seen.get("sslmode"), seen.get("require_auth"), seen.get("channel_binding")) == want, (cfg, ca, seen)
+
+
+def test_winrm_name_must_not_resolve_to_a_never_scan_address(monkeypatch):
+    from zs_scan_node.collectors import windows_winrm as W
+    from zs_scan_node.netutil import Target
+
+    ctx = _ctx()
+    ctx.never_scan = NeverScan(["10.0.0.6/32"])
+    monkeypatch.setattr(W, "resolve", lambda name: ["10.0.0.5", "10.0.0.6"])
+    with pytest.raises(W._Fail) as err:
+        W.check_name(ctx, Target("winhost.corp", "10.0.0.5"))
+    assert err.value.status == "skipped_never_scan"
+    W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))  # an IP target is the address that was checked

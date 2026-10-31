@@ -136,9 +136,9 @@ DB_GRANTS = {
     ),
     "mysql": (
         "CREATE USER 'zs_cbom'@'%' IDENTIFIED BY '<from your vault>';\n"
-        "GRANT PROCESS, REPLICATION CLIENT ON *.* TO 'zs_cbom'@'%';\n"
         "GRANT SELECT (user, host, plugin, ssl_type) ON mysql.user TO 'zs_cbom'@'%';\n"
-        "GRANT SELECT ON performance_schema.* TO 'zs_cbom'@'%';\n"
+        "-- TLS of live connections only; no PROCESS and no other performance_schema table (those show SQL text)\n"
+        "GRANT SELECT ON performance_schema.status_by_thread TO 'zs_cbom'@'%';\n"
     ),
     "mssql": (
         "CREATE LOGIN svc_zscbom WITH PASSWORD = '<from your vault>';\n"
@@ -168,8 +168,11 @@ DB_READS = {
               "Certificates and keys in the master database", "Encrypted live connections"],
     "oracle": ["Native network encryption settings", "Transparent Data Encryption and wallet state",
                "Password versions per user"],
-    "mongodb": ["TLS mode and allowed protocols", "SCRAM mechanisms per user", "Encryption at rest status"],
-    "redis": ["TLS port, protocols and ciphers (named tls-* settings only; never passwords)", "Whether AUTH is required"],
+    "mongodb": ["TLS mode and allowed protocols", "OpenSSL version and whether authorization is on",
+                "Encryption at rest setting"],
+    "redis": ["TLS port, protocols and ciphers (named tls-* settings only; never passwords)", "Whether AUTH is required",
+              "Note: Redis ACLs cannot limit CONFIG GET to tls-* names, so this login could read any setting, including "
+              "requirepass; the scan node never asks for those"],
 }
 
 TEMPLATE_NAMES = {

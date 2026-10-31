@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import ipaddress
+import json
 import os
 import re
 import shutil
@@ -30,6 +31,8 @@ from zs_scan_node.netutil import resolve
 
 PAGE = 200
 MAX_ITEMS = 5000
+MAX_PAGES = MAX_ITEMS // PAGE + 20  # a server that keeps sending "continue" cannot keep the job forever
+MAX_BODY = 32 * 1024 * 1024  # bytes per API response
 
 
 class Api:
@@ -120,7 +123,16 @@ class Api:
 
     def get(self, path: str, params: dict | None = None) -> tuple[int, Any]:
         try:
-            r = self.client.get(path, params=params)
+            with self.client.stream("GET", path, params=params) as r:
+                status, raw, size = r.status_code, bytearray(), 0
+                for chunk in r.iter_bytes():
+                    size += len(chunk)
+                    if size > MAX_BODY:
+                        raise _TooLarge("error", f"the API server answered {path} with more than {MAX_BODY // 2**20} MB")
+                    stop = self.ctx.should_stop()
+                    if stop:
+                        raise _Skip(stop)
+                    raw += chunk
         except httpx.ConnectError as exc:
             msg = str(exc)
             if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate" in msg.lower():
@@ -132,10 +144,10 @@ class Api:
         except httpx.HTTPError as exc:
             raise _Fail("error", exc.__class__.__name__) from None
         try:
-            body = r.json()
+            body = json.loads(bytes(raw))
         except ValueError:
             body = None
-        return r.status_code, body
+        return status, body
 
     def post(self, path: str, body: dict) -> tuple[int, Any]:
         try:
@@ -148,12 +160,24 @@ class Api:
         """Yield items across pages; returns early with ('denied'|'not_installed', None) on 403/404."""
         cont = None
         count = 0
+        pages = 0
         while True:
+            stop = self.ctx.should_stop()
+            if stop:
+                raise _Skip(stop)
+            pages += 1
+            if pages > MAX_PAGES:
+                yield ("truncated", None)
+                return
             p = dict(params or {})
             p["limit"] = PAGE
             if cont:
                 p["continue"] = cont
-            status, body = self.get(path, p)
+            try:
+                status, body = self.get(path, p)
+            except _TooLarge as big:  # one oversized page costs this resource, not the rest of the cluster
+                yield ("error", big.error)
+                return
             if status in (401,):
                 raise _Fail("auth_failed", "the API server refused the credential")
             if status == 403:
@@ -186,6 +210,10 @@ class _Fail(Exception):
     def __init__(self, status: str, error: str) -> None:
         super().__init__(error)
         self.status, self.error = status, error
+
+
+class _TooLarge(_Fail):
+    pass
 
 
 class _Skip(Exception):
@@ -383,6 +411,9 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     except _Fail as fail:
         ctx.outcome(loc, fail.status, fail.error, started=started, assets=n)
         return fail.error
+    except _Skip as skip:  # cancelled, window closed or deadline reached between pages
+        ctx.outcome(loc, skip.status, started=started, assets=n)
+        return f"stopped ({skip.status}) after {n} assets"
     finally:
         api.close()
 
@@ -421,8 +452,9 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                 sample["note"] = f"Kubernetes {(version or {}).get('gitVersion')}"
     except ConfigError as exc:
         sample.update(status="error", note=str(exc))
-    except _Skip:
-        sample.update(status="skipped_never_scan", note="the API server address is on the never-scan list")
+    except _Skip as skip:
+        sample.update(status=skip.status, note="the API server address is on the never-scan list"
+                      if skip.status == "skipped_never_scan" else "the test was stopped")
     except _Fail as fail:
         sample.update(status=fail.status, note=fail.error)
     finally:

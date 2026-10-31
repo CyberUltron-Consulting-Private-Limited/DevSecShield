@@ -21,8 +21,8 @@ from typing import Any
 
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
-from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import RateLimiter, iter_line_ips
+from zs_scan_node.jobctx import JobContext, LeaseLost
+from zs_scan_node.netutil import iter_line_ips, node_limiter
 
 TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
                  "tds", "ssh", "rdp"}
@@ -94,7 +94,7 @@ class NetworkScan:
         self.ctx = ctx
         self.scope = scope
         rl = scope.get("rate_limits") or {}
-        self.limiter = RateLimiter(rl.get("connections_per_second") or 20, rl.get("parallel_per_server") or 2)
+        self.limiter = node_limiter(rl.get("connections_per_second") or 20, rl.get("parallel_per_server") or 2)
         self.per_endpoint = int(rl.get("handshakes_per_endpoint") or 12)
         self.sni_cache: dict[str, set] = {}
         self.timeouts: dict[str, int] = {}
@@ -153,6 +153,11 @@ class NetworkScan:
             if exc.code == "timeout":
                 self.timeouts[ep.ip] = self.timeouts.get(ep.ip, 0) + 1
             return exc.code if exc.code != "refused" else "refused", exc.detail[:200], 0
+        except LeaseLost:
+            raise
+        except Exception as exc:  # a hostile endpoint must cost one endpoint, never the whole job
+            self.ctx.log("probe error", endpoint=ep.where, error=exc.__class__.__name__, level="warn")
+            return "error", f"unexpected answer ({exc.__class__.__name__})", 0
         finally:
             _ = started
 
@@ -397,6 +402,16 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
     per_server = max(1, int((scope.get("rate_limits") or {}).get("parallel_per_server") or 2))
 
     def do_address(ip: str, mode: str):
+        try:
+            return _do_address(ip, mode)
+        except LeaseLost:
+            raise
+        except Exception as exc:  # one address must never end the whole range
+            ctx.log("address error", target=ip, error=exc.__class__.__name__, level="warn")
+            ctx.outcome(ip, "error", f"node error ({exc.__class__.__name__})")
+            return 0
+
+    def _do_address(ip: str, mode: str):
         started = time.monotonic()
         stop = ctx.should_stop(network=True)
         if stop:

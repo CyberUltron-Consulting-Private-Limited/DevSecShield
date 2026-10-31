@@ -213,6 +213,11 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     user = str(config.get("login_user") or "zs-cbom")
     policy = config.get("host_key_policy") or "tofu"
     host_port = f"{target.ip}:{port}"
+    if "password" in creds and "key" not in creds and policy != "pinned":
+        # a first-seen host key proves nothing, so a password could go to an impostor (whole ranges make that
+        # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
+        raise TargetFail("identity_unverified", "password logins need a pinned host key (known_hosts); the password "
+                         "was not sent")
     try:
         sock = socket.create_connection((target.ip, port), timeout=10)
     except socket.timeout:

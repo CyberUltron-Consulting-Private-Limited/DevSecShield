@@ -20,6 +20,7 @@ class FakeApi:
         self.heartbeats = []
         self.cancel = set()
         self.lease_lost = set()
+        self.stop = False
         self.enrolled = False
         self.lock = threading.Lock()
 
@@ -35,7 +36,7 @@ class FakeApi:
             return 401, {"detail": "Invalid node token"}
         if path == "/cbom/node/heartbeat":
             self.heartbeats.append(body)
-            return 200, {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": False,
+            return 200, {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": self.stop,
                          "heartbeat_interval_s": 5}
         if path == "/cbom/node/jobs/claim":
             with self.lock:
@@ -111,6 +112,7 @@ def _job(job_id, port, secret="s3cr3t-password-value"):
 
 def _agent(tmp_path, url, monkeypatch):
     monkeypatch.setenv("ZS_API_URL", url)
+    monkeypatch.setenv("ZS_ALLOW_INSECURE_HTTP", "1")  # the fake API is plain HTTP on loopback
     monkeypatch.setenv("ZS_REGISTRATION_TOKEN", "zsr_good_token_0123456789")
     monkeypatch.setenv("ZS_STATE_DIR", str(tmp_path / "state"))
     return A.Agent()
@@ -167,6 +169,76 @@ def test_heartbeat_reports_running_and_cancel_stops_job(server, tmp_path, monkey
     assert counts["skipped"] >= 1
 
 
+def test_resume_is_not_undone_by_a_stale_stop_flag(server, tmp_path, monkeypatch):
+    """Edge run 2026-10-31: network jobs claimed in the 30 s after 'resume' were skipped as stopped (jobs 167, 168)."""
+    api, url = server
+    srv, port = _listener()
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    api.stop = True
+    ag.heartbeat_once()
+    assert ag.stop_network.is_set()
+    api.stop = False  # the user resumes; the node's next heartbeat is up to 30 s away
+    api.jobs.append(_job(44, port))
+    t = threading.Thread(target=ag.claim_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: 44 in api.results)
+    ag.shutdown.set()
+    assert api.results[44]["result"]["counts"]["skipped"] == 0
+    assert not ag.stop_network.is_set()
+    # an answer to a heartbeat sent before that claim arrives late: it must not stop network work again
+    ag.apply_control({"stop_all_network": True, "never_scan": ["10.0.0.0/8"]}, sent=0.0)
+    assert not ag.stop_network.is_set() and ag.team_never is None
+    # a heartbeat sent after the claim is newer and applies
+    ag.apply_control({"stop_all_network": True, "never_scan": []}, sent=time.monotonic())
+    assert ag.stop_network.is_set()
+    srv.close()
+
+
+def test_plain_http_api_url_is_refused_without_the_lab_flag(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZS_API_URL", "http://zeroshield.example")
+    monkeypatch.delenv("ZS_ALLOW_INSECURE_HTTP", raising=False)
+    monkeypatch.setenv("ZS_STATE_DIR", str(tmp_path / "state"))
+    with pytest.raises(SystemExit):
+        A.Agent()
+
+
+def test_a_stuck_collector_is_ended_and_frees_its_slot(server, tmp_path, monkeypatch):
+    """Security review 2026-10-31: a target that stops answering must not hold a node job slot forever."""
+    api, url = server
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    monkeypatch.setattr(A, "STUCK_GRACE_S", 1)
+    release = threading.Event()
+
+    def hang(ctx, job, scope, source):
+        release.wait(30)  # ignores cancel and deadline, like a socket read that never returns
+        return "success", None, None
+
+    monkeypatch.setattr(A, "run_job", hang)
+    job = _job(45, 9)
+    job["scope"]["max_runtime_s"] = 1
+    ag.start_job(job)
+    assert _wait(lambda: 45 in api.results, 20)
+    assert api.results[45]["status"] == "failure" and "stopped answering" in api.results[45]["error"]
+    assert _wait(lambda: 45 not in ag.running, 5)
+    release.set()  # the collector finally returns: its late result must not be posted again
+    time.sleep(1)
+    assert api.calls.count("/cbom/node/jobs/45/result") == 1
+
+
+def test_a_non_network_claim_does_not_hide_a_stop(tmp_path, monkeypatch):
+    """Second review: only a network claim says anything about the stop flag."""
+    monkeypatch.setenv("ZS_API_URL", "https://zeroshield.example")
+    monkeypatch.setenv("ZS_STATE_DIR", str(tmp_path / "state"))
+    ag = A.Agent()
+    ag.claimed(10.0, is_network=False)
+    ag.apply_control({"stop_all_network": True, "never_scan": ["10.9.0.0/16"]}, sent=5.0)  # sent before that claim
+    assert ag.stop_network.is_set() and ag.team_never is None
+    ag.claimed(20.0, is_network=True)
+    assert not ag.stop_network.is_set()
+
+
 def test_lease_lost_posts_no_result(server, tmp_path, monkeypatch):
     api, url = server
     srv, port = _listener()
@@ -183,6 +255,7 @@ def test_lease_lost_posts_no_result(server, tmp_path, monkeypatch):
 def test_bad_registration_token_is_not_retried_in_a_loop(server, tmp_path, monkeypatch):
     api, url = server
     monkeypatch.setenv("ZS_API_URL", url)
+    monkeypatch.setenv("ZS_ALLOW_INSECURE_HTTP", "1")
     monkeypatch.setenv("ZS_REGISTRATION_TOKEN", "zsr_wrong_token_0123456789")
     monkeypatch.setenv("ZS_STATE_DIR", str(tmp_path / "state"))
     ag = A.Agent()

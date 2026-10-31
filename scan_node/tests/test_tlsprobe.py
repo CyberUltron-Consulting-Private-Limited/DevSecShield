@@ -161,3 +161,15 @@ SSL-Session:
     v35 = T.parse_s_client("Peer signature type: ecdsa_secp256r1_sha256\nPeer Temp Key: X25519, 253 bits\n"
                            "New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384\n")  # OpenSSL 3.5 wording
     assert v35.group == "X25519" and v35.peer_sig_type == "ecdsa_secp256r1_sha256"
+
+
+def test_ldap_result_code_at_the_very_end_is_a_probe_error_not_a_crash():
+    """Security review 2026-10-31: the answer 30 02 0a 01 raised IndexError and ended the whole network job."""
+    a, b = socket.socketpair()
+    try:
+        b.sendall(bytes.fromhex("30020a01"))
+        with pytest.raises(T.ProbeError):
+            T._ldap(a, time.monotonic() + 5)
+    finally:
+        a.close()
+        b.close()

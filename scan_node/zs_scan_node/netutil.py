@@ -10,6 +10,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 import threading
+import weakref
 import time
 from dataclasses import dataclass
 from typing import Iterator
@@ -154,9 +155,18 @@ class RateLimiter:
         self.last = time.monotonic()
         self.lock = threading.Lock()
         self.per_server = max(int(per_server or 1), 1)
-        self._sems: dict[str, threading.BoundedSemaphore] = {}
+        # weak: a semaphore lives only while a connection holds it, so a /16 sweep does not grow this forever
+        self._sems: weakref.WeakValueDictionary[str, threading.BoundedSemaphore] = weakref.WeakValueDictionary()
         self._sem_lock = threading.Lock()
         self.connections = 0
+
+    def configure(self, per_second: float, per_server: int) -> None:
+        with self.lock:
+            self.rate = max(float(per_second or 1), 0.1)
+            self.capacity = max(1.0, self.rate)
+            self.tokens = min(self.tokens, self.capacity)
+        with self._sem_lock:
+            self.per_server = max(int(per_server or 1), 1)
 
     def acquire(self, stop: threading.Event | None = None, deadline: float | None = None) -> bool:
         while True:
@@ -181,6 +191,22 @@ class RateLimiter:
             if sem is None:
                 sem = self._sems[ip] = threading.BoundedSemaphore(self.per_server)
             return sem
+
+
+_NODE_LIMITER: RateLimiter | None = None
+_NODE_LIMITER_LOCK = threading.Lock()
+
+
+def node_limiter(per_second: float, per_server: int) -> RateLimiter:
+    """The one limiter of this node process.  The agreed connections per second bind the node as a whole, however
+    many network jobs it runs at once; the newest job's limits (the team's current settings) apply to all of them."""
+    global _NODE_LIMITER
+    with _NODE_LIMITER_LOCK:
+        if _NODE_LIMITER is None:
+            _NODE_LIMITER = RateLimiter(per_second, per_server)
+        else:
+            _NODE_LIMITER.configure(per_second, per_server)
+        return _NODE_LIMITER
 
 
 def local_ips() -> list[str]:

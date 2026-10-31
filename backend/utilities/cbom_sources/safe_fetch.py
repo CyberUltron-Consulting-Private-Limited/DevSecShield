@@ -5,7 +5,7 @@
   unique-local, multicast, reserved, or an IPv4-mapped form of one), and the connection goes to the
   address that was checked, so a DNS answer cannot change between the check and the fetch;
 * no proxy from the environment; at most 3 redirects, each checked the same way;
-* 1 MB body cap, 10 s timeout, identity encoding only.
+* 1 MB body cap, 10 s per read and 30 s for the whole fetch, identity encoding only.
 
 ``CBOM_LAB_ALLOW_PRIVATE_FETCH=1`` allows private addresses for a local test lab only (it is logged
 loudly), and ``CBOM_LAB_CA_FILE`` adds a lab CA to the trust store.
@@ -17,15 +17,21 @@ import ipaddress
 import os
 import socket
 import ssl
+import threading
+import time
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
 from backend.utilities.cbom_sources.common import log
 
 MAX_BYTES = 1024 * 1024
-TIMEOUT = 10.0
+TIMEOUT = 10.0  # per connect / read
+TOTAL_TIMEOUT = 30.0  # the whole fetch, redirects included: a server dripping bytes cannot hold the worker
 MAX_REDIRECTS = 3
 _CGNAT = ipaddress.ip_network("100.64.0.0/10")
+# IPv6 prefixes that carry an IPv4 address to a translator or relay (NAT64, local NAT64, 6to4)
+_V4_IN_V6 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"), ipaddress.ip_network("2002::/16"),
+             ipaddress.ip_network("::ffff:0:0:0/96"), ipaddress.ip_network("::/96"))  # + IPv4-translated, -compatible
 
 
 class FetchError(Exception):
@@ -52,6 +58,8 @@ def public_address(text: str) -> bool:
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and any(ip in net for net in _V4_IN_V6):
         return False
     return bool(ip.is_global) and not ip.is_multicast
 
@@ -103,9 +111,36 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
 
 
+def _read_capped(resp: http.client.HTTPResponse, conn: http.client.HTTPConnection, deadline: float) -> bytes:
+    body = bytearray()
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise FetchError(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document")
+        if conn.sock is not None:
+            conn.sock.settimeout(min(TIMEOUT, left))
+        chunk = resp.read1(min(65536, MAX_BYTES + 1 - len(body)))  # one socket read at most, then re-check
+        if not chunk:
+            return bytes(body)
+        body += chunk
+        if len(body) > MAX_BYTES:
+            raise FetchError("the document is larger than 1 MB")
+
+
+def _abort(conn: http.client.HTTPConnection) -> None:
+    """Deadline reached: shut the socket so a blocked handshake or header read returns at once."""
+    sock = conn.sock
+    if sock is not None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
 def fetch(url: str, *, accept: str = "application/json") -> Fetched:
     allow_private = _lab_private_allowed()
     current = url
+    deadline = time.monotonic() + TOTAL_TIMEOUT
     for _hop in range(MAX_REDIRECTS + 1):
         parts = urlsplit(current)
         if parts.scheme != "https" or not parts.hostname:
@@ -118,6 +153,13 @@ def fetch(url: str, *, accept: str = "application/json") -> Fetched:
         address = _resolve(parts.hostname, port, allow_private)
         conn = _PinnedHTTPS(parts.hostname, address, port, _context())
         path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise FetchError(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document")
+        # the per-read timeout alone lets a server drip handshake or header bytes for ever; this bounds the hop
+        timer = threading.Timer(left, _abort, (conn,))
+        timer.daemon = True
+        timer.start()
         try:
             conn.request("GET", path, headers={"Accept": accept, "Accept-Encoding": "identity",
                                                "User-Agent": "ZeroShield-CBOM/1.0", "Host": parts.netloc})
@@ -128,16 +170,15 @@ def fetch(url: str, *, accept: str = "application/json") -> Fetched:
                     raise FetchError(f"redirect without a Location from {parts.hostname}")
                 current = urljoin(current, location)
                 continue
-            body = resp.read(MAX_BYTES + 1)
-            if len(body) > MAX_BYTES:
-                raise FetchError("the document is larger than 1 MB")
+            body = _read_capped(resp, conn, deadline)
             return Fetched(current, resp.status, resp.getheader("Content-Type") or "", body)
         except ssl.SSLCertVerificationError as exc:
             raise FetchError(f"TLS certificate of {parts.hostname} is not trusted ({exc.verify_message})") from exc
         except (OSError, http.client.HTTPException) as exc:
-            if isinstance(exc, FetchError):
-                raise
+            if time.monotonic() >= deadline:
+                raise FetchError(f"the server took longer than {int(TOTAL_TIMEOUT)} s to send the document") from exc
             raise FetchError(f"could not read {parts.hostname}: {type(exc).__name__}") from exc
         finally:
+            timer.cancel()
             conn.close()
     raise FetchError("too many redirects")

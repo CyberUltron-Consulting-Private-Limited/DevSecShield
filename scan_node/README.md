@@ -23,7 +23,8 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
 
 | Variable | Meaning |
 |---|---|
-| `ZS_API_URL` | ZeroShield API URL (required) |
+| `ZS_API_URL` | ZeroShield API URL over `https://` (required) |
+| `ZS_ALLOW_INSECURE_HTTP` | `1` allows an `http://` API URL; local test labs only, since job credentials would travel unencrypted |
 | `ZS_REGISTRATION_TOKEN` | single-use token, needed only until the node has enrolled |
 | `ZS_STATE_DIR` | state directory (default `/var/lib/zs-node`; keep it on a volume) |
 | `ZS_MAX_JOBS` | jobs run in parallel (default 2, max 8) |
@@ -37,7 +38,7 @@ ZeroShield.
 
 ## What it runs
 
-**Linux (SSH).** Tier 1 runs as the login user without sudo; Tier 2 adds the exact `sudo -n` lines of the
+**Linux (SSH).** Tier 1 runs as the login user without sudo; Tier 2 adds the exact `/usr/bin/sudo -n` lines of the
 `zs-cbom` sudoers file. The command list is in `zs_scan_node/commands.py` (the same list the UI shows), and
 `commands.sudoers_file()` produces the sudoers file. File paths only ever come from the Tier 2 `find`, are
 shell-quoted, and are read with commands that print **public** material only (`openssl storeutl -certs`,

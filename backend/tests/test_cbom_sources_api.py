@@ -106,10 +106,14 @@ def api(world):
     return call
 
 
+KNOWN_HOSTS = "10.20.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE0Bq1hQ0j7lC1n6x3o0b9Z7w2YtqXxw9i6ZQ5mM2kHq"
+
+
 def linux_body(name="linux-dc", node_id=None, targets=None, **cfg):
+    # password logins need pinned host keys (verified identity only, 2026-10-31)
     return {"kind": "linux_servers", "name": name, "node_id": node_id,
             "config": {"targets": targets or ["10.20.0.0/29", "app-01.bank.local"], "credential_type": "password",
-                       "login_user": "zs-cbom", **cfg},
+                       "login_user": "zs-cbom", "host_key_policy": "pinned", "known_hosts": KNOWN_HOSTS, **cfg},
             "secrets": {"password": PASSWORD}}
 
 
@@ -592,6 +596,38 @@ def test_failed_or_cancelled_collect_jobs_are_refunded(api, world):
         assert s.get(CbomCollectionJob, claim["job"]["id"]).refunded is True
 
 
+def test_same_location_on_two_hosts_is_two_assets(api, world):
+    """Security review 2026-10-31: host collectors report host-relative locations, so the key must include the target."""
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    job, lease = claim["job"], claim["job"]["lease_id"]
+    batch = [{"type": "ssh_server_config", "target": t, "location": "sshd -T", "name": "sshd effective configuration",
+              "facts": {"ciphers": c}} for t, c in (("10.20.0.1", ["aes128-cbc"]), ("10.20.0.2", ["chacha20-poly1305@openssh.com"]))]
+    batch += [{"type": "crypto_library", "target": t, "location": "package:openssl", "name": "openssl",
+               "facts": {"name": "openssl", "version": v}} for t, v in (("10.20.0.1", "1.0.2k"), ("10.20.0.2", "3.0.13"))]
+    out = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr,
+              json={"lease_id": lease, "batch_id": "hosts", "assets": batch}).json()
+    assert out["accepted"] == 4 and out["duplicate"] == 0
+    items = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets").json()["items"]
+    assert sorted((a["target"], a["location"]) for a in items) == [
+        ("10.20.0.1", "package:openssl"), ("10.20.0.1", "sshd -T"), ("10.20.0.2", "package:openssl"), ("10.20.0.2", "sshd -T")]
+
+
+def test_a_job_whose_every_target_was_skipped_is_refunded(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    with Session(engine) as s:
+        before = s.get(Team, 1).credit_balance
+    r = api("POST", f"/cbom/node/jobs/{claim['job']['id']}/result", None, headers=hdr,
+            json={"lease_id": claim["job"]["lease_id"], "status": "success",
+                  "result": {"counts": {"total": 2, "ok": 0, "failed": 0, "skipped": 2}, "asset_count": 0}})
+    assert r.status_code == 200
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, claim["job"]["id"])
+        assert job.outcome == "failed" and job.refunded is True
+        assert round(s.get(Team, 1).credit_balance - before, 2) == 0.4
+
+
 def test_heartbeat_running_list_renews_only_live_jobs_and_releases_orphans(api, world):
     engine, _ = world
     src, run, claim, hdr = _collect_job(api, engine)
@@ -701,6 +737,139 @@ def test_safe_fetch_refuses_private_and_mapped_addresses(monkeypatch):
         safe_fetch.fetch("https://metadata.example.com/latest")
 
 
+def test_passwords_only_go_to_servers_whose_identity_is_checked(api, world):
+    """Product decision 2026-10-31: verified identity before any password; vault references are for team admins."""
+    node_id, _t, _ = enroll_node(api)
+    tofu = linux_body(name="pw-tofu", node_id=node_id, host_key_policy="tofu", known_hosts=None)
+    r = api("POST", "/1/cbom/sources/items", json=tofu)
+    assert r.status_code == 400 and "pinned host keys" in r.json()["detail"]
+    key = linux_body(name="key-tofu", node_id=node_id, host_key_policy="tofu", known_hosts=None, credential_type="node_key")
+    key["secrets"] = {}
+    assert api("POST", "/1/cbom/sources/items", json=key).status_code == 201  # key logins reveal nothing
+    pinned = api("POST", "/1/cbom/sources/items", json=linux_body(name="pw-pinned", node_id=node_id)).json()["source"]
+    weaken = api("PATCH", f"/1/cbom/sources/items/{pinned['id']}", json={
+        "config": {**pinned["config"], "host_key_policy": "tofu", "known_hosts": None}, "secrets": {"password": PASSWORD},
+        "expected_version": pinned["row_version"]})
+    assert weaken.status_code == 400 and "pinned host keys" in weaken.json()["detail"]
+    win = {"kind": "windows_servers", "name": "win-http", "node_id": node_id,
+           "config": {"targets": ["10.20.5.10"], "port": 5985, "credential_type": "password"}, "secrets": {"password": PASSWORD}}
+    r = api("POST", "/1/cbom/sources/items", json=win)
+    assert r.status_code == 400 and "HTTPS (5986)" in r.json()["detail"]
+    win["config"]["port"] = 5986
+    win["name"] = "win-https"
+    assert api("POST", "/1/cbom/sources/items", json=win).status_code == 201
+    db = {"kind": "database", "name": "my-noca", "node_id": node_id,
+          "config": {"engine": "mysql", "host": "10.20.6.1", "login": "zs_cbom"}, "secrets": {"password": PASSWORD}}
+    r = api("POST", "/1/cbom/sources/items", json=db)
+    assert r.status_code == 400 and "CA certificate" in r.json()["detail"]
+    redis_open = {"kind": "database", "name": "redis-noauth", "node_id": node_id,
+                  "config": {"engine": "redis", "host": "10.20.6.2"}, "secrets": {}}
+    assert api("POST", "/1/cbom/sources/items", json=redis_open).status_code == 201  # no password, nothing to leak
+    pg = {"kind": "database", "name": "pg-noca", "node_id": node_id,
+          "config": {"engine": "postgres", "host": "10.20.6.3", "login": "zs_cbom"}, "secrets": {"password": PASSWORD}}
+    assert api("POST", "/1/cbom/sources/items", json=pg).status_code == 201  # the node holds it to SCRAM
+    vault = linux_body(name="vault-src", node_id=node_id, credential_type="vault",
+                       vault={"provider": "hashicorp", "path": "secret/zs-cbom/ssh"})
+    vault["secrets"] = {}
+    r = api("POST", "/1/cbom/sources/items", "bob", json=vault)
+    assert r.status_code == 400 and "team admin" in r.json()["detail"]
+    made = api("POST", "/1/cbom/sources/items", json=vault)
+    assert made.status_code == 201, made.text
+
+
+def test_review2_edge_rules(api, world):
+    """Second independent review, 2026-10-31: a source saved before the identity rules can still be disabled; a
+    rename does not stop a running discovery; a job that stored assets is never refunded as 'nothing collected'."""
+    engine, _ = world
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    src = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id)).json()["source"]
+    with Session(engine) as s:  # saved before the rule: password + trust on first use
+        row = s.get(CbomCollectionSource, src["id"])
+        row.config = {**row.config, "host_key_policy": "tofu", "known_hosts": None}
+        s.add(row)
+        s.commit()
+        version = row.row_version
+    r = api("PATCH", f"/1/cbom/sources/items/{src['id']}", json={"enabled": False, "expected_version": version})
+    assert r.status_code == 200, r.text
+    api("PATCH", "/1/cbom/sources/settings", json={"scan_window": [[True] * 24 for _ in range(7)]})
+    rng = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "r-a", "node_id": node_id,
+                                                    "config": {"cidr": "10.30.0.0/24", "mode": "full"}}).json()["source"]
+    assert api("POST", "/1/cbom/sources/discovery").status_code == 200
+    claim = api("POST", "/cbom/node/jobs/claim", None, headers=hdr).json()
+    assert claim["job"]["kind"] == "discovery"
+    assert api("PATCH", f"/1/cbom/sources/items/{rng['id']}",
+               json={"name": "r-a-renamed", "expected_version": rng["row_version"]}).status_code == 200
+    hb = api("POST", "/cbom/node/heartbeat", None, headers=hdr,
+             json={"running": [{"job_id": claim["job"]["id"], "lease_id": claim["job"]["lease_id"]}]}).json()
+    assert claim["job"]["id"] not in hb["cancel_job_ids"]
+
+
+def test_a_job_that_stored_assets_is_not_refunded_as_empty(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine, targets=["10.20.0.1"])
+    job, lease = claim["job"], claim["job"]["lease_id"]
+    out = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr, json={"lease_id": lease, "batch_id": "b1", "assets": [
+        {"type": "crypto_library", "target": "10.20.0.1", "location": f"package:lib{i}", "name": f"lib{i}",
+         "facts": {"name": f"lib{i}", "version": "1"}} for i in range(5)]}).json()
+    assert out["accepted"] == 5
+    r = api("POST", f"/cbom/node/jobs/{job['id']}/result", None, headers=hdr, json={"lease_id": lease, "status": "success",
+            "result": {"counts": {"total": 1, "ok": 0, "failed": 0, "skipped": 1}, "asset_count": 5}})
+    assert r.status_code == 200
+    with Session(engine) as s:
+        j = s.get(CbomCollectionJob, job["id"])
+        assert j.asset_count == 5 and j.refunded is False
+
+
+def test_safe_fetch_blocks_ipv4_carried_in_ipv6():
+    from backend.utilities.cbom_sources import safe_fetch
+
+    for address in ("64:ff9b::a9fe:a9fe", "64:ff9b:1::a00:1", "2002:a9fe:a9fe::1",  # NAT64, local NAT64, 6to4
+                    "::ffff:0:7f00:1", "::7f00:1"):  # IPv4-translated, IPv4-compatible
+        assert not safe_fetch.public_address(address), address
+    assert safe_fetch.public_address("2606:4700:4700::1111")
+
+
+def test_saml_doctype_is_refused_in_any_encoding():
+    """Security review 2026-10-31: a UTF-16 document hid its DOCTYPE from the byte search."""
+    from backend.utilities.cbom_sources.idp_collect import FetchError, saml_assets_from_xml
+
+    doc = ('<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE x [<!ENTITY a "aaaa">]>'
+           '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="&a;"/>')
+    with pytest.raises(FetchError, match="DOCTYPE"):
+        saml_assets_from_xml(doc.encode("utf-16"), "u", "l")
+
+
+def test_discovery_only_sweeps_ranges_that_still_apply(api, world):
+    """Security review 2026-10-31: a deleted, disabled or changed range was still swept by a queued or running discovery."""
+    node_id, token, _ = enroll_node(api)
+    hdr = {"X-ZS-Node-Token": token}
+    api("PATCH", "/1/cbom/sources/settings", json={"scan_window": [[True] * 24 for _ in range(7)]})
+    ids = {}
+    for name, cidr in (("r-a", "10.30.0.0/24"), ("r-b", "10.31.0.0/24")):
+        r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": name, "node_id": node_id,
+                                                      "config": {"cidr": cidr, "mode": "full"}})
+        assert r.status_code == 201, r.text
+        ids[name] = r.json()["source"]["id"]
+    assert api("POST", "/1/cbom/sources/discovery").status_code == 200
+    assert api("DELETE", f"/1/cbom/sources/items/{ids['r-b']}").status_code == 200
+    claim = api("POST", "/cbom/node/jobs/claim", None, headers=hdr).json()
+    assert claim["job"]["kind"] == "discovery" and [r["cidr"] for r in claim["scope"]["ranges"]] == ["10.30.0.0/24"]
+    src = api("GET", f"/1/cbom/sources/items/{ids['r-a']}").json()["source"]
+    edit = api("PATCH", f"/1/cbom/sources/items/{ids['r-a']}", json={"config": {**src["config"], "cidr": "10.30.1.0/24"},
+                                                                       "expected_version": src["row_version"]})
+    assert edit.status_code == 200, edit.text
+    hb = api("POST", "/cbom/node/heartbeat", None, headers=hdr,
+             json={"running": [{"job_id": claim["job"]["id"], "lease_id": claim["job"]["lease_id"]}]}).json()
+    assert claim["job"]["id"] in hb["cancel_job_ids"]
+    # a queued sweep whose every range is gone is cancelled at claim, never handed out
+    assert api("POST", "/1/cbom/sources/discovery").status_code == 200
+    src = api("GET", f"/1/cbom/sources/items/{ids['r-a']}").json()["source"]
+    assert api("PATCH", f"/1/cbom/sources/items/{ids['r-a']}",
+               json={"enabled": False, "expected_version": src["row_version"]}).status_code == 200
+    assert api("POST", "/cbom/node/jobs/claim", None, headers=hdr).status_code == 204
+
+
 def test_saml_parser_refuses_entities_and_reads_signing_certs():
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
@@ -759,3 +928,10 @@ def test_command_lists_shown_to_customers_match_the_server_and_sudoers():
         return [line.strip().rstrip(", \\").strip() for line in body.splitlines()[1:] if line.strip()]
 
     assert cmnd_entries(sudoers) == cmnd_entries(node_commands.sudoers_file())
+    # what the Databases form says the login reads is exactly what templates.py says (it once promised per-role
+    # password hashes and Redis ACL users that the read-only logins cannot see)
+    db_tsx = (_REPO_ROOT / "frontend/components/cbom/sources/ClustersDatabasesTab.tsx").read_text()
+    block = _re.search(r"const DB_READS: Record<Engine, string\[\]> = \{(.*?)\n\};", db_tsx, _re.S).group(1)
+    ui_reads = {m.group(1): [json.loads(x) for x in _re.findall(r'"(?:[^"\\]|\\.)*"', m.group(2))]
+                for m in _re.finditer(r"(\w+): \[(.*?)\]", block, _re.S)}
+    assert ui_reads == templates.DB_READS

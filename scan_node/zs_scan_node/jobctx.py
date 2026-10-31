@@ -21,14 +21,17 @@ ASSET_TYPES = frozenset({
 })
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
+    "identity_unverified",
     "sudoers_missing", "sudo_denied", "rbac_denied", "tls_unavailable", "not_supported", "error", "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
 })
 FAILED = frozenset({"unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
+                    "identity_unverified",
                     "sudoers_missing", "sudo_denied", "rbac_denied", "tls_unavailable", "not_supported", "error"})
 MAX_FACTS_BYTES = 16 * 1024
 MAX_TARGET_ROWS = 1000
 BATCH = 500
+MAX_BATCH_BYTES = 768 * 1024  # the server refuses asset bodies over 1 MB
 
 
 class LeaseLost(Exception):
@@ -120,6 +123,8 @@ class JobContext:
     _seq: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock)
     sent: int = 0
+    lost: int = 0  # assets the server never accepted (refused batch, API down past retries)
+    _buffer_bytes: int = 0
     accepted: int = 0
     rejected: int = 0
     duplicate: int = 0
@@ -164,9 +169,11 @@ class JobContext:
             "facts": _fit(_clean(self.scrubber.obj(facts or {})), MAX_FACTS_BYTES),
         }
         asset = self.scrubber.obj(asset)
+        size = len(json.dumps(asset, separators=(",", ":"), default=str)) + 1
         with self._lock:
             self._buffer.append(asset)
-            full = len(self._buffer) >= BATCH
+            self._buffer_bytes += size
+            full = len(self._buffer) >= BATCH or self._buffer_bytes >= MAX_BATCH_BYTES
         if full:
             self.flush()
 
@@ -180,7 +187,7 @@ class JobContext:
 
     def flush(self) -> None:
         with self._lock:
-            batch, self._buffer = self._buffer, []
+            batch, self._buffer, self._buffer_bytes = self._buffer, [], 0
             if not batch:
                 return
             self._seq += 1
@@ -190,13 +197,33 @@ class JobContext:
             self.collected.extend(batch)
             self.accepted += len(batch)
             return
-        counters = self.poster(batch, batch_id)  # raises LeaseLost
-        self.accepted += int(counters.get("accepted", 0))
-        self.duplicate += int(counters.get("duplicate", 0))
-        self.rejected += int(counters.get("rejected", 0))
-        if counters.get("cap_reached"):
-            self.cap_reached = True
-            self.truncated = True
+        self._post(batch, batch_id)
+
+    def _post(self, batch: list[dict], batch_id: str) -> None:
+        """Post one batch; a body the server finds too large is split and retried, so no asset is dropped for size.
+        Raises LeaseLost.  Any other refusal is counted in ``lost`` and reported, never silently ignored."""
+        from zs_scan_node.api import ApiError  # local import: api imports this module
+
+        try:
+            counters = self.poster(batch, batch_id)
+        except ApiError as exc:
+            if exc.status == 413 and len(batch) > 1:
+                half = len(batch) // 2
+                self._post(batch[:half], f"{batch_id}a")
+                self._post(batch[half:], f"{batch_id}b")
+                return
+            with self._lock:
+                self.lost += len(batch)
+                self.truncated = True
+            self.log("asset batch not accepted", batch=batch_id, assets=len(batch), error=str(exc)[:200], level="error")
+            return
+        with self._lock:
+            self.accepted += int(counters.get("accepted", 0))
+            self.duplicate += int(counters.get("duplicate", 0))
+            self.rejected += int(counters.get("rejected", 0))
+            if counters.get("cap_reached"):
+                self.cap_reached = True
+                self.truncated = True
 
     # ------------------------------------------------------------------ outcomes
     def outcome(self, target: str, status: str, error: str | None = None, started: float | None = None,
@@ -234,6 +261,7 @@ class JobContext:
             "asset_count": self.accepted,
             "targets": rows,
             "truncated": bool(self.truncated),
+            "assets_lost": self.lost,
             "duration_s": int(time.monotonic() - self.started),
         }
         if self.kind == "test_connection":

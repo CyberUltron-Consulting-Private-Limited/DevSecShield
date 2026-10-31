@@ -8,13 +8,18 @@ the local lab (validated in the AWS lab).
 from __future__ import annotations
 
 import concurrent.futures as cf
+import contextlib
+import ipaddress
 import json
+import os
+import shutil
+import tempfile
 import time
 from typing import Any
 
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Target, expand_targets
+from zs_scan_node.netutil import Target, expand_targets, resolve
 from zs_scan_node.scrub import printable
 
 SCRIPTS = {
@@ -121,15 +126,63 @@ class _Fail(Exception):
         self.status, self.error = status, error
 
 
-def _session(target: Target, config: dict, password: str):
+@contextlib.contextmanager
+def _ca_file(config: dict):
+    """The customer's CA for WinRM HTTPS certificates, as a temporary file (None: the public trust store)."""
+    pem = config.get("ca_pem")
+    if not pem:
+        yield None
+        return
+    folder = tempfile.mkdtemp(prefix="zswinrm-")
+    try:
+        path = os.path.join(folder, "ca.pem")
+        with open(path, "w", encoding="ascii") as f:
+            f.write(pem)
+        yield path
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def endpoint(target: Target, config: dict) -> str:
+    """HTTPS only, and by the name the customer gave when there is one, so the certificate can prove the server
+    before NTLM sends anything.  WinRM over HTTP (5985) cannot prove the server and is refused."""
+    port = int(config.get("port") or 5986)
+    if port == 5985:
+        raise _Fail("identity_unverified", "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986). "
+                    "The password was not sent")
+    host = target.ip if _is_ip(target.label) else target.label
+    if ":" in str(host):
+        host = f"[{host}]"
+    return f"https://{host}:{port}/wsman"
+
+
+def _is_ip(text: str) -> bool:
+    try:
+        ipaddress.ip_address(str(text))
+        return True
+    except ValueError:
+        return False
+
+
+def check_name(ctx: JobContext, target: Target) -> None:
+    """WinRM connects by the name (so the certificate can prove the server), and the HTTP client resolves it again.
+    Every address the name has must therefore be allowed, not just the one checked when targets were expanded."""
+    if _is_ip(target.label):
+        return
+    try:
+        addresses = resolve(target.label)
+    except OSError:
+        raise _Fail("unreachable", f"could not resolve {target.label}") from None
+    if any(ctx.never_scan.blocks_ip(ip) for ip in addresses):
+        raise _Fail("skipped_never_scan", f"{target.label} also resolves to an address on the never-scan list")
+
+
+def _session(target: Target, config: dict, password: str, ca_path: str | None = None):
     import winrm
 
-    port = int(config.get("port") or 5986)
-    scheme = "http" if port == 5985 else "https"
-    return winrm.Session(f"{scheme}://{target.ip}:{port}/wsman", auth=(str(config.get("login_user") or "svc-zscbom"),
-                                                                      password),
-                         transport="ntlm", server_cert_validation="ignore", read_timeout_sec=60,
-                         operation_timeout_sec=50)
+    return winrm.Session(endpoint(target, config), auth=(str(config.get("login_user") or "svc-zscbom"), password),
+                         transport="ntlm", server_cert_validation="validate",
+                         ca_trust_path=ca_path or "legacy_requests", read_timeout_sec=60, operation_timeout_sec=50)
 
 
 def _run(sess, name: str) -> tuple[int, str, str]:
@@ -137,6 +190,10 @@ def _run(sess, name: str) -> tuple[int, str, str]:
         r = sess.run_ps(SCRIPTS[name])
     except Exception as exc:  # requests/winrm raise many types
         text = str(exc)
+        if "CERTIFICATE_VERIFY_FAILED" in text or "SSLError" in text or "certificate verify failed" in text:
+            raise _Fail("identity_unverified", "the WinRM certificate is not trusted for this server: upload the CA "
+                        "that issued it, or list the server by the name in its certificate. The password was not "
+                        "sent") from None
         if "401" in text or "Unauthorized" in text or "credentials were rejected" in text:
             raise _Fail("auth_failed", "WinRM refused the login") from None
         if "timed out" in text.lower():
@@ -145,8 +202,9 @@ def _run(sess, name: str) -> tuple[int, str, str]:
     return r.status_code, r.std_out.decode("utf-8", "replace"), r.std_err.decode("utf-8", "replace")[:300]
 
 
-def collect_target(ctx: JobContext, target: Target, config: dict, password: str) -> int:
-    sess = _session(target, config, password)
+def collect_target(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None = None) -> int:
+    check_name(ctx, target)
+    sess = _session(target, config, password, ca_path)
     loc = target.label
     n = 0
     code, out, _err = _run(sess, "os")
@@ -206,14 +264,15 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
             ctx.outcome(target.label, "unreachable", target.error, started=started)
             return
         try:
-            n = collect_target(ctx, target, config, password)
+            n = collect_target(ctx, target, config, password, ca_path)
             ctx.outcome(target.label, "ok", started=started, assets=n)
         except _Fail as fail:
             ctx.outcome(target.label, fail.status, fail.error, started=started)
         except Exception as exc:
             ctx.outcome(target.label, "error", exc.__class__.__name__, started=started)
 
-    with cf.ThreadPoolExecutor(max_workers=max(1, min(int(config.get("parallel") or 8), 32))) as pool:
+    with _ca_file(config) as ca_path, \
+            cf.ThreadPoolExecutor(max_workers=max(1, min(int(config.get("parallel") or 8), 32))) as pool:
         list(pool.map(one, targets))
     return None
 
@@ -226,16 +285,22 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                             "note": str(exc)})
         return str(exc)
     targets, _ = expand_targets(scope.get("targets") or [], ctx.never_scan)
-    for target in targets[:5]:
-        sample = {"target": target.label, "status": "ready", "reachable": False, "login": False, "privilege": None,
-                  "note": ""}
-        if target.ip is None:
-            sample.update(status="unreachable", note=target.error or "")
-        else:
-            try:
-                code, out, _ = _run(_session(target, config, password), "os")
-                sample.update(reachable=True, login=code == 0, note=printable(out.strip(), 160))
-            except _Fail as fail:
-                sample.update(status=fail.status, reachable=fail.status not in ("unreachable", "timeout"), note=fail.error)
-        ctx.samples.append(sample)
+    with _ca_file(config) as ca_path:
+        for target in targets[:5]:
+            _test_one(ctx, target, config, password, ca_path)
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(ctx.samples)} samples ready"
+
+
+def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None) -> None:
+    sample = {"target": target.label, "status": "ready", "reachable": False, "login": False, "privilege": None,
+              "note": ""}
+    if target.ip is None:
+        sample.update(status="unreachable", note=target.error or "")
+    else:
+        try:
+            check_name(ctx, target)
+            code, out, _ = _run(_session(target, config, password, ca_path), "os")
+            sample.update(reachable=True, login=code == 0, note=printable(out.strip(), 160))
+        except _Fail as fail:
+            sample.update(status=fail.status, reachable=fail.status not in ("unreachable", "timeout"), note=fail.error)
+    ctx.samples.append(sample)

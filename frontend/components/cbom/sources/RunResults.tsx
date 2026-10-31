@@ -68,7 +68,7 @@ const TARGET_TONE: Record<string, Tone> = { ok: "green", skipped_never_scan: "zi
   skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc" };
 const TARGET_LABEL: Record<string, string> = {
   ok: "Read", unreachable: "Unreachable", refused: "Connection refused", timeout: "Timed out", no_route: "No route",
-  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
+  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", identity_unverified: "Server not verified", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
   sudo_denied: "Sudo refused", tls_unavailable: "No TLS", not_supported: "Not supported", error: "Error",
   skipped_never_scan: "Skipped: never-scan list", skipped_window: "Skipped: scan window closed", skipped_stop: "Skipped: scanning stopped",
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",

@@ -33,6 +33,7 @@ import {
   countCbomTargets,
   createCbomSource,
   deleteCbomSource,
+  getCbomSourcesOverview,
   getCbomSourcesSettings,
   getCbomTemplate,
   listCbomScanNodes,
@@ -156,7 +157,7 @@ const MAX_TARGET_LINES = 1000;
 const MAX_EXCLUSIONS = 2000;
 const READY = new Set(["ready", "ok", "passed"]);
 const WAITING = new Set(["pending", "running", "queued", "claimed"]);
-const BAD = new Set(["failed", "failure", "error", "no_route", "unreachable", "host_key_changed", "login_failed", "auth_failed", "timeout", "refused"]);
+const BAD = new Set(["failed", "failure", "error", "no_route", "unreachable", "host_key_changed", "identity_unverified", "login_failed", "auth_failed", "timeout", "refused"]);
 
 // ---------------------------------------------------------------------------- helpers
 /** Never-scan accepts one per line or comma separated (the design shows "10.20.0.1, 10.20.0.254"). */
@@ -233,6 +234,7 @@ interface FormState {
   loginUser: string;
   hostKeyPolicy: HostKeyPolicy;
   knownHosts: string;
+  caPem: string;
   credentialType: CredType;
   vaultProvider: string;
   vaultPath: string;
@@ -245,7 +247,7 @@ interface FormState {
   window: WindowMode;
   customWindow: WindowGrid | null;
 }
-type ErrorKey = keyof FormState | "csv" | "knownHostsFile";
+type ErrorKey = keyof FormState | "csv" | "knownHostsFile" | "caFile";
 type Errors = Partial<Record<ErrorKey, string>>;
 
 function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormState {
@@ -261,6 +263,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
       loginUser: info.login,
       hostKeyPolicy: "tofu",
       knownHosts: "",
+      caPem: "",
       credentialType: info.defaultCred,
       vaultProvider: "hashicorp",
       vaultPath: "",
@@ -288,6 +291,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
     loginUser: String(cfg.login_user ?? info.login),
     hostKeyPolicy: cfg.host_key_policy === "pinned" ? "pinned" : "tofu",
     knownHosts: typeof cfg.known_hosts === "string" ? cfg.known_hosts : "",
+    caPem: typeof cfg.ca_pem === "string" ? cfg.ca_pem : "",
     credentialType: cred,
     vaultProvider: cfg.vault?.provider ?? "hashicorp",
     vaultPath: cfg.vault?.path ?? "",
@@ -307,11 +311,21 @@ function whereChanged(form: FormState, source: CbomSource | null): boolean {
   if (!source) return false;
   const cfg = source.config ?? {};
   const stored = Array.isArray(cfg.targets) ? (cfg.targets as string[]).join("\n") : "";
+  // How the node checks the server's identity also counts: a weaker check must not reuse a stored password.
+  const linux = source.kind === "linux_servers";
+  const policy = linux ? form.hostKeyPolicy : "tofu";
+  const knownHosts = linux && form.hostKeyPolicy === "pinned" ? form.knownHosts.trim() : null;
+  const vault = form.credentialType === "vault" ? `${form.vaultProvider}|${form.vaultPath.trim()}` : null;
+  const storedVault = cfg.vault ? `${cfg.vault.provider}|${cfg.vault.path}` : null;
   return (
     splitLines(form.targets).join("\n") !== stored ||
     Number(form.port) !== Number(cfg.port) ||
     form.loginUser.trim() !== String(cfg.login_user ?? "") ||
-    form.nodeId !== source.node_id
+    form.nodeId !== source.node_id ||
+    policy !== (cfg.host_key_policy ?? "tofu") ||
+    (!linux && (form.caPem.trim() || null) !== ((typeof cfg.ca_pem === "string" && cfg.ca_pem.trim()) || null)) ||
+    (knownHosts || null) !== ((typeof cfg.known_hosts === "string" && cfg.known_hosts.trim()) || null) ||
+    vault !== storedVault
   );
 }
 
@@ -647,6 +661,16 @@ function ServerForm({
 
   const info = KIND_INFO[form.kind];
   const isLinux = form.kind === "linux_servers";
+  const overviewQuery = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 60_000,
+  });
+  // Vault references fetch a secret on the node: only team admins may add or change them (server enforces too).
+  const isAdmin = !!overviewQuery.data?.viewer?.is_admin;
+  const caRef = useRef<HTMLInputElement>(null);
   const selectedNode = nodes.find((n) => n.id === form.nodeId) ?? null;
   const login = form.loginUser.trim() || info.login;
   const editingWhereChanged = whereChanged(form, source);
@@ -734,6 +758,10 @@ function ServerForm({
     if (intIn(form.port, 1, 65535) == null) e.port = "Enter a port from 1 to 65535";
     if (!LOGIN_RE.test(form.loginUser.trim())) e.loginUser = "Use up to 64 letters, digits and . _ @ $ \\ -";
     if (isLinux && form.hostKeyPolicy === "pinned" && !form.knownHosts.trim()) e.knownHosts = "Paste the known_hosts lines to pin, or choose trust on first use";
+    if (isLinux && form.credentialType === "password" && form.hostKeyPolicy !== "pinned")
+      e.hostKeyPolicy = "Password logins need pinned host keys, so the password only goes to the real servers";
+    if (!isLinux && Number(form.port) === 5985) e.port = "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986)";
+    if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "password" && !form.password && !stored("password")) e.password = "Enter the password for this login";
     if (form.credentialType === "ssh_cert") {
@@ -769,6 +797,7 @@ function ServerForm({
         login_user: form.loginUser.trim(),
         host_key_policy: isLinux ? form.hostKeyPolicy : "tofu",
         known_hosts: isLinux && form.hostKeyPolicy === "pinned" ? form.knownHosts : null,
+        ...(isLinux ? {} : { ca_pem: form.caPem.trim() ? form.caPem : null }),
         credential_type: form.credentialType,
         vault: form.credentialType === "vault" ? { provider: form.vaultProvider, path: form.vaultPath.trim() } : null,
         tier: isLinux ? form.tier : source?.config?.tier === 2 ? 2 : 1,
@@ -798,11 +827,11 @@ function ServerForm({
   const secretHint = (what: string) =>
     source && editingWhereChanged && stored(what) ? (
       <span className="text-amber-600 dark:text-amber-400">
-        The targets, port, login or scan node changed: enter it again, or the server refuses the save because stored credentials are cleared
-        when the target changes.
+        The targets, port, login, host key check, vault path or scan node changed: enter it again, or the server refuses the save because
+        stored credentials are cleared when the target or the way its identity is checked changes.
       </span>
     ) : source ? (
-      "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job. Changing the targets, port, login or scan node clears it unless you enter it again."
+      "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job. Changing the targets, port, login, host key check, vault path or scan node clears it unless you enter it again."
     ) : undefined;
 
   const hours = form.customWindow ? countHours(form.customWindow) : 0;
@@ -991,11 +1020,20 @@ function ServerForm({
                     value={form.hostKeyPolicy}
                     onChange={(v) => set({ hostKeyPolicy: v })}
                     options={[
-                      { value: "tofu", title: "Trust on first use", description: "Remember each key on first contact; refuse and alert if it changes" },
+                      {
+                        value: "tofu",
+                        title: "Trust on first use",
+                        description:
+                          form.credentialType === "password"
+                            ? "Not with a password: a key seen for the first time proves nothing"
+                            : "Remember each key on first contact; refuse and alert if it changes",
+                        disabled: form.credentialType === "password",
+                      },
                       { value: "pinned", title: "Pin fingerprints", description: "Paste or upload a known_hosts file" },
                     ]}
                   />
                 </div>
+                {errors.hostKeyPolicy && <p className="text-xs text-red-600 dark:text-red-400">{errors.hostKeyPolicy}</p>}
                 {form.hostKeyPolicy === "pinned" && (
                   <Field
                     label="known_hosts lines"
@@ -1035,6 +1073,48 @@ function ServerForm({
                 )}
               </div>
             )}
+            {!isLinux && (
+              <Field
+                label="CA certificate (optional)"
+                htmlFor="servers-ca"
+                error={errors.caPem ?? errors.caFile}
+                hint="WinRM runs over HTTPS and the server's certificate is checked before the login is sent. Add the CA that issued it when it is an internal CA."
+              >
+                <Textarea
+                  id="servers-ca"
+                  data-testid="servers-ca"
+                  value={form.caPem}
+                  rows={3}
+                  spellCheck={false}
+                  placeholder="-----BEGIN CERTIFICATE-----"
+                  className="font-mono text-xs min-h-[72px] max-h-60 overflow-y-auto resize-y"
+                  onChange={(e) => set({ caPem: e.target.value })}
+                />
+                <input
+                  ref={caRef}
+                  type="file"
+                  accept=".pem,.crt,.cer"
+                  className="hidden"
+                  data-testid="servers-ca-file"
+                  onChange={async (e) => {
+                    const input = e.currentTarget;
+                    await readFileInto(input.files?.[0], (text) => set({ caPem: text }), "caFile");
+                    input.value = "";
+                  }}
+                />
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={() => caRef.current?.click()}>
+                    <Upload className="h-4 w-4 mr-1.5" />
+                    Upload PEM file
+                  </Button>
+                  {form.caPem && (
+                    <Button type="button" variant="ghost" size="sm" className="cursor-pointer" onClick={() => set({ caPem: "" })}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </Field>
+            )}
           </FormSection>
 
           <FormSection title="Credential">
@@ -1043,10 +1123,17 @@ function ServerForm({
                 name="servers-credential"
                 label="Credential"
                 value={form.credentialType}
-                onChange={(v) => set({ credentialType: v })}
-                options={info.creds.map((c) => ({ value: c, ...CRED_TEXT[c] }))}
+                onChange={(v) =>
+                  // a password goes only to pinned host keys, so choosing one pins them
+                  set({ credentialType: v, ...(isLinux && v === "password" ? { hostKeyPolicy: "pinned" as HostKeyPolicy } : {}) })
+                }
+                options={info.creds.map((c) => ({ value: c, ...CRED_TEXT[c], disabled: c === "vault" && !isAdmin }))}
               />
             </div>
+            {!isAdmin && info.creds.includes("vault") && (
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">Only a team admin can add or change a vault reference.</p>
+            )}
+            {errors.credentialType && <p className="text-xs text-red-600 dark:text-red-400">{errors.credentialType}</p>}
             {source && !sameCredential && (
               <p className="text-xs text-amber-600 dark:text-amber-400">Changing the credential type replaces the stored credential when you save.</p>
             )}

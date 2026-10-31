@@ -108,17 +108,28 @@ def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     import psycopg
 
     port = int(config.get("port") or 5432)
-    sslmode = ("verify-ca" if ca.path else "require") if config.get("require_tls", True) else "prefer"
+    require_tls = bool(config.get("require_tls", True))
+    verified = bool(ca.path) and require_tls  # only verify-ca proves the server; "prefer" never checks the CA
+    sslmode = ("verify-ca" if verified else "require") if require_tls else "prefer"
     kwargs = dict(host=target.label, hostaddr=target.ip, port=port, user=config.get("login"), password=password or None,
                   dbname=config.get("database_name") or "postgres", sslmode=sslmode, connect_timeout=10,
                   application_name="zeroshield-cbom",
                   options="-c default_transaction_read_only=on -c statement_timeout=15000")
-    if ca.path:
+    if verified:
         kwargs["sslrootcert"] = ca.path
+    else:
+        # the server is not proven: allow only SCRAM, which never sends the password, and bind it to the TLS
+        # channel when there is one, so a man in the middle cannot relay the login either
+        kwargs["require_auth"] = "scram-sha-256"
+        if require_tls:
+            kwargs["channel_binding"] = "require"
     try:
         conn = psycopg.connect(**kwargs, autocommit=True)
     except psycopg.OperationalError as exc:
         msg = str(exc)
+        if "authentication method requirement" in msg or "channel binding" in msg:
+            raise DbFail("identity_unverified", "the server asked for a login method that would reveal the password; "
+                         "without its CA certificate only SCRAM is allowed, so the password was not sent") from None
         if "password authentication failed" in msg or "no pg_hba.conf entry" in msg or "authentication" in msg:
             raise DbFail("auth_failed", "PostgreSQL refused the login") from None
         if "certificate" in msg.lower() or "SSL" in msg:
@@ -173,6 +184,27 @@ def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     return n
 
 
+def _strict_mysql():
+    """A PyMySQL connection that logs in only inside the TLS it was asked for.  Stock PyMySQL silently continues in
+    plain text when a server's greeting leaves out TLS, and answers a switch to the clear-text plugin with the
+    password: an impostor could use either to read it (independent review, 2026-10-31)."""
+    import pymysql
+    from pymysql.constants import CLIENT
+
+    class StrictTLSConnection(pymysql.connections.Connection):
+        def _request_authentication(self):
+            if self.ssl and not (self.server_capabilities & CLIENT.SSL):
+                raise pymysql.err.OperationalError(2026, "the server did not offer TLS on this connection")
+            return super()._request_authentication()
+
+        def _process_auth(self, plugin_name, auth_packet):
+            if plugin_name == b"mysql_clear_password":
+                raise pymysql.err.OperationalError(2059, "the server asked for the clear-text password plugin")
+            return super()._process_auth(plugin_name, auth_packet)
+
+    return StrictTLSConnection
+
+
 def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import pymysql
 
@@ -185,10 +217,12 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
             sctx.verify_mode = ssl.CERT_NONE
         ssl_arg = sctx
     try:
-        conn = pymysql.connect(host=target.ip, port=port, user=config.get("login"), password=password or "",
+        conn = _strict_mysql()(host=target.ip, port=port, user=config.get("login"), password=password or "",
                                connect_timeout=10, read_timeout=20, ssl=ssl_arg, autocommit=True)
     except pymysql.err.OperationalError as exc:
         code = exc.args[0] if exc.args else 0
+        if code in (2026, 2059) and len(exc.args) > 1 and "the server" in str(exc.args[1]):
+            raise DbFail("identity_unverified", f"{exc.args[1]}; the password was not sent") from None
         if code in (1045, 1698):
             raise DbFail("auth_failed", "MySQL refused the login") from None
         if code == 3159:
@@ -373,6 +407,11 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     if require_tls and not tls:
         return target, "tls_unavailable", "the server does not offer TLS; the password was not sent", n
     password = _password(ctx, config, secrets)
+    if password and engine in ("mysql", "redis") and not (tls and config.get("ca_pem")):
+        # MySQL full authentication and Redis AUTH hand the password to whatever answers; only a server proven by
+        # the CA certificate may receive it.  (PostgreSQL is held to SCRAM instead; MongoDB uses SCRAM.)
+        return target, "identity_unverified", ("the server's identity cannot be checked without its CA certificate "
+                                               "and TLS; the password was not sent"), n
     ca = _CaFile(config.get("ca_pem"))
     try:
         if engine == "postgres":

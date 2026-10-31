@@ -17,6 +17,25 @@ from backend.utilities.cbom_sources.safe_fetch import FetchError, fetch
 
 _NS = {"md": "urn:oasis:names:tc:SAML:2.0:metadata", "ds": "http://www.w3.org/2000/09/xmldsig#"}
 _DTD = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
+_DTD_REFUSED = "SAML metadata contains a DOCTYPE or ENTITY declaration and was not parsed"
+
+
+def _refuse_dtd(body: bytes) -> None:
+    """Refuse any DTD however the document is encoded: expat decodes UTF-16/UTF-8 itself, so a DOCTYPE hidden
+    from a byte search (UTF-16) is still seen here, before ElementTree ever parses the document."""
+    import xml.parsers.expat as expat
+
+    def deny(*_args: Any) -> None:
+        raise FetchError(_DTD_REFUSED)
+
+    parser = expat.ParserCreate()
+    parser.StartDoctypeDeclHandler = deny
+    parser.EntityDeclHandler = deny
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+    try:
+        parser.Parse(body, True)
+    except expat.ExpatError as exc:
+        raise FetchError("SAML metadata is not valid XML") from exc
 
 
 def discovery_urls(cfg: dict[str, Any]) -> list[tuple[str, str]]:
@@ -149,7 +168,8 @@ def saml_assets_from_xml(body: bytes, location: str, label: str) -> list[dict[st
 
     Documents with a DOCTYPE or ENTITY declaration are refused (no XXE / entity expansion)."""
     if _DTD.search(body):
-        raise FetchError("SAML metadata contains a DOCTYPE or ENTITY declaration and was not parsed")
+        raise FetchError(_DTD_REFUSED)
+    _refuse_dtd(body)
     try:
         root = ET.fromstring(body)
     except ET.ParseError as exc:

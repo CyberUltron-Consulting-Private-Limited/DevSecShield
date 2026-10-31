@@ -61,7 +61,7 @@ from backend.utilities.cbom_sources.http import (
 )
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
-from backend.utilities.cbom_sources.kinds import KINDS, validate_secret_value
+from backend.utilities.cbom_sources.kinds import KINDS, credential_target_problem, validate_secret_value
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
@@ -445,7 +445,7 @@ def _merge_secrets(kind: str, cfg: Any, current: dict[str, str], provided: dict[
     missing = sorted(required - set(result))
     if missing:
         if where_changed and current:
-            raise HTTPException(status_code=400, detail=f"secrets.{missing[0]}: re-enter it; stored credentials are cleared when the target changes")
+            raise HTTPException(status_code=400, detail=f"secrets.{missing[0]}: re-enter it; stored credentials are cleared when the target or the way its identity is checked changes")
         raise HTTPException(status_code=400, detail=f"secrets.{missing[0]}: required for this credential type")
     return result
 
@@ -476,7 +476,12 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")
         node = _team_node(session, team_id, body.node_id if needs_node else None)
         _check_refs(session, team_id, body.kind, cfg)
+        if getattr(cfg, "credential_type", None) == "vault":
+            require_admin(session, user_id, team_id, "sources that read their credential from a vault")
         secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
+        problem = credential_target_problem(body.kind, cfg, secrets_)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
         source = CbomCollectionSource(
             team_id=team_id, owner_user_id=user_id, updated_by_user_id=user_id, kind=body.kind, name=body.name,
             name_lower=body.name.lower(), node_id=node.id if node else None, enabled=body.enabled,
@@ -586,6 +591,13 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         reset = credential_changed or (where_changed and bool(current))
         merged = _merge_secrets(source.kind, cfg, current, provided, clear=body.clear_secrets, reset=reset,
                                 where_changed=where_changed)
+        # Renaming or disabling never needs these checks, so a source saved before the rules can still be turned off.
+        relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
+        if relevant and new_dump.get("credential_type") == "vault":
+            require_admin(session, user_id, team_id, "sources that read their credential from a vault")
+        problem = credential_target_problem(source.kind, cfg, merged) if relevant else None
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
         if merged != current:
             changed |= {f"secrets.{k}" for k in set(merged) | set(current)}
             source.secret_encrypted = encrypt_secrets(merged)
@@ -607,6 +619,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             source.row_version += 1
             source.updated_by_user_id = user_id
             source.last_updated = now
+            if changed - {"name"}:  # a rename does not change what a running sweep may touch
+                J.stop_discoveries_using(session, source, now, "A range in this discovery was changed")
             if changed - {"name", "enabled"}:
                 J.cancel_open_jobs(session, source, now, reason="Source changed")
                 source.last_test_status = "never" if spec.collectable(cfg) or source.kind == "aws_account" else "not_available"
@@ -646,6 +660,7 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
         J.cancel_open_jobs(session, source, now, reason="Source deleted")
+        J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
         for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
             job.params = {**(job.params or {}), "source_name": source.name}
             job.source_id = None

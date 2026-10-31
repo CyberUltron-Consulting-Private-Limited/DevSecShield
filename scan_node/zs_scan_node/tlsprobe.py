@@ -410,7 +410,7 @@ def _ldap(sock, deadline):
         raise ProbeError("error", "LDAP response too large")
     body = _recv_exact(sock, length, deadline)
     idx = body.find(b"\x0a\x01")
-    if idx < 0:
+    if idx < 0 or idx + 2 >= len(body):  # "0a 01" at the very end has no result byte (hostile or truncated)
         raise ProbeError("error", "no LDAP result code")
     if body[idx + 2] != 0:
         raise StarttlsUnavailable(f"LDAP StartTLS result {body[idx + 2]}")
