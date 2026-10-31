@@ -318,3 +318,39 @@ def test_winrm_name_must_not_resolve_to_a_never_scan_address(monkeypatch):
     with pytest.raises(W._Fail) as err:
         W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))
     assert err.value.status == "skipped_never_scan"
+
+
+def test_one_rate_limiter_per_node():
+    """Security review 2026-10-31: each network job had its own limiter, so N jobs ran at N x the agreed rate."""
+    from zs_scan_node.netutil import node_limiter
+
+    a = node_limiter(20, 2)
+    b = node_limiter(5, 1)  # the newest job carries the team's current settings
+    assert a is b and b.rate == 5 and b.per_server == 1
+
+
+def test_kubernetes_paging_is_bounded_and_stops(monkeypatch):
+    """A server that always answers with a 'continue' token, or a stop between pages, cannot keep the job."""
+    from zs_scan_node.collectors import kubernetes as K
+
+    api = K.Api.__new__(K.Api)
+    api.ctx = _ctx()
+    calls = []
+
+    def endless(path, params=None):
+        calls.append(params.get("continue"))
+        return 200, {"items": [], "metadata": {"continue": f"page{len(calls)}"}}
+
+    api.get = endless
+    out = list(api.list_all("/api/v1/configmaps"))
+    assert out == [("truncated", None)] and len(calls) == K.MAX_PAGES
+    api.ctx.cancel.set()
+    with pytest.raises(K._Skip):
+        list(api.list_all("/api/v1/configmaps"))
+
+    def too_big(path, params=None):
+        raise K._TooLarge("error", "more than 32 MB")
+
+    api.ctx = _ctx()
+    api.get = too_big
+    assert list(api.list_all("/api/v1/configmaps")) == [("error", "more than 32 MB")]
