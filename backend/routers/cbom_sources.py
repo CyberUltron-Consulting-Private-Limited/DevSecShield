@@ -51,6 +51,7 @@ from backend.utilities.cbom_sources.http import (
     authorize,
     bad_request,
     check_version,
+    is_team_admin,
     read_limiter,
     require_admin,
     require_owner_or_admin,
@@ -148,7 +149,7 @@ def _node_counts(session: Session, team_id: int, settings: CbomCollectionSetting
 
 
 # ============================================================================ overview
-def _overview(engine, team_id: int) -> dict:
+def _overview(engine, team_id: int, user_id: int) -> dict:
     now = utcnow()
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
@@ -197,6 +198,7 @@ def _overview(engine, team_id: int) -> dict:
         team = session.get(Team, team_id)
         return {
             "server_time": iso_z(now),
+            "viewer": {"user_id": user_id, "is_admin": is_team_admin(session, user_id, team_id)},
             "credit_balance": round(float(team.credit_balance or 0), 2) if team else 0,
             "rates": {k: credits(v) for k, v in RATES_C.items()},
             "nodes": {"total": len(nodes), "online": statuses.count("online"), "offline": statuses.count("offline"),
@@ -218,8 +220,8 @@ def _overview(engine, team_id: int) -> dict:
 
 @router.get(BASE + "/overview", dependencies=READ, summary="Counts, skipped items and the estimate for every tab")
 async def get_overview(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
-    return _ok(await _run("overview", team_id, _overview, engine, team_id))
+    engine, user = await authorize(team_id, Authorization)
+    return _ok(await _run("overview", team_id, _overview, engine, team_id, user.id))
 
 
 # ============================================================================ nodes

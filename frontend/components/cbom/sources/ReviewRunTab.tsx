@@ -458,7 +458,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                             <Eye className="h-4 w-4 mr-1.5" />
                             Details
                           </Button>
-                          {isActiveRun(run.status) && (run.job_counts?.pending ?? 1) > 0 && (
+                          {isActiveRun(run.status) && (run.job_counts?.pending ?? 1) > 0 &&
+                            (overview.viewer?.is_admin || overview.viewer?.user_id === run.owner_user_id) && (
                             <Button
                               size="sm"
                               variant="outline"

@@ -4225,6 +4225,7 @@ export interface CbomEstimate {
 
 export interface CbomSourcesOverview {
     server_time: string
+    viewer: { user_id: number; is_admin: boolean }
     credit_balance: number
     rates: Record<string, number>
     nodes: { total: number; online: number; offline: number; pending: number }
