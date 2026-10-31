@@ -1,0 +1,27 @@
+#36 [GET] https://devsecshieldapi.zeroshield.ai/1/sbom_sca/scan/367
+
+  General
+    status:    [200] OK
+    duration:  4888ms
+    type:      xhr
+    mimeType:  application/json
+
+  Request headers
+    sec-ch-ua-platform: "Linux"
+    authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTMwMDIxMzksInN1YiI6InNoaXZhbUBjeWJlcnVsdHJvbi5jb20ifQ.DTdoyiBhy2eK-Eclxv1T_nm7lQxsotr51sDr_hy4b7U
+    referer: https://devsecshield.zeroshield.ai/
+    user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+    sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"
+    sec-ch-ua-mobile: ?0
+
+  Response headers
+    access-control-allow-origin: https://devsecshield.zeroshield.ai
+    content-length: 1644950
+    date: Mon, 26 Oct 2026 07:43:31 GMT
+    content-type: application/json
+    vary: Origin
+    server: nginx/1.24.0 (Ubuntu)
+    connection: keep-alive
+
+Call browser_network_request with part="response-body" to read the response body.

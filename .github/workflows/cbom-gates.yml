@@ -83,7 +83,7 @@ jobs:
       # regress. A single failure fails the build.
       - name: Gate A — full committed CBOM + crypto suite (no capability escapes the lock)
         run: >-
-          AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest
+          uv run --with pytest python -m pytest
           tests/ -k "cbom or crypto" -v
 
       # Gate (b): benchmark true-miss gate (hermetic) + crypto recall. Ours vs the
@@ -91,7 +91,7 @@ jobs:
       # ZERO true-positive misses (FP-triaged) AND our-unique > 0. Named separately
       # from Gate A for emphasis — this is the differential-parity invariant.
       - name: Gate B — benchmark true-miss + crypto recall (hermetic / synthetic)
-        run: AIBOM_LLM_OFFLINE=1 uv run --with pytest python -m pytest tests/test_cbom_benchmark_gate.py -v
+        run: uv run --with pytest python -m pytest tests/test_cbom_benchmark_gate.py -v
 
       # Gate (c): lint + types on the CBOM lane. ruff and mypy must stay clean on
       # every shipped crypto scanner / compliance / emit module (the product ships

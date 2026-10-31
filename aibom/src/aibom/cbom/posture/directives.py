@@ -145,15 +145,24 @@ def _collapse(
     sink: object | None,
     path: str,
     casefold: bool,
+    keep_repeats: frozenset[str] = frozenset(),
 ) -> tuple[Directive, ...]:
     index: dict[tuple[str | None, str], int] = {}
     kept: list[Directive] = []
     for entry in entries:
         name = entry.name.casefold() if casefold else entry.name
+        if name in keep_repeats:
+            kept.append(entry)
+            continue
         key = (entry.parent, name)
         if key in index:
+            previous = kept[index[key]]
+            conditional = entry.marker == "unresolved_expression"
+            concrete = previous.marker != "unresolved_expression"
+            if conditional and concrete:
+                continue
             _add(sink, "duplicate_key", path, entry.line)
-            if first_wins:
+            if first_wins and concrete:
                 continue
             kept[index[key]] = entry
             continue
@@ -171,6 +180,7 @@ def _finish(
     sink: object | None,
     path: str,
     casefold: bool = False,
+    keep_repeats: frozenset[str] = frozenset(),
 ) -> DirectiveFile:
     kept = _collapse(
         entries,
@@ -178,6 +188,7 @@ def _finish(
         sink=sink,
         path=path,
         casefold=casefold,
+        keep_repeats=keep_repeats,
     )
     return DirectiveFile(kept, tuple(includes), len(text.splitlines()))
 
@@ -298,7 +309,15 @@ def _nginx(text: str, path: str, sink: object | None) -> DirectiveFile:
                 includes.extend(args)
 
     block(None)
-    return _finish(entries, includes, text, first_wins=False, sink=sink, path=path)
+    return _finish(
+        entries,
+        includes,
+        text,
+        first_wins=False,
+        sink=sink,
+        path=path,
+        keep_repeats=frozenset({"listen"}),
+    )
 
 
 def _lex_braces(text: str) -> list[tuple[str, str, int]]:
@@ -445,7 +464,14 @@ def _openssh(text: str, path: str, sink: object | None) -> DirectiveFile:
         if name.casefold() == "include":
             includes.extend(args)
     return _finish(
-        entries, includes, text, first_wins=True, sink=sink, path=path, casefold=True
+        entries,
+        includes,
+        text,
+        first_wins=True,
+        sink=sink,
+        path=path,
+        casefold=True,
+        keep_repeats=frozenset({"listenaddress", "port"}),
     )
 
 

@@ -12,6 +12,7 @@ from aibom.cbom.posture.defaults import (
     load_registry,
     read_data_bytes,
 )
+from aibom.cbom.posture.model import EncryptionFact
 from aibom.cbom.weakness import cipher_suite_findings
 from aibom.model.component import CryptoAssetComponent
 
@@ -189,6 +190,70 @@ class CipherEvaluator:
         if len(self._order) > _CACHE_LIMIT:
             self._cache.pop(self._order.pop(0), None)
         return value
+
+
+_WEAK_TLS = frozenset({"SSLv2", "SSLv3", "TLSv1", "TLSv1.0", "TLSv1.1"})
+
+
+def _basis_value(fact: EncryptionFact, name: str) -> str | None:
+    return next(
+        (item.value for item in fact.basis if item.name == name and item.value),
+        None,
+    )
+
+
+def protocol_asset(fact: EncryptionFact) -> CryptoAssetComponent | None:
+    """A TLS protocol asset for a recorded cipher list or protocol floor."""
+    suite = _basis_value(fact, "cipher_suite")
+    floor = _basis_value(fact, "protocol_min")
+    if suite is None and floor is None:
+        return None
+    ssh = fact.kind == "ssh_service"
+    props = {
+        "crypto:assetType": "protocol",
+        "crypto:factId": fact.id,
+        "crypto:protocolType": "ssh" if ssh else "tls",
+        "discovery:source": fact.path,
+    }
+    if suite:
+        props["crypto:cipherSuite"] = suite
+    listen = _basis_value(fact, "listen_declared")
+    if listen:
+        props["crypto:listen"] = listen
+    endpoint = _basis_value(fact, "endpoint")
+    if endpoint:
+        props["crypto:endpoint"] = endpoint
+    if floor:
+        props["crypto:protocolVersion"] = floor
+        if floor in _WEAK_TLS or (ssh and floor == "SSH-1"):
+            props["crypto:strength"] = "weak"
+    return CryptoAssetComponent(
+        bom_ref=f"crypto-proto-{fact.id}",
+        name="SSH" if ssh else "TLS",
+        properties=props,
+    )
+
+
+def proxy_protocol_asset(fact: EncryptionFact) -> CryptoAssetComponent | None:
+    """Outbound Apache ``SSLProxyProtocol`` floor. It does not replace the listener."""
+    floor = _basis_value(fact, "proxy_protocol_min")
+    if not floor:
+        return None
+    props = {
+        "crypto:assetType": "protocol",
+        "crypto:factId": fact.id,
+        "crypto:policyName": "SSLProxyProtocol",
+        "crypto:protocolType": "tls",
+        "crypto:protocolVersion": floor,
+        "discovery:source": fact.path,
+    }
+    if floor in _WEAK_TLS:
+        props["crypto:strength"] = "weak"
+    return CryptoAssetComponent(
+        bom_ref=f"crypto-proto-proxy-{fact.id}",
+        name="TLS",
+        properties=props,
+    )
 
 
 def evaluator_for(sink: PostureSink) -> CipherEvaluator:

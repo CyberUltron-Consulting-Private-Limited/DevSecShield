@@ -1,0 +1,78 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e41]:
+    - generic [ref=e44]:
+      - generic [ref=e51]:
+        - heading "DevSec Shield" [level=1] [ref=e52]
+        - paragraph [ref=e53]: DevSecOps Assistant
+      - generic [ref=e58]:
+        - generic [ref=e59]: Teams
+        - generic [ref=e60]:
+          - list [ref=e61]:
+            - listitem [ref=e62]:
+              - button "Create team" [ref=e63] [cursor=pointer]
+          - list [ref=e66]:
+            - listitem [ref=e67]:
+              - link "E2E Demo Team" [ref=e68] [cursor=pointer]:
+                - /url: /1
+      - button "EA E2E Admin e2e-admin@dss-e2e.test" [ref=e76] [cursor=pointer]:
+        - generic [ref=e77]: EA
+        - generic [ref=e79]:
+          - paragraph [ref=e80]: E2E Admin
+          - paragraph [ref=e81]: e2e-admin@dss-e2e.test
+    - main [ref=e82]:
+      - main [ref=e84]:
+        - generic [ref=e85]:
+          - heading [level=2] [ref=e86]
+          - paragraph [ref=e93]: Utilization and credit balance across all teams you belong to.
+          - generic [ref=e94]:
+            - generic [ref=e95]:
+              - generic [ref=e96]:
+                - generic [ref=e97]: Utilization across all teams
+                - generic [ref=e98]: Total scans (SAST, IAC, SBOM/SCA) and integrations (CI/CD) aggregated across all your teams. Segment size reflects relative proportion.
+              - generic [ref=e99]:
+                - img [ref=e103]:
+                  - generic [ref=e104] [cursor=pointer]
+                - generic [ref=e116]:
+                  - generic [ref=e117]:
+                    - generic [ref=e119]: SAST
+                    - generic [ref=e120]: "0"
+                  - generic [ref=e121]:
+                    - generic [ref=e123]: IAC
+                    - generic [ref=e124]: "0"
+                  - generic [ref=e125]:
+                    - generic [ref=e127]: SBOM/SCA
+                    - generic [ref=e128]: "1"
+                  - generic [ref=e129]:
+                    - generic [ref=e131]: CI/CD
+                    - generic [ref=e132]: "0"
+                - paragraph [ref=e133]: Hover over segments for details.
+            - generic [ref=e134]:
+              - generic [ref=e135]:
+                - generic [ref=e136]: Credit balance by team
+                - generic [ref=e137]: Available scan credits per team. Each segment represents one team; size is proportional to its share of total credits.
+              - generic [ref=e138]:
+                - img [ref=e142]:
+                  - generic [ref=e143] [cursor=pointer]
+                - generic [ref=e150]:
+                  - generic [ref=e152]: E2E Demo Team
+                  - generic [ref=e153]: "1000"
+                - paragraph [ref=e154]: Hover over segments for details.
+        - generic [ref=e156]:
+          - generic [ref=e157]:
+            - generic [ref=e158]: Teams
+            - generic [ref=e159]: Click a row to open the team
+          - table [ref=e162]:
+            - rowgroup [ref=e163]:
+              - row [ref=e164]:
+                - columnheader "Team" [ref=e165]
+                - columnheader "Members" [ref=e166]
+                - columnheader "Credits" [ref=e167]
+                - columnheader "Created" [ref=e168]
+            - rowgroup [ref=e169]:
+              - row [ref=e170] [cursor=pointer]:
+                - cell "E2E Demo Team" [ref=e171]
+                - cell "e2e-admin@dss-e2e.test" [ref=e172]
+                - cell "1000" [ref=e173]
+                - cell "29 Jul 2026" [ref=e174]
+  - region "Notifications alt+T"
+  - alert [ref=e40]

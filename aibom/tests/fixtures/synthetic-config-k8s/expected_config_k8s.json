@@ -1,0 +1,83 @@
+{
+  "facts": [
+    {
+      "address": "default/enc",
+      "path": "encryption-config.yaml",
+      "line": 1,
+      "kind": "k8s_secrets_etcd",
+      "native_type": "EncryptionConfiguration",
+      "provider": "k8s",
+      "layers": {
+        "database": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "ENCRYPTED_DECLARED",
+      "key_management": "local_file",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "k8s.encryptionconfig"
+      ],
+      "outcome": "negative",
+      "why": "secrets resource uses secretbox as the first provider; etcd encryption is declared with local_file custody"
+    },
+    {
+      "address": "default/db-credentials",
+      "path": "secret.yaml",
+      "line": 1,
+      "kind": "secret_store",
+      "native_type": "Secret",
+      "provider": "k8s",
+      "layers": {
+        "service": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "layer_not_observable",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "k8s.secret"
+      ],
+      "outcome": "negative",
+      "why": "Secret type Opaque without data fields; service layer is not observable and carries no posture finding"
+    },
+    {
+      "address": "default/web",
+      "path": "ingress.yaml",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "Ingress",
+      "provider": "k8s",
+      "layers": {
+        "transport": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "ENCRYPTED_DECLARED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "k8s.ingress"
+      ],
+      "outcome": "negative",
+      "why": "spec.tls with secretName edge-tls declares TLS transport; secret name is a basis ref only"
+    }
+  ],
+  "totals": {
+    "facts": 3,
+    "by_kind": {
+      "k8s_secrets_etcd": 1,
+      "secret_store": 1,
+      "tls_endpoint": 1
+    },
+    "by_verdict": {
+      "ENCRYPTED_DECLARED": 2,
+      "UNKNOWN": 1
+    },
+    "by_code": {},
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

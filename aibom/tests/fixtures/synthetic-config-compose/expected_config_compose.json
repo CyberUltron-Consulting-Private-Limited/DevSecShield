@@ -1,0 +1,40 @@
+{
+  "facts": [
+    {
+      "address": "db",
+      "path": "docker-compose.yml",
+      "line": 3,
+      "kind": "relational_db",
+      "native_type": "postgres",
+      "provider": "compose",
+      "layers": {
+        "database": "UNKNOWN",
+        "volume": "UNKNOWN",
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "layer_not_observable",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "compose.datastore.postgres"
+      ],
+      "outcome": "negative",
+      "why": "postgres:15 matches datastore_images.json; host bind ./pgdata does not make volume/database layers assessable"
+    }
+  ],
+  "totals": {
+    "facts": 1,
+    "by_kind": {
+      "relational_db": 1
+    },
+    "by_verdict": {
+      "UNKNOWN": 1
+    },
+    "by_code": {},
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

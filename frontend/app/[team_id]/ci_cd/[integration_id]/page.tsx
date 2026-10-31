@@ -769,15 +769,15 @@ export default function CicdIntegrationDashboardPage() {
 
               {/* Sub-tab Content */}
               {activeSubTab === "github-actions" && (
-                <GitHubActionsGuide apiKey={dashboardData.api_key} />
+                <GitHubActionsGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
               )}
 
               {activeSubTab === "jenkins" && (
-                <JenkinsGuide apiKey={dashboardData.api_key} teamId={Number(team_id)} />
+                <JenkinsGuide apiKey={dashboardData.api_key} teamId={Number(team_id)} scanType={dashboardData.scan_type} />
               )}
 
               {activeSubTab === "bamboo" && (
-                <BambooGuide apiKey={dashboardData.api_key} />
+                <BambooGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
               )}
                 </>
               )}

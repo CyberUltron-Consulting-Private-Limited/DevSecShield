@@ -3922,6 +3922,12 @@ export interface CicdLog {
     profile_id?: number | null
     trigger?: string | null
     scan_kind?: string | null
+    cbom_page?: {
+        data?: unknown
+        dashboard?: CbomScanDashboardData | null
+        findings?: CbomFinding[] | null
+        scan_metadata?: CbomScanMetadata | Record<string, unknown> | null
+    } | null
 }
 
 /** Per-date counts by impact (Critical, High, Medium, Low). Keys are date strings YYYY-MM-DD. */

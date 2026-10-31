@@ -465,6 +465,40 @@ def m37(monkeypatch: Any) -> None:
     )
 
 
+def m48(monkeypatch: Any) -> None:
+    """Treat a missing pg_hba.conf as encrypted when ssl is on."""
+    from aibom.cbom.posture.extract_databases import pg_transport
+    from aibom.cbom.posture.verdict import LayerResult
+
+    def wrapped(ssl: str | None, hba: Any) -> Any:
+        if ssl == "on" and hba is None:
+            return LayerResult("ENCRYPTED_DECLARED")
+        return pg_transport(ssl, hba)
+
+    patch_symbol(
+        monkeypatch, "aibom.cbom.posture.extract_databases.pg_transport", wrapped
+    )
+
+
+def m49(monkeypatch: Any) -> None:
+    """Treat a loopback-only pg_hba.conf as encrypted when ssl is on."""
+    from aibom.cbom.posture.extract_databases import _loopback, pg_transport
+    from aibom.cbom.posture.verdict import LayerResult
+
+    def wrapped(ssl: str | None, hba: Any) -> Any:
+        if (
+            ssl == "on"
+            and hba
+            and all(_loopback(row[1]) or row[2] in {"reject", "local"} for row in hba)
+        ):
+            return LayerResult("ENCRYPTED_DECLARED")
+        return pg_transport(ssl, hba)
+
+    patch_symbol(
+        monkeypatch, "aibom.cbom.posture.extract_databases.pg_transport", wrapped
+    )
+
+
 def m44(monkeypatch: Any) -> None:
     """Raise a finding-default code when the governing attribute is unresolved."""
     from aibom.cbom.posture.findings import derive_findings
@@ -477,6 +511,271 @@ def m44(monkeypatch: Any) -> None:
         return derive_findings(fact, opened)
 
     patch_symbol(monkeypatch, "aibom.cbom.posture.findings.derive_findings", wrapped)
+
+
+def _blank_without_dead(text: str, pairs: tuple[tuple[str, str], ...]) -> str:
+    """Same walk as blank_spans, but an opener is never abandoned."""
+    cursor = 0
+    pieces: list[str] = []
+    copied = 0
+    length = len(text)
+    while cursor < length:
+        best_at: int | None = None
+        best: tuple[str, str] | None = None
+        for opener, closer in pairs:
+            found = text.find(opener, cursor)
+            if found < 0:
+                continue
+            if best_at is None or found < best_at:
+                best_at = found
+                best = (opener, closer)
+        if best is None or best_at is None:
+            break
+        opener, closer = best
+        close_at = text.find(closer, best_at + len(opener))
+        if close_at < 0:
+            cursor = best_at + len(opener)
+            continue
+        end = close_at + len(closer)
+        pieces.append(text[copied:best_at])
+        pieces.append(text[best_at:end])
+        copied = end
+        cursor = end
+    pieces.append(text[copied:])
+    return "".join(pieces)
+
+
+def m33(monkeypatch: Any) -> None:
+    """Keep searching for an opener after it has no closer."""
+    from aibom.cbom.posture import textscan
+
+    original = textscan.blank_spans
+
+    def wrapped(
+        text: str,
+        pairs: tuple[tuple[str, str], ...],
+        *,
+        unterminated: str,
+    ) -> str | None:
+        if unterminated != "skip":
+            return original(text, pairs, unterminated=unterminated)
+        return _blank_without_dead(text, pairs)
+
+    monkeypatch.setattr(textscan, "blank_spans", wrapped)
+
+
+def m39(monkeypatch: Any) -> None:
+    """Leave a capped YAML document in the stream."""
+    def wrapped(_loader: Any) -> None:
+        return None
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.yamlsafe._drain", wrapped)
+
+
+def m40(monkeypatch: Any) -> None:
+    """Leave the line-carrying YAML constructors unregistered."""
+    import yaml
+
+    from aibom.cbom.posture.yamlsafe import _Loader
+
+    base_map = yaml.SafeLoader.yaml_constructors["tag:yaml.org,2002:map"]
+    base_seq = yaml.SafeLoader.yaml_constructors["tag:yaml.org,2002:seq"]
+    monkeypatch.setitem(_Loader.yaml_constructors, "tag:yaml.org,2002:map", base_map)
+    monkeypatch.setitem(_Loader.yaml_constructors, "tag:yaml.org,2002:seq", base_seq)
+
+
+def m41(monkeypatch: Any) -> None:
+    """Read an included file without charging the scan budget."""
+    from aibom.cbom.posture.context import PostureSink
+
+    original = PostureSink.read_included
+
+    def wrapped(self: Any, rel: str, cls: str) -> Any:
+        files = self.files_parsed
+        raw_bytes = self.bytes_read
+        included = self.included_files
+        result = original(self, rel, cls)
+        self.files_parsed = files
+        self.bytes_read = raw_bytes
+        self.included_files = included
+        return result
+
+    monkeypatch.setattr(PostureSink, "read_included", wrapped)
+
+
+def m42(monkeypatch: Any) -> None:
+    """Drop the CycloneDX algorithm family map."""
+
+    def wrapped(_name: str | None) -> None:
+        return None
+
+    patch_symbol(monkeypatch, "aibom.emit.cyclonedx._family_of", wrapped)
+
+
+def m43(monkeypatch: Any) -> None:
+    """Ignore coverage ref lists, so a hidden ref path is rejected."""
+    from aibom.cbom.posture.coverage import _hidden
+
+    def wrapped(
+        consulted: Any, refs: Any, presence: Any, row_id: str
+    ) -> None:
+        del refs
+        return _hidden(consulted, (), presence, row_id)
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.coverage._hidden", wrapped)
+
+
+def m50(monkeypatch: Any) -> None:
+    """Omit registry when and unless_attrs paths from consulted sets."""
+    from aibom.cbom.posture.coverage import _consulted
+
+    def wrapped(
+        native: Any,
+        layers: Any,
+        key_paths: Any,
+        attr_paths: Any,
+        companions: Any,
+        tls_floor: Any,
+        reached: Any,
+    ) -> Any:
+        class _Blank:
+            when: dict[str, object] = {}
+            unless_attrs: dict[str, object] = {}
+
+        blank = tuple(_Blank() for _row in reached)
+        return _consulted(
+            native, layers, key_paths, attr_paths, companions, tls_floor, blank
+        )
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.coverage._consulted", wrapped)
+
+
+def m51(monkeypatch: Any) -> None:
+    """Treat a disabling override value as enabling."""
+    from aibom.cbom.posture.resolve import Resolved
+    from aibom.cbom.posture.verdict import LayerResult, assess_layer
+
+    def wrapped(case: Any) -> Any:
+        result = assess_layer(case)
+        value = case.override_value
+        if isinstance(value, Resolved) and value.value is False:
+            return LayerResult("ENCRYPTED_DECLARED", default_row=case.row_id)
+        return result
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.verdict.assess_layer", wrapped)
+
+
+def m45(monkeypatch: Any) -> None:
+    """Leave import tool versions and timestamps unclipped."""
+
+    def wrapped(value: str | None) -> str | None:
+        return value
+
+    patch_symbol(
+        monkeypatch, "aibom.cbom.posture.assemble._clip_import_field", wrapped
+    )
+
+
+def m53(monkeypatch: Any) -> None:
+    """Drop listen-directive tokens and keep an empty listen string."""
+    from aibom.cbom.posture.extract_servers import _listen_flags
+
+    def wrapped(entries: Any) -> Any:
+        plaintext, tls, _listen = _listen_flags(entries)
+        return plaintext, tls, ""
+
+    patch_symbol(
+        monkeypatch, "aibom.cbom.posture.extract_servers._listen_flags", wrapped
+    )
+
+
+def m46(monkeypatch: Any) -> None:
+    """Replace an Apache protocol set with its last unprefixed token."""
+    from aibom.cbom.posture.extract_servers import _apache_protocols
+
+    def wrapped(entries: Any) -> tuple[str, str]:
+        _floor, protocols = _apache_protocols(entries)
+        if not protocols:
+            return "", ""
+        last = protocols.rsplit(",", 1)[-1]
+        return last, last
+
+    patch_symbol(
+        monkeypatch,
+        "aibom.cbom.posture.extract_servers._apache_protocols",
+        wrapped,
+    )
+
+
+def m47(monkeypatch: Any) -> None:
+    """Analyse an included server file again as its own entry."""
+    from aibom.cbom.posture.extract_servers import server_facts
+
+    def wrapped(files: dict[str, str], *, analyse_included: bool = False) -> Any:
+        del analyse_included
+        return server_facts(files, analyse_included=True)
+
+    patch_symbol(
+        monkeypatch, "aibom.cbom.posture.extract_servers.server_facts", wrapped
+    )
+
+
+def m52(monkeypatch: Any) -> None:
+    """Drop IAM condition blocks before judging exposure."""
+    from aibom.cbom.posture.resolve import policy_exposure
+
+    def wrapped(statement: dict[str, object]) -> str:
+        cleaned = dict(statement)
+        cleaned.pop("Condition", None)
+        return policy_exposure(cleaned)
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.resolve.policy_exposure", wrapped)
+
+
+def m38(monkeypatch: Any) -> None:
+    """Treat a conditioned public GCP binding as unknown."""
+    from aibom.cbom.posture.resolve import gcp_binding_exposure
+
+    def wrapped(members: object, condition: object = None) -> tuple[str, bool]:
+        exposure, conditional = gcp_binding_exposure(members, condition)
+        if conditional and exposure == "public":
+            return "unknown", True
+        return exposure, conditional
+
+    patch_symbol(
+        monkeypatch, "aibom.cbom.posture.resolve.gcp_binding_exposure", wrapped
+    )
+
+
+def m27(monkeypatch: Any) -> None:
+    """Validate every fitting build instead of only the last one."""
+
+    def wrapped(builds: int) -> int:
+        return builds if builds > 0 else 0
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.assemble.validations_for", wrapped)
+
+
+def m34(monkeypatch: Any) -> None:
+    """Skip the pre-prune and keep every fact in the first build."""
+
+    def wrapped(estimates: Any, budget: int = 0) -> int:
+        del budget
+        return len(list(estimates))
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.assemble.n_pre", wrapped)
+
+
+def m35(monkeypatch: Any) -> None:
+    """Keep the phase-1 parse tree on the reduced record."""
+    from aibom.cbom.posture.assemble import reduce_record
+
+    def wrapped(tree: object) -> dict[str, object]:
+        record = reduce_record(tree)
+        record["tree"] = tree
+        return record
+
+    patch_symbol(monkeypatch, "aibom.cbom.posture.assemble.reduce_record", wrapped)
 
 
 def _missing(seam: str) -> Mutant:
@@ -512,31 +811,31 @@ MUTANTS: dict[str, Mutant] = {
     "M24": m24,
     "M25": m25,
     "M26": m26,
-    "M27": _missing("governor validates every fitting build"),
+    "M27": m27,
     "M28": m28,
     "M29": m29,
     "M30": m30,
     "M31": m31,
     "M32": m32,
-    "M33": _missing("blank_spans dead-opener set"),
-    "M34": _missing("governor pre-prune"),
-    "M35": _missing("phase-1 record keeps the parse tree"),
+    "M33": m33,
+    "M34": m34,
+    "M35": m35,
     "M36": m36,
     "M37": m37,
-    "M38": _missing("GCP condition block"),
-    "M39": _missing("YAML drain of a capped document"),
-    "M40": _missing("YAML line-carrying constructors"),
-    "M41": _missing("read_included budget"),
-    "M42": _missing("CycloneDX family map"),
-    "M43": _missing("refs redaction lists"),
+    "M38": m38,
+    "M39": m39,
+    "M40": m40,
+    "M41": m41,
+    "M42": m42,
+    "M43": m43,
     "M44": m44,
-    "M45": _missing("import field clipping"),
-    "M46": _missing("Apache unprefixed token"),
-    "M47": _missing("included file analysed as an entry"),
-    "M48": _missing("absent pg_hba.conf"),
-    "M49": _missing("loopback-only pg_hba.conf"),
-    "M50": _missing("coverage consulted paths"),
-    "M51": _missing("override value"),
-    "M52": _missing("policy document condition blocks"),
-    "M53": _missing("crypto:listen candidates"),
+    "M45": m45,
+    "M46": m46,
+    "M47": m47,
+    "M48": m48,
+    "M49": m49,
+    "M50": m50,
+    "M51": m51,
+    "M52": m52,
+    "M53": m53,
 }

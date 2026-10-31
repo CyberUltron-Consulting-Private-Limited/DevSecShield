@@ -77,7 +77,7 @@ def test_default_mode_still_requires_the_two_loopback_ports() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_airgap_mode_rejects_published_ports_and_requires_internal() -> None:
+def _airgap_model() -> dict:
     model = _base()
     model["services"]["backend"]["ports"] = []
     model["services"]["frontend"]["ports"] = []
@@ -96,11 +96,29 @@ def test_airgap_mode_rejects_published_ports_and_requires_internal() -> None:
         image="dss-e2e/aibom-scan:local",
         network_mode="none",
     )
+    model["services"]["gateway"] = _service(
+        "gateway",
+        networks=["default", "edge"],
+        ports=[
+            {"host_ip": "127.0.0.1", "published": "43000", "target": "3000"},
+            {"host_ip": "127.0.0.1", "published": "43080", "target": "8080"},
+        ],
+    )
     model["networks"]["default"]["internal"] = True
-    result = _run(model, "--airgap")
+    model["networks"]["edge"] = {"name": "dss-e2e_edge", "labels": {"com.dss-e2e": "1"}}
+    return model
+
+
+def test_airgap_mode_publishes_only_through_the_gateway() -> None:
+    result = _run(_airgap_model(), "--airgap")
     assert result.returncode == 0, result.stdout + result.stderr
     published = _run(_base(), "--airgap")
     assert published.returncode == 1
+    leaked = _airgap_model()
+    leaked["services"]["backend"]["ports"] = [
+        {"host_ip": "127.0.0.1", "published": "43080", "target": "8080"}
+    ]
+    assert _run(leaked, "--airgap").returncode == 1
 
 
 def test_overlay_file_marks_the_network_internal() -> None:
@@ -108,3 +126,5 @@ def test_overlay_file_marks_the_network_internal() -> None:
     assert "internal: true" in text
     assert "network_mode: none" in text
     assert "ports: !override []" in text
+    assert "gateway:" in text
+    assert "edge:" in text

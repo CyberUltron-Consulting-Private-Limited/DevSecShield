@@ -13,11 +13,28 @@ POSTURE = REPO / "aibom" / "src" / "aibom" / "cbom" / "posture"
 SCANNERS = REPO / "aibom" / "src" / "aibom" / "cbom" / "scanners"
 
 EXTRA_KEYS = (
+    "crypto:algorithm",
     "crypto:assetType",
     "crypto:cipherSuite",
+    "crypto:curve",
+    "crypto:endpoint",
+    "crypto:hardcoded",
+    "crypto:keySize",
+    "crypto:keyUsage",
+    "crypto:listen",
+    "crypto:materialKind",
+    "crypto:mode",
+    "crypto:notValidAfter",
+    "crypto:policyName",
     "crypto:postureDropped",
     "crypto:postureTruncated",
+    "crypto:primitive",
     "crypto:protocolType",
+    "crypto:protocolVersion",
+    "crypto:quantumVulnerable",
+    "crypto:rotation",
+    "crypto:strength",
+    "crypto:subjectName",
 )
 
 

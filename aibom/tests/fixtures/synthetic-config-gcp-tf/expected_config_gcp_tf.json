@@ -1,0 +1,85 @@
+{
+  "facts": [
+    {
+      "address": "google_kms_crypto_key.app",
+      "path": "main.tf",
+      "line": 1,
+      "kind": "kms_key",
+      "native_type": "google_kms_crypto_key",
+      "provider": "gcp",
+      "layers": {
+        "rotation": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "default_unknown",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "gcp.kms.key"
+      ],
+      "outcome": "negative",
+      "why": "rotation_period omitted stays default_unknown per K-18; no KMS_KEY_ROTATION_DISABLED signal"
+    },
+    {
+      "address": "google_storage_bucket.data",
+      "path": "main.tf",
+      "line": 5,
+      "kind": "object_store",
+      "native_type": "google_storage_bucket",
+      "provider": "gcp",
+      "layers": {
+        "service": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "attribute_not_modeled",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "gcp.gcs"
+      ],
+      "outcome": "negative",
+      "why": "bucket name alone is not an assessable encryption attribute; service layer stays UNKNOWN with no finding"
+    },
+    {
+      "address": "google_kms_crypto_key_iam_binding.open",
+      "path": "main.tf",
+      "line": 9,
+      "kind": "kms_key",
+      "native_type": "google_kms_crypto_key_iam_binding",
+      "provider": "gcp",
+      "layers": {
+        "service": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "default_unknown",
+      "default_row": null,
+      "finding_codes": [
+        "KMS_KEY_POLICY_PUBLIC"
+      ],
+      "covers": [
+        "gcp.kms.binding"
+      ],
+      "outcome": "positive",
+      "why": "members includes allUsers; posture signal KMS_KEY_POLICY_PUBLIC fires on the binding fact"
+    }
+  ],
+  "totals": {
+    "facts": 3,
+    "by_kind": {
+      "kms_key": 2,
+      "object_store": 1
+    },
+    "by_verdict": {
+      "UNKNOWN": 3
+    },
+    "by_code": {
+      "KMS_KEY_POLICY_PUBLIC": 1
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

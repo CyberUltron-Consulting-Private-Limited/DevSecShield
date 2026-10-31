@@ -313,7 +313,11 @@ export function inventoryRowsFromCycloneDx(bom: unknown): SbomInventoryRow[] {
     if (n && !childByName.has(n)) childByName.set(n, other);
   }
 
-  return comps.map((c) => {
+  // Only treat the inventory as CVE-assessed when the BOM carries a vulnerabilities[]
+  // array (possibly empty). Missing the key means the scan never linked advisories —
+  // that is the real "N/A". An assessed package with no matches is "None".
+  const vulnsAssessed = Array.isArray(doc.vulnerabilities);
+  const rows = comps.map((c) => {
     const ref = c["bom-ref"] || canonicalPurl(c.purl) || "";
     const kidRefs = children.get(ref) || [];
     const kidNames = kidRefs.map((r) => names.get(r) || "").filter(Boolean);
@@ -336,9 +340,16 @@ export function inventoryRowsFromCycloneDx(bom: unknown): SbomInventoryRow[] {
       subSubDependencies: joinList(nested, knownLeaf || kidNames.length ? "None" : "—"),
       author: dash(authorText(c)),
       hash: dash(hashText(c)),
-      cves: cveList.length ? cveList.join(", ") : "N/A",
+      cves: cveList.length ? cveList.join(", ") : vulnsAssessed ? "None" : "N/A",
       dateAdded,
       status: propStatus(c.properties) || overall,
     };
+  });
+  // Vulnerable packages first so Known vulnerabilities is not buried under clean inventory.
+  return rows.sort((a, b) => {
+    const aHit = a.cves !== "None" && a.cves !== "N/A" && a.cves !== "—" ? 0 : 1;
+    const bHit = b.cves !== "None" && b.cves !== "N/A" && b.cves !== "—" ? 0 : 1;
+    if (aHit !== bHit) return aHit - bHit;
+    return a.name.localeCompare(b.name) || a.version.localeCompare(b.version);
   });
 }

@@ -1,0 +1,16 @@
+{
+  "facts": [],
+  "totals": {
+    "facts": 0,
+    "by_kind": {},
+    "by_verdict": {},
+    "by_code": {},
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {
+      "binary_skipped": 1,
+      "unsafe_xml": 1,
+      "unsupported_result_format": 1
+    }
+  }
+}

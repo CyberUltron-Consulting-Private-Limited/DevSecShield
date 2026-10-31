@@ -1,0 +1,679 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - generic [ref=f1e5]:
+      - button "E2E Demo Team 1000 credits" [ref=f1e8] [cursor=pointer]:
+        - generic [ref=f1e12]:
+          - text: E2E Demo Team
+          - generic [ref=f1e13]: 1000 credits
+      - generic [ref=f1e17]:
+        - list [ref=f1e20]:
+          - listitem [ref=f1e21]:
+            - link "Home" [ref=f1e22] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f1e27]:
+          - generic [ref=f1e28]: Scanning Utilities
+          - list [ref=f1e30]:
+            - listitem [ref=f1e31]:
+              - link "SAST" [ref=f1e32] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f1e37]:
+              - link "SCA + SBOM" [ref=f1e38] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f1e44]:
+              - link "CBOM" [ref=f1e45] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f1e50]:
+              - link "AI BOM" [ref=f1e51] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f1e56]:
+              - link "MCP" [ref=f1e57] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f1e62]:
+              - link "LLM" [ref=f1e63] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f1e68]:
+              - link "IAC" [ref=f1e69] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f1e74]:
+              - link "DAST" [ref=f1e75] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f1e80]:
+          - generic [ref=f1e81]: Integrations
+          - list [ref=f1e83]:
+            - listitem [ref=f1e84]:
+              - link "CI / CD" [ref=f1e85] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f1e90]:
+        - list [ref=f1e91]:
+          - listitem [ref=f1e92]:
+            - link "Teams" [ref=f1e93] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f1e100]:
+            - link "Settings" [ref=f1e101] [cursor=pointer]:
+              - /url: /1/settings
+        - button "EA E2E Admin e2e-admin@dss-e2e.test" [ref=f1e107] [cursor=pointer]:
+          - generic [ref=f1e108]: EA
+          - generic [ref=f1e109]:
+            - paragraph [ref=f1e110]: E2E Admin
+            - paragraph [ref=f1e111]: e2e-admin@dss-e2e.test
+    - main [ref=f1e114]:
+      - generic [ref=f1e125]:
+        - generic [ref=f1e126]:
+          - generic [ref=f1e127]:
+            - button [ref=f1e128] [cursor=pointer]
+            - generic [ref=f1e129]:
+              - heading "CBOM Scan Results" [level=1] [ref=f1e130]
+              - generic [ref=f1e134]:
+                - generic [ref=f1e135]: https://github.com/e2e-demo/code-supply
+                - generic [ref=f1e140]: "Branch: main"
+          - generic [ref=f1e141]:
+            - button "CycloneDX JSON" [ref=f1e142] [cursor=pointer]
+            - button "VEX" [ref=f1e143] [cursor=pointer]
+            - button "Signature" [ref=f1e144] [cursor=pointer]
+            - button "Evidence pack" [ref=f1e145] [cursor=pointer]
+            - button "PDF Report" [ref=f1e146] [cursor=pointer]
+            - button "Chat with the Results" [ref=f1e147] [cursor=pointer]
+        - generic [ref=f1e148]:
+          - button "Results" [ref=f1e149] [cursor=pointer]
+          - button "Ticketing integrations" [ref=f1e153] [cursor=pointer]
+        - generic [ref=f1e157]:
+          - generic [ref=f1e165]:
+            - paragraph [ref=f1e166]: Branch
+            - paragraph [ref=f1e167]: main
+          - generic [ref=f1e174]:
+            - paragraph [ref=f1e175]: Source
+            - paragraph [ref=f1e176]: Repository
+        - generic [ref=f1e177]:
+          - generic [ref=f1e178]:
+            - generic [ref=f1e179]:
+              - generic [ref=f1e180]:
+                - generic [ref=f1e181]: Algorithm distribution
+                - generic [ref=f1e184]: Crypto algorithms by primitive
+              - img [ref=f1e189]:
+                - generic [ref=f1e190]: Block cipher
+            - generic [ref=f1e199]:
+              - generic [ref=f1e200]:
+                - generic [ref=f1e201]: Weak-crypto findings
+                - generic [ref=f1e204]: Weak / deprecated crypto by category (High red · Medium orange)
+              - generic [ref=f1e205]: No weak crypto detected
+            - generic [ref=f1e207]:
+              - generic [ref=f1e208]:
+                - generic [ref=f1e209]: PQC readiness
+                - generic [ref=f1e214]: Quantum-safe share (nistQuantumSecurityLevel)
+              - generic [ref=f1e216]:
+                - generic [ref=f1e217]:
+                  - generic:
+                    - paragraph: 100%
+                    - paragraph: quantum-safe
+                - generic [ref=f1e247]:
+                  - generic [ref=f1e248]: "Safe: 1"
+                  - generic [ref=f1e249]: "Vulnerable: 0"
+          - generic [ref=f1e250]:
+            - generic [ref=f1e251]:
+              - generic [ref=f1e252]:
+                - generic [ref=f1e253]: Quantum-vulnerable algorithms
+                - generic [ref=f1e258]: Public-key assets broken by a cryptographically-relevant quantum computer (NIST level 0)
+              - generic [ref=f1e260]:
+                - paragraph [ref=f1e264]: No quantum-vulnerable algorithms
+                - paragraph [ref=f1e265]: Every inventoried algorithm is quantum-resistant at its parameter size.
+            - generic [ref=f1e266]:
+              - generic [ref=f1e267]:
+                - generic [ref=f1e268]: PQC migration roadmap
+                - generic [ref=f1e274]: NIST-standardized replacement per algorithm, against the CNSA 2.0 timeline
+              - generic [ref=f1e275]:
+                - generic [ref=f1e276]:
+                  - paragraph [ref=f1e277]: CNSA 2.0 transition milestones
+                  - list [ref=f1e282]:
+                    - listitem [ref=f1e283]:
+                      - paragraph [ref=f1e284]: "2025"
+                      - paragraph [ref=f1e285]: Software / firmware signing
+                    - listitem [ref=f1e286]:
+                      - paragraph [ref=f1e287]: "2030"
+                      - paragraph [ref=f1e288]: Networking & traditional protocols
+                    - listitem [ref=f1e289]:
+                      - paragraph [ref=f1e290]: "2033"
+                      - paragraph [ref=f1e291]: Operating systems
+                    - listitem [ref=f1e292]:
+                      - paragraph [ref=f1e293]: "2035"
+                      - paragraph [ref=f1e294]: All National Security Systems
+                - paragraph [ref=f1e295]: No migration required — the inventory carries no quantum-vulnerable algorithms.
+          - generic [ref=f1e296]:
+            - generic [ref=f1e297]:
+              - generic [ref=f1e298]:
+                - generic [ref=f1e299]: Asset types
+                - generic [ref=f1e304]: Crypto inventory by CycloneDX asset class
+              - img [ref=f1e309]:
+                - generic [ref=f1e311]:
+                  - generic [ref=f1e312]: Algorithm
+                  - generic [ref=f1e314]: Library
+            - generic [ref=f1e323]:
+              - generic [ref=f1e324]:
+                - generic [ref=f1e325]: Certificate expiry
+                - generic [ref=f1e329]: X.509 validity and related key / keystore material
+              - generic [ref=f1e330]: No X.509 certificates or key material in this scan
+            - generic [ref=f1e332]:
+              - generic [ref=f1e333]:
+                - generic [ref=f1e334]: Protocol / TLS
+                - generic [ref=f1e340]: Transport-security protocols in use
+              - generic [ref=f1e341]: No protocols detected
+          - generic [ref=f1e344]:
+            - generic [ref=f1e345]:
+              - generic [ref=f1e346]:
+                - generic [ref=f1e347]: Crypto dependency graph
+                - generic [ref=f1e354]:
+                  - text: CycloneDX lineage — certificate / protocol / key material → the algorithm assets they reference
+                  - generic [ref=f1e355]: Showing 2 clustered nodes of 10. Open fullscreen for more detail.
+              - button "Expand dependency graph" [ref=f1e356]: Expand
+            - generic [ref=f1e357]:
+              - application [ref=f1e360]:
+                - generic [ref=f1e362]:
+                  - generic:
+                    - generic:
+                      - group: Unlinked algorithm (1)
+                      - group: Unlinked library (9)
+                - generic "Graph viewport controls" [ref=f1e363]:
+                  - button "Zoom In" [disabled]
+                  - button "Zoom Out" [ref=f1e364] [cursor=pointer]
+                  - button "Fit View" [ref=f1e367] [cursor=pointer]
+              - generic [ref=f1e371]:
+                - generic [ref=f1e372]: algorithm
+                - generic [ref=f1e374]: certificate
+                - generic [ref=f1e376]: protocol
+                - generic [ref=f1e378]: related-crypto-material
+                - generic [ref=f1e380]: library
+                - generic [ref=f1e382]: weak
+                - generic [ref=f1e384]: quantum-vulnerable
+          - generic [ref=f1e387]:
+            - generic [ref=f1e388]:
+              - generic [ref=f1e389]: Crypto compliance readiness
+              - generic [ref=f1e394]: Per-framework verdicts (advisory). Coverage = pass / (pass + fail). Out of scope (framework doesn't apply) and Not BOM-evidenceable (process evidence) are reported separately — never folded into pass or fail. Click a bar for per-requirement detail.
+            - generic [ref=f1e395]:
+              - generic [ref=f1e396]:
+                - generic [ref=f1e397]: Frameworks
+                - button "All" [ref=f1e398] [cursor=pointer]
+                - button "Quantum-safe" [ref=f1e399] [cursor=pointer]
+                - button "Baseline crypto" [ref=f1e400] [cursor=pointer]
+                - button "Regulatory" [ref=f1e401] [cursor=pointer]
+                - button "India / CERT-In / SEBI" [ref=f1e402] [cursor=pointer]
+                - button "Failures only" [ref=f1e404] [cursor=pointer]
+              - img [ref=f1e409]:
+                - generic [ref=f1e411]:
+                  - generic [ref=f1e412]: NIST SP1800-38B
+                  - generic [ref=f1e414]: NIST SP 800-57
+                  - generic [ref=f1e416]: OMB M-23-02
+                  - generic [ref=f1e418]: EU CRA
+                  - generic [ref=f1e420]: EU DORA
+                  - generic [ref=f1e422]: PCI-DSS 4.0
+                  - generic [ref=f1e424]: FIPS 140-3
+                  - generic [ref=f1e426]: BSI TR-02102
+                  - generic [ref=f1e428]: NIST SP1800-38C
+                  - generic [ref=f1e430]: CNSA 2.0
+                  - generic [ref=f1e432]: RBI FREE-AI(Protection)
+                  - generic [ref=f1e434]: CERT-In CBOM(Guidelines v2.0)
+                  - generic [ref=f1e436]: SEBI CSCRF(CBOM)
+                - generic [ref=f1e440]:
+                  - generic [ref=f1e442] [cursor=pointer]
+                  - generic [ref=f1e444] [cursor=pointer]
+                  - generic [ref=f1e446] [cursor=pointer]
+                  - generic [ref=f1e448] [cursor=pointer]
+                  - generic [ref=f1e450] [cursor=pointer]
+                  - generic [ref=f1e452] [cursor=pointer]
+                  - generic [ref=f1e454] [cursor=pointer]
+                  - generic [ref=f1e456] [cursor=pointer]
+                  - generic [ref=f1e458] [cursor=pointer]
+                  - generic [ref=f1e460] [cursor=pointer]
+                  - generic [ref=f1e462] [cursor=pointer]
+                  - generic [ref=f1e464] [cursor=pointer]
+                  - generic [ref=f1e466] [cursor=pointer]
+                - generic [ref=f1e471] [cursor=pointer]
+                - generic [ref=f1e474]:
+                  - generic [ref=f1e476] [cursor=pointer]
+                  - generic [ref=f1e478] [cursor=pointer]
+                  - generic [ref=f1e480] [cursor=pointer]
+                  - generic [ref=f1e482] [cursor=pointer]
+                  - generic [ref=f1e484] [cursor=pointer]
+                  - generic [ref=f1e486] [cursor=pointer]
+                  - generic [ref=f1e488] [cursor=pointer]
+                  - generic [ref=f1e490] [cursor=pointer]
+                  - generic [ref=f1e492] [cursor=pointer]
+                  - generic [ref=f1e494] [cursor=pointer]
+                  - generic [ref=f1e496] [cursor=pointer]
+                  - generic [ref=f1e498] [cursor=pointer]
+                  - generic [ref=f1e500] [cursor=pointer]
+              - generic [ref=f1e501]:
+                - generic [ref=f1e502]: Pass
+                - generic [ref=f1e504]: Pass (evidence)
+                - generic [ref=f1e506]: Fail
+                - generic [ref=f1e508]: Out of scope
+                - generic [ref=f1e510]: Not BOM-evidenceable
+                - generic [ref=f1e512]: N/A
+        - generic [ref=f1e514]:
+          - generic [ref=f1e515]:
+            - generic [ref=f1e516]: RBI CSF Posture Rollup
+            - generic [ref=f1e520]: FREE-AI requirement verdicts aggregated into the five RBI Cyber Security Framework pillars. Coverage = pass / (pass + fail); process-only controls are reported separately.
+          - img [ref=f1e525]:
+            - generic [ref=f1e529]:
+              - generic [ref=f1e530]: RBI CSF — Governance
+              - generic [ref=f1e532]: RBI CSF — RiskIdentification
+              - generic [ref=f1e534]: RBI CSF — RiskProtection
+              - generic [ref=f1e536]: RBI CSF — ThreatDetection
+              - generic [ref=f1e538]: RBI CSF — Response &Recovery
+            - generic [ref=f1e542]:
+              - generic [ref=f1e544] [cursor=pointer]
+              - generic [ref=f1e546] [cursor=pointer]
+            - generic [ref=f1e551] [cursor=pointer]
+        - generic [ref=f1e552]:
+          - generic [ref=f1e553]:
+            - generic [ref=f1e554]: CERT-In CBOM posture (advisory)
+            - generic [ref=f1e559]: Cryptographic asset inventory and crypto process controls for this scan. Does not constitute certification. HBOM deferred — not in product scope.
+          - img [ref=f1e564]:
+            - generic [ref=f1e568]:
+              - generic [ref=f1e569]: Cryptographic assetinventory
+              - generic [ref=f1e571]: Crypto process controls
+            - generic [ref=f1e577] [cursor=pointer]
+            - generic [ref=f1e582] [cursor=pointer]
+            - generic [ref=f1e585]:
+              - generic [ref=f1e587] [cursor=pointer]
+              - generic [ref=f1e589] [cursor=pointer]
+        - generic [ref=f1e590]:
+          - generic [ref=f1e591]:
+            - generic [ref=f1e598]:
+              - paragraph [ref=f1e599]: Crypto assets
+              - paragraph [ref=f1e600]: "12"
+            - generic [ref=f1e606]:
+              - paragraph [ref=f1e607]: Weak
+              - paragraph [ref=f1e608]: "0"
+            - generic [ref=f1e614]:
+              - paragraph [ref=f1e615]: Quantum vulnerable
+              - paragraph [ref=f1e616]: "0"
+            - generic [ref=f1e623]:
+              - paragraph [ref=f1e624]: Certificates
+              - paragraph [ref=f1e625]: "0"
+            - generic [ref=f1e633]:
+              - paragraph [ref=f1e634]: Keys
+              - paragraph [ref=f1e635]: "0"
+            - generic [ref=f1e641]:
+              - paragraph [ref=f1e642]: Quantum ready
+              - paragraph [ref=f1e643]: 100%
+            - generic [ref=f1e649]:
+              - paragraph [ref=f1e650]: Avg risk score
+              - paragraph [ref=f1e651]: "6.8"
+          - generic [ref=f1e652]:
+            - generic [ref=f1e653]:
+              - generic [ref=f1e654]: Remediation progress
+              - generic [ref=f1e655]: Finding status breakdown
+            - generic [ref=f1e657]:
+              - generic [ref=f1e662]:
+                - paragraph [ref=f1e663]: Fixed
+                - paragraph [ref=f1e664]: 0 · 0%
+                - progressbar [ref=f1e665]
+              - generic [ref=f1e670]:
+                - paragraph [ref=f1e671]: In progress
+                - paragraph [ref=f1e672]: 0 · 0%
+                - progressbar [ref=f1e673]
+              - generic [ref=f1e678]:
+                - paragraph [ref=f1e679]: Not started
+                - paragraph [ref=f1e680]: 9 · 100%
+                - progressbar [ref=f1e681]
+              - generic [ref=f1e689]:
+                - paragraph [ref=f1e690]: Ignored
+                - paragraph [ref=f1e691]: 0 · 0%
+                - progressbar [ref=f1e692]
+              - generic [ref=f1e694]:
+                - generic [ref=f1e695]: Findings resolved
+                - generic [ref=f1e696]: 0/9
+          - generic [ref=f1e697]:
+            - generic [ref=f1e698]:
+              - generic [ref=f1e699]:
+                - generic [ref=f1e700]: OWASP Top 10 issues
+                - generic [ref=f1e704]: Distribution by OWASP category
+              - generic [ref=f1e705]:
+                - generic [ref=f1e706] [cursor=pointer]
+                - generic [ref=f1e716]: A02:2021 - Cryptographic Failures
+            - generic [ref=f1e720]:
+              - generic [ref=f1e721]:
+                - generic [ref=f1e722]: Risk metrics
+                - generic [ref=f1e725]: Findings by impact severity
+              - generic [ref=f1e726]:
+                - img [ref=f1e730]:
+                  - generic [ref=f1e733]:
+                    - generic [ref=f1e734]: Critical
+                    - generic [ref=f1e736]: High
+                    - generic [ref=f1e738]: Medium
+                    - generic [ref=f1e740]: Low
+                - paragraph [ref=f1e757]: Findings for each impact level (Critical, High, Medium, Low)
+            - generic [ref=f1e758]:
+              - generic [ref=f1e759]:
+                - generic [ref=f1e760]: Compliance controls
+                - generic [ref=f1e763]: Findings mapped to compliance frameworks
+              - img [ref=f1e768]:
+                - generic [ref=f1e772]:
+                  - generic [ref=f1e773]: ISO 27001 - A.10Cryptography
+                  - generic [ref=f1e775]: NIST 800-53 -System andCommu…
+                  - generic [ref=f1e777]: CERT-In CBOM(Guidelines v2.0)
+          - generic [ref=f1e788]:
+            - generic [ref=f1e789]:
+              - generic [ref=f1e790]:
+                - generic [ref=f1e791]: Algorithm types
+                - generic [ref=f1e794]: Distribution by algorithm category
+              - img [ref=f1e799]:
+                - generic [ref=f1e803]:
+                  - generic [ref=f1e804]: "0"
+                  - generic [ref=f1e806]: "2"
+                  - generic [ref=f1e808]: "4"
+                  - generic [ref=f1e810]: "6"
+                  - generic [ref=f1e812]: "8"
+                - generic [ref=f1e815]:
+                  - generic [ref=f1e816]: other
+                  - generic [ref=f1e818]: block-cipher
+            - generic [ref=f1e827]:
+              - generic [ref=f1e828]:
+                - generic [ref=f1e829]: Crypto strength
+                - generic [ref=f1e833]: Distribution by cryptographic strength
+              - img [ref=f1e838]:
+                - generic [ref=f1e842]:
+                  - generic [ref=f1e843]: Strong
+                  - generic [ref=f1e845]: Quantum-Safe
+                - generic [ref=f1e848]:
+                  - generic [ref=f1e849]: "0"
+                  - generic [ref=f1e851]: "2"
+                  - generic [ref=f1e853]: "4"
+                  - generic [ref=f1e855]: "6"
+                  - generic [ref=f1e857]: "8"
+            - generic [ref=f1e866]:
+              - generic [ref=f1e867]:
+                - generic [ref=f1e868]: Quantum readiness
+                - generic [ref=f1e871]: Safe vs vulnerable cryptographic assets
+              - img [ref=f1e876]:
+                - generic [ref=f1e879]: Safe
+                - generic [ref=f1e884]:
+                  - generic [ref=f1e885]: "0"
+                  - generic [ref=f1e887]: "0.25"
+                  - generic [ref=f1e889]: "0.5"
+                  - generic [ref=f1e891]: "0.75"
+                  - generic [ref=f1e893]: "1"
+            - generic [ref=f1e900]:
+              - generic [ref=f1e901]:
+                - generic [ref=f1e902]: Risk scores per finding
+                - generic [ref=f1e906]: Risk score by finding (top 24, descending)
+              - img [ref=f1e911]:
+                - generic [ref=f1e915]:
+                  - generic [ref=f1e916]: F1
+                  - generic [ref=f1e918]: F2
+                  - generic [ref=f1e920]: F3
+                  - generic [ref=f1e922]: F4
+                  - generic [ref=f1e924]: F5
+                  - generic [ref=f1e926]: F6
+                  - generic [ref=f1e928]: F7
+                  - generic [ref=f1e930]: F8
+                  - generic [ref=f1e932]: F9
+          - generic [ref=f1e940]:
+            - generic [ref=f1e941]:
+              - generic [ref=f1e942]: Remediation metrics
+              - generic [ref=f1e943]: Performance and efficiency tracking
+            - generic [ref=f1e945]:
+              - generic [ref=f1e946]:
+                - paragraph [ref=f1e951]: Mean time to remediate
+                - paragraph [ref=f1e952]: <0.1 days
+                - paragraph [ref=f1e953]: "Target: 3 days"
+                - generic [ref=f1e954]:
+                  - progressbar [ref=f1e955]
+                  - generic [ref=f1e957]: —
+              - generic [ref=f1e958]:
+                - paragraph [ref=f1e963]: Critical issues fixed
+                - paragraph [ref=f1e964]: 0%
+                - paragraph [ref=f1e965]: "Target: 95%"
+                - generic [ref=f1e966]:
+                  - progressbar [ref=f1e967]
+                  - generic [ref=f1e969]: +95%
+              - generic [ref=f1e970]:
+                - paragraph [ref=f1e974]: High priority backlog
+                - paragraph [ref=f1e975]: "8"
+                - paragraph [ref=f1e976]: "Target: 10"
+                - generic [ref=f1e977]:
+                  - progressbar [ref=f1e978]
+                  - generic [ref=f1e980]: "+2"
+              - generic [ref=f1e981]:
+                - paragraph [ref=f1e985]: Remediation velocity
+                - paragraph [ref=f1e986]: 0/week
+                - paragraph [ref=f1e987]: "Target: 20/week"
+                - generic [ref=f1e988]:
+                  - progressbar [ref=f1e989]
+                  - generic [ref=f1e991]: "+20"
+        - generic [ref=f1e992]:
+          - generic [ref=f1e993]:
+            - generic [ref=f1e994]: Cryptographic findings
+            - generic [ref=f1e995]: 9 of 9 findings. Select rows to create Jira tickets; use Action to change finding state.
+          - generic [ref=f1e996]:
+            - generic [ref=f1e997]:
+              - searchbox "Search findings table" [ref=f1e1002]
+              - combobox [ref=f1e1003] [cursor=pointer]:
+                - generic: All impacts
+              - combobox [ref=f1e1004] [cursor=pointer]:
+                - generic: Risk score
+              - combobox [ref=f1e1005] [cursor=pointer]:
+                - generic: All strengths
+              - combobox [ref=f1e1006] [cursor=pointer]:
+                - generic: All types
+              - combobox [ref=f1e1007] [cursor=pointer]:
+                - generic: All
+            - table [ref=f1e1012]:
+              - rowgroup [ref=f1e1013]:
+                - row [ref=f1e1014]:
+                  - columnheader [ref=f1e1015]:
+                    - checkbox "Select all rows" [ref=f1e1016] [cursor=pointer]
+                  - columnheader "Algorithm" [ref=f1e1017]
+                  - columnheader "Type" [ref=f1e1018]
+                  - columnheader "Impact" [ref=f1e1019]
+                  - columnheader "Strength" [ref=f1e1020]
+                  - columnheader "Quantum" [ref=f1e1021]
+                  - columnheader "Risk score" [ref=f1e1022]
+                  - columnheader "Location" [ref=f1e1023]
+                  - columnheader "Status" [ref=f1e1024]
+                  - columnheader "Actions" [ref=f1e1025]
+              - rowgroup [ref=f1e1026]:
+                - row [ref=f1e1027]:
+                  - cell [ref=f1e1028]:
+                    - checkbox "Select bouncycastle.cryptography@2.2.0" [ref=f1e1029] [cursor=pointer]
+                  - cell [ref=f1e1030]:
+                    - button "bouncycastle.cryptography@2.2.0" [ref=f1e1031] [cursor=pointer]
+                  - cell "other" [ref=f1e1032]
+                  - cell "High" [ref=f1e1033]
+                  - cell "strong" [ref=f1e1035]
+                  - cell "—" [ref=f1e1037]
+                  - cell "5.9" [ref=f1e1038]:
+                    - generic "Risk score" [ref=f1e1039]: "5.9"
+                  - cell "packages.lock.json" [ref=f1e1040]
+                  - cell "not started" [ref=f1e1041]
+                  - cell [ref=f1e1043]:
+                    - button "Finding actions" [ref=f1e1044] [cursor=pointer]: Action
+                - row [ref=f1e1045]:
+                  - cell [ref=f1e1046]:
+                    - checkbox "Select ed25519-dalek@1.0.1" [ref=f1e1047] [cursor=pointer]
+                  - cell [ref=f1e1048]:
+                    - button "ed25519-dalek@1.0.1" [ref=f1e1049] [cursor=pointer]
+                  - cell "other" [ref=f1e1050]
+                  - cell "High" [ref=f1e1051]
+                  - cell "strong" [ref=f1e1053]
+                  - cell "—" [ref=f1e1055]
+                  - cell "5.9" [ref=f1e1056]:
+                    - generic "Risk score" [ref=f1e1057]: "5.9"
+                  - cell "Cargo.lock" [ref=f1e1058]
+                  - cell "not started" [ref=f1e1059]
+                  - cell [ref=f1e1061]:
+                    - button "Finding actions" [ref=f1e1062] [cursor=pointer]: Action
+                - row [ref=f1e1063]:
+                  - cell [ref=f1e1064]:
+                    - checkbox "Select golang.org/x/crypto@v0.16.0" [ref=f1e1065] [cursor=pointer]
+                  - cell [ref=f1e1066]:
+                    - button "golang.org/x/crypto@v0.16.0" [ref=f1e1067] [cursor=pointer]
+                  - cell "other" [ref=f1e1068]
+                  - cell "High" [ref=f1e1069]
+                  - cell "strong" [ref=f1e1071]
+                  - cell "—" [ref=f1e1073]
+                  - cell "5.9" [ref=f1e1074]:
+                    - generic "Risk score" [ref=f1e1075]: "5.9"
+                  - cell "go.sum" [ref=f1e1076]
+                  - cell "not started" [ref=f1e1077]
+                  - cell [ref=f1e1079]:
+                    - button "Finding actions" [ref=f1e1080] [cursor=pointer]: Action
+                - row [ref=f1e1081]:
+                  - cell [ref=f1e1082]:
+                    - checkbox "Select node-forge@1.2.1" [ref=f1e1083] [cursor=pointer]
+                  - cell [ref=f1e1084]:
+                    - button "node-forge@1.2.1" [ref=f1e1085] [cursor=pointer]
+                  - cell "other" [ref=f1e1086]
+                  - cell "High" [ref=f1e1087]
+                  - cell "strong" [ref=f1e1089]
+                  - cell "—" [ref=f1e1091]
+                  - cell "5.9" [ref=f1e1092]:
+                    - generic "Risk score" [ref=f1e1093]: "5.9"
+                  - cell "package-lock.json" [ref=f1e1094]
+                  - cell "not started" [ref=f1e1095]
+                  - cell [ref=f1e1097]:
+                    - button "Finding actions" [ref=f1e1098] [cursor=pointer]: Action
+                - row [ref=f1e1099]:
+                  - cell [ref=f1e1100]:
+                    - checkbox "Select org.bouncycastle:bcprov-jdk15on@1.70" [ref=f1e1101] [cursor=pointer]
+                  - cell [ref=f1e1102]:
+                    - button "org.bouncycastle:bcprov-jdk15on@1.70" [ref=f1e1103] [cursor=pointer]
+                  - cell "other" [ref=f1e1104]
+                  - cell "High" [ref=f1e1105]
+                  - cell "strong" [ref=f1e1107]
+                  - cell "—" [ref=f1e1109]
+                  - cell "5.9" [ref=f1e1110]:
+                    - generic "Risk score" [ref=f1e1111]: "5.9"
+                  - cell "pom.xml" [ref=f1e1112]
+                  - cell "not started" [ref=f1e1113]
+                  - cell [ref=f1e1115]:
+                    - button "Finding actions" [ref=f1e1116] [cursor=pointer]: Action
+                - row [ref=f1e1117]:
+                  - cell [ref=f1e1118]:
+                    - checkbox "Select pyjwt@2.3.0" [ref=f1e1119] [cursor=pointer]
+                  - cell [ref=f1e1120]:
+                    - button "pyjwt@2.3.0" [ref=f1e1121] [cursor=pointer]
+                  - cell "other" [ref=f1e1122]
+                  - cell "High" [ref=f1e1123]
+                  - cell "strong" [ref=f1e1125]
+                  - cell "—" [ref=f1e1127]
+                  - cell "5.9" [ref=f1e1128]:
+                    - generic "Risk score" [ref=f1e1129]: "5.9"
+                  - cell "requirements.txt" [ref=f1e1130]
+                  - cell "not started" [ref=f1e1131]
+                  - cell [ref=f1e1133]:
+                    - button "Finding actions" [ref=f1e1134] [cursor=pointer]: Action
+                - row [ref=f1e1135]:
+                  - cell [ref=f1e1136]:
+                    - checkbox "Select relational_db:aws_db_instance.plain" [ref=f1e1137] [cursor=pointer]
+                  - cell [ref=f1e1138]:
+                    - button "relational_db:aws_db_instance.plain" [ref=f1e1139] [cursor=pointer]
+                  - cell "other" [ref=f1e1140]
+                  - cell "High" [ref=f1e1141]
+                  - cell "strong" [ref=f1e1143]
+                  - cell "—" [ref=f1e1145]
+                  - cell "5.9" [ref=f1e1146]:
+                    - generic "Risk score" [ref=f1e1147]: "5.9"
+                  - cell [ref=f1e1148]
+                  - cell "not started" [ref=f1e1149]
+                  - cell [ref=f1e1151]:
+                    - button "Finding actions" [ref=f1e1152] [cursor=pointer]: Action
+                - row [ref=f1e1153]:
+                  - cell [ref=f1e1154]:
+                    - checkbox "Select tls_endpoint:py.unverified_context" [ref=f1e1155] [cursor=pointer]
+                  - cell [ref=f1e1156]:
+                    - button "tls_endpoint:py.unverified_context" [ref=f1e1157] [cursor=pointer]
+                  - cell "other" [ref=f1e1158]
+                  - cell "High" [ref=f1e1159]
+                  - cell "strong" [ref=f1e1161]
+                  - cell "—" [ref=f1e1163]
+                  - cell "5.9" [ref=f1e1164]:
+                    - generic "Risk score" [ref=f1e1165]: "5.9"
+                  - cell [ref=f1e1166]
+                  - cell "not started" [ref=f1e1167]
+                  - cell [ref=f1e1169]:
+                    - button "Finding actions" [ref=f1e1170] [cursor=pointer]: Action
+                - row [ref=f1e1171]:
+                  - cell [ref=f1e1172]:
+                    - checkbox "Select AES (custom implementation)" [ref=f1e1173] [cursor=pointer]
+                  - cell [ref=f1e1174]:
+                    - button "AES (custom implementation)" [ref=f1e1175] [cursor=pointer]
+                  - cell "block-cipher" [ref=f1e1176]
+                  - cell "Medium" [ref=f1e1177]
+                  - cell "quantum_safe" [ref=f1e1179]
+                  - cell "Safe" [ref=f1e1181]
+                  - cell "3.9" [ref=f1e1183]:
+                    - generic "Risk score" [ref=f1e1184]: "3.9"
+                  - cell "custom_aes.py" [ref=f1e1185]
+                  - cell "not started" [ref=f1e1186]
+                  - cell [ref=f1e1188]:
+                    - button "Finding actions" [ref=f1e1189] [cursor=pointer]: Action
+        - generic [ref=f1e1190]:
+          - generic [ref=f1e1191]:
+            - generic [ref=f1e1192]: Top cryptographic risks
+            - generic [ref=f1e1193]: Highest-risk cryptographic assets
+          - table [ref=f1e1199]:
+            - rowgroup [ref=f1e1200]:
+              - row [ref=f1e1201]:
+                - columnheader "Algorithm" [ref=f1e1202]
+                - columnheader "Type" [ref=f1e1203]
+                - columnheader "Strength" [ref=f1e1204]
+                - columnheader "Quantum safe" [ref=f1e1205]
+                - columnheader "Impact" [ref=f1e1206]
+            - rowgroup [ref=f1e1207]:
+              - row [ref=f1e1208]:
+                - cell "bouncycastle.cryptography@2.2.0" [ref=f1e1209]
+                - cell "other" [ref=f1e1210]
+                - cell "strong" [ref=f1e1211]
+                - cell "No" [ref=f1e1213]
+                - cell "High" [ref=f1e1215]
+              - row [ref=f1e1216]:
+                - cell "ed25519-dalek@1.0.1" [ref=f1e1217]
+                - cell "other" [ref=f1e1218]
+                - cell "strong" [ref=f1e1219]
+                - cell "No" [ref=f1e1221]
+                - cell "High" [ref=f1e1223]
+              - row [ref=f1e1224]:
+                - cell "golang.org/x/crypto@v0.16.0" [ref=f1e1225]
+                - cell "other" [ref=f1e1226]
+                - cell "strong" [ref=f1e1227]
+                - cell "No" [ref=f1e1229]
+                - cell "High" [ref=f1e1231]
+              - row [ref=f1e1232]:
+                - cell "node-forge@1.2.1" [ref=f1e1233]
+                - cell "other" [ref=f1e1234]
+                - cell "strong" [ref=f1e1235]
+                - cell "No" [ref=f1e1237]
+                - cell "High" [ref=f1e1239]
+              - row [ref=f1e1240]:
+                - cell "org.bouncycastle:bcprov-jdk15on@1.70" [ref=f1e1241]
+                - cell "other" [ref=f1e1242]
+                - cell "strong" [ref=f1e1243]
+                - cell "No" [ref=f1e1245]
+                - cell "High" [ref=f1e1247]
+              - row [ref=f1e1248]:
+                - cell "pyjwt@2.3.0" [ref=f1e1249]
+                - cell "other" [ref=f1e1250]
+                - cell "strong" [ref=f1e1251]
+                - cell "No" [ref=f1e1253]
+                - cell "High" [ref=f1e1255]
+              - row [ref=f1e1256]:
+                - cell "relational_db:aws_db_instance.plain" [ref=f1e1257]
+                - cell "other" [ref=f1e1258]
+                - cell "strong" [ref=f1e1259]
+                - cell "No" [ref=f1e1261]
+                - cell "High" [ref=f1e1263]
+              - row [ref=f1e1264]:
+                - cell "tls_endpoint:py.unverified_context" [ref=f1e1265]
+                - cell "other" [ref=f1e1266]
+                - cell "strong" [ref=f1e1267]
+                - cell "No" [ref=f1e1269]
+                - cell "High" [ref=f1e1271]
+              - row [ref=f1e1272]:
+                - cell "AES (custom implementation)" [ref=f1e1273]
+                - cell "block-cipher" [ref=f1e1274]
+                - cell "quantum_safe" [ref=f1e1275]
+                - cell "Yes" [ref=f1e1277]
+                - cell "Medium" [ref=f1e1279]
+  - region "Notifications alt+T"
+  - alert [ref=f1e124]
+  - generic [aria-hidden] [ref=f1e1280]: "0.25"

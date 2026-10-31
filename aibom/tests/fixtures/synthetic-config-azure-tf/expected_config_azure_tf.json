@@ -1,0 +1,87 @@
+{
+  "facts": [
+    {
+      "address": "azurerm_key_vault.vault",
+      "path": "main.tf",
+      "line": 1,
+      "kind": "kms_key",
+      "native_type": "azurerm_key_vault",
+      "provider": "azure",
+      "layers": {
+        "service": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "default_unknown",
+      "default_row": null,
+      "finding_codes": [
+        "KMS_KEY_DELETION_UNPROTECTED"
+      ],
+      "covers": [
+        "azure.vault"
+      ],
+      "outcome": "positive",
+      "why": "purge_protection_enabled omitted; reviewed azure.keyvault.purge_protection finding_default fires KMS_KEY_DELETION_UNPROTECTED"
+    },
+    {
+      "address": "azurerm_storage_account.logs",
+      "path": "main.tf",
+      "line": 9,
+      "kind": "object_store",
+      "native_type": "azurerm_storage_account",
+      "provider": "azure",
+      "layers": {
+        "service": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "attribute_not_modeled",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "azure.storage"
+      ],
+      "outcome": "negative",
+      "why": "no assessable encryption attribute on the storage account block; service layer stays UNKNOWN with no finding"
+    },
+    {
+      "address": "azurerm_linux_web_app.app",
+      "path": "main.tf",
+      "line": 17,
+      "kind": "tls_endpoint",
+      "native_type": "azurerm_linux_web_app",
+      "provider": "azure",
+      "layers": {
+        "transport": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "ENCRYPTED_DECLARED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "azure.web.linux"
+      ],
+      "outcome": "negative",
+      "why": "https_only = true declares HTTPS-only transport (encrypted positive control similar to storage-at-rest cases)"
+    }
+  ],
+  "totals": {
+    "facts": 3,
+    "by_kind": {
+      "kms_key": 1,
+      "object_store": 1,
+      "tls_endpoint": 1
+    },
+    "by_verdict": {
+      "ENCRYPTED_DECLARED": 1,
+      "UNKNOWN": 2
+    },
+    "by_code": {
+      "KMS_KEY_DELETION_UNPROTECTED": 1
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

@@ -6,10 +6,18 @@ from dataclasses import replace
 from pathlib import PurePosixPath
 
 from aibom.cbom.posture.assemble import iter_class
-from aibom.cbom.posture.business import load_mapping, owner_hint
+from aibom.cbom.posture.business import (
+    MAPPING_ORDER,
+    OWNERS_ORDER,
+    first_named,
+    load_mapping,
+    matched_linkage,
+    owner_hint,
+)
 from aibom.cbom.posture.codec import decode_fact, encode_fact
 from aibom.cbom.posture.context import posture_sink
 from aibom.cbom.posture.diagnostics import DIAGNOSTIC_CODES
+from aibom.cbom.posture.limits import GlobBudget
 from aibom.cbom.posture.model import Linkage
 from aibom.cbom.registry import cbom_register
 from aibom.scan.registry import ScanContext, Scanner
@@ -26,7 +34,11 @@ def _stamp(current: Linkage, chosen: Linkage | None, hint: str | None) -> Linkag
         classification = chosen.data_classification
     if chosen and chosen.data_lifetime:
         lifetime = chosen.data_lifetime
-    source = chosen.source if chosen and chosen.source else current.source
+    source = current.source
+    if chosen and chosen.source:
+        source = chosen.source
+    elif hint and not source:
+        source = "codeowners"
     return replace(
         current,
         system=system,
@@ -40,35 +52,51 @@ def _stamp(current: Linkage, chosen: Linkage | None, hint: str | None) -> Linkag
 
 def _collect(ctx: ScanContext) -> None:
     sink = posture_sink(ctx)
-    owners_text: str | None = None
-    owners_path = "CODEOWNERS"
-    links: list[Linkage] = []
-    for decoded in iter_class(sink, _CLASSES):
-        filename = PurePosixPath(decoded.rel).name.casefold()
-        if filename == "codeowners":
-            owners_text = decoded.text
-            owners_path = decoded.rel
+    found = {decoded.rel: decoded for decoded in iter_class(sink, _CLASSES)}
+    owners_rel = first_named(
+        {rel: decoded for rel, decoded in found.items() if _is_owners(rel)},
+        OWNERS_ORDER,
+    )
+    mapping_rel = first_named(
+        {rel: decoded for rel, decoded in found.items() if not _is_owners(rel)},
+        MAPPING_ORDER,
+    )
+    for rel in found:
+        if _is_owners(rel) or rel == mapping_rel:
             continue
-        loaded = load_mapping(decoded.text, decoded.rel)
+        if PurePosixPath(rel).name.casefold().startswith("cbom-mapping."):
+            sink.diagnostics.add("mapping_file_ignored", rel, 0)
+    owners_text = None if owners_rel is None else found[owners_rel].text
+    loaded = None
+    if mapping_rel is not None:
+        loaded = load_mapping(found[mapping_rel].text, mapping_rel)
         for note in loaded.notes:
             if note.code in DIAGNOSTIC_CODES:
                 sink.diagnostics.add(note.code, note.path, note.line)
-        links.extend(loaded.links)
-    if owners_text is None and not links:
+    if owners_text is None and loaded is None:
         return
-    chosen = links[0] if len(links) == 1 else None
+    budget = GlobBudget()
     for comp in ctx.components:
         props = comp.properties or {}
         if comp.kind != "infra" or "crypto:factId" not in props:
             continue
         fact = decode_fact(props)
+        chosen = None
+        if loaded is not None:
+            chosen = matched_linkage(
+                loaded, fact.address, fact.path, fact.kind, budget
+            )
         hint = None
-        if owners_text is not None:
-            hint = owner_hint(owners_text, fact.path, owners_path)
+        if owners_text is not None and owners_rel is not None:
+            hint = owner_hint(owners_text, fact.path, owners_rel)
         updated = _stamp(fact.linkage, chosen, hint)
         if updated == fact.linkage:
             continue
         comp.properties = encode_fact(replace(fact, linkage=updated))
+
+
+def _is_owners(rel: str) -> bool:
+    return PurePosixPath(rel).name.casefold() == "codeowners"
 
 
 @cbom_register

@@ -115,6 +115,7 @@ interface CbomResultsProps {
   integrationSettings?: Record<string, unknown> | null;
   onIntegrationSettingsUpdated?: () => void;
   onFindingsUpdated?: () => void;
+  backHref?: string;
 }
 
 function getImpactBadgeClass(impact: string): string {
@@ -755,6 +756,7 @@ export default function CbomResults({
   integrationSettings,
   onIntegrationSettingsUpdated,
   onFindingsUpdated,
+  backHref,
 }: CbomResultsProps) {
   const router = useRouter();
   const params = useParams();
@@ -1140,8 +1142,9 @@ export default function CbomResults({
               variant="outline"
               size="icon"
               onClick={() => {
-                const backRoute =
-                  origin === "chat" && team_id && scan_id != null
+                const backRoute = backHref
+                  ? backHref
+                  : origin === "chat" && team_id && scan_id != null
                     ? `/${team_id}/cbom/${scan_id}`
                     : team_id
                       ? `/${team_id}/cbom`

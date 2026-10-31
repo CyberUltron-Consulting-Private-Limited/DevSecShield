@@ -45,6 +45,28 @@ def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str
     # #endregion
 
 
+def _estimation_failure(task_result) -> HTTPException:
+    """Zip-safety rejects are bad input. Everything else stays a credit-estimation failure."""
+    err = task_result.result
+    text = str(err or "")
+    lowered = text.lower()
+    if any(
+        token in lowered
+        for token in (
+            "zip bomb",
+            "suspicious compression",
+            "path traversal",
+            "too many files",
+            "uncompressed size exceeds",
+        )
+    ):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=text)
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Credit estimation failed, please try again later",
+    )
+
+
 async def poll_for_estimated_credits ( 
     task_id: str,
     simple_app: Celery,
@@ -54,7 +76,7 @@ async def poll_for_estimated_credits (
         for i in range(ESTIMATION_POLL_MAX_ATTEMPTS):
             task_result = simple_app.AsyncResult(task_id)
             if task_result.state == "FAILURE":
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation failed, please try again later")
+                raise _estimation_failure(task_result)
             if task_result.state == "SUCCESS":
                 result = task_result.result
                 if result is None or result < 0:
@@ -92,6 +114,8 @@ async def poll_for_estimated_credits (
                 )
                 # #endregion
                 return result
+        if task_result.state == "FAILURE":
+            raise _estimation_failure(task_result)
         # #region agent log
         _agent_debug_log(
             "estimate_scan.py:poll_for_estimated_credits",

@@ -6,13 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiBaseURL } from "@/utils/interceptors";
 
 interface BambooIntegrationGuideProps {
   apiKey: string;
+  scanType?: string;
 }
 
-export function BambooGuide({ apiKey }: BambooIntegrationGuideProps) {
+export function BambooGuide({ apiKey, scanType = "sast" }: BambooIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
+  const kind = (scanType || "sast").toLowerCase();
+  const label = kind.toUpperCase();
+  const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
   // Generate script content based on selections (full content for copying)
   const scriptContent = useMemo(() => {
@@ -22,16 +27,16 @@ export function BambooGuide({ apiKey }: BambooIntegrationGuideProps) {
     return `# Compress the project files excluding unnecessary ones
 zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
 
-# Call the API for SAST scan
+# Call the API for ${label} scan
 RESPONSE=$(curl -X POST \\
   -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
   -F "zip_file=@project.zip" \\
-  https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)
+  ${endpoint})
 
 # Parse JSON response
-VULNS=$(echo "$RESPONSE" | grep -o '"vulnerabilities":[0-9]*' | grep -o '[0-9]*' || echo "0")
+FINDINGS=$(echo "$RESPONSE" | grep -o '"finding_count":[0-9]*' | grep -o '[0-9]*' || echo "0")
 
-echo "Vulnerabilities found during SAST: $VULNS"
+echo "Findings found during ${label}: $FINDINGS"
 
 # Check for error in response
 if echo "$RESPONSE" | grep -q '"error"'; then
@@ -41,7 +46,7 @@ if echo "$RESPONSE" | grep -q '"error"'; then
 fi
 
 echo "$RESPONSE"`;
-  }, []);
+  }, [endpoint, label]);
 
   // Generate masked script content for display
   const displayedScriptContent = useMemo(() => {
@@ -60,16 +65,16 @@ echo "$RESPONSE"`;
     return `# Compress the project files excluding unnecessary ones
 zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
 
-# Call the API for SAST scan
+# Call the API for ${label} scan
 RESPONSE=$(curl -X POST \\
   -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
   -F "zip_file=@project.zip" \\
-  https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)
+  ${endpoint})
 
 # Parse JSON response
-VULNS=$(echo "$RESPONSE" | grep -o '"vulnerabilities":[0-9]*' | grep -o '[0-9]*' || echo "0")
+FINDINGS=$(echo "$RESPONSE" | grep -o '"finding_count":[0-9]*' | grep -o '[0-9]*' || echo "0")
 
-echo "Vulnerabilities found during SAST: $VULNS"
+echo "Findings found during ${label}: $FINDINGS"
 
 # Check for error in response
 if echo "$RESPONSE" | grep -q '"error"'; then
@@ -79,7 +84,7 @@ if echo "$RESPONSE" | grep -q '"error"'; then
 fi
 
 echo "$RESPONSE"`;
-  }, [apiKey]);
+  }, [apiKey, endpoint, label]);
 
   const copyToClipboard = async () => {
     try {
@@ -102,7 +107,7 @@ echo "$RESPONSE"`;
           Atlassian Bamboo Integration
         </h3>
         <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6">
-          Follow these steps to integrate DevSecShield SAST scanning into your Atlassian Bamboo plan.
+          Follow these steps to integrate DevSecShield {label} scanning into your Atlassian Bamboo plan.
         </p>
       </div>
 
@@ -141,12 +146,12 @@ echo "$RESPONSE"`;
             <li>
               <strong>Add a Job</strong>
               <br />
-              <span className="text-zinc-600 dark:text-zinc-400">Add a job under the Security Scans stage named <strong>SAST Scan</strong>.</span>
+              <span className="text-zinc-600 dark:text-zinc-400">Add a job under the Security Scans stage named <strong>{label} Scan</strong>.</span>
             </li>
             <li>
-              <strong>Configure the SAST Scan Job</strong>
+              <strong>Configure the {label} Scan Job</strong>
               <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
-                <li>Go to the SAST Scan job</li>
+                <li>Go to the {label} Scan job</li>
                 <li>Add a new task and select the task type as <strong>Script</strong></li>
                 <li>Follow the script configuration steps below</li>
               </ol>
@@ -155,7 +160,7 @@ echo "$RESPONSE"`;
               <strong>Script Configuration</strong>
               <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
                 <li>
-                  <strong>Task Description:</strong> Enter a recognizable description like "SAST Scan"
+                  <strong>Task Description:</strong> Enter a recognizable description like "{label} Scan"
                 </li>
                 <li>
                   <strong>Interpreter:</strong> Choose <code className="bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-xs font-mono">Shell</code> for Linux
@@ -204,7 +209,7 @@ echo "$RESPONSE"`;
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-base">SAST Scan Script</CardTitle>
+            <CardTitle className="text-base">{label} Scan Script</CardTitle>
             <CardDescription>
               Copy this script to use in your Bamboo Script task
             </CardDescription>

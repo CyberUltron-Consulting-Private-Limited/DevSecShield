@@ -1,0 +1,42 @@
+{
+  "facts": [
+    {
+      "address": "aws_db_instance.canary",
+      "path": "main.tf",
+      "line": 1,
+      "kind": "relational_db",
+      "native_type": "aws_db_instance",
+      "provider": "aws",
+      "layers": {
+        "service": "NOT_ENCRYPTED"
+      },
+      "verdict": "NOT_ENCRYPTED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [
+        "UNENCRYPTED_AT_REST"
+      ],
+      "covers": [
+        "aws.rds.storage_encrypted"
+      ],
+      "outcome": "positive",
+      "why": "storage_encrypted omitted/false disables at-rest encryption; password attribute holds CANARY_POSTURE_SECRET_9f3a in source only and must not appear in scan output"
+    }
+  ],
+  "totals": {
+    "facts": 1,
+    "by_kind": {
+      "relational_db": 1
+    },
+    "by_verdict": {
+      "NOT_ENCRYPTED": 1
+    },
+    "by_code": {
+      "UNENCRYPTED_AT_REST": 1
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

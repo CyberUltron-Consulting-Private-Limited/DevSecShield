@@ -1,0 +1,64 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - generic [ref=f1e5]:
+      - button "E2E Demo Team 1000 credits" [ref=f1e8] [cursor=pointer]:
+        - generic [ref=f1e12]:
+          - text: E2E Demo Team
+          - generic [ref=f1e13]: 1000 credits
+      - generic [ref=f1e17]:
+        - list [ref=f1e20]:
+          - listitem [ref=f1e21]:
+            - link "Home" [ref=f1e22] [cursor=pointer]:
+              - /url: /1
+        - generic [ref=f1e27]:
+          - generic [ref=f1e28]: Scanning Utilities
+          - list [ref=f1e30]:
+            - listitem [ref=f1e31]:
+              - link "SAST" [ref=f1e32] [cursor=pointer]:
+                - /url: /1/sast
+            - listitem [ref=f1e37]:
+              - link "SCA + SBOM" [ref=f1e38] [cursor=pointer]:
+                - /url: /1/sbom_sca
+            - listitem [ref=f1e44]:
+              - link "CBOM" [ref=f1e45] [cursor=pointer]:
+                - /url: /1/cbom
+            - listitem [ref=f1e50]:
+              - link "AI BOM" [ref=f1e51] [cursor=pointer]:
+                - /url: /1/ai_bom
+            - listitem [ref=f1e56]:
+              - link "MCP" [ref=f1e57] [cursor=pointer]:
+                - /url: /1/mcp
+            - listitem [ref=f1e62]:
+              - link "LLM" [ref=f1e63] [cursor=pointer]:
+                - /url: /1/llm
+            - listitem [ref=f1e68]:
+              - link "IAC" [ref=f1e69] [cursor=pointer]:
+                - /url: /1/iac
+            - listitem [ref=f1e74]:
+              - link "DAST" [ref=f1e75] [cursor=pointer]:
+                - /url: /1/dast
+        - generic [ref=f1e80]:
+          - generic [ref=f1e81]: Integrations
+          - list [ref=f1e83]:
+            - listitem [ref=f1e84]:
+              - link "CI / CD" [ref=f1e85] [cursor=pointer]:
+                - /url: /1/ci_cd
+      - generic [ref=f1e90]:
+        - list [ref=f1e91]:
+          - listitem [ref=f1e92]:
+            - link "Teams" [ref=f1e93] [cursor=pointer]:
+              - /url: /home
+          - listitem [ref=f1e100]:
+            - link "Settings" [ref=f1e101] [cursor=pointer]:
+              - /url: /1/settings
+        - button "EA E2E Admin e2e-admin@dss-e2e.test" [ref=f1e107] [cursor=pointer]:
+          - generic [ref=f1e108]: EA
+          - generic [ref=f1e109]:
+            - paragraph [ref=f1e110]: E2E Admin
+            - paragraph [ref=f1e111]: e2e-admin@dss-e2e.test
+    - main [ref=f1e114]
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=f1e118]:
+        - generic [ref=f1e122]: User profile fetched successfully
+  - alert [ref=f1e124]

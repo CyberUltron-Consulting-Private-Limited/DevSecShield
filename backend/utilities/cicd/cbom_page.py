@@ -1,0 +1,98 @@
+"""Project a CBOM CI run-object into the same view a CBOM scan page renders."""
+
+from types import SimpleNamespace
+
+from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
+from backend.utilities.dashboard.finding_metrics import get_issue_status_metrics
+from backend.utilities.dashboard.remediation_metrics import get_remediation_metrics
+from backend.utilities.dashboard.scan import generate_scan_dashboard
+from backend.utilities.dashboard.scan_metadata import get_scan_metadata
+
+
+def _display_row(row: dict) -> dict:
+    copied = dict(row)
+    algorithm_type = copied.get("algorithm_type")
+    if not algorithm_type or str(algorithm_type).lower() in ("unknown", "none", "null"):
+        copied["algorithm_type"] = copied.get("asset_type") or "other"
+    strength = copied.get("crypto_strength")
+    if not strength or str(strength).lower() in ("unknown", "none", "null"):
+        copied["crypto_strength"] = "not-applicable"
+    return copied
+
+
+def _finding(row: dict, index: int) -> dict:
+    shown = _display_row(row)
+    return {
+        "id": str(shown.get("bom_ref") or f"ci-{index}"),
+        "bom_ref": shown.get("bom_ref") or None,
+        "title": shown.get("title") or "",
+        "description": shown.get("description") or "",
+        "impact": shown.get("impact") or "low",
+        "risk_score": cbom_finding_risk_score(shown),
+        "status": "not_started",
+        "compliance_controls": shown.get("compliance_controls") or [],
+        "owasp_top_10": shown.get("owasp_top_10") or [],
+        "suggested_fix": shown.get("suggested_fix") or "",
+        "algorithm_name": shown.get("algorithm_name") or shown.get("title") or "",
+        "algorithm_type": shown.get("algorithm_type") or "",
+        "crypto_strength": shown.get("crypto_strength") or "",
+        "key_size": shown.get("key_size"),
+        "quantum_safe": shown.get("quantum_safe", False),
+        "location": shown.get("location") or "",
+        "snippet": shown.get("snippet") or "",
+        "remediation": None,
+        "asset_type": shown.get("asset_type"),
+        "material_kind": shown.get("material_kind"),
+        "container_format": shown.get("container_format"),
+        "not_valid_after": shown.get("not_valid_after"),
+        "self_signed": shown.get("self_signed"),
+        "expired": shown.get("expired"),
+    }
+
+
+def project_cbom_ci_page(run: dict) -> dict | None:
+    """Return data, dashboard, findings, and scan_metadata for CbomResults.
+
+    CI logs are not Scan rows, so findings are not in the findings collection.
+    The dashboard is built from the stored run-object and every finding is
+    not started.
+    """
+    if not isinstance(run, dict):
+        return None
+    rows = run.get("results")
+    if not isinstance(rows, list):
+        return None
+    if "cbom_json" not in run and "cbom_distributions" not in run:
+        return None
+
+    scan = SimpleNamespace(
+        id=-1,
+        scan_data=run,
+        scan_metadata={"zip_file_used": True},
+    )
+    dashboard = generate_scan_dashboard(scan_type="cbom", scan_object=scan)
+    stored = [
+        {
+            "finding_status": "not_started",
+            "finding_data": row if isinstance(row, dict) else {},
+            "created_at": None,
+        }
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    status = get_issue_status_metrics(stored)
+    dashboard["remediation_metrics"] = get_remediation_metrics(stored)
+    dashboard["remediation_actions_required"] = {
+        "total_findings": len(stored),
+        "total_fixed": status.get("fixed", 0),
+        "total_in_progress": status.get("in_progress", 0),
+        "total_not_started": status.get("not_started", 0),
+        "total_ignored": status.get("ignored", 0),
+    }
+    findings = [_finding(row, index) for index, row in enumerate(rows) if isinstance(row, dict)]
+    return {
+        "data": [_display_row(row) for row in rows if isinstance(row, dict)],
+        "dashboard": dashboard,
+        "findings": findings,
+        "scan_metadata": get_scan_metadata(scan_type="cbom", scan=scan),
+    }

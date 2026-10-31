@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 
 def _get_cves(related: list[dict] | None) -> list[str]:
     """Extract CVE IDs from relatedVulnerabilities."""
@@ -151,3 +153,134 @@ def parse_sbom_results_to_strings(results: dict) -> list[str]:
         if s:
             out.append(s)
     return out
+
+
+_CVE_ID = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
+
+
+def _cve_records(match: dict) -> list[tuple[str, str]]:
+    """CVE id plus a short description from a Grype match."""
+    vuln = match.get("vulnerability")
+    vuln = vuln if isinstance(vuln, dict) else {}
+    related = match.get("relatedVulnerabilities")
+    candidates: list[dict] = []
+    if vuln:
+        candidates.append(vuln)
+    if isinstance(related, list):
+        candidates.extend(item for item in related if isinstance(item, dict))
+    seen: set[str] = set()
+    records: list[tuple[str, str]] = []
+    fallback = str(vuln.get("description") or "").strip()
+    for item in candidates:
+        found = _CVE_ID.search(str(item.get("id") or ""))
+        if not found:
+            continue
+        cve = found.group(0).upper()
+        if cve in seen:
+            continue
+        seen.add(cve)
+        desc = str(item.get("description") or fallback or cve).strip()
+        records.append((cve, desc[:400] or cve))
+    return records
+
+
+def grype_package_cves(document: dict | None) -> dict[str, dict[str, str]]:
+    """Index Grype CVE ids by purl and by ``name@version``.
+
+    A bare package name is indexed only when every match for that name shares
+    one version, so a lookup cannot mix CVEs from other releases.
+    """
+    if not isinstance(document, dict):
+        return {}
+    matches = document.get("matches")
+    if not isinstance(matches, list):
+        return {}
+    index: dict[str, dict[str, str]] = {}
+    versions_for_name: dict[str, set[str]] = {}
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+        artifact = match.get("artifact")
+        artifact = artifact if isinstance(artifact, dict) else {}
+        name = str(artifact.get("name") or "").strip()
+        version = str(artifact.get("version") or "").strip()
+        purl = artifact.get("purl")
+        purl = purl.strip() if isinstance(purl, str) else ""
+        records = _cve_records(match)
+        if not records:
+            continue
+        keys: list[str] = []
+        if name and version:
+            keys.append(f"{name.lower()}@{version}")
+            keys.append(f"{name.lower()}=={version}")
+            versions_for_name.setdefault(name.lower(), set()).add(version)
+        if purl:
+            keys.append(purl.lower())
+        for key in keys:
+            bucket = index.setdefault(key, {})
+            for cve, desc in records:
+                bucket.setdefault(cve, desc)
+    for name, versions in versions_for_name.items():
+        if len(versions) == 1:
+            only = next(iter(versions))
+            exact = index.get(f"{name}@{only}")
+            if exact:
+                index.setdefault(name, dict(exact))
+    return index
+
+
+def _row_has_cve_id(cves: object) -> bool:
+    if isinstance(cves, dict):
+        return any(_CVE_ID.search(str(key)) for key in cves)
+    if isinstance(cves, list):
+        return any(_CVE_ID.search(str(item)) for item in cves)
+    return False
+
+
+def _row_lookup_keys(row: dict) -> list[str]:
+    keys: list[str] = []
+    purl = row.get("purl")
+    if isinstance(purl, str) and purl.strip():
+        keys.append(purl.strip().lower())
+    raw = str(row.get("dependency") or "").strip()
+    if raw.startswith("@") and raw.count("@") >= 2:
+        name, _, version = raw.rpartition("@")
+    elif "==" in raw:
+        name, _, version = raw.partition("==")
+    elif "@" in raw:
+        name, _, version = raw.partition("@")
+    else:
+        name, version = raw, ""
+    name = name.strip().lower()
+    version = version.strip()
+    if name and version:
+        keys.append(f"{name}@{version}")
+        keys.append(f"{name}=={version}")
+    if name:
+        keys.append(name)
+    return keys
+
+
+def apply_grype_cves(rows: list[dict], document: dict | None) -> None:
+    """Copy Grype CVE ids onto finding rows the map-reduce left empty.
+
+    The structured LLM field only accepts a recent-NVD allowlist, so package
+    CVEs that Grype already identified are dropped. The bill-of-materials table
+    reads those ids, not the prose description.
+    """
+    index = grype_package_cves(document)
+    if not index:
+        return
+    for row in rows:
+        if not isinstance(row, dict) or _row_has_cve_id(row.get("cves")):
+            continue
+        found: dict[str, str] | None = None
+        for key in _row_lookup_keys(row):
+            bucket = index.get(key)
+            if not bucket:
+                continue
+            found = bucket
+            if "@" in key or "==" in key or key.startswith("pkg:"):
+                break
+        if found:
+            row["cves"] = dict(found)

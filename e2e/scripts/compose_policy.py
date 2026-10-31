@@ -58,8 +58,7 @@ def main() -> int:
     ports = set(EXPECTED_PORTS)
     images = set(ALLOWED_THIRD_PARTY_IMAGES)
     if airgap:
-        expected |= {"rabbitmq", "object-store", "scan-worker"}
-        ports = set()
+        expected |= {"rabbitmq", "object-store", "scan-worker", "gateway"}
         images |= {"rabbitmq:3.13-alpine", "minio/minio:RELEASE.2024-10-02T17-50-41Z"}
 
     check(
@@ -169,14 +168,37 @@ def main() -> int:
                 escapes.append(f"{name}: mounts {source}")
     check(not escapes, f"no privileged / host-namespace / docker.sock / root-bind escapes (found: {escapes or 'none'})")
     if airgap:
-        internals = [
-            name
-            for name, net in (cfg.get("networks") or {}).items()
-            if (net or {}).get("internal") is True
-        ]
-        check(bool(internals), f"at least one network is internal (got {internals or 'none'})")
-        for name in ("backend", "frontend", "rabbitmq", "object-store"):
+        check(
+            (networks.get("default") or {}).get("internal") is True,
+            "network default is internal",
+        )
+        edge = networks.get("edge") or {}
+        check(
+            bool(edge) and labelled(edge) and edge.get("internal") is not True,
+            "edge exists, is labelled, and is not internal",
+        )
+
+        def attached(svc: dict) -> set[str]:
+            if svc.get("network_mode") in {"none", "host"}:
+                return set()
+            nets = svc.get("networks")
+            if isinstance(nets, list):
+                return {str(item) for item in nets}
+            if isinstance(nets, dict):
+                return {str(item) for item in nets}
+            return {"default"}
+
+        holders = sorted(name for name, svc in services.items() if "edge" in attached(svc))
+        check(holders == ["gateway"], f"edge is attached to gateway only (got {holders or 'none'})")
+        publishers = sorted(name for name, svc in services.items() if svc.get("ports"))
+        check(publishers == ["gateway"], f"only gateway publishes host ports (got {publishers or 'none'})")
+        for name in ("backend", "frontend", "postgres", "mongo", "rabbitmq", "object-store"):
             check(not (services.get(name) or {}).get("ports"), f"{name} publishes no host port")
+        gateway = services.get("gateway") or {}
+        check(
+            str(gateway.get("image", "")).startswith("dss-e2e/") and gateway.get("pull_policy") == "never",
+            "gateway uses a dss-e2e image with pull_policy: never",
+        )
         worker = services.get("scan-worker") or {}
         check(worker.get("network_mode") == "none", "scan-worker runs with network_mode: none")
 

@@ -42,13 +42,30 @@ def _scored(fact: EncryptionFact) -> dict[str, bool]:
     for entry in fact.basis:
         if entry.name == "signal" and entry.value:
             scored[entry.value] = True
-        if entry.name == "listener" and entry.value in {"plaintext", "mesh_permissive"}:
+        if entry.name == "verification" and entry.value == "disabled":
+            scored["TLS_VERIFICATION_DISABLED"] = True
+        if entry.name == "at_rest_weakness" and entry.value:
+            scored["AT_REST_ENCRYPTION_WEAK"] = True
+        if entry.name == "listener" and entry.value in {
+            "plaintext",
+            "mesh_permissive",
+            "client_plaintext",
+        }:
             scored["plaintext_listener"] = True
     return scored
 
 
+_CONDITIONAL_BINDING = "conditional binding: review the condition"
+
+
 def _message(fact: EncryptionFact, code: str) -> str:
-    text = f"{fact.kind} {fact.address} ({fact.path}:{fact.line}): {code}."
+    note = ""
+    if code == "KMS_KEY_POLICY_PUBLIC" and any(
+        item.name == "exposure_conditional" and item.value == "true"
+        for item in fact.basis
+    ):
+        note = " " + _CONDITIONAL_BINDING
+    text = f"{fact.kind} {fact.address} ({fact.path}:{fact.line}): {code}.{note}"
     return text[:512]
 
 

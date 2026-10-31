@@ -7,6 +7,8 @@ from aibom.cbom.posture.resolve import (
     Scope,
     Unresolved,
     VarDecl,
+    gcp_binding_exposure,
+    policy_exposure,
     resolve_expr,
 )
 
@@ -46,6 +48,28 @@ def test_policy_document_uses_scope_documents() -> None:
     scope = Scope(documents={"pub": Resolved({"Statement": []})})
     node = {"kind": "data.aws_iam_policy_document", "name": "pub"}
     assert resolve_expr(node, scope) == Resolved({"Statement": []})
+
+
+def test_gcp_public_member_stays_public_with_a_condition() -> None:
+    assert gcp_binding_exposure(["allUsers"], {"title": "only-prod"}) == (
+        "public",
+        True,
+    )
+    assert gcp_binding_exposure(["allUsers"], None) == ("public", False)
+    assert gcp_binding_exposure(["allAuthenticatedUsers"], None) == ("public", False)
+    assert gcp_binding_exposure(["user:a@example.com"], None) == ("private", False)
+
+
+def test_known_condition_keeps_a_star_principal_restricted() -> None:
+    restricted = {
+        "Effect": "Allow",
+        "Principal": "*",
+        "Condition": {"StringEquals": {"aws:SourceVpc": "vpc-1"}},
+    }
+    public = {"Effect": "Allow", "Principal": "*"}
+    assert policy_exposure(restricted) == "restricted"
+    assert policy_exposure(public) == "public"
+    assert policy_exposure(dict(restricted)) == policy_exposure(restricted)
 
 
 def test_oversized_expression_is_unresolved() -> None:

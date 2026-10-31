@@ -1,0 +1,84 @@
+{
+  "facts": [
+    {
+      "address": "nginx.server[1]",
+      "path": "nginx.conf",
+      "line": 2,
+      "kind": "tls_endpoint",
+      "native_type": "nginx",
+      "provider": "self_hosted",
+      "layers": {
+        "transport": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "ENCRYPTED_DECLARED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "nginx:listen",
+        "nginx:ssl_protocols"
+      ],
+      "outcome": "negative",
+      "why": "`listen 443 ssl` declares TLS; explicit `ssl_protocols TLSv1.2 TLSv1.3` pins the floor at 1.2 with no posture finding"
+    },
+    {
+      "address": "apache.virtualhost[1]",
+      "path": "httpd/ssl.conf",
+      "line": 2,
+      "kind": "tls_endpoint",
+      "native_type": "apache_httpd",
+      "provider": "self_hosted",
+      "layers": {
+        "transport": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "ENCRYPTED_DECLARED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "apache_httpd:sslengine",
+        "apache_httpd:sslprotocol"
+      ],
+      "outcome": "negative",
+      "why": "`SSLEngine on` on port 443 declares encryption; `SSLProtocol TLSv1` sets a weak protocol floor (crypto `WEAK_PROTOCOL` is raised on the linked TLS asset, not a posture verdict code)"
+    },
+    {
+      "address": "sshd_config[1]",
+      "path": "sshd_config",
+      "line": 1,
+      "kind": "ssh_service",
+      "native_type": "sshd_config",
+      "provider": "self_hosted",
+      "layers": {
+        "transport": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "ENCRYPTED_DECLARED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [
+        "openssh:protocol",
+        "openssh:port"
+      ],
+      "outcome": "negative",
+      "why": "`Protocol 2` restricts SSH to protocol 2; `Port 22` is recorded as the declared listener with no disabling posture signal"
+    }
+  ],
+  "totals": {
+    "facts": 3,
+    "by_kind": {
+      "ssh_service": 1,
+      "tls_endpoint": 2
+    },
+    "by_verdict": {
+      "ENCRYPTED_DECLARED": 3
+    },
+    "by_code": {},
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

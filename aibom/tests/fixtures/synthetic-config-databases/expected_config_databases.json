@@ -1,0 +1,81 @@
+{
+  "facts": [
+    {
+      "address": "postgres-declared/postgresql.conf",
+      "path": "postgres-declared/postgresql.conf",
+      "line": 1,
+      "kind": "relational_db",
+      "native_type": "postgresql",
+      "provider": "self_hosted",
+      "layers": {
+        "database": "UNKNOWN",
+        "volume": "UNKNOWN",
+        "transport": "ENCRYPTED_DECLARED"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "layer_not_observable",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "negative",
+      "why": "ssl = on plus hostssl pg_hba for a non-loopback scope declares TLS transport; rollup stays UNKNOWN without a database-layer signal"
+    },
+    {
+      "address": "postgres-ssl-unknown/postgresql.conf",
+      "path": "postgres-ssl-unknown/postgresql.conf",
+      "line": 1,
+      "kind": "relational_db",
+      "native_type": "postgresql",
+      "provider": "self_hosted",
+      "layers": {
+        "database": "UNKNOWN",
+        "volume": "UNKNOWN",
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "layer_not_observable",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "positive",
+      "why": "ssl = on without a paired pg_hba.conf does not reach ENCRYPTED_DECLARED on transport (decision table in test_cbom_posture_settings_databases.py)"
+    },
+    {
+      "address": "redis-plaintext/redis.conf",
+      "path": "redis-plaintext/redis.conf",
+      "line": 1,
+      "kind": "cache",
+      "native_type": "redis",
+      "provider": "self_hosted",
+      "layers": {
+        "database": "UNKNOWN",
+        "volume": "UNKNOWN",
+        "transport": "NOT_ENCRYPTED"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "layer_not_observable",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "positive",
+      "why": "tls-port with plaintext port 6379 and bind 0.0.0.0 exposes NOT_ENCRYPTED transport; verdict rollup stays UNKNOWN so no in-transit finding code"
+    }
+  ],
+  "totals": {
+    "facts": 3,
+    "by_kind": {
+      "relational_db": 2,
+      "cache": 1
+    },
+    "by_verdict": {
+      "UNKNOWN": 3
+    },
+    "by_code": {},
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

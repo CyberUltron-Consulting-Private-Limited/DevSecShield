@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 
 from aibom.cbom.posture.coverage import TypeRule, load_coverage
-from aibom.cbom.posture.extract_terraform import assess_sources, build_encryption_fact
+from aibom.cbom.posture.extract_terraform import (
+    apply_aws_rotation_value,
+    assess_sources,
+    build_encryption_fact,
+)
 from aibom.cbom.posture.jsonsafe import parse_json
-from aibom.cbom.posture.model import EncryptionFact
+from aibom.cbom.posture.model import BasisEntry, EncryptionFact
 from aibom.cbom.posture.resolve import Absent, Value, resolve_expr
+from aibom.cbom.posture.tls_policy import protocol_for_policy, weak_suite_for_policy
 from aibom.cbom.posture.yamlsafe import parse_yaml
 
 
@@ -21,22 +27,89 @@ def extract_cloudformation(text: str, path: str) -> tuple[EncryptionFact, ...]:
     facts: list[EncryptionFact] = []
     for address, native, props, line in _resources(document, lines):
         rule = _match(native, props)
-        if rule is None or not rule.layers:
+        if rule is None:
             continue
-        facts.append(
-            build_encryption_fact(
-                rule,
-                _getter(props),
-                address=address,
-                path=path,
-                line=line,
-                form="cloudformation",
-                native_type=native,
-                syntax="cloudformation",
-                assess=assess_sources,
-            )
+        if not rule.layers and native != "AWS::KMS::Key":
+            continue
+        fact = build_encryption_fact(
+            rule,
+            _getter(props),
+            address=address,
+            path=path,
+            line=line,
+            form="cloudformation",
+            native_type=native,
+            syntax="cloudformation",
+            assess=assess_sources,
         )
+        if native == "AWS::KMS::Key":
+            fact = apply_aws_rotation_value(
+                fact,
+                _cfn_value(props, "EnableKeyRotation"),
+                usage=_cfn_value(props, "KeyUsage"),
+                spec=_cfn_value(props, "KeySpec"),
+            )
+        fact = _apply_tls_policy(fact, native, props)
+        facts.append(fact)
     return tuple(facts)
+
+
+def _apply_tls_policy(
+    fact: EncryptionFact, native: str, props: Mapping[str, object]
+) -> EncryptionFact:
+    if native == "AWS::CloudFront::Distribution":
+        path = ("DistributionConfig", "ViewerCertificate", "MinimumProtocolVersion")
+    elif native == "AWS::ElasticLoadBalancingV2::Listener":
+        path = ("SslPolicy",)
+    else:
+        return fact
+    name = _nested(props, path)
+    present = _present(props, path)
+    if not isinstance(name, str) or not name:
+        if present:
+            return replace(
+                fact,
+                basis=fact.basis
+                + (BasisEntry("ssl_policy", None, "unresolved_expression"),),
+            )
+        if native != "AWS::ElasticLoadBalancingV2::Listener":
+            return fact
+        protocol = _nested(props, ("Protocol",))
+        if not isinstance(protocol, str) or protocol.upper() != "HTTPS":
+            return fact
+        name = "ELBSecurityPolicy-2016-08"
+    floor = protocol_for_policy(name)
+    if floor is None:
+        return replace(
+            fact,
+            basis=fact.basis + (BasisEntry("ssl_policy", None, "default_unknown"),),
+        )
+    notes: list[BasisEntry] = [
+        BasisEntry("policy", name),
+        BasisEntry("protocol_min", floor),
+    ]
+    suite = weak_suite_for_policy(name)
+    if suite is not None:
+        notes.append(BasisEntry("cipher_suite", suite))
+    return replace(fact, basis=fact.basis + tuple(notes))
+
+
+def _present(value: object, path: tuple[str, ...]) -> bool:
+    current = value
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return False
+        current = current[key]
+    return True
+
+
+def _nested(value: object, path: tuple[str, ...]) -> object:
+    current = value
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 def _load(

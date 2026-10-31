@@ -3,8 +3,7 @@
 Deterministic (no network / no LLM), so the scan path stays byte-reproducible
 (CLAUDE.md rule 6). Keyed by a normalized model FAMILY token, so namespaced /
 variant ids (``Xenova/all-MiniLM-L6-v2``, ``chroma/all-minilm-l6-v2-f32``) all
-resolve to the same card. Models not covered here fall through to the optional
-LLM enrichment (``model_card_enrich``).
+resolve to the same card. Models not covered here get an empty card ("—").
 
 Each entry's keys map onto :class:`aibom.model.component.ModelCard`:
 ``approach_type`` (a ModelCard Literal or omitted), ``task``,

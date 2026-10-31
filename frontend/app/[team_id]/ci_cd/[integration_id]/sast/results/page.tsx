@@ -4,6 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import CbomResults from "@/components/CbomResults";
 import CicdSastResults from "@/components/cicd-sast-results";
 import { getCicdIntegrationDashboard } from "@/utils/backend_api";
 
@@ -90,7 +91,22 @@ export default function CicdSastResultsPage() {
     );
   }
 
-  // Extract SAST results from the log's results field
+  const cbomPage = log.cbom_page;
+  if (cbomPage?.findings && cbomPage.findings.length > 0) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-zinc-900">
+        <CbomResults
+          data={cbomPage.data}
+          dashboard={cbomPage.dashboard}
+          findings={cbomPage.findings}
+          scanMetadata={cbomPage.scan_metadata}
+          teamId={team_id}
+          backHref={`/${team_id}/ci_cd/${integration_id}`}
+        />
+      </div>
+    );
+  }
+
   const sastData = log.results;
 
   if (!sastData) {

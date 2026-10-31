@@ -1,0 +1,38 @@
+{
+  "facts": [
+    {
+      "address": "aws_s3_bucket.logs",
+      "path": "main.tf",
+      "line": 1,
+      "kind": "object_store",
+      "native_type": "aws_s3_bucket",
+      "provider": "aws",
+      "layers": {
+        "service": "ENCRYPTED_PROVIDER_DEFAULT"
+      },
+      "verdict": "ENCRYPTED_PROVIDER_DEFAULT",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": "aws.s3.sse_default",
+      "finding_codes": [],
+      "covers": [
+        "aws.s3.sse_default"
+      ],
+      "outcome": "negative",
+      "why": "S3 bucket block with no encryption attribute; provider default applies. Linkage (system=payments, owner=declared-owner, owner_hint=@platform) is stamped at scan time but is not part of the oracle fact row"
+    }
+  ],
+  "totals": {
+    "facts": 1,
+    "by_kind": {
+      "object_store": 1
+    },
+    "by_verdict": {
+      "ENCRYPTED_PROVIDER_DEFAULT": 1
+    },
+    "by_code": {},
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

@@ -33,7 +33,11 @@ def _endpoints(view: object) -> list[dict[str, Any]]:
     rows = [
         fact
         for fact in common.facts_of(view)
-        if common.kind_of(fact) == "tls_endpoint" and not common.is_verification(fact)
+        if not common.is_verification(fact)
+        and (
+            common.kind_of(fact) == "tls_endpoint"
+            or common.net_of(fact)
+        )
     ]
     rows.sort(key=lambda fact: (common.endpoint_label(fact).casefold(), common.evidence_kind(fact)))
     return rows
@@ -144,7 +148,7 @@ def _endpoint_register(view: object, styles: Styles, width: float) -> list[Flowa
                 "Location",
             ),
             rows,
-            (90, 70, 55, 50, 40, 70, 40, 40, 55, 70, 70, 70),
+            (120, 68, 52, 48, 38, 64, 36, 62, 52, 66, 52, 52),
             width,
             styles,
             view=view,

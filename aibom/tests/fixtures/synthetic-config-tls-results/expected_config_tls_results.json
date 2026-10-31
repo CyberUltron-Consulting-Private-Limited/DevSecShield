@@ -1,0 +1,138 @@
+{
+  "facts": [
+    {
+      "address": "app.example.test:8443",
+      "path": "nmap/scan.xml",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "tls_result",
+      "provider": "nmap",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "import_observation",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "negative",
+      "why": "nmap XML names app.example.test:8443 with docs-range alt 192.0.2.10:8443; import records endpoints only and does not assert encryption"
+    },
+    {
+      "address": "example.org:443",
+      "path": "sslyze/scan.json",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "tls_result",
+      "provider": "sslyze",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "import_observation",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "negative",
+      "why": "sslyze server_location hostname example.org port 443; observation-only UNKNOWN with no scored import signal"
+    },
+    {
+      "address": "example.com:443",
+      "path": "testssl/host_ip_split.json",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "tls_result",
+      "provider": "testssl_pretty",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "import_observation",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "negative",
+      "why": "testssl ip field example.com/192.0.2.10 splits primary endpoint and endpoint_alt; TLS 1.0 offered but no downgrade or scored vuln on this file alone"
+    },
+    {
+      "address": "example.com:443",
+      "path": "testssl/legacy_protocols.json",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "tls_result",
+      "provider": "testssl_pretty",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "import_observation",
+      "default_row": null,
+      "finding_codes": [
+        "DOWNGRADE_PROTECTION_MISSING"
+      ],
+      "covers": [],
+      "outcome": "positive",
+      "why": "TLS 1.0 still offered with TLS_FALLBACK_SCSV severity LOW; old protocol plus missing fallback SCSV raises DOWNGRADE_PROTECTION_MISSING while verdict stays import UNKNOWN"
+    },
+    {
+      "address": "example.com:443",
+      "path": "testssl/not_tested.json",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "tls_result",
+      "provider": "testssl_pretty",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "import_not_tested",
+      "default_row": null,
+      "finding_codes": [],
+      "covers": [],
+      "outcome": "negative",
+      "why": "scanResult severity not_tested maps to import_not_tested; no posture finding codes and no signal basis entries"
+    },
+    {
+      "address": "example.com:443",
+      "path": "testssl/vulnerable_flat.json",
+      "line": 1,
+      "kind": "tls_endpoint",
+      "native_type": "tls_result",
+      "provider": "testssl_pretty",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "import_observation",
+      "default_row": null,
+      "finding_codes": [
+        "KNOWN_TLS_VULNERABILITY"
+      ],
+      "covers": [],
+      "outcome": "positive",
+      "why": "HEARTBLEED is scored in named_vulnerabilities.json; BEAST is reported only (unscored); KNOWN_TLS_VULNERABILITY fires from the scored HEARTBLEED id"
+    }
+  ],
+  "totals": {
+    "facts": 6,
+    "by_kind": {
+      "tls_endpoint": 6
+    },
+    "by_verdict": {
+      "UNKNOWN": 6
+    },
+    "by_code": {
+      "DOWNGRADE_PROTECTION_MISSING": 1,
+      "KNOWN_TLS_VULNERABILITY": 1
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

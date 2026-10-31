@@ -1,0 +1,17 @@
+[      51ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:52741/login:0
+[      73ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[     120ms] [LOG] api base url :  http://devsec-staging-api.zeroshield.ai @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[     121ms] [LOG] [HMR] connected @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   61979ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:52741/login:0
+[   62005ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   62014ms] [LOG] api base url :  http://devsec-staging-api.zeroshield.ai @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   62021ms] [LOG] [HMR] connected @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   62531ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   62541ms] [LOG] [HMR] connected @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   62558ms] [LOG] api base url :  http://devsec-staging-api.zeroshield.ai @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   66905ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   66922ms] [LOG] [HMR] connected @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   66925ms] [LOG] api base url :  http://devsec-staging-api.zeroshield.ai @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   71288ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   71303ms] [LOG] api base url :  http://devsec-staging-api.zeroshield.ai @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431
+[   71308ms] [LOG] [HMR] connected @ http://127.0.0.1:52741/_next/static/chunks/node_modules_next_dist_115brz8._.js:2431

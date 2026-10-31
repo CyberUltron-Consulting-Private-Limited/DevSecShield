@@ -1,0 +1,9 @@
+version: 1
+defaults:
+  system: billing
+  owner: declared-owner
+entries:
+  - match:
+      kind: object_store
+      path: main.tf
+    system: payments

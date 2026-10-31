@@ -8,12 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiBaseURL } from "@/utils/interceptors";
 
 interface GitHubActionsIntegrationGuideProps {
   apiKey: string;
+  scanType?: string;
 }
 
-export function GitHubActionsGuide({ apiKey }: GitHubActionsIntegrationGuideProps) {
+export function GitHubActionsGuide({ apiKey, scanType = "sast" }: GitHubActionsIntegrationGuideProps) {
+  const kind = (scanType || "sast").toLowerCase();
+  const label = kind.toUpperCase();
+  const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
   const [branch, setBranch] = useState<string>("main");
   const [copied, setCopied] = useState(false);
 
@@ -21,14 +26,14 @@ export function GitHubActionsGuide({ apiKey }: GitHubActionsIntegrationGuideProp
   const yamlContent = useMemo(() => {
     // Use string concatenation to avoid parsing ${{ }} as template literal syntax
     const githubActionsSecret = '${{ secrets.CICD_API_KEY }}';
-    return `name: SAST Check
+    return `name: ${label} Check
 on:
   push:
     branches: [ ${branch} ]  # Adjust this to your master branch name
   pull_request:
     branches: [ ${branch} ]  # Optionally run on PRs
 jobs:
-  sast-check:
+  ${kind}-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -37,13 +42,13 @@ jobs:
         run: |
           zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
       
-      - name: Perform SAST Scan
-        id: sast
+      - name: Perform ${label} Scan
+        id: ${kind}
         run: |
           RESPONSE=$(curl -X POST \\
             -H "cicd-api-key: ${githubActionsSecret}" \\
             -F "zip_file=@project.zip" \\
-            https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)          
+            ${endpoint})          
           
           
           # Check for error in response
@@ -52,11 +57,11 @@ jobs:
             echo "Error: $ERROR"
             exit 1
           else
-            VULNS=$(echo "$RESPONSE" | jq -r '.vulnerabilities')
-            echo "Vulnerabilities:"
-            echo "$VULNS"
+            COUNT=$(echo "$RESPONSE" | jq '.finding_count // 0')
+            echo "${label} findings: $COUNT"
+            echo "$RESPONSE" | jq -r '(.results.results // [])[] | "\\(.impact // "unknown") \\(.title // .name // "")"'
           fi`;
-  }, [branch]);
+  }, [branch, endpoint, kind, label]);
 
   const copyToClipboard = async () => {
     try {
@@ -78,7 +83,7 @@ jobs:
           GitHub Actions Integration
         </h3>
         <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6">
-          Follow these steps to integrate DevSecShield SAST scanning into your GitHub Actions workflow.
+          Follow these steps to integrate DevSecShield {label} scanning into your GitHub Actions workflow.
         </p>
       </div>
 
@@ -119,7 +124,7 @@ jobs:
               In your GitHub repository, navigate to <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">.github/workflows/</code> directory.
             </li>
             <li>
-              Create a new file (e.g., <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">sast-check.yml</code>) and paste the copied YAML content.
+              Create a new file (e.g., <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">{kind}-check.yml</code>) and paste the copied YAML content.
             </li>
             <li>
               Add the CI/CD API key as a secret in your GitHub repository:
@@ -160,7 +165,7 @@ jobs:
               Commit and push the workflow file to your repository.
             </li>
             <li>
-              The SAST scan will run automatically on every push and pull request to the selected branch.
+              The {label} scan will run automatically on every push and pull request to the selected branch.
             </li>
           </ol>
         </CardContent>

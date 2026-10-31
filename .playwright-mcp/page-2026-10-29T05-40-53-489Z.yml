@@ -1,0 +1,121 @@
+- generic:
+  - generic [aria-hidden]:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - button:
+                - generic:
+                  - generic:
+                    - generic:
+                      - text: E2E Demo Team
+                      - generic: 1000 credits
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - list:
+                        - listitem:
+                          - link:
+                            - /url: /1
+                            - generic: Home
+                  - generic:
+                    - generic: Scanning Utilities
+                    - generic:
+                      - list:
+                        - listitem:
+                          - link:
+                            - /url: /1/sast
+                            - generic: SAST
+                        - listitem:
+                          - link:
+                            - /url: /1/sbom_sca
+                            - generic: SCA + SBOM
+                        - listitem:
+                          - link:
+                            - /url: /1/cbom
+                            - generic: CBOM
+                        - listitem:
+                          - link:
+                            - /url: /1/ai_bom
+                            - generic: AI BOM
+                        - listitem:
+                          - link:
+                            - /url: /1/mcp
+                            - generic: MCP
+                        - listitem:
+                          - link:
+                            - /url: /1/llm
+                            - generic: LLM
+                        - listitem:
+                          - link:
+                            - /url: /1/iac
+                            - generic: IAC
+                        - listitem:
+                          - link:
+                            - /url: /1/dast
+                            - generic: DAST
+                  - generic:
+                    - generic: Integrations
+                    - generic:
+                      - list:
+                        - listitem:
+                          - link:
+                            - /url: /1/ci_cd
+                            - generic: CI / CD
+          - generic:
+            - list:
+              - listitem:
+                - link:
+                  - /url: /home
+                  - generic: Teams
+              - listitem:
+                - link:
+                  - /url: /1/settings
+                  - generic: Settings
+            - generic:
+              - button:
+                - generic: EA
+                - generic:
+                  - paragraph: E2E Admin
+                  - paragraph: e2e-admin@dss-e2e.test
+    - main:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - heading [level=1]: CI/CD Integrations
+                - paragraph: Manage and view all your CI/CD integrations.
+              - generic:
+                - button: Refresh
+                - button: Create Integration
+            - generic:
+              - paragraph: No integrations yet. Create your first CI/CD integration to get started.
+              - button: Create Integration
+  - region "Notifications alt+T"
+  - alert
+  - dialog [aria-hidden]:
+    - generic:
+      - heading [level=2]: Create CI/CD Integration
+      - paragraph: Enter the details for your new CI/CD integration.
+    - generic:
+      - generic:
+        - generic: Title *
+        - textbox:
+          - /placeholder: Integration name
+      - generic:
+        - generic: Scan Type *
+        - combobox [expanded]:
+          - generic: Select scan type
+    - generic:
+      - button: Cancel
+      - button [disabled]: Create
+    - button:
+      - generic: Close
+  - listbox [ref=f2e151]:
+    - option "SAST" [active] [ref=f2e152] [cursor=pointer]
+    - option "DAST" [ref=f2e155] [cursor=pointer]

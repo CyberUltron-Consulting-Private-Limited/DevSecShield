@@ -295,6 +295,372 @@ stringData:
     assert any(item.name == "type" and item.value == "Opaque" for item in fact.basis)
 
 
+def test_istio_gateway_passthrough_is_not_a_terminated_floor(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "gateway.yaml").write_text(
+        "apiVersion: networking.istio.io/v1beta1\n"
+        "kind: Gateway\n"
+        "metadata:\n"
+        "  name: web\n"
+        "spec:\n"
+        "  servers:\n"
+        "  - port:\n"
+        "      number: 443\n"
+        "      protocol: HTTPS\n"
+        "    tls:\n"
+        "      mode: PASSTHROUGH\n"
+        "      minProtocolVersion: TLSV1_0\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "WEAK_PROTOCOL" not in {flag.code for flag in result.flags}
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in result.flags}
+    gateway = next(
+        comp
+        for comp in result.components
+        if (comp.properties or {}).get("crypto:factNativeType") == "Gateway"
+    )
+    assert (gateway.properties or {}).get("crypto:factVerdict") == "UNKNOWN"
+
+
+def test_istio_gateway_cipher_suites(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def write(suite: str) -> None:
+        (tmp_path / "gateway.yaml").write_text(
+            "apiVersion: networking.istio.io/v1beta1\n"
+            "kind: Gateway\n"
+            "metadata:\n"
+            "  name: web\n"
+            "spec:\n"
+            "  servers:\n"
+            "  - port:\n"
+            "      number: 443\n"
+            "      protocol: HTTPS\n"
+            "    tls:\n"
+            "      mode: SIMPLE\n"
+            "      cipherSuites:\n"
+            f"      - {suite}\n",
+            encoding="utf-8",
+        )
+
+    write("TLS_RSA_WITH_3DES_EDE_CBC_SHA")
+    weak = scan_crypto(tmp_path)
+    protocol = next(comp for comp in weak.components if comp.name == "TLS")
+    suite = (protocol.properties or {})["crypto:cipherSuite"]
+    assert "TLS_RSA_WITH_3DES_EDE_CBC_SHA" in suite
+    assert "WEAK_CIPHER_SUITE" in {flag.code for flag in weak.flags}
+    write("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384")
+    strong = scan_crypto(tmp_path)
+    assert "WEAK_CIPHER_SUITE" not in {flag.code for flag in strong.flags}
+
+
+def test_istio_gateway_http_and_tls_floor(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "gateway.yaml").write_text(
+        "apiVersion: networking.istio.io/v1beta1\n"
+        "kind: Gateway\n"
+        "metadata:\n"
+        "  name: web\n"
+        "spec:\n"
+        "  servers:\n"
+        "  - port:\n"
+        "      number: 80\n"
+        "      protocol: HTTP\n"
+        "  - port:\n"
+        "      number: 443\n"
+        "      protocol: HTTPS\n"
+        "    tls:\n"
+        "      mode: SIMPLE\n"
+        "      minProtocolVersion: TLSV1_0\n",
+        encoding="utf-8",
+    )
+    opened = scan_crypto(tmp_path)
+    protocol = next(comp for comp in opened.components if comp.name == "TLS")
+    assert (protocol.properties or {})["crypto:protocolVersion"] == "TLSv1.0"
+    codes = {flag.code for flag in opened.flags}
+    assert "UNENCRYPTED_IN_TRANSIT" in codes
+    assert "WEAK_PROTOCOL" in codes
+    (tmp_path / "gateway.yaml").write_text(
+        "apiVersion: networking.istio.io/v1beta1\n"
+        "kind: Gateway\n"
+        "metadata:\n"
+        "  name: web\n"
+        "spec:\n"
+        "  servers:\n"
+        "  - port:\n"
+        "      number: 80\n"
+        "      protocol: HTTP\n"
+        "    tls:\n"
+        "      httpsRedirect: true\n"
+        "  - port:\n"
+        "      number: 443\n"
+        "      protocol: HTTPS\n"
+        "    tls:\n"
+        "      mode: SIMPLE\n"
+        "      minProtocolVersion: TLSV1_2\n",
+        encoding="utf-8",
+    )
+    secured = scan_crypto(tmp_path)
+    kept = next(comp for comp in secured.components if comp.name == "TLS")
+    assert (kept.properties or {})["crypto:protocolVersion"] == "TLSv1.2"
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in secured.flags}
+    assert "WEAK_PROTOCOL" not in {flag.code for flag in secured.flags}
+
+
+def test_destination_rule_disable_and_skipped_verify(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def write(body: str) -> None:
+        (tmp_path / "rule.yaml").write_text(
+            "apiVersion: networking.istio.io/v1beta1\n"
+            "kind: DestinationRule\n"
+            "metadata:\n"
+            "  name: api\n"
+            "spec:\n"
+            "  trafficPolicy:\n"
+            "    tls:\n"
+            f"{body}",
+            encoding="utf-8",
+        )
+
+    write("      mode: DISABLE\n")
+    disabled = scan_crypto(tmp_path)
+    codes = {flag.code for flag in disabled.flags}
+    assert "UNENCRYPTED_IN_TRANSIT" in codes
+    assert "PLAINTEXT_LISTENER" in codes
+    write("      mode: SIMPLE\n      insecureSkipVerify: true\n")
+    skipped = scan_crypto(tmp_path)
+    skipped_codes = {flag.code for flag in skipped.flags}
+    assert "TLS_VERIFICATION_DISABLED" in skipped_codes
+    assert "UNENCRYPTED_IN_TRANSIT" not in skipped_codes
+
+
+def test_service_negotiation_policy_sets_the_tls_floor(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "svc.yaml").write_text(
+        "apiVersion: v1\n"
+        "kind: Service\n"
+        "metadata:\n"
+        "  name: lb\n"
+        "  annotations:\n"
+        "    service.beta.kubernetes.io/aws-load-balancer-ssl-negotiation-policy:\n"
+        "      ELBSecurityPolicy-2016-08\n"
+        "spec:\n"
+        "  type: LoadBalancer\n"
+        "  ports:\n"
+        "  - port: 443\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    protocol = next(comp for comp in result.components if comp.name == "TLS")
+    assert (protocol.properties or {})["crypto:protocolVersion"] == "TLSv1.0"
+    assert "WEAK_PROTOCOL" in {flag.code for flag in result.flags}
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in result.flags}
+
+
+def test_frontend_config_ssl_policy_uses_the_gcp_profile(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def write(policy: str) -> None:
+        (tmp_path / "front.yaml").write_text(
+            "apiVersion: networking.gke.io/v1beta1\n"
+            "kind: FrontendConfig\n"
+            "metadata:\n"
+            "  name: web\n"
+            "spec:\n"
+            f"  sslPolicy: {policy}\n",
+            encoding="utf-8",
+        )
+
+    write("COMPATIBLE")
+    compatible = scan_crypto(tmp_path)
+    old = next(comp for comp in compatible.components if comp.name == "TLS")
+    assert (old.properties or {})["crypto:protocolVersion"] == "TLSv1.0"
+    assert "WEAK_PROTOCOL" in {flag.code for flag in compatible.flags}
+    write("RESTRICTED")
+    restricted = scan_crypto(tmp_path)
+    kept = next(comp for comp in restricted.components if comp.name == "TLS")
+    assert (kept.properties or {})["crypto:protocolVersion"] == "TLSv1.2"
+    assert "WEAK_PROTOCOL" not in {flag.code for flag in restricted.flags}
+
+
+def test_alb_ssl_policy_sets_the_tls_floor(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def write(policy: str) -> None:
+        (tmp_path / "ingress.yaml").write_text(
+            "apiVersion: networking.k8s.io/v1\n"
+            "kind: Ingress\n"
+            "metadata:\n"
+            "  name: web\n"
+            "  annotations:\n"
+            f'    alb.ingress.kubernetes.io/ssl-policy: "{policy}"\n'
+            "spec:\n"
+            "  rules:\n"
+            "  - host: app.example.com\n",
+            encoding="utf-8",
+        )
+
+    write("ELBSecurityPolicy-2016-08")
+    old = scan_crypto(tmp_path)
+    protocol = next(comp for comp in old.components if comp.name == "TLS")
+    assert (protocol.properties or {})["crypto:protocolVersion"] == "TLSv1.0"
+    assert "WEAK_PROTOCOL" in {flag.code for flag in old.flags}
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in old.flags}
+    write("ELBSecurityPolicy-TLS13-1-3-2021-06")
+    modern = scan_crypto(tmp_path)
+    kept = next(comp for comp in modern.components if comp.name == "TLS")
+    assert (kept.properties or {})["crypto:protocolVersion"] == "TLSv1.3"
+    assert "WEAK_PROTOCOL" not in {flag.code for flag in modern.flags}
+    write("ELBSecurityPolicy-NOT-AUTHORED")
+    unknown = scan_crypto(tmp_path)
+    assert "WEAK_PROTOCOL" not in {flag.code for flag in unknown.flags}
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in unknown.flags}
+
+
+def test_certificate_arn_is_tls_until_redirect_is_disabled(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def write(extra: str) -> None:
+        (tmp_path / "ingress.yaml").write_text(
+            "apiVersion: networking.k8s.io/v1\n"
+            "kind: Ingress\n"
+            "metadata:\n"
+            "  name: web\n"
+            "  annotations:\n"
+            f"{extra}"
+            "spec:\n"
+            "  rules:\n"
+            "  - host: app.example.com\n",
+            encoding="utf-8",
+        )
+
+    arn = '    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:cert/abc"\n'
+    write(arn)
+    secured = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in secured.flags}
+    write(arn + '    nginx.ingress.kubernetes.io/ssl-redirect: "false"\n')
+    opened = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_IN_TRANSIT" in {flag.code for flag in opened.flags}
+    assert "PLAINTEXT_LISTENER" in {flag.code for flag in opened.flags}
+
+
+def test_allow_http_false_removes_plaintext(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    ports = '[{"HTTP":80},{"HTTPS":443}]'
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "  annotations:\n"
+        '    kubernetes.io/ingress.allow-http: "false"\n'
+        f"    alb.ingress.kubernetes.io/listen-ports: '{ports}'\n"
+        "spec:\n"
+        "  rules:\n"
+        "  - host: app.example.com\n",
+        encoding="utf-8",
+    )
+    blocked = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in blocked.flags}
+    assert "PLAINTEXT_LISTENER" not in {flag.code for flag in blocked.flags}
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "  annotations:\n"
+        f"    alb.ingress.kubernetes.io/listen-ports: '{ports}'\n"
+        "spec:\n"
+        "  rules:\n"
+        "  - host: app.example.com\n",
+        encoding="utf-8",
+    )
+    opened = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_IN_TRANSIT" in {flag.code for flag in opened.flags}
+    assert "PLAINTEXT_LISTENER" in {flag.code for flag in opened.flags}
+
+
+def test_alb_listen_ports_distinguish_http_from_https(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def ingress(ports: str) -> str:
+        return (
+            "apiVersion: networking.k8s.io/v1\n"
+            "kind: Ingress\n"
+            "metadata:\n"
+            "  name: web\n"
+            "  annotations:\n"
+            f"    alb.ingress.kubernetes.io/listen-ports: '{ports}'\n"
+            "spec:\n"
+            "  rules:\n"
+            "  - host: app.example.com\n"
+        )
+
+    (tmp_path / "ingress.yaml").write_text(
+        ingress('[{"HTTP":80}]'),
+        encoding="utf-8",
+    )
+    opened = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_IN_TRANSIT" in {flag.code for flag in opened.flags}
+    assert "PLAINTEXT_LISTENER" in {flag.code for flag in opened.flags}
+    (tmp_path / "ingress.yaml").write_text(
+        ingress('[{"HTTPS":443}]'),
+        encoding="utf-8",
+    )
+    secured = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_IN_TRANSIT" not in {flag.code for flag in secured.flags}
+    assert "PLAINTEXT_LISTENER" not in {flag.code for flag in secured.flags}
+
+
+def test_ingress_rc4_cipher_is_a_weak_suite(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "  annotations:\n"
+        '    nginx.ingress.kubernetes.io/ssl-ciphers: "RC4-SHA"\n'
+        "spec:\n"
+        "  tls:\n"
+        "  - secretName: edge-tls\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    protocol = next(comp for comp in result.components if comp.name == "TLS")
+    suite = (protocol.properties or {})["crypto:cipherSuite"]
+    assert "TLS_RSA_WITH_RC4_128_SHA" in suite
+    assert "WEAK_CIPHER_SUITE" in {flag.code for flag in result.flags}
+
+
+def test_ingress_ssl_protocols_set_the_floor(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "  annotations:\n"
+        "    nginx.ingress.kubernetes.io/ssl-protocols: TLSv1 TLSv1.2\n"
+        "spec:\n"
+        "  tls:\n"
+        "  - secretName: edge-tls\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    protocol = next(comp for comp in result.components if comp.name == "TLS")
+    assert (protocol.properties or {})["crypto:protocolVersion"] == "TLSv1"
+    assert "WEAK_PROTOCOL" in {flag.code for flag in result.flags}
+
+
 def test_ssl_ciphers_go_through_the_evaluator() -> None:
     text = """
 apiVersion: networking.k8s.io/v1
@@ -353,3 +719,457 @@ resources:
 hello: world
 """
     assert extract_kubernetes(text, "kustomization.yaml") == ()
+
+
+def test_the_longer_encryption_path_wins(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    specific = tmp_path / "etc" / "kubernetes"
+    other = tmp_path / "other"
+    specific.mkdir(parents=True)
+    other.mkdir()
+    (specific / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: locked\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - kms:\n"
+        "      name: vault\n"
+        "      endpoint: unix:///tmp/kms.sock\n",
+        encoding="utf-8",
+    )
+    (other / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: plain\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - identity: {}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pod.yaml").write_text(
+        "apiVersion: v1\n"
+        "kind: Pod\n"
+        "metadata:\n"
+        "  name: apiserver\n"
+        "spec:\n"
+        "  containers:\n"
+        "  - name: kube-apiserver\n"
+        "    image: registry.k8s.io/kube-apiserver:v1.29.0\n"
+        "    command:\n"
+        "    - kube-apiserver\n"
+        "    - --encryption-provider-config=/etc/kubernetes/enc.yaml\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    pod = next(
+        comp
+        for comp in result.components
+        if (comp.properties or {}).get("crypto:factNativeType") == "Pod"
+    )
+    props = pod.properties or {}
+    assert props["crypto:factVerdict"] == "ENCRYPTED_DECLARED"
+    assert "UNENCRYPTED_AT_REST" not in props["crypto:factFindingCodes"]
+
+
+def test_two_matching_encryption_files_are_not_chosen(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    left = tmp_path / "a"
+    right = tmp_path / "b"
+    left.mkdir()
+    right.mkdir()
+    (left / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: plain\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - identity: {}\n",
+        encoding="utf-8",
+    )
+    (right / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: locked\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - kms:\n"
+        "      name: vault\n"
+        "      endpoint: unix:///tmp/kms.sock\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pod.yaml").write_text(
+        "apiVersion: v1\n"
+        "kind: Pod\n"
+        "metadata:\n"
+        "  name: apiserver\n"
+        "spec:\n"
+        "  containers:\n"
+        "  - name: kube-apiserver\n"
+        "    image: registry.k8s.io/kube-apiserver:v1.29.0\n"
+        "    command:\n"
+        "    - kube-apiserver\n"
+        "    - --encryption-provider-config=/etc/kubernetes/enc.yaml\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    pod = next(
+        comp
+        for comp in result.components
+        if (comp.properties or {}).get("crypto:factNativeType") == "Pod"
+    )
+    props = pod.properties or {}
+    assert props["crypto:factVerdict"] == "UNKNOWN"
+    assert "UNENCRYPTED_AT_REST" not in props["crypto:factFindingCodes"]
+
+
+def test_apiserver_flag_uses_the_linked_configuration(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: enc\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - kms:\n"
+        "      name: vault\n"
+        "      endpoint: unix:///tmp/kms.sock\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pod.yaml").write_text(
+        "apiVersion: v1\n"
+        "kind: Pod\n"
+        "metadata:\n"
+        "  name: apiserver\n"
+        "spec:\n"
+        "  containers:\n"
+        "  - name: kube-apiserver\n"
+        "    image: registry.k8s.io/kube-apiserver:v1.29.0\n"
+        "    command:\n"
+        "    - kube-apiserver\n"
+        "    - --encryption-provider-config=/etc/kubernetes/enc.yaml\n",
+        encoding="utf-8",
+    )
+    linked = scan_crypto(tmp_path)
+    pod = next(
+        comp
+        for comp in linked.components
+        if (comp.properties or {}).get("crypto:factNativeType") == "Pod"
+    )
+    assert (pod.properties or {})["crypto:factVerdict"] == "ENCRYPTED_DECLARED"
+    assert "UNENCRYPTED_AT_REST" not in {flag.code for flag in linked.flags}
+    (tmp_path / "pod.yaml").write_text(
+        "apiVersion: v1\n"
+        "kind: Pod\n"
+        "metadata:\n"
+        "  name: apiserver\n"
+        "spec:\n"
+        "  containers:\n"
+        "  - name: kube-apiserver\n"
+        "    image: registry.k8s.io/kube-apiserver:v1.29.0\n"
+        "    command:\n"
+        "    - kube-apiserver\n"
+        "    - --encryption-provider-config=/etc/kubernetes/missing.yaml\n",
+        encoding="utf-8",
+    )
+    missing = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" not in {flag.code for flag in missing.flags}
+
+
+def test_apiserver_without_encryption_flag_is_unencrypted(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "pod.yaml").write_text(
+        "apiVersion: v1\n"
+        "kind: Pod\n"
+        "metadata:\n"
+        "  name: apiserver\n"
+        "spec:\n"
+        "  containers:\n"
+        "  - name: kube-apiserver\n"
+        "    image: registry.k8s.io/kube-apiserver:v1.29.0\n"
+        "    command: [kube-apiserver]\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" in {flag.code for flag in result.flags}
+
+
+def test_secrets_omitted_from_resources_are_unencrypted(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: enc\n"
+        "resources:\n"
+        "- resources: [configmaps]\n"
+        "  providers:\n"
+        "  - kms:\n"
+        "      name: vault\n"
+        "      endpoint: unix:///tmp/kms.sock\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" in {flag.code for flag in result.flags}
+
+
+def test_a_wildcard_before_secrets_hides_the_later_provider(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def entry(resources: str, provider: str) -> str:
+        if provider == "identity":
+            body = "  - identity: {}\n"
+        else:
+            body = (
+                "  - kms:\n"
+                "      name: vault\n"
+                "      endpoint: unix:///tmp/kms.sock\n"
+            )
+        return f"- resources: [{resources}]\n  providers:\n{body}"
+
+    def config(first: str, second: str) -> str:
+        return (
+            "apiVersion: apiserver.config.k8s.io/v1\n"
+            "kind: EncryptionConfiguration\n"
+            "metadata:\n"
+            "  name: enc\n"
+            "resources:\n"
+            + first
+            + second
+        )
+
+    (tmp_path / "enc.yaml").write_text(
+        config(entry('"*.*"', "identity"), entry("secrets", "kms")),
+        encoding="utf-8",
+    )
+    hidden = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" in {flag.code for flag in hidden.flags}
+    (tmp_path / "enc.yaml").write_text(
+        config(entry("secrets", "kms"), entry('"*.*"', "identity")),
+        encoding="utf-8",
+    )
+    specific = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" not in {flag.code for flag in specific.flags}
+
+
+def test_aescbc_is_weak_and_secretbox_is_not(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def config(provider: str) -> str:
+        return (
+            "apiVersion: apiserver.config.k8s.io/v1\n"
+            "kind: EncryptionConfiguration\n"
+            "metadata:\n"
+            "  name: enc\n"
+            "resources:\n"
+            "- resources: [secrets]\n"
+            "  providers:\n"
+            f"  - {provider}:\n"
+            "      keys:\n"
+            "      - name: key1\n"
+            "        secret: AAAAAAAAAAAAAAAAAAAAAA==\n"
+        )
+
+    (tmp_path / "enc.yaml").write_text(config("aescbc"), encoding="utf-8")
+    weak = scan_crypto(tmp_path)
+    assert "AT_REST_ENCRYPTION_WEAK" in {flag.code for flag in weak.flags}
+    aes = next(comp for comp in weak.components if comp.name == "AES")
+    assert (aes.properties or {})["crypto:mode"] == "CBC"
+    assert "crypto:keySize" not in (aes.properties or {})
+    material = next(comp for comp in weak.components if comp.name == "secret-key")
+    assert (material.properties or {})["crypto:hardcoded"] == "true"
+    assert "AAAAAAAAAAAAAAAAAAAAAA==" not in repr(weak)
+    (tmp_path / "enc.yaml").write_text(config("aesgcm"), encoding="utf-8")
+    gcm = scan_crypto(tmp_path)
+    assert "AT_REST_ENCRYPTION_WEAK" in {flag.code for flag in gcm.flags}
+    assert "HARDCODED_KEY" in {flag.code for flag in gcm.flags}
+    gcm_aes = next(comp for comp in gcm.components if comp.name == "AES")
+    assert (gcm_aes.properties or {})["crypto:mode"] == "GCM"
+    (tmp_path / "enc.yaml").write_text(config("secretbox"), encoding="utf-8")
+    strong = scan_crypto(tmp_path)
+    assert "AT_REST_ENCRYPTION_WEAK" not in {flag.code for flag in strong.flags}
+    assert all(comp.name != "AES" for comp in strong.components)
+
+
+def test_only_the_first_encryption_provider_is_used(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def config(first: str, second: str) -> str:
+        return (
+            "apiVersion: apiserver.config.k8s.io/v1\n"
+            "kind: EncryptionConfiguration\n"
+            "metadata:\n"
+            "  name: enc\n"
+            "resources:\n"
+            "- resources: [secrets]\n"
+            "  providers:\n"
+            f"  - {first}: {{}}\n"
+            f"  - {second}:\n"
+            "      name: vault\n"
+            "      endpoint: unix:///tmp/kms.sock\n"
+        )
+
+    (tmp_path / "enc.yaml").write_text(config("kms", "identity"), encoding="utf-8")
+    kms_first = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" not in {flag.code for flag in kms_first.flags}
+    (tmp_path / "enc.yaml").write_text(
+        config("identity", "kms"), encoding="utf-8"
+    )
+    identity_first = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" in {flag.code for flag in identity_first.flags}
+
+
+def test_identity_provider_is_unencrypted_at_rest(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: enc\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - identity: {}\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" in {flag.code for flag in result.flags}
+
+
+def test_kms_provider_is_not_unencrypted_at_rest(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "enc.yaml").write_text(
+        "apiVersion: apiserver.config.k8s.io/v1\n"
+        "kind: EncryptionConfiguration\n"
+        "metadata:\n"
+        "  name: enc\n"
+        "resources:\n"
+        "- resources: [secrets]\n"
+        "  providers:\n"
+        "  - kms:\n"
+        "      name: vault\n"
+        "      endpoint: unix:///tmp/kms.sock\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "UNENCRYPTED_AT_REST" not in {flag.code for flag in result.flags}
+
+
+def test_istio_permissive_is_a_plaintext_listener(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    def policy(mode: str) -> str:
+        return (
+            "apiVersion: security.istio.io/v1beta1\n"
+            "kind: PeerAuthentication\n"
+            "metadata:\n"
+            "  name: mesh\n"
+            "spec:\n"
+            "  mtls:\n"
+            f"    mode: {mode}\n"
+        )
+
+    (tmp_path / "peer.yaml").write_text(policy("PERMISSIVE"), encoding="utf-8")
+    permissive = scan_crypto(tmp_path)
+    assert "PLAINTEXT_LISTENER" in {flag.code for flag in permissive.flags}
+    (tmp_path / "peer.yaml").write_text(policy("STRICT"), encoding="utf-8")
+    strict = scan_crypto(tmp_path)
+    assert "PLAINTEXT_LISTENER" not in {flag.code for flag in strict.flags}
+    (tmp_path / "peer.yaml").write_text(policy("DISABLE"), encoding="utf-8")
+    disabled = scan_crypto(tmp_path)
+    assert "PLAINTEXT_LISTENER" in {flag.code for flag in disabled.flags}
+
+
+def test_ingress_without_tls_is_a_plaintext_listener(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "spec:\n"
+        "  rules:\n"
+        "  - host: example.com\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    codes = {flag.code for flag in result.flags}
+    assert "PLAINTEXT_LISTENER" in codes
+    assert "UNENCRYPTED_IN_TRANSIT" in codes
+
+
+def test_ssl_redirect_false_stays_plaintext_with_a_secret(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "  annotations:\n"
+        '    nginx.ingress.kubernetes.io/ssl-redirect: "false"\n'
+        "spec:\n"
+        "  tls:\n"
+        "  - secretName: web-tls\n"
+        "  rules:\n"
+        "  - host: example.com\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "PLAINTEXT_LISTENER" in {flag.code for flag in result.flags}
+
+
+def test_force_ssl_redirect_is_not_plaintext(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "  annotations:\n"
+        '    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"\n'
+        "spec:\n"
+        "  rules:\n"
+        "  - host: example.com\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "PLAINTEXT_LISTENER" not in {flag.code for flag in result.flags}
+
+
+def test_ingress_with_tls_is_not_plaintext(tmp_path) -> None:
+    from aibom.cbom.pipeline import scan_crypto
+
+    (tmp_path / "ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: Ingress\n"
+        "metadata:\n"
+        "  name: web\n"
+        "spec:\n"
+        "  tls:\n"
+        "  - secretName: web-tls\n"
+        "  rules:\n"
+        "  - host: example.com\n",
+        encoding="utf-8",
+    )
+    result = scan_crypto(tmp_path)
+    assert "PLAINTEXT_LISTENER" not in {flag.code for flag in result.flags}

@@ -1,0 +1,7 @@
+Resources:
+  PlainDb:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      StorageEncrypted: false
+  LogsBucket:
+    Type: AWS::S3::Bucket

@@ -17,6 +17,22 @@ def show_upload_progress(no_of_bytes_uploaded : int ):
 def show_download_progress(no_of_bytes_downloaded : int ):
     console.print(f"Downloaded {no_of_bytes_downloaded} bytes of the file ",style="bold orange3")
 
+def _s3_client():
+    aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+    region_name = os.getenv("AWS_DEFAULT_REGION")
+    if not aws_access_key_id or not aws_secret_access_key or not region_name:
+        raise Exception("AWS credentials are not set")
+    kwargs = {
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+        "region_name": region_name,
+    }
+    endpoint = os.getenv("AWS_ENDPOINT_URL_S3")
+    if endpoint:
+        kwargs["endpoint_url"] = endpoint
+    return boto3.client("s3", **kwargs)
+
 def upload_file(
     file_handle : any , 
     bucket : str = "devsecshield-storage", 
@@ -33,17 +49,7 @@ def upload_file(
     try:
         # STEP [ 1 ] : =========================== create a s3 client ========================================
         console.print(f"Creating a s3 client",style="bold yellow")
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID")
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
-        region_name=os.getenv("AWS_DEFAULT_REGION")
-        if not aws_access_key_id or not aws_secret_access_key or not region_name:
-            raise Exception("AWS credentials are not set")
-
-        s3_client = boto3.client('s3',
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-        region_name=region_name
-        )
+        s3_client = _s3_client()
 
 
         # STEP [ 2 ] : ============================= create name for the file in the s3 bucket ========================================
@@ -70,17 +76,7 @@ def download_file(bucket : str, object_name : str):
     try:
         # STEP [ 1 ] : =========================== create a s3 client ========================================
         console.print(f"Creating a s3 client",style="bold yellow")
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID")
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
-        region_name=os.getenv("AWS_DEFAULT_REGION")
-        if not aws_access_key_id or not aws_secret_access_key or not region_name:
-            raise Exception("AWS credentials are not set")
-
-        s3_client = boto3.client('s3',
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-        region_name=region_name
-        )
+        s3_client = _s3_client()
 
         # STEP [ 2 ] : =========================== download the file from the s3 bucket to temp file ========================================
         console.print(f"Downloading the file from the s3 bucket to temp file",style="bold yellow")
@@ -98,34 +94,22 @@ def delete_file(bucket : str, object_name : str):
     try:
         # STEP [ 1 ] : =========================== create a s3 client ========================================
         console.print(f"Creating a s3 client",style="bold yellow")
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID")
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
-        region_name=os.getenv("AWS_DEFAULT_REGION")
-        if not aws_access_key_id or not aws_secret_access_key or not region_name:
-            raise Exception("AWS credentials are not set")
-        
-        s3_client = boto3.client('s3',
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-        region_name=region_name
-        )
+        s3_client = _s3_client()
         
         # STEP [ 2 ] : =========================== delete the file from the s3 bucket ========================================
         console.print(f"Deleting the file from the s3 bucket",style="bold yellow")
-        response = s3_client.delete_object(Bucket=bucket, Key=object_name)
+        s3_client.delete_object(Bucket=bucket, Key=object_name)
 
-        # STEP [ 3 ] : ======================= check if the file is deleted  and return true if it is deleted ========================================
-        
-        # listing out all the objects in the bucket
-        objects = s3_client.list_objects(Bucket=bucket)
-        if not objects["Contents"]:
-            return True
-        for obj in objects["Contents"]:
-            # console.print(f"Object: {obj['Key']} found in the bucket",style="bold yellow")
-            if obj["Key"] == object_name:
-                return False
-        else:
-            return True
+        # An empty bucket omits Contents. head_object is the delete check.
+        try:
+            s3_client.head_object(Bucket=bucket, Key=object_name)
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if code in {"404", "NoSuchKey", "NotFound"} or http_status == 404:
+                return True
+            raise
+        return False
     except Exception as e:
         console.print(f"Error deleting file: {e}",style="bold red")
         return False

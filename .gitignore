@@ -25,3 +25,7 @@ ruvector.db
 .swarm/
 **/memory.db*
 agentdb.rvf*
+.claude-flow/*
+.claude/*
+.agents/*
+

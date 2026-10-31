@@ -163,6 +163,10 @@ class ZipContext(BaseModel):
 # SECURITY: Safe zip extraction limits
 MAX_EXTRACTED_SIZE = 2 * 1024 * 1024 * 1024  # 2GB max total extracted size
 MAX_COMPRESSION_RATIO = 100  # Zip bomb detection: 100x compression is suspicious
+# Sparse files (SQLite, empty DBs) compress far past 100x while staying small.
+# The ratio check only applies once the archive would expand past this size.
+# Smaller archives stay bounded by MAX_EXTRACTED_SIZE.
+MIN_UNCOMPRESSED_FOR_RATIO = 64 * 1024 * 1024
 MAX_FILES_IN_ARCHIVE = 50000  # Prevent file count DoS
 
 
@@ -191,9 +195,14 @@ def safe_extract_zip(zip_path: str, extract_to: str) -> None:
         if total_uncompressed > MAX_EXTRACTED_SIZE:
             raise ValueError(f"Archive uncompressed size exceeds limit: {total_uncompressed} > {MAX_EXTRACTED_SIZE}")
         
-        # Check 3: Zip bomb detection via compression ratio
-        if total_compressed > 0 and total_uncompressed / total_compressed > MAX_COMPRESSION_RATIO:
-            raise ValueError(f"Suspicious compression ratio detected (possible zip bomb)")
+        # Check 3: Zip bomb detection via compression ratio.
+        # A few megabytes at a high ratio is a sparse file, not a bomb.
+        if (
+            total_compressed > 0
+            and total_uncompressed > MIN_UNCOMPRESSED_FOR_RATIO
+            and total_uncompressed / total_compressed > MAX_COMPRESSION_RATIO
+        ):
+            raise ValueError("Suspicious compression ratio detected (possible zip bomb)")
         
         # Safe extraction with path traversal protection
         for info in zf.infolist():

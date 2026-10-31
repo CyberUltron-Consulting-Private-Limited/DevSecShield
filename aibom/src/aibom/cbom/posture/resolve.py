@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -106,3 +107,61 @@ def _hcl(node: HclUnresolved, scope: Scope) -> Value:
     if isinstance(decl.default, Resolved):
         return decl.default
     return Unresolved("variable_no_default")
+
+
+_PUBLIC_GCP = frozenset({"allUsers", "allAuthenticatedUsers"})
+
+
+def gcp_binding_exposure(
+    members: object, condition: object = None
+) -> tuple[str, bool]:
+    """A public member stays public when a condition block is present."""
+    public = _public_gcp_member(members)
+    conditional = condition is not None
+    if public:
+        return "public", conditional
+    return "private", False
+
+
+def _public_gcp_member(members: object) -> bool:
+    if isinstance(members, str):
+        members = (members,)
+    if not isinstance(members, (list, tuple)):
+        return False
+    return any(item in _PUBLIC_GCP for item in members)
+
+
+def policy_exposure(statement: Mapping[str, object]) -> str:
+    """A star principal is public unless a known condition key restricts it."""
+    if not _star_principal(statement.get("Principal")):
+        return "private"
+    if _condition_restricts(statement.get("Condition")):
+        return "restricted"
+    return "public"
+
+
+def _star_principal(principal: object) -> bool:
+    if principal == "*":
+        return True
+    if isinstance(principal, Mapping):
+        for value in principal.values():
+            if value == "*" or value == ["*"]:
+                return True
+    return False
+
+
+def _condition_restricts(condition: object) -> bool:
+    if not isinstance(condition, Mapping):
+        return False
+    keys = _restricting_keys()
+    for clause in condition.values():
+        if isinstance(clause, Mapping) and any(key in keys for key in clause):
+            return True
+    return False
+
+
+def _restricting_keys() -> frozenset[str]:
+    from aibom.cbom.posture.defaults import read_data_bytes
+
+    document = json.loads(read_data_bytes("key_policy_conditions.json"))
+    return frozenset(str(row["key"]) for row in document["rows"])

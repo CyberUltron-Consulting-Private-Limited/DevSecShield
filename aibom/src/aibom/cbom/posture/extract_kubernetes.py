@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from types import MappingProxyType
 
@@ -17,6 +18,7 @@ from aibom.cbom.posture.extract_compose import (
 )
 from aibom.cbom.posture.model import BasisEntry, EncryptionFact, path_context
 from aibom.cbom.posture.resolve import Absent
+from aibom.cbom.posture.tls_policy import protocol_for_policy
 from aibom.cbom.posture.verdict import (
     LayerCase,
     assess_layer,
@@ -98,8 +100,28 @@ def _resource(
             if server is not None:
                 found.append(server)
         found.extend(_images(doc, path, kind))
+    elif kind == "Service" and group == "":
+        service = _service(doc, path)
+        if service is not None:
+            found.append(service)
     elif kind == "Ingress" and group in {"networking.k8s.io", "extensions"}:
         found.append(_ingress(doc, path))
+    elif kind == "FrontendConfig" and group == "networking.gke.io":
+        front = _frontend(doc, path)
+        if front is not None:
+            found.append(front)
+    elif kind == "Gateway" and group == "networking.istio.io":
+        gateway = _gateway(doc, path)
+        if gateway is not None:
+            found.append(gateway)
+    elif kind == "DestinationRule" and group == "networking.istio.io":
+        rule = _destination_rule(doc, path)
+        if rule is not None:
+            found.append(rule)
+    elif kind == "PeerAuthentication" and group == "security.istio.io":
+        peer = _peer_authentication(doc, path)
+        if peer is not None:
+            found.append(peer)
     elif kind == "Secret" and group == "":
         found.append(_secret(doc, path))
     return found
@@ -135,6 +157,70 @@ def _encryption_fact(doc: Mapping[str, object], path: str) -> EncryptionFact:
     return _provider_fact(doc, path, name, body)
 
 
+def _secret_present(body: object) -> bool:
+    if not isinstance(body, Mapping):
+        return False
+    keys = body.get("keys")
+    if not isinstance(keys, list):
+        return False
+    return any(isinstance(item, Mapping) and "secret" in item for item in keys)
+
+
+def config_material(fact: EncryptionFact) -> object | None:
+    """A secret-key asset when a local provider key is present."""
+    if fact.native_type != "EncryptionConfiguration":
+        return None
+    present = any(
+        item.name == "hardcoded_secret" and item.value == "present"
+        for item in fact.basis
+    )
+    if not present:
+        return None
+    from aibom.model.component import CryptoAssetComponent
+
+    return CryptoAssetComponent(
+        bom_ref=f"crypto-material-{fact.id}",
+        name="secret-key",
+        properties={
+            "crypto:assetType": "related-crypto-material",
+            "crypto:factId": fact.id,
+            "crypto:hardcoded": "true",
+            "crypto:materialKind": "secret-key",
+            "discovery:source": f"{fact.path}:{fact.line}",
+        },
+    )
+
+
+def config_algorithm(fact: EncryptionFact) -> object | None:
+    """AES-CBC or AES-GCM for a local encryption provider. No key size is known."""
+    if fact.native_type != "EncryptionConfiguration":
+        return None
+    provider = next(
+        (
+            item.value
+            for item in fact.basis
+            if item.name == "provider" and item.value in {"aescbc", "aesgcm"}
+        ),
+        None,
+    )
+    if provider is None:
+        return None
+    from aibom.model.component import CryptoAssetComponent
+
+    mode = "CBC" if provider == "aescbc" else "GCM"
+    return CryptoAssetComponent(
+        bom_ref=f"crypto-algo-{fact.id}",
+        name="AES",
+        properties={
+            "crypto:assetType": "algorithm",
+            "crypto:factId": fact.id,
+            "crypto:mode": mode,
+            "crypto:primitive": "block-cipher",
+            "discovery:source": f"{fact.path}:{fact.line}",
+        },
+    )
+
+
 def _provider_fact(
     doc: Mapping[str, object], path: str, name: str, body: object
 ) -> EncryptionFact:
@@ -156,6 +242,10 @@ def _provider_fact(
         reason = None
         custody = "local_file"
         basis.append(BasisEntry("custody", "local_file"))
+        if token in {"aescbc", "aesgcm"}:
+            basis.append(BasisEntry("at_rest_weakness", token))
+        if _secret_present(body):
+            basis.append(BasisEntry("hardcoded_secret", "present"))
     else:
         basis.append(BasisEntry("provider", name, "attribute_not_modeled"))
     return _make(
@@ -286,7 +376,9 @@ def _ingress(doc: Mapping[str, object], path: str) -> EncryptionFact:
     has_tls = _tls_present(spec, notes)
     plain, redirect = _listener_inputs(notes, has_tls)
     heard = listener_reader(plaintext=plain, redirect=redirect)
-    basis = refs + _cipher_basis(notes)
+    basis = refs + _cipher_basis(notes) + _protocol_basis(notes) + _policy_basis(notes)
+    if plain and not redirect:
+        basis = basis + (BasisEntry("listener", "plaintext"),)
     if heard.reason:
         basis = basis + (BasisEntry("transport", None, heard.reason),)
     return _make(
@@ -298,6 +390,178 @@ def _ingress(doc: Mapping[str, object], path: str) -> EncryptionFact:
         layers={"transport": heard.verdict},
         basis=basis,
         unknown_reason=heard.reason,
+    )
+
+
+def _service(doc: Mapping[str, object], path: str) -> EncryptionFact | None:
+    notes = _map(_map(doc.get("metadata")).get("annotations"))
+    cert = notes.get("service.beta.kubernetes.io/aws-load-balancer-ssl-cert")
+    policy = notes.get(
+        "service.beta.kubernetes.io/aws-load-balancer-ssl-negotiation-policy"
+    )
+    has_cert = isinstance(cert, str) and bool(cert.strip())
+    has_policy = isinstance(policy, str) and bool(policy.strip())
+    if not has_cert and not has_policy:
+        return None
+    return _make(
+        kind="tls_endpoint",
+        native_type="Service",
+        address=_address(doc),
+        path=path,
+        line=_line(doc),
+        layers={"transport": "ENCRYPTED_DECLARED"},
+        basis=_policy_basis(notes),
+    )
+
+
+def _frontend(doc: Mapping[str, object], path: str) -> EncryptionFact | None:
+    policy = _map(doc.get("spec")).get("sslPolicy")
+    if not isinstance(policy, str) or not policy.strip():
+        return None
+    return _make(
+        kind="tls_endpoint",
+        native_type="FrontendConfig",
+        address=_address(doc),
+        path=path,
+        line=_line(doc),
+        layers={"transport": "ENCRYPTED_DECLARED"},
+        basis=_policy_basis({"alb.ingress.kubernetes.io/ssl-policy": policy}),
+    )
+
+
+_ISTIO_TLS = {
+    "TLSV1_0": "TLSv1.0",
+    "TLSV1_1": "TLSv1.1",
+    "TLSV1_2": "TLSv1.2",
+    "TLSV1_3": "TLSv1.3",
+}
+
+
+def _gateway(doc: Mapping[str, object], path: str) -> EncryptionFact | None:
+    servers = _map(doc.get("spec")).get("servers")
+    if not isinstance(servers, list) or not servers:
+        return None
+    plaintext = False
+    tls = False
+    passthrough = False
+    floors: list[str] = []
+    suites: list[str] = []
+    for item in servers:
+        if not isinstance(item, Mapping):
+            continue
+        port = _map(item.get("port"))
+        protocol = str(port.get("protocol") or "").upper()
+        secure = _map(item.get("tls"))
+        mode = str(secure.get("mode") or "").upper()
+        passed = mode in {"PASSTHROUGH", "AUTO_PASSTHROUGH"}
+        redirect = secure.get("httpsRedirect") is True
+        if protocol in {"HTTP", "HTTP2"} and not redirect:
+            plaintext = True
+        elif redirect or (protocol in {"HTTPS", "TLS"} and not passed):
+            tls = True
+        elif passed:
+            passthrough = True
+        if passed:
+            continue
+        version = str(secure.get("minProtocolVersion") or "").upper()
+        version = version.replace(".", "_")
+        if version in _ISTIO_TLS:
+            floors.append(_ISTIO_TLS[version])
+        raw_suites = secure.get("cipherSuites")
+        if isinstance(raw_suites, list):
+            for name in raw_suites:
+                if isinstance(name, str) and name:
+                    suites.append(name)
+    if not plaintext and not tls and not passthrough:
+        return None
+    reason = None
+    if plaintext:
+        verdict = "NOT_ENCRYPTED"
+        listener = "plaintext"
+    elif tls:
+        verdict = "ENCRYPTED_DECLARED"
+        listener = None
+    else:
+        verdict = "UNKNOWN"
+        listener = None
+        reason = "layer_not_observable"
+    basis: list[BasisEntry] = []
+    if passthrough and not plaintext and not tls:
+        basis.append(BasisEntry("passthrough", "tls"))
+    if listener is not None:
+        basis.append(BasisEntry("listener", listener))
+    if floors:
+        rank = ("TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3")
+        basis.append(BasisEntry("protocol_min", min(floors, key=rank.index)))
+    if suites:
+        basis.append(BasisEntry("cipher_suite", ",".join(suites[:8])))
+    return _make(
+        kind="tls_endpoint",
+        native_type="Gateway",
+        address=_address(doc),
+        path=path,
+        line=_line(doc),
+        layers={"transport": verdict},
+        basis=tuple(basis),
+        unknown_reason=reason,
+    )
+
+
+def _destination_rule(
+    doc: Mapping[str, object], path: str
+) -> EncryptionFact | None:
+    tls = _map(_map(_map(doc.get("spec")).get("trafficPolicy")).get("tls"))
+    mode = tls.get("mode")
+    skip = tls.get("insecureSkipVerify")
+    token = mode.strip().upper() if isinstance(mode, str) else ""
+    if not token and skip is None:
+        return None
+    basis: list[BasisEntry] = []
+    if token == "DISABLE":
+        verdict = "NOT_ENCRYPTED"
+        basis.append(BasisEntry("listener", "client_plaintext"))
+    elif token:
+        verdict = "ENCRYPTED_DECLARED"
+    else:
+        verdict = "UNKNOWN"
+    if skip is True or (isinstance(skip, str) and skip.strip().lower() == "true"):
+        basis.append(BasisEntry("verification", "disabled"))
+    return _make(
+        kind="tls_endpoint",
+        native_type="DestinationRule",
+        address=_address(doc),
+        path=path,
+        line=_line(doc),
+        layers={"transport": verdict},
+        basis=tuple(basis),
+    )
+
+
+def _peer_authentication(
+    doc: Mapping[str, object], path: str
+) -> EncryptionFact | None:
+    """PERMISSIVE and DISABLE are plaintext listeners. STRICT is declared TLS."""
+    mode = _map(_map(doc.get("spec")).get("mtls")).get("mode")
+    if not isinstance(mode, str):
+        return None
+    token = mode.strip().upper()
+    if token == "STRICT":
+        verdict, listener = "ENCRYPTED_DECLARED", None
+    elif token == "PERMISSIVE":
+        verdict, listener = "NOT_ENCRYPTED", "mesh_permissive"
+    elif token == "DISABLE":
+        verdict, listener = "NOT_ENCRYPTED", "plaintext"
+    else:
+        return None
+    basis = () if listener is None else (BasisEntry("listener", listener),)
+    return _make(
+        kind="tls_endpoint",
+        native_type="PeerAuthentication",
+        address=_address(doc),
+        path=path,
+        line=_line(doc),
+        layers={"transport": verdict},
+        basis=basis,
     )
 
 
@@ -509,6 +773,8 @@ def _tls_present(spec: Mapping[str, object], notes: Mapping[str, object]) -> boo
     for key in (
         "alb.ingress.kubernetes.io/certificate-arn",
         "service.beta.kubernetes.io/aws-load-balancer-ssl-cert",
+        "alb.ingress.kubernetes.io/ssl-policy",
+        "service.beta.kubernetes.io/aws-load-balancer-ssl-negotiation-policy",
     ):
         if isinstance(notes.get(key), str) and notes.get(key):
             return True
@@ -520,11 +786,46 @@ def _listener_inputs(
 ) -> tuple[bool, bool]:
     raw = notes.get("nginx.ingress.kubernetes.io/ssl-redirect")
     force = notes.get("nginx.ingress.kubernetes.io/force-ssl-redirect")
+    allow = notes.get("kubernetes.io/ingress.allow-http")
+    blocked = isinstance(allow, str) and allow.strip() == "false"
     if isinstance(raw, str) and raw == "false" and not _truthy(force):
         return True, False
+    ports = _listen_ports(notes.get("alb.ingress.kubernetes.io/listen-ports"))
+    if ports is not None and not (
+        has_tls or _truthy(force) or _truthy(raw) or _alb_redirect(notes)
+    ):
+        http, https = ports
+        if https and not http:
+            return False, True
+        if http:
+            return (False, False) if blocked else (True, False)
     if has_tls or _truthy(force) or _truthy(raw) or _alb_redirect(notes):
         return False, True
+    if blocked:
+        return False, False
     return True, False
+
+
+def _listen_ports(raw: object) -> tuple[bool, bool] | None:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list):
+        return None
+    http = False
+    https = False
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        keys = {str(key).upper() for key in item}
+        http = http or "HTTP" in keys
+        https = https or "HTTPS" in keys
+    if not http and not https:
+        return None
+    return http, https
 
 
 def _alb_redirect(notes: Mapping[str, object]) -> bool:
@@ -546,6 +847,52 @@ def _truthy(value: object) -> bool:
         text = value.strip()
         return bool(text) and text != "false"
     return False
+
+
+_TLS_ORDER = ("SSLv2", "SSLv3", "TLSv1", "TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3")
+
+
+def _protocol_basis(notes: Mapping[str, object]) -> tuple[BasisEntry, ...]:
+    raw = notes.get("nginx.ingress.kubernetes.io/ssl-protocols")
+    if not isinstance(raw, str) or not raw.strip():
+        return ()
+    tokens: list[str] = []
+    for part in raw.replace(",", " ").split():
+        word = part.strip()
+        if not word or word[0] in "+-" or word.casefold() == "all":
+            continue
+        tokens.append(word)
+    if not tokens:
+        return ()
+    rank = {name: index for index, name in enumerate(_TLS_ORDER)}
+    floor = min(tokens, key=lambda token: rank.get(token, len(rank)))
+    return (
+        BasisEntry("protocols", " ".join(tokens)),
+        BasisEntry("protocol_min", floor),
+    )
+
+
+_POLICY_KEYS = (
+    "alb.ingress.kubernetes.io/ssl-policy",
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-negotiation-policy",
+)
+
+
+def _policy_basis(notes: Mapping[str, object]) -> tuple[BasisEntry, ...]:
+    raw = next(
+        (
+            notes.get(key)
+            for key in _POLICY_KEYS
+            if isinstance(notes.get(key), str) and notes.get(key)
+        ),
+        None,
+    )
+    if not isinstance(raw, str):
+        return ()
+    floor = protocol_for_policy(raw)
+    if floor is None:
+        return (BasisEntry("ssl_policy", None, "default_unknown"),)
+    return (BasisEntry("policy", raw), BasisEntry("protocol_min", floor))
 
 
 def _cipher_basis(notes: Mapping[str, object]) -> tuple[BasisEntry, ...]:

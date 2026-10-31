@@ -6,14 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiBaseURL } from "@/utils/interceptors";
 
 interface JenkinsIntegrationGuideProps {
   apiKey: string;
   teamId: number;
+  scanType?: string;
 }
 
-export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
+export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
+  const kind = (scanType || "sast").toLowerCase();
+  const label = kind.toUpperCase();
+  const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
   // Helper function to mask API key (show first 4 and last 4 characters)
   const maskApiKey = (key: string) => {
@@ -34,7 +39,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
 
     environment {
         CICD_API_KEY = '${apiKey}'
-        SAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/sast/scan'
+        SCAN_API_URL = '${endpoint}'
     }
 
     stages {
@@ -68,21 +73,22 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
         }
 
 
-        stage('Perform SAST Scan') {
+        stage('Perform ${label} Scan') {
             steps {
                 script {
                     def response = sh(script: """
                         #!/bin/bash
-                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         "${dollar}{SAST_API_URL}"
+                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         "${dollar}{SCAN_API_URL}"
                     """, returnStdout: true).trim()
 
                     def jsonResponse = readJSON(text: response)
-                    def vulnerabilities = jsonResponse.vulnerabilities
+                    def payload = jsonResponse.results
+                    def findings = payload instanceof Map ? payload.results : payload
 
-                    echo "Vulnerabilities found during SAST:"
-                    echo "${dollar}{vulnerabilities}"
+                    echo "Findings found during ${label}: ${dollar}{jsonResponse.finding_count}"
+                    findings.each { echo "${dollar}{it.impact} ${dollar}{it.title}" }
 
-                    env.VULNERABILITIES = vulnerabilities.toString()
+                    env.FINDINGS = jsonResponse.finding_count?.toString()
                 }
             }
         }
@@ -90,7 +96,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
         // Additional stages (e.g., deploy) can be added here
     }
 }`;
-  }, [apiKey]);
+  }, [apiKey, endpoint, label]);
 
   // Generate masked Jenkinsfile content for display
   const displayedJenkinsfileContent = useMemo(() => {
@@ -102,7 +108,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
 
     environment {
         CICD_API_KEY = '${maskedKey}'
-        SAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/sast/scan'
+        SCAN_API_URL = '${endpoint}'
     }
 
     stages {
@@ -136,21 +142,22 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
         }
 
 
-        stage('Perform SAST Scan') {
+        stage('Perform ${label} Scan') {
             steps {
                 script {
                     def response = sh(script: """
                         #!/bin/bash
-                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         "${dollar}{SAST_API_URL}"
+                        curl -v -X POST                         -H "cicd-api-key: ${dollar}{CICD_API_KEY}"                         -F "zip_file=@project.zip"                         "${dollar}{SCAN_API_URL}"
                     """, returnStdout: true).trim()
 
                     def jsonResponse = readJSON(text: response)
-                    def vulnerabilities = jsonResponse.vulnerabilities
+                    def payload = jsonResponse.results
+                    def findings = payload instanceof Map ? payload.results : payload
 
-                    echo "Vulnerabilities found during SAST:"
-                    echo "${dollar}{vulnerabilities}"
+                    echo "Findings found during ${label}: ${dollar}{jsonResponse.finding_count}"
+                    findings.each { echo "${dollar}{it.impact} ${dollar}{it.title}" }
 
-                    env.VULNERABILITIES = vulnerabilities.toString()
+                    env.FINDINGS = jsonResponse.finding_count?.toString()
                 }
             }
         }
@@ -158,7 +165,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
         // Additional stages (e.g., deploy) can be added here
     }
 }`;
-  }, [apiKey]);
+  }, [apiKey, endpoint, label]);
 
   const copyToClipboard = async () => {
     try {
@@ -181,7 +188,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
           Jenkins Integration
         </h3>
         <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6">
-          Follow these steps to integrate DevSecShield SAST scanning into your Jenkins pipeline.
+          Follow these steps to integrate DevSecShield {label} scanning into your Jenkins pipeline.
         </p>
       </div>
 
@@ -262,7 +269,7 @@ export function JenkinsGuide({ apiKey }: JenkinsIntegrationGuideProps) {
               </ol>
             </li>
             <li>
-              Run the pipeline. The SAST scan will execute automatically as part of the pipeline.
+              Run the pipeline. The {label} scan will execute automatically as part of the pipeline.
             </li>
           </ol>
         </CardContent>

@@ -153,16 +153,15 @@ def get_cicd_vuln_chart_data(results_list: list[tuple[list[dict] | dict, datetim
         if date_key not in vulns_over_time_chart_data:
             vulns_over_time_chart_data[date_key] = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
         for finding in result:
-            for vuln in finding.get("vulnerabilities", []):
-                impact = (vuln.get("impact") or "").strip()
-                if impact == "Critical":
-                    vulns_over_time_chart_data[date_key]["Critical"] += 1
-                elif impact == "High":
-                    vulns_over_time_chart_data[date_key]["High"] += 1
-                elif impact == "Medium":
-                    vulns_over_time_chart_data[date_key]["Medium"] += 1
-                elif impact == "Low":
-                    vulns_over_time_chart_data[date_key]["Low"] += 1
+            nested = finding.get("vulnerabilities")
+            # SAST rows nest findings under vulnerabilities. CBOM rows carry impact
+            # on the asset itself.
+            sources = nested if isinstance(nested, list) and nested else [finding]
+            for vuln in sources:
+                impact = _normalize_impact(vuln.get("impact") or "")
+                if impact is None:
+                    continue
+                vulns_over_time_chart_data[date_key][impact] += 1
     return vulns_over_time_chart_data
 
     # mock_data = {

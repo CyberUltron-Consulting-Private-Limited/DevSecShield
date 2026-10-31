@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ============================================================
 # Stage 1b: Build cbomkit-theia from source (Go binary for CBOM scanning)
 # ============================================================
-FROM golang:1.26.1-bookworm AS cbomkit-builder
+FROM golang:1.26-bookworm AS cbomkit-builder
 
 RUN git clone --depth 1 https://github.com/cbomkit/cbomkit-theia.git /tmp/cbomkit-theia \
     && cd /tmp/cbomkit-theia \

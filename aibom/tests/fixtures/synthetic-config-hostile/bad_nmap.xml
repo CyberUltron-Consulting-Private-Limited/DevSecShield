@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<nmaprun>
+<!DOCTYPE foo SYSTEM "file:///etc/passwd">
+<host></host>
+</nmaprun>

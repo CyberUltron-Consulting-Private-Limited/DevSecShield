@@ -122,6 +122,7 @@ class SCASBOMAgent(BaseAgent):
             )
             open_source_context.run_open_source_tool()
             results = open_source_context.results
+            self.grype_document = results if isinstance(results, dict) else None
 
             # Inventory rows: Grype ran → mark assessed even when match count is 0.
             self.inventory_rows = inventory_to_finding_rows(

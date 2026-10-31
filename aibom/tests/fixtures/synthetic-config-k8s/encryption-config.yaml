@@ -1,0 +1,11 @@
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+metadata:
+  name: enc
+resources:
+  - resources: ["secrets"]
+    providers:
+      - secretbox:
+          keys:
+            - name: key1
+              secret: placeholder-secret-material

@@ -83,7 +83,7 @@ assert.equal(spring.status, "fail");
 
 const caffeine = rows[1];
 assert.equal(caffeine.name, "Caffeine");
-assert.equal(caffeine.cves, "N/A");
+assert.equal(caffeine.cves, "None");
 assert.equal(caffeine.status, "pass");
 assert.equal(caffeine.relationship, "Included in Spring Framework—Spring Core");
 

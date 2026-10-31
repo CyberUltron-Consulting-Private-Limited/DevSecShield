@@ -401,6 +401,54 @@ def _pg_notes(
     return notes
 
 
+_TLS_RANK = ("SSLv3", "TLSv1", "TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3")
+
+
+def _protocol_floor(
+    pairs: list[tuple[str, str]], names: tuple[str, ...]
+) -> BasisEntry | None:
+    raw = next(
+        (
+            value
+            for name, value in pairs
+            if name.casefold() in names and value
+        ),
+        None,
+    )
+    if raw is None:
+        return None
+    allowed = set(_TLS_RANK)
+    found = [
+        part.strip().strip("'\"")
+        for part in raw.replace(",", " ").split()
+        if part.strip().strip("'\"") in allowed
+    ]
+    if not found:
+        return BasisEntry("protocol_min", None, "unresolved_expression")
+    rank = {token: index for index, token in enumerate(_TLS_RANK)}
+    return BasisEntry("protocol_min", min(found, key=lambda token: rank[token]))
+
+
+def _cipher_note(pairs: list[tuple[str, str]]) -> BasisEntry | None:
+    """Evaluate a PostgreSQL ``ssl_ciphers`` list into IANA suite names."""
+    raw = next(
+        (value for name, value in pairs if name.casefold() == "ssl_ciphers" and value),
+        None,
+    )
+    if raw is None:
+        return None
+    from aibom.cbom.posture.ciphers import evaluate_cipher_list
+    from aibom.cbom.posture.defaults import load_registry
+
+    result = evaluate_cipher_list(raw, load_registry())
+    names = result.explicit or result.suites
+    if not names:
+        if result.unresolved:
+            return BasisEntry("cipher_suite", None, "unresolved_expression")
+        return None
+    return BasisEntry("cipher_suite", ",".join(names[:8]))
+
+
 def _known(software: str, pairs: list[tuple[str, str]]) -> list[BasisEntry]:
     return [
         BasisEntry(name, value)
@@ -433,6 +481,35 @@ def extract_postgresql(
                 line = entry.line
             pairs.append((entry.name, " ".join(entry.args)))
     basis = _pg_notes(ssl, rows, hba_path) + _known("postgresql", pairs)
+    cipher = _cipher_note(pairs)
+    if cipher is not None:
+        basis.append(cipher)
+    floor = _protocol_floor(pairs, ("ssl_min_protocol_version",))
+    if floor is not None:
+        basis.append(floor)
+    dh_path = next(
+        (
+            value.strip("'\"")
+            for name, value in pairs
+            if name.casefold() == "ssl_dh_params_file" and value.strip("'\"")
+        ),
+        None,
+    )
+    if dh_path:
+        basis.append(BasisEntry("dh_path", dh_path))
+    key_file = next(
+        (
+            value.strip().strip("'\"")
+            for name, value in pairs
+            if name.casefold() == "ssl_key_file" and value.strip().strip("'\"")
+        ),
+        None,
+    )
+    if key_file:
+        basis.append(BasisEntry("key_file_declared", key_file))
+    prefer = _on_off_value(pairs, "ssl_prefer_server_ciphers")
+    if prefer:
+        basis.append(BasisEntry("prefer_server_ciphers", prefer))
     return _fact(
         kind="relational_db",
         native_type="postgresql",
@@ -541,6 +618,19 @@ def extract_mysql(text: str, path: str) -> tuple[EncryptionFact, ...]:
         for entry in doc.entries
         if _server(entry.parent)
     ]
+    floor = _protocol_floor(pairs, ("tls_version",))
+    if floor is not None:
+        notes.append(floor)
+    key_file = next(
+        (
+            value.strip().strip("'\"")
+            for name, value in pairs
+            if name.casefold() == "ssl_key" and value.strip().strip("'\"")
+        ),
+        None,
+    )
+    if key_file:
+        notes.append(BasisEntry("key_file_declared", key_file))
     return (
         _fact(
             kind="relational_db",
@@ -557,6 +647,27 @@ def extract_mysql(text: str, path: str) -> tuple[EncryptionFact, ...]:
             basis=notes + _known(software, pairs),
             weak=weak,
         ),
+    )
+
+
+def _on_off_value(pairs: list[tuple[str, str]], name: str) -> str | None:
+    raw = next(
+        (value for key, value in pairs if key.casefold() == name and value),
+        None,
+    )
+    if raw is None:
+        return None
+    folded = raw.strip().strip("'\"").casefold()
+    if folded in {"on", "off", "yes", "no"}:
+        return "on" if folded in {"on", "yes"} else "off"
+    return None
+
+
+def _client_word(value: object) -> str | None:
+    if value is None:
+        return None
+    return {"none": "none", "optional": "optional", "required": "required"}.get(
+        _show(value).strip().casefold()
     )
 
 
@@ -639,6 +750,15 @@ def extract_mongo(text: str, path: str) -> tuple[EncryptionFact, ...]:
     )
     if verify:
         notes.append(BasisEntry("verification", "disabled"))
+    allow = flat.get(
+        "net.tls.allowConnectionsWithoutCertificates",
+        flat.get("net.ssl.allowConnectionsWithoutCertificates"),
+    )
+    if _flag(allow) == "on":
+        notes.append(BasisEntry("client_auth", "optional"))
+    floor = _disabled_protocol_floor(flat)
+    if floor is not None:
+        notes.append(floor)
     return (
         _fact(
             kind="nosql_db",
@@ -658,6 +778,27 @@ def extract_mongo(text: str, path: str) -> tuple[EncryptionFact, ...]:
             verify=verify,
         ),
     )
+
+
+_MONGO_TLS = (
+    ("TLS1_0", "TLSv1"),
+    ("TLS1_1", "TLSv1.1"),
+    ("TLS1_2", "TLSv1.2"),
+    ("TLS1_3", "TLSv1.3"),
+)
+
+
+def _disabled_protocol_floor(flat: dict[str, object]) -> BasisEntry | None:
+    """The lowest TLS version MongoDB did not disable."""
+    raw = flat.get("net.tls.disabledProtocols", flat.get("net.ssl.disabledProtocols"))
+    if raw is None:
+        return None
+    text = _show(raw).upper().replace(",", " ")
+    disabled = set(text.split())
+    for token, version in _MONGO_TLS:
+        if token not in disabled:
+            return BasisEntry("protocol_min", version)
+    return BasisEntry("protocol_min", None, "unresolved_expression")
 
 
 def _elastic_transport(flat: dict[str, object], channel: str) -> LayerResult:
@@ -694,9 +835,19 @@ def extract_elasticsearch(text: str, path: str) -> tuple[EncryptionFact, ...]:
                     f"{channel}.ssl.verification_mode",
                 )
             )
-        auth = flat.get(f"xpack.security.{channel}.ssl.client_authentication")
+        auth = _client_word(
+            flat.get(f"xpack.security.{channel}.ssl.client_authentication")
+        )
         if auth is not None:
-            notes.append(BasisEntry("client_auth", _show(auth)))
+            notes.append(BasisEntry("client_auth", auth))
+        offered = flat.get(f"xpack.security.{channel}.ssl.supported_protocols")
+        if offered is not None:
+            floor = _protocol_floor(
+                [("supported_protocols", _show(offered))],
+                ("supported_protocols",),
+            )
+            if floor is not None:
+                notes.append(floor)
         facts.append(
             _fact(
                 kind="search_index",
@@ -741,8 +892,24 @@ def extract_redis(text: str, path: str) -> tuple[EncryptionFact, ...]:
         [(entry.name, " ".join(entry.args)) for entry in doc.entries],
     )
     auth = doc.lookup("tls-auth-clients")
-    if auth and auth[0].casefold() == "no":
-        notes.append(BasisEntry("client_auth", "none"))
+    if auth:
+        word = {"no": "none", "optional": "optional", "yes": "required"}.get(
+            auth[0].casefold()
+        )
+        if word:
+            notes.append(BasisEntry("client_auth", word))
+    prefer = doc.lookup("tls-prefer-server-ciphers")
+    if prefer:
+        folded = prefer[0].casefold()
+        mapped = {"yes": "on", "no": "off", "on": "on", "off": "off"}.get(folded)
+        if mapped:
+            notes.append(BasisEntry("prefer_server_ciphers", mapped))
+    floor = _protocol_floor(
+        [(entry.name, " ".join(entry.args)) for entry in doc.entries],
+        ("tls-protocols",),
+    )
+    if floor is not None:
+        notes.append(floor)
     return (
         _fact(
             kind="cache",

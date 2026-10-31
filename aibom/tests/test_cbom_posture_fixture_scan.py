@@ -24,7 +24,16 @@ def test_committed_terraform_tree_matches_the_oracle() -> None:
             }
         )
     found.sort(key=lambda row: row["native_type"] or "")
-    wanted = sorted(expected["facts"], key=lambda row: row["native_type"])
+    wanted = sorted(
+        (
+            {
+                "native_type": row["native_type"],
+                "verdict": row["verdict"],
+            }
+            for row in expected["facts"]
+        ),
+        key=lambda row: row["native_type"] or "",
+    )
     assert found == wanted
     codes = {flag.code for flag in result.flags}
     assert "UNENCRYPTED_AT_REST" in codes

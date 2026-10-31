@@ -211,6 +211,9 @@ try:
                     else:
                         by_dep[f"__vuln_{len(by_dep)}"] = row
                 parsed_output = list(by_dep.values())
+                from helpers.tools.sca_sbom_agent.parser import apply_grype_cves
+
+                apply_grype_cves(parsed_output, getattr(agent, "grype_document", None))
                 end_time = time.time()
                 duration_of_scan = end_time - start_time
                 return enrich_sbom_scan(
@@ -473,6 +476,8 @@ try:
 
         except Exception as e:
             console.print(f"Error in sast_estimation task: {str(e)}",style="bold red")
+            if isinstance(e, ValueError):
+                raise
             return -1 # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
@@ -529,6 +534,8 @@ try:
 
         except Exception as e:
             console.print(f"Error in sbom_sca_estimation task: {str(e)}",style="bold red")
+            if isinstance(e, ValueError):
+                raise
             return -1 # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
@@ -593,6 +600,8 @@ try:
         
         except Exception as e:
             console.print(f"Error in iac_estimation task: {str(e)}",style="bold red")
+            if isinstance(e, ValueError):
+                raise
             return -1 # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
@@ -840,6 +849,8 @@ try:
             console.print(f"Error in cbom_estimation task: {str(e)}", style="bold red")
             import traceback
             console.print(traceback.format_exc(), style="dim red")
+            if isinstance(e, ValueError):
+                raise
             return -1  # return -1 to indicate that the estimation failed
         finally:
             if zip_context:
@@ -904,6 +915,8 @@ try:
             console.print(f"Error in ai_bom_estimation task: {str(e)}", style="bold red")
             import traceback
             console.print(traceback.format_exc(), style="dim red")
+            if isinstance(e, ValueError):
+                raise
             return -1  # return -1 to indicate that the estimation failed
         finally:
             if zip_context:

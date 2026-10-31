@@ -1,0 +1,1 @@
+{"scanResult":[{"targetHost":"example.com","port":"443","protocols":["TLSv1","TLSv1.2"],"findings":[{"id":"TLS_FALLBACK_SCSV","severity":"LOW"}]}]}

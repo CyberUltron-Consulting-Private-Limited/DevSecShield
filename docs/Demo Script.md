@@ -1,7 +1,7 @@
 # DevSecShield — Client Demo Script (Detailed)
 
 > **Audience:** Business leaders, security decision-makers, engineering managers  
-> **Duration:** ~30 to 35 minutes (includes ~90-second demo context + walkthrough)  
+> **Duration:** ~35 to 40 minutes (includes ~90-second demo context + walkthrough; SBOM + CBOM results get extra time)  
 > **Format:** Frontend-first, screen-by-screen walkthrough  
 > **Tone:** Clear, explanatory, outcome-driven — set context first, then show the product
 
@@ -124,7 +124,7 @@ A fintech product team is preparing a release with new APIs, frontend updates, T
 
 ### Transition into the demo (~10 seconds)
 
-> "With that context, I'll walk you through the product — starting from login and team dashboard, then each scan type, results, integrations, and reporting. Same flow your engineers and security team would use day to day."
+> "With that context, I'll walk you through the product — starting from login and team dashboard, then each scan type. I'll spend extra time on **SCA + SBOM** and **CBOM** results — the inventory tables, crypto graph, PQC roadmap, downloads, and board deliverables — then cover integrations and reporting. Same flow your engineers and security team would use day to day."
 
 ---
 
@@ -189,37 +189,149 @@ This walkthrough follows the actual product flow:
 
 ---
 
-## Screen 5 — SCA + SBOM: Dependency and Supply Chain Exposure (2.5 minutes)
+## Screen 5 — SCA + SBOM: Dependency and Supply Chain Exposure (4 to 5 minutes)
 
 ### Routes
-`/[team_id]/sbom_sca` -> `/{scan_id}` -> `/results`
+`/[team_id]/sbom_sca` → open a **completed** scan → `/results`  
+*(Demo tip: use a rich scan such as the DPDPA / dependency-heavy repo so the BOM and CVE columns are populated.)*
 
-### Script (What to say)
+### What this module is (say first)
 
-> "When a new CVE drops, SCA + SBOM answers two urgent questions quickly: where we are exposed and what to patch first."
+> "SCA + SBOM is our software supply-chain view. **SCA** finds known vulnerabilities in third-party packages. **SBOM** is the inventory itself — every component, version, license, and relationship — so when a new CVE drops you can answer *where am I exposed* and *what do I patch first* without hunting through lockfiles by hand."
 
-> "Real-world example: a critical vulnerability is announced in a widely used package. Instead of manually checking every repository, this module identifies impacted projects, dependency versions, and remediation priority in one place."
+### Landing page (brief)
 
-> "Benefit: faster supply-chain response and stronger audit readiness because SBOM gives a clear software inventory trail."
+> "Same pattern as the other scanners: **New Scan** / **Refresh**, Dashboard vs Table, scan list with status. Start from a Git repo or a zip. When the scan finishes, open **Results**."
+
+### Results page — walk the UI top to bottom
+
+**1) Header actions (point as you click)**
+
+> "From the results header you can export what auditors and partners usually ask for:
+> - **Download SBOM** — CycloneDX JSON inventory of every component
+> - **VEX** — Vulnerability Exploitability eXchange: which findings you accept, fix, or mark not affected
+> - **Signature** — cryptographic signature over the BOM for integrity
+> - **Evidence pack** — bundled evidence for CERT-In / audit handoff
+> - **Download Scan Report** — PDF for leadership or the ticket trail
+> - **Chat with the Results** — ask plain-language questions over this scan"
+
+**2) Summary cards and charts**
+
+> "Up top: repository, branch, total vulnerabilities, severity mix. Charts show remediation progress, findings over time, license distribution, risk by reachability, and top CVEs by risk score — so a release meeting can prioritize without opening every row."
+
+**3) Software bill of materials table (spend time here)**
+
+> "This is the living inventory. One row per unique component and version.
+>
+> Columns to call out:
+> - **Component / version / supplier / license** — what shipped and under what terms
+> - **Relationship** — how it got into the app (e.g. included via `package-lock.json`)
+> - **Sub dependencies** — what that package pulls in
+> - **Author / hash** — provenance and integrity hints
+> - **Known vulnerabilities** — linked CVE / GHSA / PYSEC ids from the scan. Packages assessed with no match show **None**; if the scan never linked advisories you'd see N/A
+> - **Date added** — when this BOM snapshot was produced
+>
+> Demo move: turn on **Vulnerable only** (or search `cryptography` / a known CVE). Show that vulnerable packages surface first with real CVE ids in red — not buried under hundreds of clean Babel packages."
+
+**4) Findings table**
+
+> "Below the BOM, the findings table is the actionable CVE list: title, dependency, impact, risk score, status, reachability, license, OWASP, compliance. Click a row for detail; sync to Jira when ticketing is configured."
+
+### Real-world close
+
+> "Example: a critical CVE lands in a widely used library. Instead of grepping every repo, this page shows which services pin the bad version, the SBOM trail for auditors, and a PDF/VEX pack for the incident channel. That's faster supply-chain response and audit-ready evidence in one screen."
 
 ---
 
-## Screen 6 — CBOM: Cryptography Inventory and Post-Quantum Readiness (2.5 minutes)
+## Screen 6 — CBOM: Cryptography Inventory, Graph, PQC, and Deliverables (5 to 6 minutes)
 
 ### Routes
-`/[team_id]/cbom` -> `/{scan_id}` -> `/results`
+`/[team_id]/cbom` → open a **completed** crypto-rich scan → `/results`  
+*(Also show the team CBOM page **Deliverables** dropdown before or after results.)*
 
-### Script (What to say)
+### What this module is (say first)
 
-> "CBOM stands for Cryptography Bill of Materials. It gives teams a complete inventory of where cryptography is used across applications and infrastructure — algorithms, keys, certificates, and protocols — so weak or outdated choices are visible before they become compliance or breach risk."
+> "CBOM is the **Cryptography Bill of Materials**. Where SBOM inventories packages, CBOM inventories *crypto itself*: algorithms, certificates, keys and other material, TLS/SSH/IPsec protocols, policy files — plus weakness flags, compliance against crypto frameworks, and a post-quantum migration path. Regulators increasingly ask *what crypto do you run* and *are you quantum-ready*; this page answers both."
 
-> "Real-world example: a regulated fintech team is preparing for post-quantum migration and an upcoming audit. Instead of manually tracing every TLS configuration and encryption library, CBOM surfaces weak algorithms, deprecated ciphers, and certificate gaps in one prioritized view."
+### Landing page (brief)
 
-> "Teams can scan from a repository, upload a zip, or import an existing CBOM file. Optional binary scanning extends coverage to packaged applications where source code is not available."
+> "Again: New Scan from repo, zip, or an existing CBOM file; optional binary scanning when you only have a package. Scan list, Dashboard/Table. **Deliverables** in the header is team-wide — we'll come back to that. Open a finished scan into Results."
 
-> "Benefit: stronger cryptographic governance, faster audit readiness, and a practical path toward post-quantum preparedness without slowing release velocity."
+### Results page — walk the UI section by section
+
+**1) Header downloads (point as you click)**
+
+> "Per-scan exports:
+> - **CycloneDX JSON** — machine-readable CBOM (CycloneDX 1.6 crypto-asset)
+> - **VEX** — exploitability statements for crypto findings
+> - **Signature** — signed BOM for integrity
+> - **Evidence pack** — audit bundle
+> - **PDF Report** — single-scan executive/technical PDF
+> - Plus chat with the results when you need a quick narrative for a stakeholder"
+
+**2) Summary and classic dashboard charts**
+
+> "Risk band, finding counts, OWASP / risk radar / compliance control bars — same operational language as the other scanners, so security and engineering don't context-switch."
+
+**3) Crypto analytics (Cbom charts — go slowly)**
+
+Walk these cards in order; pause on each:
+
+| UI block | What to say |
+|---|---|
+| **Algorithm distribution** | "How crypto breaks down by primitive — block cipher, hash, PKE, signature, key agreement. Instant sense of the estate." |
+| **Weak-crypto findings** | "Counts by finding code: weak algorithms, weak modes (e.g. ECB), undersized keys, weak protocols, expired or weak certs. Severity-toned so High vs Medium is obvious." |
+| **PQC readiness gauge** | "Share of inventoried algorithms that are quantum-safe vs quantum-vulnerable, derived from NIST quantum security levels. This is the board-friendly one-number view." |
+| **Certificate expiry** | "Cert estate and validity — what's expiring, self-signed, already expired." |
+| **Protocols / TLS** | "Pinned TLS/SSH/IPsec versions and suites. Call out anything below TLS 1.2 as weak." |
+| **Asset-type breakdown** | "Algorithms vs certificates vs protocols vs related crypto material vs libraries — what *kinds* of crypto assets we found." |
+| **Crypto dependency graph** | "This is the lineage view. Nodes are crypto assets; edges show how they connect — e.g. a certificate *signed with* a digest, *public key* is RSA-2048, a protocol *uses* a cipher suite. Red ring = weak today; orange = quantum-vulnerable but not necessarily broken classically. Click around so they see cert → algorithm relationships, not a flat list." |
+
+**4) Quantum-vulnerable list + PQC migration roadmap (emphasize)**
+
+> "Here we go from inventory to *plan*.
+>
+> - **Quantum-vulnerable algorithms** — public-key assets at NIST level 0 (broken by a cryptographically relevant quantum computer). Grouped by algorithm family with impact and instance count.
+> - **PQC migration roadmap** — for each vulnerable algorithm, the NIST-standardized replacement (for example ML-KEM / ML-DSA / SLH-DSA targets) and a **CNSA 2.0 milestone strip** so leadership sees *when* migration pressure hits, not only *what* to change.
+>
+> Demo line: 'RSA-2048 may still be fine classically today, but it shows here as quantum-vulnerable with a concrete migration target — so PQC work can be scheduled instead of surprise-audited.'"
+
+**5) Compliance matrix (tri-state)**
+
+> "This is framework coverage for crypto — NIST 1800-38 / SP 800-57, OMB, EU CRA/DORA, FIPS, BSI, PCI, and related controls.
+>
+> Verdicts are **tri-state and honest**:
+> - **Pass / Fail** — we could evidence from the BOM
+> - **Out of scope** — no crypto in the repo, not a fake 0%
+> - **Not BOM-evidenceable** — needs operational proof (e.g. lab attestation) we don't invent
+>
+> Coverage is pass ÷ (pass + fail). Use the group chips — Quantum-safe / Baseline crypto / Regulatory — and **Failures only** when you want a remediation punch-list. Click a bar to drill into the requirement table."
+
+**6) Findings table**
+
+> "Each crypto finding: asset, weakness code, severity, suggested direction. Same triage → Jira path as SCA."
+
+### Team Deliverables (from CBOM landing — open the **Deliverables** menu)
+
+> "These are **team-rolled PDF packs**, not just one scan — they aggregate CBOM history for governance and board packs:"
+
+| # | Deliverable | One-line pitch |
+|---|---|---|
+| 1 | **Scope Baseline & Asset Population Register** | What crypto assets are in scope across the team's scans |
+| 3 | **Cryptographic Discovery Methodology & Evidence Plan** | How we discover crypto and what evidence we keep |
+| 7 | **Certificate Estate Register** | Cert inventory, validity bands, ownership trail |
+| 10 | **Third-Party Cryptographic Assurance & Attestation Register** | Supplier / third-party crypto assurance status |
+| 15 | **PQC Migration Roadmap** | Board-ready migration document from the estate |
+| 16 | **Board / IT Strategy Committee Regulatory & Executive Report** | Executive narrative for committees and regulators |
+
+> "Click one — it downloads a PDF. No LLM calls, no external lookups: generated in-house from your CBOM data. That's what you hand an auditor or the board without rebuilding slides overnight."
+
+### Real-world close
+
+> "Example: a regulated team facing a crypto and PQC questionnaire. They open one CBOM results page for the technical graph and weak findings, download CycloneDX + evidence pack for the assessor, and pull the **PQC Migration Roadmap** and **Board report** deliverables for leadership — same dataset, three audiences, one product."
 
 ---
+
 
 ## Screen 7 — AI BOM: AI/ML Inventory, Compliance, and Shadow-AI Visibility (2.5 minutes)
 

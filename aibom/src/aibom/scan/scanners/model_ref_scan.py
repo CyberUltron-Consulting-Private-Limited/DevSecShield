@@ -6,10 +6,7 @@ AI inventory that lives in application code (``model="gpt-4o"``) rather than in 
 model card. Each distinct reference becomes a ``model`` component (kind=model)
 with its vendor as publisher.
 
-Deterministic by default. An OPTIONAL LLM enrichment pass (``enrich`` class
-attribute, a callable; ``None`` = disabled) can add fuzzy/uncatalogued model
-references — kept off by default and out of the golden path so scans stay
-byte-reproducible.
+Deterministic: known-model KB only. No network / no LLM.
 
 Bounded for big repos: only an extension allowlist is read, files over
 ``_MAX_BYTES`` are skipped, and build/vendor/VCS directories are pruned.
@@ -19,18 +16,18 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 
 from aibom.model.component import ModelCard, ModelComponent, PedigreeAncestor
-from aibom.scan.parsers import model_card_enrich, model_kb
+from aibom.scan.parsers import model_kb
 from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.parsers.model_refs import find_model_refs_ctx
 from aibom.scan.registry import ScanContext, Scanner, register
 
 
 def _apply_card(card: ModelCard, fields: dict) -> None:
-    """Populate ModelCard modelParameters + lineage from a KB/LLM field dict.
+    """Populate ModelCard modelParameters + lineage from a KB field dict.
 
     Only the four ``modelParameters`` fields + ``lineage`` (pedigree) are touched;
     unrelated keys (e.g. ``license``) are ignored. No-op for an empty dict so the
@@ -132,15 +129,6 @@ class ModelRefScanner(Scanner):
     order = 25  # after model-repo (20): its carded model (if any) wins the bom_ref
     level = 1
 
-    #: Optional LLM enrichment: ``Callable[[str], dict[str, str]]`` mapping text
-    #: to ``{model_name: vendor}``. ``None`` keeps the scan deterministic.
-    enrich: Callable[[str], dict[str, str]] | None = None
-
-    #: Optional LLM hook for model-CARD inference of models NOT in the KB
-    #: (``Callable[..., str | None]``, the Bedrock provider signature). ``None``
-    #: keeps the scan deterministic (KB only); tests inject a fake/real provider.
-    card_llm: Callable[..., str | None] | None = None
-
     def scan(self, ctx: ScanContext) -> None:
         # normalized name -> [display name, vendor, reference_type]. usage wins.
         seen: dict[str, list[str]] = {}
@@ -152,10 +140,6 @@ class ModelRefScanner(Scanner):
             except OSError:
                 continue
             refs = dict(find_model_refs_ctx(text))  # name -> (vendor, reference_type)
-            if self.enrich is not None:
-                # Enrichment augments, never overrides; fuzzy hits default to catalog.
-                for name, vendor in self.enrich(text).items():
-                    refs.setdefault(name, (vendor, "catalog"))
             for name, (vendor, rtype) in refs.items():
                 low = name.lower()
                 if low not in seen:
@@ -168,18 +152,9 @@ class ModelRefScanner(Scanner):
             bom_ref = f"modelref-{_slug(name)}"
             if ctx.has_ref(bom_ref):
                 continue  # a carded model already owns this ref — don't double-add
-            # Card fields: KB first (deterministic), else optional LLM enrich
-            # (off the golden path), else nothing -> the card stays "—".
+            # Card fields: known-model KB only. Unknown models stay "—".
             kb = model_kb.lookup(name)
-            card_fields = (
-                kb
-                if kb is not None
-                else (
-                    model_card_enrich.infer_card(name, llm=self.card_llm)
-                    if self.card_llm is not None
-                    else {}
-                )
-            )
+            card_fields = kb if kb is not None else {}
             # License: KB (model-specific) wins, else the vendor map.
             spdx = (kb.get("license") if kb else None) or _MODEL_LICENSE_BY_VENDOR.get(
                 vendor

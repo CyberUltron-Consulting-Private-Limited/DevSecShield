@@ -1,0 +1,5 @@
+# Local stand-in for the unpublished minio/minio:RELEASE.2024-10-02T17-50-41Z tag.
+# Built only from the python image already present on the host. Not MinIO.
+FROM python:3.12-slim
+COPY object_store_listen.py /object_store_listen.py
+ENTRYPOINT ["python", "/object_store_listen.py"]

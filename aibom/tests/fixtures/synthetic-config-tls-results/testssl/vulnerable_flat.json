@@ -1,0 +1,1 @@
+{"scanResult":[{"targetHost":"example.com","port":"443","findings":[{"id":"HEARTBLEED","severity":"HIGH"},{"id":"BEAST","severity":"LOW"}]}]}

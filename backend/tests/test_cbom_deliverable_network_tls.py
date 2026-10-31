@@ -143,3 +143,45 @@ def test_duck_typed_posture_block_marks_unscored_entries_and_keeps_rows_adjacent
     first = visible.index("static server")
     second = visible.index("imported:testssl")
     assert abs(first - second) < 400
+
+
+def test_rollup_state_field_prints_counts_instead_of_not_assessed():
+    """PostureSourceAgg stores ``state``, not ``status``. KPIs must stay numeric."""
+    from types import SimpleNamespace
+
+    view = _bare()
+    view.included = 1
+    view.eligible = 1
+    view.posture = SimpleNamespace(
+        sources=(
+            SimpleNamespace(
+                label="tls-protocol-assessment",
+                state="assessed",
+                reason=None,
+                zero_facts=False,
+                failed_lanes=(),
+            ),
+        ),
+        facts=(
+            {
+                "kind": "tls_endpoint",
+                "address": "example.com:443",
+                "native_type": "tls_result",
+                "provider": "testssl_pretty",
+                "format": "tls_result",
+                "path": "imports/testssl/legacy_protocols.json",
+                "finding_codes": ["DOWNGRADE_PROTECTION_MISSING"],
+                "net": {
+                    "endpoint": "example.com:443",
+                    "protocols": {"1.0": "offered"},
+                    "downgrade": "missing",
+                },
+            },
+        ),
+        imports=(),
+    )
+    visible = _visible(network.build_pdf(view))
+    assert "POSTURE NOT ASSESSED" not in visible
+    assert "n/a" not in visible
+    assert "imported:testssl_pretty" in visible
+    assert "1 of 1 current sources assessed" in visible

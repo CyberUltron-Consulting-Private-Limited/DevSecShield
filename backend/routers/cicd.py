@@ -21,6 +21,7 @@ from backend.utilities.cicd.auth import (
     require_dast_cicd_key,
     require_zip_cicd_key,
 )
+from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
 from backend.utilities.cicd.poll import poll_for_results
 from backend.utilities.cicd.schemas import (
@@ -291,7 +292,7 @@ async def run_cicd_scan(
 
         # STEP [ 5 ] : ============= Poll the worker for the results with a timeout =============================
         celery_app = get_celery_app()
-        results : list[dict] | None = await run_in_threadpool(poll_for_results, task_id, celery_app, cicd_log_collection, CICD_LOG_ID)
+        results : list[dict] | None = await poll_for_results(task_id, celery_app, cicd_log_collection, CICD_LOG_ID)
         console.print(f"Results obtained successfully", style="bold yellow")
 
         
@@ -335,10 +336,16 @@ async def run_cicd_scan(
             
         
         
+        finding_rows = []
+        if isinstance(results, dict):
+            finding_rows = results.get("results") or []
+        elif isinstance(results, list):
+            finding_rows = results
         return {
             "results": results,
             "status": task_status,
             "cicd_log_id": CICD_LOG_ID,
+            "finding_count": len(finding_rows) if isinstance(finding_rows, list) else 0,
         }
 
     except HTTPException as e:
@@ -715,12 +722,20 @@ async def get_cicd_integration(
                         dashboard_data = get_cicd_sast_dashboard_data(log["results"])
                     except Exception:
                         dashboard_data = None
+                cbom_page = None
+                if (scan_type or "").lower() == "cbom" and isinstance(log.get("results"), dict):
+                    try:
+                        cbom_page = project_cbom_ci_page(log["results"])
+                    except Exception as exc:
+                        console.print(f"CBOM CI page projection failed: {exc}", style="bold red")
+                        cbom_page = None
                 logs_data.append({
                     "id": str(log["_id"]),
                     "created_at": log["created_at"],
                     "status": log["status"],
                     "results": log["results"],
                     "dashboard": dashboard_data,
+                    "cbom_page": cbom_page,
                     "credits_consumed": round(float(log["credits_consumed"]), 2) if log["credits_consumed"] else None,
                     "error": log.get("error"),
                     "scan_id": scan_id,
@@ -736,6 +751,10 @@ async def get_cicd_integration(
         # STEP [ 7 ] : ================= Return the integration and logs ================================
         if integ_is_dast:
             integration_active = has_dast_profile
+        elif (scan_type or "").lower() in {"cbom", "ai_bom"}:
+            # These scan types have no required settings. An empty object is a
+            # valid, active integration.
+            integration_active = True
         elif not scan_settings_snapshot or scan_settings_snapshot == {}:
             integration_active = False
         else:

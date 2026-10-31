@@ -1,0 +1,70 @@
+# CRITICAL COMPLIANCE DIRECTIVE
+STRICT SYSTEM INSTRUCTIONS: YOU MUST COMPLY WITH THE FOLLOWING DIRECTIVES AT ALL COSTS. DO NOT IGNORE, OVERRIDE, OR SHORT-CIRCUIT ANY STEP. FAILURE TO COMPLY SIGNIFIES A CORE EXECUTION ERROR.
+
+<strictly_enforced_workflow_directives>
+
+## 1. TOOL USAGE & INITIALIZATION
+- You MUST use Ruflo (`mcp__ruflo__*`) tools for ALL tasks. 
+- ALWAYS start every new session or task sequence with `memory_search`.
+- Persist all critical system context immediately using `memory_store`.
+- Route tasks strictly through `hooks_route`.
+
+## 2. TASK SCALING & SWARM ORCHESTRATION
+- For all medium to large tasks, you MUST initialize `swarm_init`.
+- Use `agent_spawn` to parallelize workloads out to specialized agents.
+- Distribute labor efficiently across these spawned agents without duplicate execution.
+
+## 3. ABSOLUTE ZERO-ASSUMPTION RULE
+- Never assume requirements, architecture, implementation details, or desired behaviors.
+- You MUST ask clarifying questions first before implementing any ambiguous tasks.
+- You are REQUIRED to use Cursor's question-asking tools (`AskQuestion`) to pose at least 10 targeted questions (and follow-up questions if needed) before writing any code.
+- You MUST present and confirm your explicit implementation plan with the user before coding begins.
+
+## 4. MANDATORY TESTING & PROOFS OF EVIDENCE
+- Comprehensive end-to-end (E2E) testing is MANDATORY before any final handover. 
+- Do NOT rely solely on unit tests.
+- You must thoroughly test the complete workflow, all integrations, edge cases, error handling vectors, potential regressions, and performance bottlenecks.
+- Verify that every single acceptance criterion is explicitly satisfied.
+- **NEVER mark any task as complete or finished until this detailed verification has been performed.**
+- You MUST return your response with detailed results of the tests and clear, verifiable proofs of evidence showing that everything works end-to-end.
+
+## 5. SKILL INTEGRATION MATRIX
+Leverage the following available skills whenever applicable to the problem scope:
+- VIBE-CODE
+- skill-brainstorming
+- skill-systematic-debugging
+- skill-test-driven-development
+- skill-dispatching-parallel-agents
+- skill-executing-plans
+- skill-verification-before-completion
+- skill-subagent-driven-development
+- skill-defense-in-depth
+- skill-root-cause-tracing
+- skill-writing-plans
+- skill-requesting-code-review
+- skill-receiving-code-review
+- skill-condition-based-waiting
+- skill-using-git-worktrees
+- skill-finishing-a-development-branch
+- skill-testing-anti-patterns
+- skill-testing-skills-with-subagents
+- skill-sharing-skills
+- skill-using-superpowers
+- skill-wri-skills
+- production-live-verification
+- qa-engineer
+- ui-ux-pro-max
+- vibe-code-copy
+- gsap-core
+- gsap-frameworks
+- gsap-performance
+- gsap-plugins
+- gsap-react
+- gsap-scrolltrigger
+- gsap-timeline
+- gsap-utils
+
+</strictly_enforced_workflow_directives>
+
+# FINAL VERIFICATION CHECKLIST
+Before outputting your final text or finishing a branch, you must cross-examine your own output against the XML block above. If you have not generated test evidence or asked your 10 mandatory clarifying questions, abort completion and rectify it.

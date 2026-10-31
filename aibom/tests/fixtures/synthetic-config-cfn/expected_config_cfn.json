@@ -1,0 +1,65 @@
+{
+  "facts": [
+    {
+      "address": "PlainDb",
+      "path": "stack.yaml",
+      "line": 1,
+      "kind": "relational_db",
+      "native_type": "AWS::RDS::DBInstance",
+      "provider": "aws",
+      "layers": {
+        "service": "NOT_ENCRYPTED"
+      },
+      "verdict": "NOT_ENCRYPTED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [
+        "UNENCRYPTED_AT_REST"
+      ],
+      "covers": [
+        "aws.rds.instance.storage_encrypted"
+      ],
+      "outcome": "positive",
+      "why": "StorageEncrypted false is an explicit disable; UNENCRYPTED_AT_REST fires (CloudFormation twin of aws_db_instance storage_encrypted = false)"
+    },
+    {
+      "address": "LogsBucket",
+      "path": "stack.yaml",
+      "line": 1,
+      "kind": "object_store",
+      "native_type": "AWS::S3::Bucket",
+      "provider": "aws",
+      "layers": {
+        "service": "ENCRYPTED_PROVIDER_DEFAULT"
+      },
+      "verdict": "ENCRYPTED_PROVIDER_DEFAULT",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": "aws.s3.sse_default",
+      "finding_codes": [],
+      "covers": [
+        "aws.s3.sse_default"
+      ],
+      "outcome": "negative",
+      "why": "BucketEncryption omitted; reviewed S3 SSE default row applies; no finding"
+    }
+  ],
+  "totals": {
+    "facts": 2,
+    "by_kind": {
+      "object_store": 1,
+      "relational_db": 1
+    },
+    "by_verdict": {
+      "ENCRYPTED_PROVIDER_DEFAULT": 1,
+      "NOT_ENCRYPTED": 1
+    },
+    "by_code": {
+      "UNENCRYPTED_AT_REST": 1
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

@@ -1,12 +1,65 @@
 {
   "facts": [
     {
+      "address": "aws_db_instance.plain",
+      "path": "main.tf",
+      "line": 1,
+      "kind": "relational_db",
       "native_type": "aws_db_instance",
-      "verdict": "NOT_ENCRYPTED"
+      "provider": "aws",
+      "layers": {
+        "database": "NOT_ENCRYPTED"
+      },
+      "verdict": "NOT_ENCRYPTED",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": null,
+      "finding_codes": [
+        "UNENCRYPTED_AT_REST"
+      ],
+      "covers": [
+        "aws.rds.storage_encrypted"
+      ],
+      "outcome": "positive",
+      "why": "storage_encrypted = false is an explicit disable; UNENCRYPTED_AT_REST fires"
     },
     {
+      "address": "aws_s3_bucket.logs",
+      "path": "main.tf",
+      "line": 5,
+      "kind": "object_store",
       "native_type": "aws_s3_bucket",
-      "verdict": "ENCRYPTED_PROVIDER_DEFAULT"
+      "provider": "aws",
+      "layers": {
+        "application": "ENCRYPTED_PROVIDER_DEFAULT"
+      },
+      "verdict": "ENCRYPTED_PROVIDER_DEFAULT",
+      "key_management": "unspecified",
+      "unknown_reason": null,
+      "default_row": "aws.s3.default_encryption",
+      "finding_codes": [],
+      "covers": [
+        "aws.s3.default_encryption"
+      ],
+      "outcome": "negative",
+      "why": "encryption block omitted; reviewed S3 provider-default row applies; no finding"
     }
-  ]
+  ],
+  "totals": {
+    "facts": 2,
+    "by_kind": {
+      "object_store": 1,
+      "relational_db": 1
+    },
+    "by_verdict": {
+      "ENCRYPTED_PROVIDER_DEFAULT": 1,
+      "NOT_ENCRYPTED": 1
+    },
+    "by_code": {
+      "UNENCRYPTED_AT_REST": 1
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
 }

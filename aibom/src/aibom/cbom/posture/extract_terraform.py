@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from aibom.cbom.posture.codec import make_fact_id
@@ -29,8 +30,11 @@ from aibom.cbom.posture.resolve import (
     Resolved,
     Unresolved,
     Value,
+    gcp_binding_exposure,
+    policy_exposure,
     resolve_expr,
 )
+from aibom.cbom.posture.tls_policy import protocol_for_policy, weak_suite_for_policy
 from aibom.cbom.posture.verdict import (
     LayerCase,
     LayerResult,
@@ -116,23 +120,376 @@ def extract_terraform(text: str, path: str) -> tuple[EncryptionFact, ...]:
             continue
         native, name = block.labels
         rule = rules.get(native)
-        if rule is None or not rule.layers:
+        if rule is None:
             continue
         if _count_zero(block.body):
             continue
-        facts.append(
-            build_encryption_fact(
-                rule,
-                _bound(block.body),
-                address=f"{native}.{name}",
-                path=path,
-                line=block.line if block.line > 0 else 1,
-                form="terraform",
-                native_type=native,
-                syntax="terraform",
-            )
+        signal = _kms_policy_signal(native, block.body)
+        notes = _gcp_binding_notes(native, block.body)
+        if signal is not None:
+            notes = (signal, *notes)
+        has_literal = _literal_key_policy(native, block.body)
+        tracked = notes or has_literal or _key_rotation_row(native)
+        if not rule.layers and not tracked:
+            continue
+        fact = build_encryption_fact(
+            rule,
+            _bound(block.body),
+            address=f"{native}.{name}",
+            path=path,
+            line=block.line if block.line > 0 else 1,
+            form="terraform",
+            native_type=native,
+            syntax="terraform",
         )
+        if notes:
+            fact = replace(fact, basis=fact.basis + notes)
+        if _gcp_members_unresolved(native, block.body):
+            fact = replace(
+                fact, verdict="UNKNOWN", unknown_reason="unresolved_expression"
+            )
+        fact = _apply_key_rotation(fact, native, block.body)
+        fact = _apply_purge_protection(fact, native, block.body)
+        fact = _record_declared_spec(fact, native, block.body)
+        fact = _apply_tls_policy(fact, native, block.body)
+        fact = _ensure_kms_rollup_layers(fact, native)
+        facts.append(fact)
     return tuple(facts)
+
+
+def _ensure_kms_rollup_layers(fact: EncryptionFact, native: str) -> EncryptionFact:
+    """Signal-only GCP KMS blocks still carry one layer for posture rollup."""
+    if fact.layers:
+        return fact
+    if native == "google_kms_crypto_key":
+        layers = {"rotation": "UNKNOWN"}
+    elif _gcp_member_attr(native) is not None:
+        layers = {"service": "UNKNOWN"}
+    else:
+        return fact
+    verdict = resource_verdict(layers, transport_only=False) or "UNKNOWN"
+    reason = fact.unknown_reason or "default_unknown"
+    return replace(fact, layers=layers, verdict=verdict, unknown_reason=reason)
+
+
+def _kms_policy_signal(native: str, body: Body) -> BasisEntry | None:
+    """A literal key policy that is public raises KMS_KEY_POLICY_PUBLIC."""
+    if native != "aws_kms_key":
+        return None
+    value = _hcl_value(body, "policy")
+    if not isinstance(value, Resolved) or not isinstance(value.value, str):
+        return None
+    try:
+        document = json.loads(value.value)
+    except json.JSONDecodeError:
+        return None
+    statements = document.get("Statement") if isinstance(document, dict) else None
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return None
+    for statement in statements:
+        if isinstance(statement, dict) and policy_exposure(statement) == "public":
+            return BasisEntry("signal", "KMS_KEY_POLICY_PUBLIC")
+    return None
+
+
+def _key_rotation_row(native: str) -> bool:
+    return native in {
+        "aws_kms_key",
+        "google_kms_crypto_key",
+        "azurerm_key_vault_key",
+    }
+
+
+def _apply_key_rotation(
+    fact: EncryptionFact, native: str, body: Body
+) -> EncryptionFact:
+    """Omitted Google rotation stays unknown. Azure key rotation is not applicable."""
+    if native == "aws_kms_key":
+        return _apply_aws_rotation(fact, body)
+    if native == "azurerm_key_vault_key":
+        return replace(
+            fact, basis=fact.basis + (BasisEntry("rotation", "not_applicable"),)
+        )
+    if native != "google_kms_crypto_key":
+        return fact
+    value = _hcl_value(body, "rotation_period")
+    if isinstance(value, Resolved):
+        return fact
+    reason = (
+        "unresolved_expression" if isinstance(value, Unresolved) else "default_unknown"
+    )
+    return replace(fact, verdict="UNKNOWN", unknown_reason=reason)
+
+
+def _apply_aws_rotation(fact: EncryptionFact, body: Body) -> EncryptionFact:
+    """Absent or false rotation raises the reviewed AWS finding. A variable does not."""
+    return apply_aws_rotation_value(
+        fact,
+        _hcl_value(body, "enable_key_rotation"),
+        usage=_hcl_value(body, "key_usage"),
+        spec=_hcl_value(body, "customer_master_key_spec"),
+    )
+
+
+def apply_aws_rotation_value(
+    fact: EncryptionFact,
+    value: Value,
+    *,
+    usage: Value,
+    spec: Value,
+) -> EncryptionFact:
+    """Shared by Terraform and CloudFormation. An unresolved value raises nothing."""
+    notes: list[BasisEntry] = []
+    if isinstance(spec, Resolved) and isinstance(spec.value, str) and spec.value:
+        notes.append(BasisEntry("key_spec", spec.value))
+    if isinstance(usage, Resolved) and isinstance(usage.value, str) and usage.value:
+        notes.append(BasisEntry("key_usage", usage.value))
+    if notes:
+        fact = replace(fact, basis=fact.basis + tuple(notes))
+    asymmetric = (
+        isinstance(usage, Resolved) and usage.value not in {None, "ENCRYPT_DECRYPT"}
+    ) or (
+        isinstance(spec, Resolved) and spec.value not in {None, "SYMMETRIC_DEFAULT"}
+    )
+    if asymmetric:
+        return replace(
+            fact, basis=fact.basis + (BasisEntry("rotation", "not_applicable"),)
+        )
+    if isinstance(value, Unresolved):
+        return replace(
+            fact, verdict="UNKNOWN", unknown_reason="unresolved_expression"
+        )
+    if isinstance(value, Resolved) and value.value is True:
+        return replace(fact, basis=fact.basis + (BasisEntry("rotation", "enabled"),))
+    notes = [
+        BasisEntry("signal", "KMS_KEY_ROTATION_DISABLED"),
+        BasisEntry("rotation", "disabled"),
+    ]
+    reason = fact.unknown_reason
+    verdict = fact.verdict
+    if not isinstance(value, Resolved):
+        notes.append(BasisEntry("rotation_default_row", "aws.kms.enable_key_rotation"))
+        verdict = "UNKNOWN"
+        reason = "default_unknown"
+    return replace(
+        fact,
+        basis=fact.basis + tuple(notes),
+        verdict=verdict,
+        unknown_reason=reason,
+    )
+
+
+_PURGE_ROWS = {
+    "azurerm_key_vault": "azure.keyvault.purge_protection",
+    "azurerm_key_vault_managed_hardware_security_module": (
+        "azure.keyvault_hsm.purge_protection"
+    ),
+}
+
+
+def _apply_purge_protection(
+    fact: EncryptionFact, native: str, body: Body
+) -> EncryptionFact:
+    """An omitted or false purge-protection flag raises the reviewed Azure finding."""
+    row = _PURGE_ROWS.get(native)
+    if row is None:
+        return fact
+    value = _hcl_value(body, "purge_protection_enabled")
+    if isinstance(value, Unresolved):
+        return replace(
+            fact, verdict="UNKNOWN", unknown_reason="unresolved_expression"
+        )
+    if isinstance(value, Resolved) and value.value is True:
+        return replace(
+            fact, basis=fact.basis + (BasisEntry("purge_protection", "enabled"),)
+        )
+    notes = [
+        BasisEntry("signal", "KMS_KEY_DELETION_UNPROTECTED"),
+        BasisEntry("purge_protection", "disabled"),
+    ]
+    verdict = fact.verdict
+    reason = fact.unknown_reason
+    if not isinstance(value, Resolved):
+        notes.append(BasisEntry("purge_protection_default_row", row))
+        if verdict not in {"ENCRYPTED_DECLARED", "NOT_ENCRYPTED"}:
+            verdict = "UNKNOWN"
+            reason = "default_unknown"
+    return replace(
+        fact,
+        basis=fact.basis + tuple(notes),
+        verdict=verdict,
+        unknown_reason=reason,
+    )
+
+
+_DECLARED_SPEC = {
+    "azurerm_key_vault_key": "key_type",
+    "google_kms_crypto_key": "version_template.algorithm",
+}
+
+
+def _record_declared_spec(
+    fact: EncryptionFact, native: str, body: Body
+) -> EncryptionFact:
+    """Attach a key_specs.json id when the declared type matches that row."""
+    attr = _DECLARED_SPEC.get(native)
+    if attr is None or any(item.name == "key_spec" for item in fact.basis):
+        return fact
+    value = _hcl_value(body, attr)
+    if not isinstance(value, Resolved) or not isinstance(value.value, str):
+        return fact
+    spec = value.value
+    if spec == "RSA" and _size_mismatch(body, 2048):
+        return fact
+    if spec == "EC" and _size_mismatch(body, 256):
+        return fact
+    if spec not in {"RSA", "EC", "GOOGLE_SYMMETRIC_ENCRYPTION"}:
+        return fact
+    return replace(fact, basis=fact.basis + (BasisEntry("key_spec", spec),))
+
+
+_AZURE_WEB = frozenset({"azurerm_linux_web_app", "azurerm_windows_web_app"})
+_AZURE_TLS = {"1.0": "TLSv1.0", "1.1": "TLSv1.1", "1.2": "TLSv1.2", "1.3": "TLSv1.3"}
+_TLS_ATTR = {
+    "aws_cloudfront_distribution": "viewer_certificate.minimum_protocol_version",
+}
+_LISTENER_DEFAULT = "ELBSecurityPolicy-2016-08"
+
+
+def _apply_tls_policy(
+    fact: EncryptionFact, native: str, body: Body
+) -> EncryptionFact:
+    if native == "google_compute_ssl_policy":
+        return _gcp_ssl_policy(fact, body)
+    if native in _AZURE_WEB:
+        return _azure_tls(fact, body)
+    if native == "aws_lb_listener":
+        return _listener_policy(fact, body)
+    attr = _TLS_ATTR.get(native)
+    if attr is None:
+        return fact
+    value = _hcl_value(body, attr)
+    if not isinstance(value, Resolved) or not isinstance(value.value, str):
+        return fact
+    return _named_policy(fact, value.value)
+
+
+def _listener_policy(fact: EncryptionFact, body: Body) -> EncryptionFact:
+    value = _hcl_value(body, "ssl_policy")
+    protocol = (_literal(body, "protocol") or "").upper()
+    if isinstance(value, Resolved) and isinstance(value.value, str):
+        return _named_policy(fact, value.value)
+    if isinstance(value, Absent) and protocol == "HTTPS":
+        return _named_policy(fact, _LISTENER_DEFAULT)
+    if protocol == "HTTPS":
+        return replace(
+            fact,
+            basis=fact.basis
+            + (BasisEntry("ssl_policy", None, "unresolved_expression"),),
+        )
+    return fact
+
+
+def _named_policy(fact: EncryptionFact, name: str | None) -> EncryptionFact:
+    if name is None:
+        return fact
+    floor = protocol_for_policy(name)
+    if floor is None:
+        return replace(
+            fact,
+            basis=fact.basis + (BasisEntry("ssl_policy", None, "default_unknown"),),
+        )
+    notes = [BasisEntry("policy", name), BasisEntry("protocol_min", floor)]
+    suite = weak_suite_for_policy(name)
+    if suite is not None:
+        notes.append(BasisEntry("cipher_suite", suite))
+    return replace(fact, basis=fact.basis + tuple(notes))
+
+
+def _gcp_ssl_policy(fact: EncryptionFact, body: Body) -> EncryptionFact:
+    profile = _literal(body, "profile") or "COMPATIBLE"
+    configured = _literal(body, "min_tls_version") or "TLS_1_0"
+    floor = protocol_for_policy(profile, configured)
+    if floor is None:
+        return replace(
+            fact,
+            basis=fact.basis + (BasisEntry("ssl_policy", None, "default_unknown"),),
+        )
+    return replace(
+        fact,
+        basis=fact.basis
+        + (BasisEntry("policy", profile), BasisEntry("protocol_min", floor)),
+    )
+
+
+def _azure_tls(fact: EncryptionFact, body: Body) -> EncryptionFact:
+    raw = _literal(body, "site_config.minimum_tls_version") or "1.2"
+    floor = _AZURE_TLS.get(raw)
+    if floor is None:
+        return replace(
+            fact,
+            basis=fact.basis + (BasisEntry("ssl_policy", None, "default_unknown"),),
+        )
+    return replace(
+        fact,
+        basis=fact.basis
+        + (BasisEntry("policy", raw), BasisEntry("protocol_min", floor)),
+    )
+
+
+def _literal(body: Body, name: str) -> str | None:
+    value = _hcl_value(body, name)
+    if isinstance(value, Resolved) and isinstance(value.value, str):
+        return value.value
+    return None
+
+
+def _size_mismatch(body: Body, expected: int) -> bool:
+    value = _hcl_value(body, "key_size")
+    return isinstance(value, Resolved) and value.value != expected
+
+
+def _gcp_member_attr(native: str) -> str | None:
+    return {
+        "google_kms_crypto_key_iam_binding": "members",
+        "google_kms_crypto_key_iam_member": "member",
+    }.get(native)
+
+
+def _literal_key_policy(native: str, body: Body) -> bool:
+    if native == "aws_kms_key":
+        return isinstance(_hcl_value(body, "policy"), Resolved)
+    attr = _gcp_member_attr(native)
+    if attr is None:
+        return False
+    return isinstance(_hcl_value(body, attr), (Resolved, Unresolved))
+
+
+def _gcp_members_unresolved(native: str, body: Body) -> bool:
+    attr = _gcp_member_attr(native)
+    return attr is not None and isinstance(_hcl_value(body, attr), Unresolved)
+
+
+def _gcp_binding_notes(native: str, body: Body) -> tuple[BasisEntry, ...]:
+    """allUsers stays public even when a condition block is present."""
+    attr = _gcp_member_attr(native)
+    if attr is None:
+        return ()
+    value = _hcl_value(body, attr)
+    if not isinstance(value, Resolved):
+        return ()
+    conditional = _block(body, "condition") is not None
+    exposure, _flag = gcp_binding_exposure(
+        value.value, object() if conditional else None
+    )
+    notes: list[BasisEntry] = []
+    if exposure == "public":
+        notes.append(BasisEntry("signal", "KMS_KEY_POLICY_PUBLIC"))
+    if conditional and exposure == "public":
+        notes.append(BasisEntry("exposure_conditional", "true"))
+    return tuple(notes)
 
 
 def build_encryption_fact(

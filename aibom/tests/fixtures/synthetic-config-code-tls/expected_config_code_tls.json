@@ -1,0 +1,61 @@
+{
+  "facts": [
+    {
+      "address": "py.requests.verify",
+      "path": "client.py",
+      "line": 3,
+      "kind": "tls_endpoint",
+      "native_type": "py.requests.verify",
+      "provider": "code",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "attribute_not_modeled",
+      "default_row": null,
+      "finding_codes": [
+        "TLS_VERIFICATION_DISABLED"
+      ],
+      "covers": [],
+      "outcome": "positive",
+      "why": "Literal verify=False on a requests call; transport stays UNKNOWN but TLS_VERIFICATION_DISABLED fires from the explicit signal"
+    },
+    {
+      "address": "curl.insecure",
+      "path": "fetch.sh",
+      "line": 2,
+      "kind": "tls_endpoint",
+      "native_type": "curl.insecure",
+      "provider": "code",
+      "layers": {
+        "transport": "UNKNOWN"
+      },
+      "verdict": "UNKNOWN",
+      "key_management": "unspecified",
+      "unknown_reason": "attribute_not_modeled",
+      "default_row": null,
+      "finding_codes": [
+        "TLS_VERIFICATION_DISABLED"
+      ],
+      "covers": [],
+      "outcome": "positive",
+      "why": "curl -k disables certificate verification; same signal-based finding as other verification patterns"
+    }
+  ],
+  "totals": {
+    "facts": 2,
+    "by_kind": {
+      "tls_endpoint": 2
+    },
+    "by_verdict": {
+      "UNKNOWN": 2
+    },
+    "by_code": {
+      "TLS_VERIFICATION_DISABLED": 2
+    },
+    "out_of_scope": 0,
+    "disabled": 0,
+    "diagnostic_totals": {}
+  }
+}

@@ -288,8 +288,19 @@ def test_prose_documents_name_the_required_topics() -> None:
     mapping = _doc("business-mapping.md")
     for field in ("system", "owner", "data_classification", "data_lifetime"):
         assert field in mapping
-    assert "CODEOWNERS" in mapping
-    assert "10,000" in mapping
+    for phrase in (
+        "CODEOWNERS",
+        "10,000",
+        "version: 1",
+        ".devsecshield/cbom-mapping.yaml",
+        ".github/CODEOWNERS",
+        "match.resource",
+        "match.path",
+        "match.kind",
+        "mapping_file_ignored",
+        "owner_hint",
+    ):
+        assert phrase in mapping
     registry = _doc("defaults-registry.md")
     assert "importlib.resources" in registry
     assert "valid_as_of" in registry

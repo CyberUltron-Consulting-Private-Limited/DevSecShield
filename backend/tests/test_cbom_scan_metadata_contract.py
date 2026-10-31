@@ -28,7 +28,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from backend.utilities.dashboard.scan_metadata import get_scan_metadata  # noqa: E402
+from backend.utilities.dashboard.scan_metadata import get_scan_metadata
 
 # The additive keys the reconciled aibom CBOM lane produces and the results page
 # reads from scan_metadata (see backend_api.ts CbomScanMetadata).
@@ -91,6 +91,13 @@ def test_graph_is_surfaced_with_nodes_and_edges() -> None:
     ids = {n["id"] for n in graph["nodes"]} | {"crypto-cert-x"}
     for e in graph["edges"]:
         assert e["source"] in ids and e["target"] in ids
+
+
+def test_cbom_posture_is_not_surfaced() -> None:
+    data = _reconciled_scan_data()
+    data["cbom_posture"] = {"schema_version": 1, "facts": [{"id": "fact"}]}
+    out = get_scan_metadata("cbom", _scan({}, data))
+    assert "cbom_posture" not in out
 
 
 def test_legacy_scan_keys_present_but_none() -> None:

@@ -29,9 +29,6 @@ scan = [
 imaging = ["pydicom>=2.4"]
 # API / MCP surface (Phase 5).
 api = ["fastapi>=0.111"]
-# Optional LLM enrichment via Amazon Bedrock (Converse / Anthropic Haiku 4.5).
-# Always optional + fail-open: scans run deterministic-only without it.
-llm = ["boto3>=1.34"]
 # Phase-3 client deliverables (xlsx traceability matrix, pdf readiness report,
 # docx SaMD/PCCP memo) generated from ScanResult.compliance.
 report = [

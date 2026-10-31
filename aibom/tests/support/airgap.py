@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import ast
 import json
+import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
+from types import TracebackType
 
 FORBIDDEN_TOKENS: tuple[str, ...] = (
     "socket",
@@ -45,6 +48,40 @@ BANNED_MODULES: frozenset[str] = frozenset(
         "urllib3",
     }
 )
+
+
+class NetworkBlocked(RuntimeError):
+    """A posture test tried to use the network or start a process."""
+
+
+class block_network:
+    """Raise on socket and process calls inside the block."""
+
+    def __enter__(self) -> block_network:
+        self._socket = socket.socket
+        self._create = socket.create_connection
+        self._popen = subprocess.Popen
+        self._system = os.system
+
+        def _refused(*_args: object, **_kwargs: object) -> object:
+            raise NetworkBlocked("network is blocked")
+
+        socket.socket = _refused  # type: ignore[assignment, method-assign]
+        socket.create_connection = _refused  # type: ignore[assignment]
+        subprocess.Popen = _refused  # type: ignore[assignment, misc]
+        os.system = _refused  # type: ignore[assignment]
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        socket.socket = self._socket  # type: ignore[method-assign]
+        socket.create_connection = self._create
+        subprocess.Popen = self._popen  # type: ignore[misc]
+        os.system = self._system
 
 
 def package_root() -> Path:

@@ -59,18 +59,26 @@ export default function SbomBillOfMaterialsTable({
   onDownload?: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [vulnerableOnly, setVulnerableOnly] = useState(true);
   const rows = useMemo(() => inventoryRowsFromCycloneDx(bom), [bom]);
   const overall = useMemo(() => overallComplianceFromBom(bom), [bom]);
+  const vulnerableCount = useMemo(
+    () => rows.filter((row) => row.cves !== "None" && row.cves !== "N/A" && row.cves !== "—").length,
+    [rows],
+  );
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) =>
-      [row.name, row.supplier, row.version, row.uniqueId, row.cves, row.relationship, row.author]
+    return rows.filter((row) => {
+      if (vulnerableOnly && (row.cves === "None" || row.cves === "N/A" || row.cves === "—")) {
+        return false;
+      }
+      if (!q) return true;
+      return [row.name, row.supplier, row.version, row.uniqueId, row.cves, row.relationship, row.author]
         .join(" ")
         .toLowerCase()
-        .includes(q),
-    );
-  }, [rows, query]);
+        .includes(q);
+    });
+  }, [rows, query, vulnerableOnly]);
 
   if (!rows.length) return null;
 
@@ -81,13 +89,17 @@ export default function SbomBillOfMaterialsTable({
           <div>
             <CardTitle>Software bill of materials</CardTitle>
             <CardDescription className="mt-1 max-w-3xl">
-              One row per unique component and version. GitHub Actions that pin a tag
-              and a commit appear as two rows. Document status is a single Pass/Fail
-              verdict. RBI, SEBI, and CERT-In detail stays in the dashboard and PDF.
+              One row per unique component and version. Known vulnerabilities lists
+              linked CVE/GHSA ids from the scan; packages with none show None.
+              Vulnerable packages are listed first. RBI, SEBI, and CERT-In detail
+              stays in the dashboard and PDF.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={overall} />
+            <Badge variant="outline" data-testid="sbom-vuln-count">
+              {vulnerableCount} with known vulns
+            </Badge>
             {onDownload ? (
               <Button
                 type="button"
@@ -102,16 +114,27 @@ export default function SbomBillOfMaterialsTable({
             ) : null}
           </div>
         </div>
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <Input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search components, licenses, CVEs..."
-            className="h-9 cursor-text pl-9"
-            aria-label="Search software bill of materials"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative max-w-sm flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search components, licenses, CVEs..."
+              className="h-9 cursor-text pl-9"
+              aria-label="Search software bill of materials"
+            />
+          </div>
+          <Button
+            type="button"
+            variant={vulnerableOnly ? "default" : "outline"}
+            className="h-9 cursor-pointer"
+            onClick={() => setVulnerableOnly((v) => !v)}
+            data-testid="sbom-vulnerable-only"
+          >
+            {vulnerableOnly ? "Vulnerable only" : "Show all components"}
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -147,7 +170,10 @@ export default function SbomBillOfMaterialsTable({
                         key={col.key}
                         className={`align-top text-xs text-zinc-800 dark:text-zinc-200 ${col.className}`}
                       >
-                        {col.key === "cves" && row.cves !== "N/A" ? (
+                        {col.key === "cves" &&
+                        row.cves !== "N/A" &&
+                        row.cves !== "None" &&
+                        row.cves !== "—" ? (
                           <span className="text-red-700 dark:text-red-300">{row.cves}</span>
                         ) : (
                           <span className="break-words">{row[col.key]}</span>

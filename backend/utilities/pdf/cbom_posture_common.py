@@ -63,7 +63,17 @@ def posture_block(view: object) -> object | None:
 
 
 def fact_map(item: object) -> dict[str, Any]:
+    """A roll-up fact is a ``PostureFactAgg`` whose payload lives under ``fact``."""
     mapped = as_mapping(item)
+    nested = mapped.get("fact")
+    if isinstance(nested, Mapping):
+        row = dict(nested)
+        source = mapped.get("source_key")
+        if source and "source" not in row:
+            row["source"] = source
+        if mapped.get("discrepancy"):
+            row["discrepancy"] = True
+        return row
     return mapped if mapped else {}
 
 
@@ -75,9 +85,12 @@ def facts_of(view: object) -> list[dict[str, Any]]:
 
 
 def _source_status(row: Mapping[str, Any]) -> str:
-    raw = str(row.get("status") or "").strip().lower().replace(" ", "_")
+    # The roll-up stores PostureSourceAgg.state. Dict fixtures use status.
+    raw = str(row.get("status") or row.get("state") or "").strip().lower().replace(" ", "_")
     if raw in {"assessed", "partial", "not_assessed"}:
         return raw
+    if raw in {"newer_engine", "malformed", "failed", "absent"}:
+        return "not_assessed"
     if row.get("partial") or as_rows(row.get("failed_lanes")):
         return "partial"
     if row.get("assessed") is True:
@@ -165,6 +178,10 @@ def layer_verdict(fact: Mapping[str, Any], layer: str) -> str:
             return str(item.get("verdict") or "")
         if item:
             return str(item)
+    if layer == "at_rest":
+        overall = fact.get("verdict")
+        if isinstance(overall, str):
+            return overall
     return ""
 
 
@@ -232,14 +249,35 @@ def endpoint_label(fact: Mapping[str, Any]) -> str:
     return address_of(fact)
 
 
+def _source_has_zero_facts(source: Mapping[str, Any]) -> bool:
+    if source.get("partial"):
+        return False
+    if source.get("zero_facts") is True:
+        return True
+    if source.get("zero_facts") is False:
+        return False
+    if "fact_count" in source:
+        return as_int(source.get("fact_count")) == 0
+    return False
+
+
 def evidence_kind(fact: Mapping[str, Any]) -> str:
     net = net_of(fact)
     evidence = str(net.get("evidence") or fact.get("evidence") or "")
-    if evidence.startswith("imported"):
+    if evidence.startswith("imported") or evidence == "static server":
         return evidence
     native = str(fact.get("native_type") or "")
-    if str(fact.get("format") or "") == "import" or native in {"testssl", "sslyze", "nmap"}:
-        return f"imported:{native or 'tool'}"
+    fmt = str(fact.get("format") or "")
+    provider = str(fact.get("provider") or "")
+    imported = fmt in {"import", "tls_result"} or native in {
+        "testssl",
+        "sslyze",
+        "nmap",
+        "tls_result",
+    }
+    if imported:
+        tool = provider if provider and provider not in {"other", "self_hosted"} else native
+        return f"imported:{tool or 'tool'}"
     return "static server"
 
 
@@ -389,7 +427,7 @@ def source_status_flow(view: object, styles: Styles, width: float) -> list[Flowa
             shown = f"partial (lanes failed: {lanes})" if lanes else "partial"
         elif status == "assessed":
             shown = "assessed"
-            if as_int(source.get("fact_count")) == 0 and not source.get("partial"):
+            if _source_has_zero_facts(source):
                 zero_labels.append(str(source.get("label") or source.get("key") or "source"))
         else:
             shown = "not assessed"
