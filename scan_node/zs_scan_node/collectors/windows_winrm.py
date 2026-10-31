@@ -168,6 +168,9 @@ def check_name(ctx: JobContext, target: Target) -> None:
     """WinRM connects by the name (so the certificate can prove the server), and the HTTP client resolves it again.
     Every address the name has must therefore be allowed, not just the one checked when targets were expanded."""
     if _is_ip(target.label):
+        # checked again per target: a never-scan entry added after the job started applies to the rest of it
+        if target.ip and ctx.never_scan.blocks_ip(target.ip):
+            raise _Fail("skipped_never_scan", f"{target.label} is on the never-scan list")
         return
     try:
         addresses = resolve(target.label)

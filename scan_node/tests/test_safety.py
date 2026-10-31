@@ -314,3 +314,7 @@ def test_winrm_name_must_not_resolve_to_a_never_scan_address(monkeypatch):
         W.check_name(ctx, Target("winhost.corp", "10.0.0.5"))
     assert err.value.status == "skipped_never_scan"
     W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))  # an IP target is the address that was checked
+    ctx.never_scan.update(["10.0.0.6/32", "10.0.0.5/32"])  # added after the job started
+    with pytest.raises(W._Fail) as err:
+        W.check_name(ctx, Target("10.0.0.5", "10.0.0.5"))
+    assert err.value.status == "skipped_never_scan"
