@@ -147,6 +147,13 @@ class PortItem(_Body):
     label: str = Field(default="", max_length=40)
 
 
+class RiskModel(_Body):
+    """Mosca inputs, in years. All three are needed for a verdict; null clears one."""
+    data_shelf_life_years: int | None = Field(default=None, ge=0, le=100, strict=True)
+    migration_years: int | None = Field(default=None, ge=0, le=100, strict=True)
+    threat_years: int | None = Field(default=None, ge=0, le=100, strict=True)
+
+
 class SettingsUpdate(_Body):
     cert_domains: list[str] | None = Field(default=None, max_length=200)
     network_exclusions: list[ExclusionItem] | None = Field(default=None, max_length=500)
@@ -160,6 +167,7 @@ class SettingsUpdate(_Body):
     rate_handshakes_per_endpoint: int | None = Field(default=None, ge=1, le=200)
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
+    risk_model: RiskModel | None = None
     expected_version: int | None = None
 
     @field_validator("scan_window")

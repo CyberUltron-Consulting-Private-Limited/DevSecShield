@@ -20,6 +20,17 @@ def _display_row(row: dict) -> dict:
     return copied
 
 
+_KB_REMEDIATION_ROWS = 500
+
+
+def _kb_remediation(row: dict, index: int) -> dict | None:
+    if index >= _KB_REMEDIATION_ROWS or not row.get("finding_codes"):
+        return None
+    from backend.utilities.cbom_sources.kb_remediation import remediation
+
+    return remediation(row, "code")
+
+
 def _finding(row: dict, index: int) -> dict:
     shown = _display_row(row)
     return {
@@ -40,7 +51,12 @@ def _finding(row: dict, index: int) -> dict:
         "quantum_safe": shown.get("quantum_safe", False),
         "location": shown.get("location") or "",
         "snippet": shown.get("snippet") or "",
-        "remediation": None,
+        # CI runs are not stored findings, so the remediation endpoint cannot look them up; the offline
+        # knowledge-base remediation is built here for flagged rows instead (no AI, no network).
+        "remediation": _kb_remediation(shown, index),
+        "finding_codes": shown.get("finding_codes") or [],
+        "cwe": shown.get("cwe") or [],
+        "cves": shown.get("cves") or [],
         "asset_type": shown.get("asset_type"),
         "material_kind": shown.get("material_kind"),
         "container_format": shown.get("container_format"),

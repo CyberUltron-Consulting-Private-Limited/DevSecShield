@@ -221,6 +221,11 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "location": fd.get("location", ""),
                 "snippet": fd.get("snippet", ""),
                 "remediation": finding.get("remediation", None),
+                # knowledge-base references (code-scan rows from this release on; older rows have none)
+                "finding_codes": fd.get("finding_codes") or [],
+                "cwe": fd.get("cwe") or [],
+                "cves": fd.get("cves") or [],
+                "asset_type": fd.get("asset_type"),
             })
 
     elif scan_type == "ai_bom":

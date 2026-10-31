@@ -24,6 +24,7 @@ import {
 
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
+import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate, type Tone } from "./shared";
 
 export const ASSET_TYPE_LABEL: Record<string, string> = {
@@ -183,6 +184,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
   return (
     <div className="space-y-4 min-w-0" data-testid="run-results">
       <TargetsBlock jobs={data.targets} />
+      <RunPostureCard teamId={teamId} runId={runId} active={active} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -315,14 +317,18 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                               Source: {asset.source_name ?? "—"}
                               {asset.finding_codes.length > 0 ? ` · ${asset.finding_codes.join(", ")}` : ""}
                             </p>
-                            <dl className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-x-4 gap-y-1 text-xs">
-                              {factsRows(asset).map(([key, value]) => (
-                                <Fragment key={key}>
-                                  <dt className="text-zinc-500">{key}</dt>
-                                  <dd className="text-zinc-800 dark:text-zinc-200 break-all font-mono">{value}</dd>
-                                </Fragment>
-                              ))}
-                            </dl>
+                            <AssetDetailPanel teamId={teamId} assetId={asset.id} />
+                            <details className="text-xs">
+                              <summary className="cursor-pointer text-zinc-500">Collected facts</summary>
+                              <dl className="mt-2 grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-x-4 gap-y-1 text-xs">
+                                {factsRows(asset).map(([key, value]) => (
+                                  <Fragment key={key}>
+                                    <dt className="text-zinc-500">{key}</dt>
+                                    <dd className="text-zinc-800 dark:text-zinc-200 break-all font-mono">{value}</dd>
+                                  </Fragment>
+                                ))}
+                              </dl>
+                            </details>
                           </div>
                         </TableCell>
                       </TableRow>

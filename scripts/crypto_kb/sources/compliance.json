@@ -1,0 +1,1048 @@
+{
+ "_meta": {
+  "compiled_utc": "2026-10-31",
+  "method": "Each leaf was taken from a page/PDF opened during research (curl download + text extraction, or WebFetch where curl was blocked). 'verified': false marks items that could not be confirmed from a primary source.",
+  "owasp_index_sources": {
+   "2025": "https://top10.owasp.org/2025/",
+   "2021": "https://top10.owasp.org/2021/",
+   "note": "owasp.org/Top10/2025/ and owasp.org/Top10/2021/ 302-redirect to top10.owasp.org; category pages were fetched from top10.owasp.org.",
+   "2025_status_quote": "Welcome to the OWASP Top 10:2025 Release. ... This is the 2025 version of the OWASP Top 10.",
+   "2025_status_note": "No 'release candidate' wording on the index page; no release date stated on the page.",
+   "mapped_cwes_crosscheck": "Listed CWE counts match each page's 'CWEs Mapped' factor-table figure for 19/20 categories; A02:2021 lists 30 vs factor 29."
+  },
+  "owasp_2025_category_mapping": {
+   "cryptographic_failures": "A04:2025",
+   "security_misconfiguration": "A02:2025",
+   "vulnerable_outdated_components_or_supply_chain": "A03:2025",
+   "authentication_failures": "A07:2025"
+  }
+ },
+ "owasp_2021": [
+  {
+   "id": "A01:2021",
+   "name": "Broken Access Control",
+   "source": "https://top10.owasp.org/2021/A01_2021-Broken_Access_Control/",
+   "mapped_cwes": [
+    "CWE-22",
+    "CWE-23",
+    "CWE-35",
+    "CWE-59",
+    "CWE-200",
+    "CWE-201",
+    "CWE-219",
+    "CWE-264",
+    "CWE-275",
+    "CWE-276",
+    "CWE-284",
+    "CWE-285",
+    "CWE-352",
+    "CWE-359",
+    "CWE-377",
+    "CWE-402",
+    "CWE-425",
+    "CWE-441",
+    "CWE-497",
+    "CWE-538",
+    "CWE-540",
+    "CWE-548",
+    "CWE-552",
+    "CWE-566",
+    "CWE-601",
+    "CWE-639",
+    "CWE-651",
+    "CWE-668",
+    "CWE-706",
+    "CWE-862",
+    "CWE-863",
+    "CWE-913",
+    "CWE-922",
+    "CWE-1275"
+   ],
+   "mapped_cwes_count_listed": 34
+  },
+  {
+   "id": "A02:2021",
+   "name": "Cryptographic Failures",
+   "source": "https://top10.owasp.org/2021/A02_2021-Cryptographic_Failures/",
+   "mapped_cwes": [
+    "CWE-259",
+    "CWE-261",
+    "CWE-296",
+    "CWE-310",
+    "CWE-319",
+    "CWE-321",
+    "CWE-322",
+    "CWE-323",
+    "CWE-324",
+    "CWE-325",
+    "CWE-326",
+    "CWE-327",
+    "CWE-328",
+    "CWE-329",
+    "CWE-330",
+    "CWE-331",
+    "CWE-335",
+    "CWE-336",
+    "CWE-337",
+    "CWE-338",
+    "CWE-340",
+    "CWE-347",
+    "CWE-523",
+    "CWE-720",
+    "CWE-757",
+    "CWE-759",
+    "CWE-760",
+    "CWE-780",
+    "CWE-818",
+    "CWE-916"
+   ],
+   "mapped_cwes_count_listed": 30,
+   "note": "Page factor table states 'CWEs Mapped 29' but the page's List of Mapped CWEs shows 30 entries; all 30 listed here as shown."
+  },
+  {
+   "id": "A03:2021",
+   "name": "Injection",
+   "source": "https://top10.owasp.org/2021/A03_2021-Injection/",
+   "mapped_cwes": [
+    "CWE-20",
+    "CWE-74",
+    "CWE-75",
+    "CWE-77",
+    "CWE-78",
+    "CWE-79",
+    "CWE-80",
+    "CWE-83",
+    "CWE-87",
+    "CWE-88",
+    "CWE-89",
+    "CWE-90",
+    "CWE-91",
+    "CWE-93",
+    "CWE-94",
+    "CWE-95",
+    "CWE-96",
+    "CWE-97",
+    "CWE-98",
+    "CWE-99",
+    "CWE-100",
+    "CWE-113",
+    "CWE-116",
+    "CWE-138",
+    "CWE-184",
+    "CWE-470",
+    "CWE-471",
+    "CWE-564",
+    "CWE-610",
+    "CWE-643",
+    "CWE-644",
+    "CWE-652",
+    "CWE-917"
+   ],
+   "mapped_cwes_count_listed": 33
+  },
+  {
+   "id": "A04:2021",
+   "name": "Insecure Design",
+   "source": "https://top10.owasp.org/2021/A04_2021-Insecure_Design/",
+   "mapped_cwes": [
+    "CWE-73",
+    "CWE-183",
+    "CWE-209",
+    "CWE-213",
+    "CWE-235",
+    "CWE-256",
+    "CWE-257",
+    "CWE-266",
+    "CWE-269",
+    "CWE-280",
+    "CWE-311",
+    "CWE-312",
+    "CWE-313",
+    "CWE-316",
+    "CWE-419",
+    "CWE-430",
+    "CWE-434",
+    "CWE-444",
+    "CWE-451",
+    "CWE-472",
+    "CWE-501",
+    "CWE-522",
+    "CWE-525",
+    "CWE-539",
+    "CWE-579",
+    "CWE-598",
+    "CWE-602",
+    "CWE-642",
+    "CWE-646",
+    "CWE-650",
+    "CWE-653",
+    "CWE-656",
+    "CWE-657",
+    "CWE-799",
+    "CWE-807",
+    "CWE-840",
+    "CWE-841",
+    "CWE-927",
+    "CWE-1021",
+    "CWE-1173"
+   ],
+   "mapped_cwes_count_listed": 40
+  },
+  {
+   "id": "A05:2021",
+   "name": "Security Misconfiguration",
+   "source": "https://top10.owasp.org/2021/A05_2021-Security_Misconfiguration/",
+   "mapped_cwes": [
+    "CWE-2",
+    "CWE-11",
+    "CWE-13",
+    "CWE-15",
+    "CWE-16",
+    "CWE-260",
+    "CWE-315",
+    "CWE-520",
+    "CWE-526",
+    "CWE-537",
+    "CWE-541",
+    "CWE-547",
+    "CWE-611",
+    "CWE-614",
+    "CWE-756",
+    "CWE-776",
+    "CWE-942",
+    "CWE-1004",
+    "CWE-1032",
+    "CWE-1174"
+   ],
+   "mapped_cwes_count_listed": 20
+  },
+  {
+   "id": "A06:2021",
+   "name": "Vulnerable and Outdated Components",
+   "source": "https://top10.owasp.org/2021/A06_2021-Vulnerable_and_Outdated_Components/",
+   "mapped_cwes": [
+    "CWE-937",
+    "CWE-1035",
+    "CWE-1104"
+   ],
+   "mapped_cwes_count_listed": 3
+  },
+  {
+   "id": "A07:2021",
+   "name": "Identification and Authentication Failures",
+   "source": "https://top10.owasp.org/2021/A07_2021-Identification_and_Authentication_Failures/",
+   "mapped_cwes": [
+    "CWE-255",
+    "CWE-259",
+    "CWE-287",
+    "CWE-288",
+    "CWE-290",
+    "CWE-294",
+    "CWE-295",
+    "CWE-297",
+    "CWE-300",
+    "CWE-302",
+    "CWE-304",
+    "CWE-306",
+    "CWE-307",
+    "CWE-346",
+    "CWE-384",
+    "CWE-521",
+    "CWE-613",
+    "CWE-620",
+    "CWE-640",
+    "CWE-798",
+    "CWE-940",
+    "CWE-1216"
+   ],
+   "mapped_cwes_count_listed": 22
+  },
+  {
+   "id": "A08:2021",
+   "name": "Software and Data Integrity Failures",
+   "source": "https://top10.owasp.org/2021/A08_2021-Software_and_Data_Integrity_Failures/",
+   "mapped_cwes": [
+    "CWE-345",
+    "CWE-353",
+    "CWE-426",
+    "CWE-494",
+    "CWE-502",
+    "CWE-565",
+    "CWE-784",
+    "CWE-829",
+    "CWE-830",
+    "CWE-915"
+   ],
+   "mapped_cwes_count_listed": 10
+  },
+  {
+   "id": "A09:2021",
+   "name": "Security Logging and Monitoring Failures",
+   "source": "https://top10.owasp.org/2021/A09_2021-Security_Logging_and_Monitoring_Failures/",
+   "mapped_cwes": [
+    "CWE-117",
+    "CWE-223",
+    "CWE-532",
+    "CWE-778"
+   ],
+   "mapped_cwes_count_listed": 4
+  },
+  {
+   "id": "A10:2021",
+   "name": "Server-Side Request Forgery (SSRF)",
+   "source": "https://top10.owasp.org/2021/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
+   "mapped_cwes": [
+    "CWE-918"
+   ],
+   "mapped_cwes_count_listed": 1
+  }
+ ],
+ "owasp_2025": [
+  {
+   "id": "A01:2025",
+   "name": "Broken Access Control",
+   "source": "https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/",
+   "mapped_cwes": [
+    "CWE-22",
+    "CWE-23",
+    "CWE-36",
+    "CWE-59",
+    "CWE-61",
+    "CWE-65",
+    "CWE-200",
+    "CWE-201",
+    "CWE-219",
+    "CWE-276",
+    "CWE-281",
+    "CWE-282",
+    "CWE-283",
+    "CWE-284",
+    "CWE-285",
+    "CWE-352",
+    "CWE-359",
+    "CWE-377",
+    "CWE-379",
+    "CWE-402",
+    "CWE-424",
+    "CWE-425",
+    "CWE-441",
+    "CWE-497",
+    "CWE-538",
+    "CWE-540",
+    "CWE-548",
+    "CWE-552",
+    "CWE-566",
+    "CWE-601",
+    "CWE-615",
+    "CWE-639",
+    "CWE-668",
+    "CWE-732",
+    "CWE-749",
+    "CWE-862",
+    "CWE-863",
+    "CWE-918",
+    "CWE-922",
+    "CWE-1275"
+   ],
+   "mapped_cwes_count_listed": 40
+  },
+  {
+   "id": "A02:2025",
+   "name": "Security Misconfiguration",
+   "source": "https://top10.owasp.org/2025/A02_2025-Security_Misconfiguration/",
+   "mapped_cwes": [
+    "CWE-5",
+    "CWE-11",
+    "CWE-13",
+    "CWE-15",
+    "CWE-16",
+    "CWE-260",
+    "CWE-315",
+    "CWE-489",
+    "CWE-526",
+    "CWE-547",
+    "CWE-611",
+    "CWE-614",
+    "CWE-776",
+    "CWE-942",
+    "CWE-1004",
+    "CWE-1174"
+   ],
+   "mapped_cwes_count_listed": 16,
+   "covers": "security misconfiguration (was A05:2021)",
+   "quote": "Moving up from #5 in the previous edition, 100% of the applications tested were found to have some form of misconfiguration"
+  },
+  {
+   "id": "A03:2025",
+   "name": "Software Supply Chain Failures",
+   "source": "https://top10.owasp.org/2025/A03_2025-Software_Supply_Chain_Failures/",
+   "mapped_cwes": [
+    "CWE-447",
+    "CWE-1035",
+    "CWE-1104",
+    "CWE-1329",
+    "CWE-1357",
+    "CWE-1395"
+   ],
+   "mapped_cwes_count_listed": 6,
+   "covers": "vulnerable/outdated components and wider supply chain (successor of A06:2021)",
+   "quote": "Since initially appearing in the 2013 Top 10 as \"A9 – Using Components with Known Vulnerabilities\", the risk has grown in scope to include all supply chain failures, not just ones involving known vulnerabilities."
+  },
+  {
+   "id": "A04:2025",
+   "name": "Cryptographic Failures",
+   "source": "https://top10.owasp.org/2025/A04_2025-Cryptographic_Failures/",
+   "mapped_cwes": [
+    "CWE-261",
+    "CWE-296",
+    "CWE-319",
+    "CWE-320",
+    "CWE-321",
+    "CWE-322",
+    "CWE-323",
+    "CWE-324",
+    "CWE-325",
+    "CWE-326",
+    "CWE-327",
+    "CWE-328",
+    "CWE-329",
+    "CWE-330",
+    "CWE-331",
+    "CWE-332",
+    "CWE-334",
+    "CWE-335",
+    "CWE-336",
+    "CWE-337",
+    "CWE-338",
+    "CWE-340",
+    "CWE-342",
+    "CWE-347",
+    "CWE-523",
+    "CWE-757",
+    "CWE-759",
+    "CWE-760",
+    "CWE-780",
+    "CWE-916",
+    "CWE-1240",
+    "CWE-1241"
+   ],
+   "mapped_cwes_count_listed": 32,
+   "covers": "cryptographic failures (was A02:2021)",
+   "quote": "Moving down two positions to #4, this weakness focuses on failures related to the lack of cryptography, insufficiently strong cryptography, leaking of cryptographic keys, and related errors."
+  },
+  {
+   "id": "A05:2025",
+   "name": "Injection",
+   "source": "https://top10.owasp.org/2025/A05_2025-Injection/",
+   "mapped_cwes": [
+    "CWE-20",
+    "CWE-74",
+    "CWE-76",
+    "CWE-77",
+    "CWE-78",
+    "CWE-79",
+    "CWE-80",
+    "CWE-83",
+    "CWE-86",
+    "CWE-88",
+    "CWE-89",
+    "CWE-90",
+    "CWE-91",
+    "CWE-93",
+    "CWE-94",
+    "CWE-95",
+    "CWE-96",
+    "CWE-97",
+    "CWE-98",
+    "CWE-99",
+    "CWE-103",
+    "CWE-104",
+    "CWE-112",
+    "CWE-113",
+    "CWE-114",
+    "CWE-115",
+    "CWE-116",
+    "CWE-129",
+    "CWE-159",
+    "CWE-470",
+    "CWE-493",
+    "CWE-500",
+    "CWE-564",
+    "CWE-610",
+    "CWE-643",
+    "CWE-644",
+    "CWE-917"
+   ],
+   "mapped_cwes_count_listed": 37
+  },
+  {
+   "id": "A06:2025",
+   "name": "Insecure Design",
+   "source": "https://top10.owasp.org/2025/A06_2025-Insecure_Design/",
+   "mapped_cwes": [
+    "CWE-73",
+    "CWE-183",
+    "CWE-256",
+    "CWE-266",
+    "CWE-269",
+    "CWE-286",
+    "CWE-311",
+    "CWE-312",
+    "CWE-313",
+    "CWE-316",
+    "CWE-362",
+    "CWE-382",
+    "CWE-419",
+    "CWE-434",
+    "CWE-436",
+    "CWE-444",
+    "CWE-451",
+    "CWE-454",
+    "CWE-472",
+    "CWE-501",
+    "CWE-522",
+    "CWE-525",
+    "CWE-539",
+    "CWE-598",
+    "CWE-602",
+    "CWE-628",
+    "CWE-642",
+    "CWE-646",
+    "CWE-653",
+    "CWE-656",
+    "CWE-657",
+    "CWE-676",
+    "CWE-693",
+    "CWE-799",
+    "CWE-807",
+    "CWE-841",
+    "CWE-1021",
+    "CWE-1022",
+    "CWE-1125"
+   ],
+   "mapped_cwes_count_listed": 39
+  },
+  {
+   "id": "A07:2025",
+   "name": "Authentication Failures",
+   "source": "https://top10.owasp.org/2025/A07_2025-Authentication_Failures/",
+   "mapped_cwes": [
+    "CWE-258",
+    "CWE-259",
+    "CWE-287",
+    "CWE-288",
+    "CWE-289",
+    "CWE-290",
+    "CWE-291",
+    "CWE-293",
+    "CWE-294",
+    "CWE-295",
+    "CWE-297",
+    "CWE-298",
+    "CWE-299",
+    "CWE-300",
+    "CWE-302",
+    "CWE-303",
+    "CWE-304",
+    "CWE-305",
+    "CWE-306",
+    "CWE-307",
+    "CWE-308",
+    "CWE-309",
+    "CWE-346",
+    "CWE-350",
+    "CWE-384",
+    "CWE-521",
+    "CWE-613",
+    "CWE-620",
+    "CWE-640",
+    "CWE-798",
+    "CWE-940",
+    "CWE-941",
+    "CWE-1390",
+    "CWE-1391",
+    "CWE-1392",
+    "CWE-1393"
+   ],
+   "mapped_cwes_count_listed": 36,
+   "covers": "authentication failures (was A07:2021 Identification and Authentication Failures)",
+   "quote": "Authentication Failures maintains its position at #7 with a slight name change to more accurately reflect the 36 CWEs in this category."
+  },
+  {
+   "id": "A08:2025",
+   "name": "Software or Data Integrity Failures",
+   "source": "https://top10.owasp.org/2025/A08_2025-Software_or_Data_Integrity_Failures/",
+   "mapped_cwes": [
+    "CWE-345",
+    "CWE-353",
+    "CWE-426",
+    "CWE-427",
+    "CWE-494",
+    "CWE-502",
+    "CWE-506",
+    "CWE-509",
+    "CWE-565",
+    "CWE-784",
+    "CWE-829",
+    "CWE-830",
+    "CWE-915",
+    "CWE-926"
+   ],
+   "mapped_cwes_count_listed": 14
+  },
+  {
+   "id": "A09:2025",
+   "name": "Security Logging and Alerting Failures",
+   "source": "https://top10.owasp.org/2025/A09_2025-Security_Logging_and_Alerting_Failures/",
+   "mapped_cwes": [
+    "CWE-117",
+    "CWE-221",
+    "CWE-223",
+    "CWE-532",
+    "CWE-778"
+   ],
+   "mapped_cwes_count_listed": 5
+  },
+  {
+   "id": "A10:2025",
+   "name": "Mishandling of Exceptional Conditions",
+   "source": "https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/",
+   "mapped_cwes": [
+    "CWE-209",
+    "CWE-215",
+    "CWE-234",
+    "CWE-235",
+    "CWE-248",
+    "CWE-252",
+    "CWE-274",
+    "CWE-280",
+    "CWE-369",
+    "CWE-390",
+    "CWE-391",
+    "CWE-394",
+    "CWE-396",
+    "CWE-397",
+    "CWE-460",
+    "CWE-476",
+    "CWE-478",
+    "CWE-484",
+    "CWE-550",
+    "CWE-636",
+    "CWE-703",
+    "CWE-754",
+    "CWE-755",
+    "CWE-756"
+   ],
+   "mapped_cwes_count_listed": 24
+  }
+ ],
+ "nist": {
+  "sp800_131a_rev2": {
+   "status": "Final, published 2019-03-21; still the current revision as of Oct 2026 (Rev. 3 remains an initial public draft).",
+   "source": "https://csrc.nist.gov/pubs/sp/800/131/a/r2/final",
+   "pdf": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+   "currency_evidence": {
+    "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
+    "quote": "NOTE: The initial public draft of Revision 3 (2024) is available at https://csrc.nist.gov/pubs/sp/800/131/a/r3/ipd. The URL for the final publication will be https://csrc.nist.gov/pubs/sp/800/131/a/r3/final."
+   },
+   "sha1": {
+    "section": "Sec. 9, Table 8",
+    "digital_signature_generation": "Disallowed, except where specifically allowed by NIST protocol-specific guidance",
+    "digital_signature_verification": "Legacy use",
+    "non_digital_signature_applications": "Acceptable",
+    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf"
+   },
+   "tdea_3des": {
+    "section": "Sec. 2, Table 1",
+    "two_key_encryption": "Disallowed",
+    "two_key_decryption": "Legacy use",
+    "three_key_encryption": "Deprecated through 2023; Disallowed after 2023",
+    "three_key_decryption": "Legacy use",
+    "quote": "After December 31, 2023, three-key TDEA is disallowed for encryption unless specifically allowed by other NIST guidance.",
+    "also": "Same 2023 sunset for CTR_DRBG with three-key TDEA (Sec. 4 Table 3), TDEA key wrapping (Sec. 7 Table 6), CMAC-KDF with three-key TDEA (Sec. 8 Table 7).",
+    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf"
+   },
+   "below_112_bit": {
+    "digital_signatures": {
+     "section": "Sec. 3, Table 2",
+     "generation": "Disallowed for < 112 bits (RSA len(n) < 2048; ECDSA len(n) < 224; DSA (L,N) not (2048,224),(2048,256),(3072,256))",
+     "verification": "Legacy use (e.g. RSA 1024 <= len(n) < 2048; ECDSA 160 <= len(n) < 224)",
+     "acceptable": "RSA len(n) >= 2048; ECDSA/EdDSA len(n) >= 224"
+    },
+    "dh_mqv_key_agreement": {
+     "section": "Sec. 5, Table 4",
+     "status": "< 112 bits of security strength: Disallowed (e.g. FFC len(p) < 2048; ECC len(n) < 224)"
+    },
+    "rsa_key_transport_agreement": {
+     "section": "Sec. 6, Table 5",
+     "status": "len(n) < 2048 Disallowed; len(n) >= 2048 Acceptable",
+     "quote": "After December 31, 2023, the use of PKCS1-v 1_5 padding scheme is disallowed."
+    },
+    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf"
+   }
+  },
+  "sp800_131a_rev3_draft": {
+   "status": "Initial Public Draft, 2024-10-21; comments closed 2024-12-04; not final as of 2026-10-31.",
+   "source": "https://csrc.nist.gov/pubs/sp/800/131/a/r3/ipd",
+   "pdf": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar3.ipd.pdf",
+   "proposals": {
+    "sha1_and_224bit_hashes": "Deprecated through 2030; Disallowed after 2030 (for applying protection)",
+    "tdea": "Encryption Disallowed; decryption Legacy use",
+    "ecb": "Disallowed for encrypting secret data; legacy use only",
+    "dsa": "Signature generation Disallowed; verification Legacy use",
+    "rsa_ecdsa_112_bit": "Acceptable through 2030; Deprecated after 2030 (RSA 2048 <= len(n) < 3072)"
+   },
+   "quote": "TDEA is disallowed as of 2024 (see Sec. 2). This revision of SP 800-131A also deprecates SHA-1 and the 224-bit hash functions through December 31, 2030, and disallows them thereafter for applying cryptographic protection"
+  },
+  "ir8547": {
+   "status": "Final, October 2026 (CSRC lists final 2026-10-27; approved by NIST ERB 2026-10-21); draft (ipd) was 2024-11-12.",
+   "source": "https://csrc.nist.gov/pubs/ir/8547/final",
+   "pdf": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
+   "quote": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035.",
+   "table2_signatures_p15": {
+    "ECDSA (>=112 bits)": "Deprecated after 2030; Disallowed after 2035",
+    "EdDSA (>=128 bits)": "Deprecated after 2030; Disallowed after 2035",
+    "RSA (>=112 bits)": "Deprecated after 2030; Disallowed after 2035"
+   },
+   "table4_key_establishment_p16_17": {
+    "Finite Field DH and MQV (>=112 bits)": "Deprecated after 2030; Disallowed after 2035",
+    "Elliptic Curve DH and MQV (>=112 bits)": "Deprecated after 2030; Disallowed after 2035",
+    "RSA SP 800-56B (>=112 bits)": "Deprecated after 2030; Disallowed after 2035"
+   },
+   "change_from_draft": {
+    "source": "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf",
+    "detail": "The Nov 2024 draft split rows: 112-bit = 'Deprecated after 2030, Disallowed after 2035'; >=128-bit = 'Disallowed after 2035' only. The final collapses to a single row (>=112 bits, or >=128 for EdDSA): deprecated after 2030 for all strengths."
+   },
+   "federal_accelerators": {
+    "quote": "These systems must adopt post-quantum cryptography for key establishment by December 31, 2030, and for digital signatures by December 31, 2031.",
+    "context": "EO 14412 / OMB M-26-15, high value assets and high impact systems; TLS 1.3 support required no later than January 2, 2030 (EO 14306 / OMB M-26-15).",
+    "page": "Sec. 4, p.13"
+   },
+   "sha1_footnote": {
+    "quote": "The SHA-1 hash function is currently deprecated for all remaining technical applications and will be disallowed for use in FIPS-validated cryptographic modules after 2030.",
+    "page": "p.18, Table 8 fn.4"
+   },
+   "symmetric_112": {
+    "quote": "NIST has a few symmetric cryptography standards at the 112-bit security level, which will be disallowed in 2030.",
+    "page": "Sec. 4.1.3, p.18"
+   },
+   "ml_kem_default": "NIST recommends using ML-KEM-768 as the default parameter set"
+  },
+  "fips": {
+   "fips203_ml_kem": {
+    "published": "2024-08-13",
+    "source": "https://csrc.nist.gov/pubs/fips/203/final",
+    "quote": "Date Published: August 13, 2024",
+    "note": "Planning note 11/17/2025: an identified issue will be corrected in a future update/revision."
+   },
+   "fips204_ml_dsa": {
+    "published": "2024-08-13",
+    "source": "https://csrc.nist.gov/pubs/fips/204/final",
+    "quote": "Date Published: August 13, 2024",
+    "note": "Planning note 07/31/2026 points to an errata (potential updates) spreadsheet."
+   },
+   "fips205_slh_dsa": {
+    "published": "2024-08-13",
+    "source": "https://csrc.nist.gov/pubs/fips/205/final",
+    "quote": "Date Published: August 13, 2024"
+   }
+  }
+ },
+ "cnsa2": {
+  "source": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF",
+  "document": "NSA CNSA 2.0 FAQ, 'U/OO/194427-22 | PP-24-1178 | April 2024 Ver. 2.0' (as returned at that URL)",
+  "retrieval_note": "Read via WebFetch (curl got HTTP 403 from the CDN). The companion advisory CSA_CNSA_2.0_ALGORITHMS_.PDF (https://media.defense.gov/2022/Sep/07/2003071834/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS_.PDF) could not be fetched. No newer FAQ version was confirmed.",
+  "algorithms": [
+   {
+    "algorithm": "AES",
+    "function": "Symmetric encryption",
+    "spec": "FIPS PUB 197",
+    "parameters": "Use 256-bit keys for all classification levels."
+   },
+   {
+    "algorithm": "ML-KEM (CRYSTALS-Kyber)",
+    "function": "Key establishment",
+    "spec": "FIPS PUB 203",
+    "parameters": "Use Category 5 parameter, ML-KEM-1024, for all classification levels."
+   },
+   {
+    "algorithm": "ML-DSA (CRYSTALS-Dilithium)",
+    "function": "Digital signatures",
+    "spec": "FIPS PUB 204",
+    "parameters": "Use Category 5 parameter, ML-DSA-87, for all classification levels."
+   },
+   {
+    "algorithm": "SHA",
+    "function": "Hashing",
+    "spec": "FIPS PUB 180-4",
+    "parameters": "Use SHA-384 or SHA-512 for all classification levels."
+   },
+   {
+    "algorithm": "LMS",
+    "function": "Firmware and software signing",
+    "spec": "NIST SP 800-208",
+    "parameters": "All parameters approved for all classification levels. LMS SHA-256/192 is recommended."
+   },
+   {
+    "algorithm": "XMSS",
+    "function": "Firmware and software signing",
+    "spec": "NIST SP 800-208",
+    "parameters": "All parameters approved for all classification levels."
+   }
+  ],
+  "timeline": [
+   {
+    "category": "Software- and firmware-signing",
+    "support_and_prefer_by": 2025,
+    "exclusively_use_by": 2030
+   },
+   {
+    "category": "Web browsers/servers and cloud services",
+    "support_and_prefer_by": 2025,
+    "exclusively_use_by": 2033
+   },
+   {
+    "category": "Traditional networking equipment (e.g., VPNs, routers)",
+    "support_and_prefer_by": 2026,
+    "exclusively_use_by": 2030
+   },
+   {
+    "category": "Operating systems",
+    "support_and_prefer_by": 2027,
+    "exclusively_use_by": 2033
+   },
+   {
+    "category": "Niche equipment (e.g., constrained devices, large PKI systems)",
+    "support_and_prefer_by": 2030,
+    "exclusively_use_by": 2033
+   },
+   {
+    "category": "Custom applications and legacy equipment",
+    "support_and_prefer_by": null,
+    "exclusively_use_by": null,
+    "quote": "update or replace by 2033"
+   }
+  ],
+  "overall_goal_quote": "NSA intends that all NSS will be quantum-resistant by 2035"
+ },
+ "certin": {
+  "bom_guidelines": {
+   "title": "Technical Guidelines on SBOM | QBOM & CBOM | AIBOM | HBOM",
+   "version": "2.0",
+   "date": "2025-07-09",
+   "quote_date": "Version 2.0 Dated 09.07.2025",
+   "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
+   "newer_version": "None found (web search, 2026-10-31); not confirmed from CERT-In's site index.",
+   "cbom_definition": {
+    "section": "8.1, p.42",
+    "quote": "The CBOM is an inventory of cryptographic assets—including algorithms, keys, protocols, certificates, and dependencies—capturing critical metadata such as usage patterns and expiration dates."
+   },
+   "minimum_elements_table9": {
+    "section": "8.3, Table 9 'Minimum Elements pertaining to Cryptographic Asset', pp.45-48",
+    "note": "Table 8 (QBOM, p.44) says: 'For a cryptographic asset, the minimum elements that are to be included in the QBOM are mentioned in table 9 depending on the cryptographic asset type.'",
+    "algorithms": [
+     "Name",
+     "Asset Type",
+     "Primitive",
+     "Mode",
+     "Crypto Functions",
+     "Classical security level",
+     "OID",
+     "List"
+    ],
+    "keys": [
+     "Name",
+     "Asset Type",
+     "id",
+     "state",
+     "size",
+     "Creation Date",
+     "Activation Date"
+    ],
+    "protocols": [
+     "Name",
+     "Asset Type",
+     "Version",
+     "Cipher Suites",
+     "OID"
+    ],
+    "certificates": [
+     "Name",
+     "Asset Type",
+     "Subject Name",
+     "Issuer Name",
+     "Not Valid Before",
+     "Not Valid After",
+     "Signature Algorithm Reference",
+     "Subject Public Key Reference",
+     "Certificate Format",
+     "Certificate Extension"
+    ],
+    "example_quote": "For example, \"2.16.840.1.101.3.4.1.6\" for AES-128-GCM, \"1.2.840.113549.1.1.13\" for SHA512withRSA"
+   },
+   "qbom_elements_table8": [
+    "Model Name",
+    "Version",
+    "Vendor & Origin Information",
+    "License Information",
+    "Cryptographic Asset",
+    "Communication Protocol",
+    "Hardware",
+    "Software Dependencies",
+    "Environmental Impact",
+    "Vulnerabilities",
+    "Attestations"
+   ],
+   "key_recommendations": {
+    "8.4.1.1": "All government, public sector, and essential services organizations shall require a comprehensive Bill of Materials (BOM), specifically a Cryptographic BOM (CBOM) for cryptographic assets and a Quantum BOM (QBOM) for quantum systems in all related procurements, developments, and integrations.",
+    "8.4.1.5": "BOMs shall be generated using recognized industry-standard formats, such as Software Package Data eXchange (SPDX) or CycloneDX",
+    "8.4.1.6": "VEX with status Not Affected / Affected / Fixed / Under Investigation",
+    "8.4.2.2": "Enforce strict TLS configurations by specifying approved cipher suites, certificate chains, and session parameters, and prohibit the use of weak or deprecated algorithms.",
+    "8.4.2.8": "Conduct scheduled reviews, at least quarterly, to verify accuracy and completeness.",
+    "8.5.1": "Public key systems using RSA, ECC, Diffie-Hellman, and DSA algorithms are vulnerable to Shor's algorithm",
+    "pages": "8.4 pp.48-51; 8.5 pp.51-52"
+   }
+  },
+  "directions_2022": {
+   "ref": "No. 20(3)/2022-CERT-In, dated 28 April 2022 (Sec. 70B(6) IT Act)",
+   "source": "https://www.cert-in.org.in/PDF/CERT-In_Directions_70B_28.04.2022.pdf",
+   "crypto_content": "None. Text contains no encryption/TLS/cryptography requirement; it covers NTP sync, 6-hour incident reporting, 180-day log retention, etc."
+  },
+  "govt_entities_guidelines": {
+   "title": "Guidelines on Information Security Practices for Government Entities",
+   "date": "June 2023 (PDF creation date 2023-06-23; no date printed in text)",
+   "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
+   "clauses": {
+    "4.5.7 (pg.12)": "use secure protocols such as SSH, SSL, or IP Security (IPSec) encryption for all remote connections to the router/switch/server.",
+    "4.10.2 (pg.15)": "secured using highest graded encryption (WPA-2 or higher) for data confidentiality and integrity.",
+    "6.1.7 (pg.21)": "Ensure that all Websites and Applications are \"https\" enabled with a valid SSL/TLS Certificate.",
+    "6.2.2 (pg.21)": "The mobile application must implement SSL Pinning to prevent man-in-the-middle attacks.",
+    "6.2.7 (pg.22)": "Sensitive data should be shared over secure SSL/TLS connection only.",
+    "7.1 (pg.22)": "Identify and classify sensitive/personal data and apply measures for encrypting such data in transit and at rest."
+   }
+  },
+  "audit_policy_guidelines_2025": {
+   "verified": false,
+   "note": "CERT-In Comprehensive Cyber Security Audit Policy Guidelines not located as a primary PDF; crypto clauses not verified."
+  }
+ },
+ "sebi_cscrf": {
+  "circular": "SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 dated August 20, 2024 (CSCRF Version 1.0, 205 pages)",
+  "source": "https://www.sebi.gov.in/legal/circulars/aug-2024/cybersecurity-and-cyber-resilience-framework-cscrf-for-sebi-regulated-entities-res-_85964.html",
+  "pdf": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+  "applicability": {
+   "original_para17": {
+    "17.1": "For six categories of REs where cybersecurity and cyber resilience circular already exists – by January 01, 2025.",
+    "17.2": "For other REs where CSCRF is being issued for the first time – by April 01, 2025.",
+    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf"
+   },
+   "latest_extension": {
+    "circular": "SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2025/96 dated June 30, 2025",
+    "quote": "extend the compliance timelines by two (2) months, i.e., till August 31, 2025 to all REs, except Market Infrastructure Institutions (MIIs), KYC Registration Agencies (KRAs), and Qualified Registrars to an Issue and Share Transfer Agents (QRTAs).",
+    "source": "https://www.msei.in/SX-Content/Circulars/2025/July/Circular-17457.pdf",
+    "note": "Read from MSEI circular reproducing the SEBI circular as Annexure-1; intermediate extensions between Jan and Jun 2025 not verified from primary source."
+   }
+  },
+  "clauses": {
+   "ID.RA Standard 2 (Part I sec 2.2, p.59)": "Risk assessment (including post-quantum risks) of REs' IT environment shall be done on a periodic basis.",
+   "Box Item 7: Cybersecurity and Quantum Computing (pp.59-60)": "REs shall maintain an inventory of cryptographic assets, prioritizing critical assets for Post Quantum Cryptography (PQC) migration, and assess their IT infrastructure capabilities. ... REs shall enhance their crypto-agility to ensure a seamless transition to quantum-resistant solutions without disrupting their current IT systems.",
+   "PR.DS Standard 1 (Part I sec 3.3, p.63)": "Data-at-rest and Data-in-transit shall be protected. Strong data protection measures (for both at-rest and in-transit data), with industry standard encryption algorithms, shall be put in place by all REs.",
+   "PR.DS.S1/S2/S3 guideline 1.a (Part II, p.105)": "Data shall be encrypted in motion, at rest and in-use by using strong encryption methods. ... REs shall use industry standard, strong encryption algorithms (e.g., RSA, AES, etc.) wherever encryption is implemented.",
+   "PR.DS.S1/S2/S3 applicability": "All REs except small-size, self-certification REs (Mandatory)",
+   "PR.DS.S4 item 5 (p.108)": "REs shall renew their digital certificates used in IT systems well in time.",
+   "GV.SC.S5 SBOM contents (pp.88-89)": "d. Encryption used  e. Cryptographic hash of the components",
+   "Annexure-H item 5 (p.160)": "Use industry standard, strong encryption algorithms (eg: RSA, AES etc.) wherever encryption is implemented. ... the right methodologies for storing the encryption keys",
+   "Annexure-I Data Transport Security (p.161)": "Strong transport encryption mechanism such as TLS (Transport Layer Security, also referred to as SSL) should be used."
+  },
+  "source_for_clauses": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf"
+ },
+ "rbi": {
+  "md_itgrca_2023": {
+   "ref": "RBI/2023-24/107; DoS.CO.CSITEG/SEC.7/31.01.015/2023-24; November 7, 2023; effective April 1, 2024",
+   "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
+   "applicability": "SCBs (excl. RRBs), SFBs, Payments Banks, NBFCs (Top/Upper/Middle layer), CICs, AIFIs",
+   "para_16_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "status_note": "Repealed for Commercial Banks by the 2026 Directions below; status for other RE classes not verified."
+  },
+  "commercial_banks_directions_2026": {
+   "title": "Reserve Bank of India (Commercial Banks – Cybersecurity, Technology: Risk, Resilience and Assurance Framework) Directions, 2026 (Updated as on October 01, 2026)",
+   "ref": "RBI/DoS/2026-27/410; DoS.CO.CSITEG.4/31.01.015/2026-27; July 31, 2026; 'shall come into effect immediately upon issuance'",
+   "applicability": "Commercial Banks (excludes Small Finance Banks, Payments Banks, Local Area Banks)",
+   "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
+   "para_140_cryptographic_controls": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions.",
+   "para_106": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)",
+   "para_87": "installing 'containerised' apps on mobile / smartphones for exclusive business use that is encrypted and separated from other smartphone data / applications",
+   "para_230_repeal": "the existing Directions, instructions, and guidelines relating to Cybersecurity Framework and IT Governance as applicable to Commercial Banks stand repealed, as communicated vide circular no. DoS.CO.PPG.66/11.01.005/2026-27 dated July 31, 2026"
+  },
+  "cyber_security_framework_2016": {
+   "ref": "DBS.CO/CSITE/BC.11/33.01.001/2015-16 dated June 2, 2016",
+   "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=10435",
+   "para_8": "An indicative, but not exhaustive, minimum baseline cyber security and resilience framework to be implemented by the banks is given in Annex 1.",
+   "annex1": {
+    "verified": false,
+    "url": "http://rbidocs.rbi.org.in/rdocs/content/pdfs/CSFB020616_AN1.pdf",
+    "note": "Blocked by bot-protection/CAPTCHA; encryption/key-management paragraph numbers in Annex 1 NOT verified."
+   },
+   "status_note": "Repealed for Commercial Banks per para 230 of the 2026 Directions."
+  }
+ },
+ "mosca": {
+  "original_paper": {
+   "citation": "Michele Mosca, 'Cybersecurity in an Era with Quantum Computers: Will We Be Ready?', IEEE Security & Privacy 16(5):38-41, Sept 2018, doi:10.1109/MSP.2018.3761723",
+   "source": "https://api.crossref.org/works/10.1109/MSP.2018.3761723",
+   "publisher_page": "https://ieeexplore.ieee.org/document/8490169/ (DOI target; could not be opened)",
+   "preprint": {
+    "source": "https://eprint.iacr.org/2015/1075",
+    "received": "2015-11-05",
+    "quote": "For example, I estimate a $1/2$ chance of breaking RSA-2048 by $2031$."
+   },
+   "inequality_text_verified_in_paper": false,
+   "note": "Neither the IEEE full text nor the ePrint PDF could be opened (403/permission), so the x+y>z wording is not quoted from the 2018 paper itself. GRI attributes the inequality to Mosca 2013 (E-Proceedings of 1st ETSI Quantum-Safe Cryptography Workshop)."
+  },
+  "inequality": {
+   "source": "https://globalriskinstitute.org/mp-files/pdf-quantum-threat-timeline-report-2025.pdf",
+   "quote": "If TSHELF-LIFE + TMIGRATION > TTHREAT, that is, if the time required to migrate the system plus the time for which the information needs to be protected goes beyond the time ...",
+   "definitions": {
+    "X_shelf_life": "the number of years the information should be protected for",
+    "Y_migration": "the number of years needed to safely and adequately migrate the cyber-system to a quantum-safe solution",
+    "Z_threat": "the number of years before the relevant threat actors will be able to break the quantum-vulnerable systems, an event often referred to as \"Q-Day\""
+   }
+  },
+  "gri_quantum_threat_timeline_2025": {
+   "title": "Quantum Threat Timeline Report 2025",
+   "authors": "Michele Mosca, Marco Piani (evolutionQ)",
+   "published": "March 2026 (web page datePublished 2026-03-09)",
+   "experts": 26,
+   "page": "https://globalriskinstitute.org/publication/quantum-threat-timeline-report-2025b/",
+   "source": "https://globalriskinstitute.org/mp-files/pdf-quantum-threat-timeline-report-2025.pdf",
+   "estimates_CRQC_breaking_RSA2048": {
+    "within_5_years": {
+     "optimistic": "~15%"
+    },
+    "within_10_years": {
+     "pessimistic": "~28%",
+     "optimistic": "~49%"
+    },
+    "within_15_years": {
+     "pessimistic": "~51%",
+     "page_summary": "likely (51-70%) in the next 15"
+    },
+    "within_20_years": {
+     "pessimistic": "~69%"
+    }
+   },
+   "quotes": [
+    "the average estimated probability is ~51% by the 15-year mark, and ~69% by the 20-year mark.",
+    "a substantial majority (19/26) felt it was more than 5%-likely already within a 10-year timeframe, with half of the respondents (13/26) indicating a likelihood of about 50% or more."
+   ]
+  },
+  "suggested_default_Z_derived_not_sourced": {
+   "note": "Derived from the above, not a source statement",
+   "aggressive_Z_years": 10,
+   "aggressive_basis": "28-49% CRQC likelihood within 10 years (~2036)",
+   "median_Z_years": 15,
+   "median_basis": "~51% (pessimistic) to ~70% within 15 years",
+   "regulatory_anchor": "NIST IR 8547 disallowance after 2035; CNSA 2.0 'all NSS quantum-resistant by 2035' -> Z <= 9 years from 2026 for compliance-driven scoring"
+  }
+ }
+}

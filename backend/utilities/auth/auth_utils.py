@@ -199,6 +199,80 @@ async def send_email( recipient_email: str , subject: str , body: Optional[str] 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def smtp_settings() -> Optional[dict]:
+    """The site's own mail relay, for on-prem and air-gapped installs (no Microsoft Graph, no internet).
+
+    Off unless SMTP_HOST is set. SMTP_SECURITY is starttls (default), ssl, or none; none is only allowed without a
+    login, so a password never crosses the network in clear text. SMTP_CA_FILE trusts a private CA."""
+    host = os.getenv("SMTP_HOST", "").strip()
+    if not host:
+        return None
+    security = os.getenv("SMTP_SECURITY", "starttls").strip().lower()
+    if security not in ("starttls", "ssl", "none"):
+        raise ValueError("SMTP_SECURITY must be starttls, ssl or none")
+    user = os.getenv("SMTP_USERNAME", "").strip()
+    if security == "none" and user:
+        raise ValueError("SMTP_SECURITY=none cannot be used with SMTP_USERNAME: the password would be sent unencrypted")
+    try:
+        port = int(os.getenv("SMTP_PORT") or (465 if security == "ssl" else 587))
+        timeout = float(os.getenv("SMTP_TIMEOUT_S") or 20)
+    except ValueError:
+        raise ValueError("SMTP_PORT must be a number and SMTP_TIMEOUT_S a number of seconds") from None
+    if not 1 <= port <= 65535 or not 0 < timeout <= 300:  # also rejects NaN
+        raise ValueError("SMTP_PORT must be 1-65535 and SMTP_TIMEOUT_S between 0 and 300 seconds")
+    return {
+        "host": host,
+        "port": port,
+        "security": security,
+        "user": user,
+        "password": os.getenv("SMTP_PASSWORD", ""),
+        "sender": os.getenv("MAIL_FROM", "").strip() or "no-reply@localhost",
+        "ca_file": os.getenv("SMTP_CA_FILE", "").strip() or None,
+        "timeout": timeout,
+    }
+
+
+class MailAddressError(ValueError):
+    """The recipient address cannot be used (line breaks, no domain, a domain that cannot be encoded)."""
+
+
+def _smtp_address(address: str) -> str:
+    """The address as an SMTP server accepts it: an internationalised domain is sent in its ASCII (punycode) form."""
+    local, sep, domain = address.strip().rpartition("@")
+    if not sep or not local or not domain or any(c in address for c in "\r\n\x00"):
+        raise MailAddressError("invalid email address")
+    if not domain.isascii():
+        try:
+            domain = ".".join(p.encode("idna").decode("ascii") for p in domain.split("."))
+        except UnicodeError:
+            raise MailAddressError("invalid email domain") from None
+    if not local.isascii():
+        raise MailAddressError("the mail relay cannot deliver to a non-ASCII mailbox name")
+    return f"{local}@{domain}"
+
+
+def send_smtp_email(cfg: dict, recipient_email: str, subject: str, msg: MIMEText) -> None:
+    recipient_email = _smtp_address(recipient_email)
+    for value in (subject, cfg["sender"]):
+        if "\r" in value or "\n" in value:
+            raise MailAddressError("line breaks are not allowed in mail headers")
+    msg["Subject"] = subject[:200]
+    msg["From"] = cfg["sender"]
+    msg["To"] = recipient_email
+    import ssl
+    context = ssl.create_default_context(cafile=cfg["ca_file"])
+    if cfg["security"] == "ssl":
+        server = smtplib.SMTP_SSL(cfg["host"], cfg["port"], context=context, timeout=cfg["timeout"])
+    else:
+        server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=cfg["timeout"])
+    with server:
+        if cfg["security"] == "starttls":
+            server.starttls(context=context)
+        if cfg["user"]:
+            server.login(cfg["user"], cfg["password"])
+        server.send_message(msg, from_addr=cfg["sender"], to_addrs=[recipient_email])
+
+
 async def send_outlook_email( recipient_email: str , subject: str , body: Optional[str] = None , html_body:Optional[str] = None , custom_domain:str = "zeroshield.ai" ):
     if not html_body and not body:
         raise HTTPException(status_code=400, detail="Body or html_body is required")
@@ -206,6 +280,22 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
         msg = MIMEText(html_body, 'html')
     else:
         msg = MIMEText(body)
+
+    try:
+        smtp = smtp_settings()
+    except ValueError as e:
+        print(f"Mail relay settings are invalid: {e} 🔴")  # for the operator; the client gets no internals
+        raise HTTPException(status_code=500, detail="The mail relay is not configured correctly")
+    if smtp is not None:
+        try:
+            await asyncio.to_thread(send_smtp_email, smtp, recipient_email, subject, msg)
+            print("Email sent through the configured SMTP relay")
+            return
+        except MailAddressError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            print(f"Error sending email through SMTP relay {smtp['host']}:{smtp['port']}: {e} 🔴")
+            raise HTTPException(status_code=500, detail="Could not send the email through the configured mail relay")
 
     try:
         # === CONFIGURATION ===

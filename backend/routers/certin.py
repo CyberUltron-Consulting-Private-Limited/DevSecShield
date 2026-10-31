@@ -78,6 +78,14 @@ def _certin_module_candidates(name: str) -> list[Path]:
     return out
 
 
+def _vex_is_current(scan_type: str, vex: dict) -> bool:
+    """A CBOM VEX stored before findings carried CVEs said 'not affected' for everything; rebuild those."""
+    if scan_type != "cbom":
+        return True
+    props = ((vex.get("metadata") or {}).get("properties") or []) if isinstance(vex, dict) else []
+    return any(isinstance(p, dict) and p.get("name") == "zs:vex_rules" and p.get("value") == "2" for p in props)
+
+
 def _load_certin_module(name: str):
     """Load ``cert_in/{name}.py`` without importing ``aibom.compliance`` (jsonschema)."""
     # Prefer normal import when aibom is fully installed (worker / aibom venv).
@@ -307,14 +315,14 @@ async def get_scan_vex(
     check_if_user_is_in_team(user.id, team_id, engine)
     scan = _load_success_scan(engine, team_id, type, scan_id)
     data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-    if not refresh and isinstance(data.get("vex_json"), dict):
+    if not refresh and isinstance(data.get("vex_json"), dict) and _vex_is_current(type, data["vex_json"]):
         return JSONResponse(data["vex_json"])
     try:
         vex_mod = _load_certin_module("vex")
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"aibom vex unavailable: {e}") from e
     bom = bom_dict_from_scan_data(type, data)
-    findings = data.get("results") if type == "sbom_sca" else None
+    findings = data.get("results") if type in ("sbom_sca", "cbom") else None
     if not isinstance(findings, list):
         findings = None
     vex = vex_mod.build_vex(bom=bom, findings=findings, scan_type=type)
@@ -346,8 +354,8 @@ async def download_evidence_pack(
         vex_mod = _load_certin_module("vex")
         sign_mod = _load_certin_module("sign")
 
-        if not isinstance(data.get("vex_json"), dict):
-            findings = data.get("results") if type == "sbom_sca" else None
+        if not isinstance(data.get("vex_json"), dict) or not _vex_is_current(type, data["vex_json"]):
+            findings = data.get("results") if type in ("sbom_sca", "cbom") else None
             data["vex_json"] = vex_mod.build_vex(
                 bom=bom,
                 findings=findings if isinstance(findings, list) else None,

@@ -55,3 +55,18 @@ def test_disclaimer_present() -> None:
     doc = build_vex(bom={"components": [{"name": "x"}]}, scan_type="ai_bom")
     props = doc["metadata"]["properties"]
     assert any("CERT-In" in p.get("value", "") for p in props)
+
+
+def test_cbom_findings_with_cves_are_never_not_affected() -> None:
+    findings = [
+        {"bom_ref": "algo-3des", "finding_codes": ["WEAK_ALGORITHM"], "cves": ["CVE-2016-2183"], "impact": "High"},
+        {"bom_ref": "algo-md5", "finding_codes": ["WEAK_ALGORITHM"], "cves": ["CVE-2004-2761"], "impact": "High"},
+        {"bom_ref": "algo-aes", "finding_codes": [], "cves": [], "impact": "Info"},
+    ]
+    doc = build_vex(bom={"components": [{"bom-ref": f["bom_ref"]} for f in findings]}, findings=findings, scan_type="cbom")
+    by_id = {v["id"]: v for v in doc["vulnerabilities"]}
+    assert by_id["CVE-2016-2183"]["analysis"]["state"] == "in_triage"
+    assert by_id["ZS-CBOM-WEAK_ALGORITHM"]["affects"] == [{"ref": "algo-3des"}, {"ref": "algo-md5"}]
+    not_affected = {v["affects"][0]["ref"] for v in doc["vulnerabilities"] if v["analysis"]["state"] == "not_affected"}
+    assert not_affected == {"algo-aes"}
+    assert {"name": "zs:vex_rules", "value": "2"} in doc["metadata"]["properties"]

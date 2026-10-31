@@ -101,6 +101,8 @@ _MODE_SUFFIXES = ("-GCM", "-CBC", "-ECB", "-CTR", "-CFB", "-OFB", "-XTS", "-CCM"
 # Minimum acceptable asymmetric key size (bits). NIST SP 800-57 / 800-131A
 # disallow RSA/DSA/DH below 2048.
 _MIN_ASYMMETRIC_BITS = 2048
+# Public-key algorithms whose strength is the modulus size (RSA / DSA); EC keys are sized by their curve instead.
+_MODULUS_PK_TOKENS = ("rsa", "dsa")
 
 # PQC / stateful-hash signature + KEM families whose ``crypto:keySize`` carries a
 # NIST *parameter set* (FALCON-512, ML-KEM-768), NOT an integer-factorization /
@@ -500,8 +502,31 @@ def cipher_suite_findings(component: AIComponent) -> list[tuple[str, str, str]]:
 
 def _sig_digest_is_broken(sig_alg: str) -> bool:
     """A certificate signatureAlgorithm built on a collision-broken digest."""
-    low = sig_alg.lower()
-    return any(d in low for d in _BROKEN_SIG_DIGESTS)
+    return _weak_cert_hash(sig_alg) is not None
+
+
+# Signature-algorithm OIDs that x509 readers sometimes leave unnamed, and the broken digest each uses.
+_BROKEN_SIG_OIDS = {
+    "1.2.840.113549.1.1.2": "MD2",    # md2WithRSAEncryption
+    "1.2.840.113549.1.1.3": "MD4",    # md4WithRSAEncryption
+    "1.2.840.113549.1.1.4": "MD5",    # md5WithRSAEncryption
+    "1.2.840.113549.1.1.5": "SHA-1",  # sha1WithRSAEncryption
+    "1.3.14.3.2.29": "SHA-1",         # sha1WithRSA (OIW)
+    "1.2.840.10040.4.3": "SHA-1",     # dsa-with-sha1
+    "1.2.840.10045.4.1": "SHA-1",     # ecdsa-with-SHA1
+}
+
+
+def _weak_cert_hash(sig_alg: str) -> str | None:
+    """The collision-broken digest a certificate signatureAlgorithm uses ('MD5', 'SHA-1', ...), or None."""
+    oid = _BROKEN_SIG_OIDS.get(str(sig_alg or "").strip())
+    if oid:
+        return oid
+    low = str(sig_alg or "").lower().replace("-", "").replace("_", "")  # "SHA-1" / "sha_1" spell sha1 too
+    for digest in _BROKEN_SIG_DIGESTS:
+        if digest in low:
+            return {"sha1": "SHA-1"}.get(digest, digest.upper())
+    return None
 
 
 def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:

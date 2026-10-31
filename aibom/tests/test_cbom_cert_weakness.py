@@ -192,7 +192,8 @@ def _flags_on(result: ScanResult, source_substr: str) -> set[str]:
         c.bom_ref
         for c in result.components
         if c.kind == "crypto_asset"
-        and source_substr in ((c.properties or {}).get("discovery:source") or "")
+        # the file name itself: "sha1.pem" must not also pick up "rsa1024_sha1.pem"
+        and os.path.basename((c.properties or {}).get("discovery:source") or "") == source_substr
     }
     return {f.code for f in result.flags if f.target in refs}
 

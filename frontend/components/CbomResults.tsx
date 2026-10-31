@@ -16,7 +16,7 @@ import {
 import {
   AlertTriangle,
   ArrowLeft,
-  MessageCircle,
+  SlidersHorizontal,
   Download,
   Ticket,
   Pencil,
@@ -1230,8 +1230,8 @@ export default function CbomResults({
               className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => router.push(`/${team_id}/cbom/${scan_id}`)}
             >
-              <MessageCircle className="h-4 w-4 mr-2" />
-              Chat with the Results
+              <SlidersHorizontal className="h-4 w-4 mr-2" />
+              Scan settings
             </Button>
           </div>
         )}

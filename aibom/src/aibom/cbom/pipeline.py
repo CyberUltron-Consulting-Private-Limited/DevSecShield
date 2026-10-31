@@ -19,6 +19,7 @@ the same tri-state verdict model as the AIBOM lane.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 # Importing the CBOM scanners package self-registers every CBOM scanner.
 import aibom.cbom.scanners  # noqa: F401
@@ -54,17 +55,30 @@ def _dedup_by_ref(components: list[AIComponent]) -> list[AIComponent]:
     return [best[ref] for ref in order]
 
 
-def scan_crypto(path: str | Path, level: int = 1) -> ScanResult:
+def scan_crypto(
+    path: str | Path,
+    level: int = 1,
+    *,
+    seed: list[AIComponent] | None = None,
+    subject: MetadataComponent | None = None,
+) -> ScanResult:
     """Scan a repo at ``path`` into a CBOM :class:`ScanResult`.
 
     Only CBOM scanners with ``scanner.level <= level`` run. Raises
-    ``NotADirectoryError`` if ``path`` is not a directory.
+    ``NotADirectoryError`` if ``path`` is not a directory. ``seed`` components
+    (an imported CBOM) are placed on the context before the scanners run, so
+    the flagging / PQC / scoring scanners judge them exactly like inventoried
+    assets.
     """
     root = Path(path)
     if not root.is_dir():
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
     ctx = CbomScanContext(root)
+    for component in seed or []:
+        ctx.add_component(component)
+    if subject is not None:
+        ctx.subject = subject
     for scanner in ordered_cbom_scanners():
         if scanner.level <= level and scanner.matches(root):
             scanner.scan(ctx)
@@ -100,4 +114,24 @@ def scan_crypto(path: str | Path, level: int = 1) -> ScanResult:
     return result
 
 
-__all__ = ["scan_crypto"]
+def analyze_cbom_document(doc: Any, level: int = 4) -> tuple[ScanResult, dict[str, Any]]:
+    """Judge an uploaded CycloneDX CBOM with the same rules as a repository scan.
+
+    Returns the scored result and the import statistics (what was read, skipped
+    or truncated). Runs over an empty scratch directory so no repository
+    scanner finds anything of its own.
+    """
+    import tempfile
+
+    from aibom.cbom.ingest import components_from_cyclonedx
+
+    seed, stats = components_from_cyclonedx(doc)
+    metadata = doc.get("metadata") if isinstance(doc, dict) else None
+    meta = metadata.get("component") if isinstance(metadata, dict) else None
+    name = str((meta if isinstance(meta, dict) else {}).get("name") or "uploaded-cbom")[:200]
+    with tempfile.TemporaryDirectory(prefix="cbom-upload-") as scratch:
+        result = scan_crypto(scratch, level=level, seed=seed, subject=MetadataComponent(name=name))
+    return result, stats.as_dict()
+
+
+__all__ = ["analyze_cbom_document", "scan_crypto"]

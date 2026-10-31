@@ -100,7 +100,10 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             quantum_safe_count += 1
 
     avg_risk = risk_sum / total if total > 0 else 0.0
-    quantum_readiness = (quantum_safe_count / total * 100) if total > 0 else 0.0
+    # same basis as the results dashboard: share of the assets that have a quantum verdict (hashes, MACs and
+    # unknown items have none), so the PDF and the screen show the same percentage
+    judged = quantum_safe_count + quantum_vulnerable
+    quantum_readiness = (quantum_safe_count / judged * 100) if judged > 0 else 0.0
 
     styles = get_report_styles()
     doc = SimpleDocTemplate(
@@ -226,6 +229,8 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Strength", strength.title()),
                         ("Quantum status", _quantum_label(v.get("quantum_safe"))),
                         ("Where it was found", location),
+                        *([("CWE", ", ".join(map(str, v.get("cwe") or [])))] if v.get("cwe") else []),
+                        *([("CVE", ", ".join(map(str, v.get("cves") or [])))] if v.get("cves") else []),
                     ],
                     description=str(v.get("description") or ""),
                     evidence=str(v.get("snippet") or ""),

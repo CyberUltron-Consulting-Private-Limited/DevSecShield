@@ -390,6 +390,7 @@ class CbomCollectionSettings(SQLModel, table=True):
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     stop_all_network: bool = Field(default=False)
+    risk_model: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     stop_all_changed_by: int | None = Field(default=None)
     stop_all_changed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_by_user_id: int | None = Field(default=None)

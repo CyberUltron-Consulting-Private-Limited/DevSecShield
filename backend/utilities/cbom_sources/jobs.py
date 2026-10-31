@@ -765,7 +765,13 @@ def add_assets(
             in_batch_dups += 1
             continue
         keys.add(key)
-        verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
+        try:
+            verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
+        except Exception:  # one malformed asset must not cost the rest of the batch
+            log.warning("classify failed for a %s asset of job %s; stored without a verdict", asset_type, job.id,
+                        exc_info=True)
+            verdict = {"cdx_type": "other", "quantum_vulnerable": None, "impact": None, "finding_codes": [],
+                       "finding": "Not judged: the collected facts could not be read"}
         rows.append({
             "team_id": job.team_id, "run_id": job.run_id, "job_id": job.id, "source_id": job.source_id,
             "attempt": job.attempts, "asset_key": key, "asset_type": asset_type, "cdx_type": verdict["cdx_type"],

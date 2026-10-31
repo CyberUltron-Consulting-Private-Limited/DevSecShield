@@ -27,6 +27,7 @@ import {
 
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
 import RunResults from "./RunResults";
+import { CriticalityCard } from "./RunPosture";
 import { credits, formatDateTime, newRequestId, pluralize } from "./logic";
 import {
   Checkbox2,
@@ -334,6 +335,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
       </SectionCard>
+
+      <CriticalityCard teamId={teamId} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">

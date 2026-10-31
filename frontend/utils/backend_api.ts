@@ -2821,13 +2821,48 @@ export interface RemediationExploitPayload {
     attack_vector: string
 }
 
+export interface KbRef { id: string; label?: string; name?: string | null; url?: string; basis?: string }
+export interface KbCve {
+    id: string
+    url: string
+    summary: string | null
+    published?: string | null
+    matched_on?: string
+    cvss: { version: string | null; score: number | null; vector: string | null; severity: string | null } | null
+}
+export interface KbComplianceRef { framework: string; id: string; text: string; source: string; note?: string }
+/** One finding code explained by the offline crypto knowledge base (no AI). */
+export interface KbFindingDetail {
+    code: string
+    title: string
+    observed?: string | null
+    description: string
+    attack: string
+    impact: string
+    category: string
+    pqc?: string | null
+    cwe: KbRef[]
+    owasp_2021: KbRef[]
+    owasp_2025: KbRef[]
+    cves: KbCve[]
+    standards: string[]
+    compliance: KbComplianceRef[]
+    remediation: { summary: string; steps: { platform: string; how: string }[] }
+    verify: { label: string; command: string }[]
+    references: string[]
+}
+
 export interface RemediationData {
     generated_at: string
     status: "completed" | "failed"
     fix?: RemediationFix
-    exploit_payload?: RemediationExploitPayload
+    exploit_payload?: RemediationExploitPayload | null
     diff?: string
     error?: string
+    /** "knowledge_base" when built from the offline crypto knowledge base (CBOM) instead of a model. */
+    source?: "knowledge_base"
+    kb_version?: string
+    details?: KbFindingDetail[]
 }
 
 const generateFindingRemediation = async ({
@@ -4255,6 +4290,8 @@ export interface CbomSourcesSettings {
     rate_handshakes_per_endpoint: number
     soc_email: string | null
     emergency_contact: string | null
+    /** Mosca inputs in years: X = how long data must stay secret, Y = migration time, Z = years until a quantum computer. */
+    risk_model: CbomRiskModel
     stop_all_network: boolean
     stop_all_changed_by: number | null
     stop_all_changed_at: string | null
@@ -4262,6 +4299,60 @@ export interface CbomSourcesSettings {
     in_window_now: boolean
     row_version: number
     last_updated: string | null
+}
+
+export interface CbomRiskModel {
+    data_shelf_life_years: number | null
+    migration_years: number | null
+    threat_years: number | null
+}
+
+export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "not-applicable"
+
+export interface CbomRunPosture {
+    assets: number
+    pqc_classes: Record<CbomPqcClass, number>
+    pqc_readiness_pct: number | null
+    hndl_assets: number
+    impacts: Record<CbomImpact, number>
+    top_codes: { code: string; count: number; title: string }[]
+    mosca: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number; verdict?: string; note?: string }
+    top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
+    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
+    kb_version: string
+    pqc_context: {
+        mosca?: { inequality: string; definitions: Record<string, string>; source: string; paper: string }
+        expert_survey?: { title: string; published: string; source: string; quotes: string[] }
+        nist_ir_8547?: { quote: string; source: string; federal: string }
+        z_note?: string
+    }
+}
+
+export interface CbomAssetDetail {
+    id: number
+    type: string
+    name: string | null
+    location: string
+    target: string | null
+    impact: CbomImpact | null
+    finding: string | null
+    finding_codes: string[]
+    algorithm: string | null
+    key_size: number | null
+    protocol: string | null
+    quantum_vulnerable: boolean | null
+    pqc_class: CbomPqcClass
+    hndl: boolean
+    source_name: string | null
+    criticality: string
+    facts: Record<string, unknown>
+    details: KbFindingDetail[]
+    library: null | {
+        library: string; package: string; package_version: string; upstream_version: string; cves: string[]
+        eol: { branch: string; date: string; passed: boolean; sources: string[] } | null
+        cve_details: (KbCve | null)[]
+    }
+    kb_version: string
 }
 
 export type CbomSettingsWrite = Partial<Omit<CbomSourcesSettings,
@@ -4694,6 +4785,16 @@ const getCbomRunAssets = async (team_id: number, run_id: number, filters: CbomAs
     return response.data as CbomAssetPage
 }
 
+const getCbomRunPosture = async (team_id: number, run_id: number): Promise<CbomRunPosture> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/posture`)
+    return (response.data as { posture: CbomRunPosture }).posture
+}
+
+const getCbomAssetDetail = async (team_id: number, asset_id: number): Promise<CbomAssetDetail> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/assets/${asset_id}`)
+    return (response.data as { asset: CbomAssetDetail }).asset
+}
+
 const getCbomJobAssets = async (team_id: number, job_id: number, page = 1): Promise<CbomAssetPage> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/jobs/${job_id}/assets`, { params: { page, page_size: 200 } })
     return response.data as CbomAssetPage
@@ -4740,6 +4841,8 @@ export {
     listCbomRuns,
     getCbomRun,
     getCbomRunAssets,
+    getCbomRunPosture,
+    getCbomAssetDetail,
     getCbomJobAssets,
     downloadCbomRunCbom,
     estimateCbomSources,

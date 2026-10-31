@@ -41,8 +41,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from aibom.cbom import crypto_kb
 from aibom.cbom.normalize import normalize_crypto
-from aibom.cbom.pipeline import scan_crypto
+from aibom.cbom.pipeline import analyze_cbom_document, scan_crypto
+from aibom.cbom.posture.safeio import SKIP_DIRS  # the directories the engine never reads (for size estimates)
+
+# Uploaded CBOM files larger than this are refused before parsing (the upload limit is 50 MB).
+MAX_CBOM_BYTES = 50 * 1024 * 1024
 
 ProgressCb = Callable[[int, str], None]
 
@@ -80,6 +85,8 @@ def _legacy_strength(row: dict[str, Any]) -> str:
     """
     if row.get("weak"):
         return "weak"
+    if row.get("asset_type") == "algorithm" and row.get("primitive") in (None, "", "unknown"):
+        return "unknown"  # an algorithm the rule base does not know is not "safe"
     if row.get("asset_type") == "algorithm" and not row.get("quantum_vulnerable"):
         return "quantum_safe"
     return "strong"
@@ -94,7 +101,16 @@ def _legacy_quantum_safe(row: dict[str, Any]) -> bool | None:
 
 def _suggested_fix(row: dict[str, Any]) -> str:
     """A concrete remediation derived from the row's risk signals."""
+    codes = [c for c in row.get("finding_codes") or [] if c != "QUANTUM_VULNERABLE"]
+    if row.get("asset_type") == "algorithm" and row.get("primitive") in (None, "", "unknown") and not codes:
+        return ("The rule base does not recognise this algorithm, so its strength was not judged; check it "
+                "against NIST SP 800-131A and record it in the crypto inventory.")
+    kb_fix = crypto_kb.summary_fix("code", codes, str(row.get("title") or ""))
     target = row.get("pqc_migration_target")
+    if kb_fix:
+        if row.get("quantum_safe_legacy") is False and target and "ML-KEM" not in kb_fix:
+            return f"{kb_fix} Then plan its post-quantum migration ({target})."
+        return kb_fix
     if row.get("quantum_safe_legacy") is False and target:
         return (
             "Plan migration to post-quantum cryptography "
@@ -132,17 +148,39 @@ _COMPLIANCE_CRYPTO = {
 
 
 def _legacy_owasp(row: dict[str, Any]) -> dict[str, str]:
-    """Map flagged crypto rows to OWASP A02; leave clean inventory empty."""
+    """OWASP Top 10:2021 for flagged rows from the knowledge base (per finding
+    code, via OWASP's mapped-CWE lists); clean inventory stays empty."""
     if not _is_flagged_crypto(row):
         return {}
-    return dict(_OWASP_A02)
+    mapped = crypto_kb.owasp_legacy("code", list(row.get("finding_codes") or []))
+    return mapped or dict(_OWASP_A02)
 
 
 def _legacy_compliance(row: dict[str, Any]) -> dict[str, str]:
-    """Map flagged crypto rows to ISO 27001 A.10 + NIST SC; clean rows empty."""
+    """ISO 27001 / NIST 800-53 control families for flagged rows; clean rows empty."""
     if not _is_flagged_crypto(row):
         return {}
-    return dict(_COMPLIANCE_CRYPTO)
+    mapped = crypto_kb.controls_legacy("code", list(row.get("finding_codes") or []))
+    return mapped or dict(_COMPLIANCE_CRYPTO)
+
+
+def _evidence(row: dict[str, Any]) -> str:
+    return " ".join(str(row.get(k) or "") for k in ("title", "description", "mode", "protocol_version"))
+
+
+def _kb_refs(row: dict[str, Any]) -> dict[str, Any]:
+    """Small, stored references into the knowledge base (CWE ids, CVE ids). The full explanation, remediation
+    steps and proof commands are rendered from the knowledge base when the finding is read."""
+    codes = list(row.get("finding_codes") or [])
+    if not codes:
+        return {"cwe": [], "cves": []}
+    cwe: list[str] = []
+    cves: list[str] = []
+    for code in codes:
+        entry = crypto_kb.entry("code", code) or {}
+        cwe += [c for c in entry.get("cwe") or [] if c not in cwe]
+        cves += [c["id"] for c in crypto_kb.cves_for("code", code, _evidence(row)) if c["id"] not in cves]
+    return {"cwe": cwe, "cves": cves}
 
 
 def _enrich(row: dict[str, Any]) -> dict[str, Any]:
@@ -167,10 +205,25 @@ def _enrich(row: dict[str, Any]) -> dict[str, Any]:
             "compliance_controls": _legacy_compliance(row),
             "owasp_top_10": _legacy_owasp(row),
             "snippet": "",
+            **_kb_refs(row),
         }
     )
     out.pop("quantum_safe_legacy", None)
     return out
+
+
+def _fill_fact_locations(rows: list[dict[str, Any]], result: Any) -> None:
+    """Configuration-posture rows (TLS verification off, unencrypted data store ...) keep their file and line in
+    the fact's own properties; copy them into ``location`` so every finding says where it is."""
+    props_by_ref = {c.bom_ref: (c.properties or {}) for c in getattr(result, "components", []) or []}
+    for row in rows:
+        if row.get("location"):
+            continue
+        props = props_by_ref.get(row.get("bom_ref")) or {}
+        path = props.get("crypto:factPath")
+        if path:
+            line = props.get("crypto:factLine")
+            row["location"] = f"{path}:{line}" if line else path
 
 
 def normalize_to_devsecshield(
@@ -183,7 +236,9 @@ def normalize_to_devsecshield(
     host keys.
     """
     run = normalize_crypto(result, duration_of_scan=duration_of_scan)
+    _fill_fact_locations(run["results"], result)
     run["results"] = [_enrich(row) for row in run["results"]]
+    run["kb_version"] = crypto_kb.version()
     return run
 
 
@@ -203,6 +258,47 @@ def scan_crypto_to_devsecshield(
     return out
 
 
+class CbomFileError(ValueError):
+    """The uploaded CBOM file cannot be analysed (the message is safe to show the user)."""
+
+
+def analyze_cbom_file_to_devsecshield(
+    path: str | Path,
+    *,
+    progress: ProgressCb | None = None,
+) -> dict[str, Any]:
+    """Uploaded CycloneDX CBOM -> the same run-object a repository scan returns.
+
+    The file's crypto assets are judged by the deterministic engine (flags, PQC
+    grade, score, compliance, knowledge-base mapping); no language model and no
+    network. ``cbom_input`` reports what was read, skipped or truncated.
+    """
+    import json
+
+    file_path = Path(path)
+    if file_path.stat().st_size > MAX_CBOM_BYTES:
+        raise CbomFileError(f"The CBOM file is larger than {MAX_CBOM_BYTES // (1024 * 1024)} MB.")
+    _report(progress, 10, "reading the CBOM file")
+    try:
+        doc = json.loads(file_path.read_text(encoding="utf-8-sig", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CbomFileError(f"The CBOM file is not valid JSON ({exc.__class__.__name__}).") from None
+    except RecursionError:
+        raise CbomFileError("The CBOM file is nested too deeply to read.") from None
+    except ValueError:  # e.g. an integer with thousands of digits
+        raise CbomFileError("The CBOM file contains a value that cannot be read (for example a huge number).") from None
+    if not isinstance(doc, dict):
+        raise CbomFileError("The CBOM file must be a CycloneDX JSON object.")
+    start = time.monotonic()
+    _report(progress, 30, "analysing cryptographic assets")
+    result, stats = analyze_cbom_document(doc, level=4)
+    _report(progress, 80, "normalizing crypto findings")
+    out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
+    out["cbom_input"] = stats
+    _report(progress, 100, "analysis complete")
+    return out
+
+
 def _report(progress: ProgressCb | None, pct: int, message: str) -> None:
     """Best-effort progress callback; never lets reporting break a scan."""
     if progress is None:
@@ -211,4 +307,10 @@ def _report(progress: ProgressCb | None, pct: int, message: str) -> None:
         progress(pct, message)
 
 
-__all__ = ["normalize_to_devsecshield", "scan_crypto_to_devsecshield"]
+__all__ = [
+    "SKIP_DIRS",
+    "CbomFileError",
+    "analyze_cbom_file_to_devsecshield",
+    "normalize_to_devsecshield",
+    "scan_crypto_to_devsecshield",
+]

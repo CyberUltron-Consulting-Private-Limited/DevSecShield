@@ -84,6 +84,7 @@ export default function CBOMScanPage() {
           <ChatWindow
             query={query}
             progress={isInProgress && scanInfo?.current != null ? { current: scanInfo.current } : undefined}
+            chatDisabledNotice="CBOM runs without any AI model, so there is no chat. Open the results to see each finding's explanation, CVE / CWE / OWASP mapping, remediation steps and proof commands."
           />
         </div>
       </div>

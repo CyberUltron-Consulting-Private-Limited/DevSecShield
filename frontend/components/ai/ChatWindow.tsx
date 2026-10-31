@@ -60,9 +60,12 @@ export type ChatWindowProgress = { current: number };
 const ChatWindow = ({
   query,
   progress,
+  chatDisabledNotice,
 }: {
   query: UseQueryResult<SastConversationResponse> | UseQueryResult<LLMConversationResponse> | UseQueryResult<MCPConversationResponse> | UseQueryResult<IACConversationResponse> | UseQueryResult<DASTConversationResponse> | UseQueryResult<DASTScanResponse> | UseQueryResult<SCASBOMConversationResponse> | UseQueryResult<CBOMConversationResponse> | UseQueryResult<AIBOMConversationResponse>;
   progress?: ChatWindowProgress;
+  /** When set, the scan has no chat (for example CBOM, which runs without an AI model): show this instead of the input. */
+  chatDisabledNotice?: string;
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const router = useRouter();
@@ -336,6 +339,11 @@ const ChatWindow = ({
         <ConversationScrollButton />
       </Conversation>
       {/* Input Area */}
+      {chatDisabledNotice ? (
+        <div className="border-t p-4 text-sm text-muted-foreground" data-testid="chat-disabled-notice">
+          {chatDisabledNotice}
+        </div>
+      ) : (
       <div className="border-t p-4 relative">
         {showSuggestions && !inputValue.trim() && !isTyping && messages.length <= 1 && (
           <div className="absolute bottom-full left-0 right-0 mb-2 z-10">
@@ -366,6 +374,7 @@ const ChatWindow = ({
           </PromptInputToolbar>
         </PromptInput>
       </div>
+      )}
     </div>
   );
 };

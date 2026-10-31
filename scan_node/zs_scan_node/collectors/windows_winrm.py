@@ -117,7 +117,9 @@ def parse_rdp(text: str) -> dict[str, Any]:
     row = rows[0] if rows and isinstance(rows[0], dict) else {}
     layer = row.get("SecurityLayer")
     return {"security_layer": layer, "security_layer_name": RDP_LAYERS.get(layer) if isinstance(layer, int) else None,
-            "min_encryption_level": row.get("MinEncryptionLevel"), "nla": bool(row.get("UserAuthentication"))}
+            "min_encryption_level": row.get("MinEncryptionLevel"),
+            # missing or null means the value was not read, not "NLA off"
+            "nla": None if row.get("UserAuthentication") is None else bool(row.get("UserAuthentication"))}
 
 
 class _Fail(Exception):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { generateFindingRemediation, type RemediationData } from "@/utils/backend_api";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import KbFindingDetails from "@/components/cbom/KbFindingDetails";
 
 interface RemediationPanelProps {
   teamId: string;
@@ -97,7 +98,57 @@ const difficultyColors: Record<string, string> = {
   expert: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
-export default function RemediationPanel({
+/** CBOM: remediation and proof of exposure come from the offline crypto knowledge base. They load by themselves,
+ * cost nothing and involve no AI. A stored result is shown at once and then rebuilt, so a knowledge-base update (or
+ * an older AI result) never stays on screen; views without a scan (the CI page) show what they were given. */
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation }: RemediationPanelProps) {
+  const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed";
+  const canLoad = Number.isInteger(scanId) && scanId > 0 && !!findingId;
+  const [data, setData] = useState<RemediationData | null>(stored ? existingRemediation! : null);
+  const load = useMutation({
+    mutationFn: () =>
+      generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
+    onSuccess: (d) => setData(d),
+    onError: (err) => showErrorToast(err, "Could not load the remediation"),
+  });
+  useEffect(() => {
+    if (canLoad) load.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findingId, scanId]);
+
+  return (
+    <div className="space-y-3 pt-2" data-testid="cbom-kb-panel">
+      <div className="flex items-center gap-2">
+        <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
+        <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Remediation and proof of exposure</span>
+        {data?.kb_version && (
+          <Badge variant="outline" className="ml-auto text-[10px]" title="Built from the offline crypto knowledge base; no AI and no credits">
+            Knowledge base {data.kb_version} · no AI
+          </Badge>
+        )}
+      </div>
+      {load.isPending && !data && (
+        <div className="flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+      )}
+      {load.isError && !data && canLoad && (
+        <Button variant="outline" size="sm" onClick={() => load.mutate()}>Retry</Button>
+      )}
+      {!canLoad && !data && (
+        <p className="text-xs text-zinc-500">The remediation for this item is on the scan&apos;s own results page.</p>
+      )}
+      {data && <KbFindingDetails details={data.details ?? []} />}
+    </div>
+  );
+}
+
+export default function RemediationPanel(props: RemediationPanelProps) {
+  if (props.scanType === "cbom") {
+    return <CbomKnowledgePanel {...props} />;
+  }
+  return <AiRemediationPanel {...props} />;
+}
+
+function AiRemediationPanel({
   teamId,
   scanType,
   scanId,

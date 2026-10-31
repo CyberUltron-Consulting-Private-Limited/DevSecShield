@@ -10,6 +10,8 @@ import datetime as _dt
 import re
 from typing import Any
 
+from backend.utilities.cbom_sources import crypto_kb
+
 IMPACTS = ("Critical", "High", "Medium", "Low")
 _RANK = {name: i for i, name in enumerate(IMPACTS)}
 
@@ -82,12 +84,16 @@ class _Out:
     def __init__(self) -> None:
         self.codes: list[str] = []
         self.texts: list[tuple[int, str]] = []
+        self.by_code: dict[str, str] = {}
+        self.impacts: dict[str, str | None] = {}
         self.impact: str | None = None
 
     def add(self, code: str, impact: str | None, text: str) -> None:
         if code in self.codes:
             return
         self.codes.append(code)
+        self.by_code[code] = text
+        self.impacts[code] = impact
         rank = _RANK.get(impact, len(IMPACTS)) if impact else len(IMPACTS) + 1
         self.texts.append((rank, text))
         if impact and (self.impact is None or _RANK[impact] < _RANK[self.impact]):
@@ -243,6 +249,41 @@ def _normalise(asset_type: str, facts: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_SCHANNEL = {"SSL 2.0": ("PROTO_SSLv2", "Critical"), "SSL 3.0": ("PROTO_SSLv3", "Critical"),
+             "TLS 1.0": ("PROTO_TLS10", "High"), "TLS 1.1": ("PROTO_TLS11", "High")}
+
+
+def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
+    """SCHANNEL registry, enabled cipher suites and RDP security on a Windows host. Only settings that are
+    explicitly on are flagged: a missing registry key means the OS default, which the network probe of the
+    host's TLS ports measures directly."""
+    schannel = facts.get("schannel_protocols")
+    if isinstance(schannel, dict):
+        for proto, sides in schannel.items():
+            rule = _SCHANNEL.get(str(proto).strip())
+            server = (sides or {}).get("server") if isinstance(sides, dict) else None
+            if rule and isinstance(server, dict) and server.get("enabled") is True:
+                out.add(rule[0], rule[1], f"SCHANNEL enables {proto} for servers (registry)")
+    raw_suites = facts.get("cipher_suites")
+    suites = [str(c) for c in raw_suites if isinstance(c, str)] if isinstance(raw_suites, list) else []
+    weak = [c for c in suites if _WEAK_CIPHER_RE.search(c)]
+    if weak:
+        out.add("WEAK_CIPHER", "High", f"Windows enables weak cipher suites ({', '.join(sorted(set(weak))[:4])})")
+    if any(c.upper().startswith("TLS_RSA_WITH_") for c in suites):
+        out.add("STATIC_RSA_KEX", "Medium", "Windows enables RSA key exchange suites without forward secrecy")
+    aead = any(("_GCM_" in c.upper() or "CHACHA20" in c.upper() or "_CCM" in c.upper()) for c in suites)
+    if any("_CBC_" in c.upper() for c in suites):
+        if aead:
+            out.add("CBC_ACCEPTED", "Low", "Windows still enables CBC-mode cipher suites")
+        else:
+            out.add("CBC_ONLY", "Medium", "Windows enables only CBC-mode cipher suites (no AES-GCM or ChaCha20)")
+    rdp = facts.get("rdp") if isinstance(facts.get("rdp"), dict) else {}
+    if rdp.get("security_layer") == 0:
+        out.add("RDP_NO_TLS", "High", "Remote Desktop uses the legacy RDP security layer (no TLS)")
+    if rdp.get("nla") is False:
+        out.add("RDP_NO_NLA", "Medium", "Remote Desktop accepts connections without Network Level Authentication")
+
+
 _EOL_OPENSSL = re.compile(r"^(openssl|libssl|libcrypto|compat-openssl|openssl-libs)", re.I)
 
 
@@ -304,16 +345,40 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             _key_rules(out, host_key.get("key_type"), host_key.get("bits"), "SSH host key")
     elif asset_type in ("crypto_library", "process_library"):
         version = str(facts.get("version") or "")
-        if not facts.get("eol") and _EOL_OPENSSL.match(str(facts.get("name") or facts.get("package") or "")) \
-                and re.match(r"^(\d+:)?1\.[01]\.", version):
-            out.add("LIB_EOL", "Medium", f"{facts.get('name')} {version}: OpenSSL 1.x is end of life upstream; confirm vendor support")
+        package = str(facts.get("name") or facts.get("package") or "")
+        status = crypto_kb.library_status(package, version, today=now.date()) if version and package else None
+        eol = (status or {}).get("eol") or {}
         if facts.get("eol"):
             out.add("LIB_EOL", "High", f"{facts.get('package') or algorithm or 'Library'} {facts.get('version') or ''} is end of life".strip())
+        elif eol.get("passed"):
+            out.add("LIB_EOL", "Medium", f"{package} {version}: upstream {status['library']} {eol['branch']} reached end of life "
+                                         f"on {eol['date']}; confirm your OS vendor still ships fixes")
+        elif not status and _EOL_OPENSSL.match(package) and re.match(r"^(\d+:)?1\.[01]\.", version):
+            out.add("LIB_EOL", "Medium", f"{package} {version}: OpenSSL 1.x is end of life upstream; confirm vendor support")
+        if status and status["cves"]:
+            cves = status["cves"]
+            out.add("LIB_KNOWN_CVE", "Low", f"{package} {version} is inside the published affected range of {len(cves)} "
+                                            f"CVE(s) ({', '.join(cves[:3])}{', ...' if len(cves) > 3 else ''}); in triage "
+                                            "until checked against the OS vendor's back-ported fixes")
         if facts.get("deleted"):
             out.add("LIB_DELETED_IN_USE", "Medium", "A running process still uses a deleted or replaced crypto library")
         if facts.get("statically_linked_crypto"):
             out.add("LIB_STATIC", "Low", "Crypto is linked into the binary; library patching will not reach it")
         qv = None
+    elif asset_type == "disk_encryption" and facts.get("source") == "bitlocker":
+        status_text = str(facts.get("status") or "").lower()
+        method = str(facts.get("method") or algorithm or "").lower()
+        if status_text == "fullydecrypted" or method in ("", "none"):
+            out.add("DISK_UNENCRYPTED", "Medium", f"BitLocker volume {facts.get('mount') or ''} is not encrypted".replace("  ", " "))
+            qv = None  # no cipher, so no quantum verdict (not "quantum-safe")
+        else:
+            if "xts" not in method and method.startswith("aes"):
+                out.add("DISK_CBC", "Medium", f"BitLocker uses {facts.get('method')} (AES-CBC); use XTS-AES 256")
+            if "128" in method and "xts" in method:
+                out.add("DISK_XTS_128", "Low", f"BitLocker uses XTS-AES with a 128-bit key ({facts.get('method')})")
+            if str(facts.get("protection") or "").lower() == "off" and status_text == "fullyencrypted":
+                out.add("DISK_PROTECTION_OFF", "Medium", "BitLocker protection is suspended (the volume key is stored in the clear)")
+            qv = False
     elif asset_type == "disk_encryption":
         cipher = _upper(facts.get("cipher") or algorithm)
         if facts.get("encrypted") is False:
@@ -324,11 +389,12 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("DISK_XTS_128", "Low", "AES-XTS with a 128-bit key")
         if facts.get("luks_version") == 1:
             out.add("LUKS1", "Low", "LUKS1 header (no Argon2 key derivation)")
-        qv = False
+        qv = None if facts.get("encrypted") is False else False
     elif asset_type == "os_crypto_policy":
         policy = _upper(facts.get("policy"))
         if policy.startswith("LEGACY"):
             out.add("POLICY_LEGACY", "High", "System crypto policy is LEGACY")
+        _windows_rules(out, facts)
         qv = None
     elif asset_type == "database_config":
         if facts.get("ssl") is False or facts.get("tls_enabled") is False or facts.get("tls") is False:
@@ -407,4 +473,4 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     if qv and not any(code.startswith(("NO_PQ", "SSH_NO_PQ")) for code in out.codes) and asset_type != "coverage":
         out.add("QUANTUM_VULNERABLE", None, "Uses public-key cryptography that a quantum computer can break")
     return {"impact": out.impact, "quantum_vulnerable": qv, "finding_codes": out.codes, "finding": out.finding(),
-            "cdx_type": CDX_TYPE.get(asset_type, "other")}
+            "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts}

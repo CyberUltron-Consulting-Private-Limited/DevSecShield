@@ -149,7 +149,6 @@ def _enum_values():
 
 
 @pytest.mark.parametrize("module_path", [
-    "helpers/tools/cbom_agent/summary_manager.py",
     "helpers/tools/ai_bom_agent/summary_manager.py",
 ])
 def test_summary_prompt_compliance_strings_match_enum(module_path):

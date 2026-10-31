@@ -31,9 +31,9 @@ for i in range(1, N+1):
     t0 = time.time()
     ctx = validate_dict_with_context({"mode":"github","repo_url":REPO,"branch":BRANCH,"PAT":""})
     agent = CBOMAgent(context=ctx, scan_binaries=False, state_update_writer=NoOp())
-    res = agent.run_agent()
-    results = agent.to_dict_list(res)
-    cbom = agent.get_cyclonedx_cbom() or {}
+    run = agent.run_agent()
+    results = run["results"]
+    cbom = run.get("cbom_json") or {}
     comps = len(cbom.get("components", []))
     rec = {"run": i, "findings": len(results), "raw_components": comps,
            "keys": keyset(results),

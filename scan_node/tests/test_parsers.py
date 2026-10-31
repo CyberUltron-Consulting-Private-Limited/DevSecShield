@@ -119,3 +119,10 @@ def test_windows_parsers():
     assert W.parse_bitlocker('{"Mount":"C:","Status":"FullyEncrypted","Method":"XtsAes128","Protection":"On"}')[0]["method"] == "XtsAes128"
     assert W.parse_rdp('{"SecurityLayer":0,"MinEncryptionLevel":2,"UserAuthentication":0}')["security_layer_name"].startswith("RDP")
     assert W.parse_certificates("not json") == []
+
+
+def test_rdp_missing_nla_value_is_unknown_not_off():
+    assert W.parse_rdp('[{"SecurityLayer":2}]')["nla"] is None
+    assert W.parse_rdp("")["nla"] is None
+    assert W.parse_rdp('{"SecurityLayer":2,"UserAuthentication":0}')["nla"] is False
+    assert W.parse_rdp('{"SecurityLayer":2,"UserAuthentication":1}')["nla"] is True

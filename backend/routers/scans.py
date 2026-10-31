@@ -169,6 +169,12 @@ async def send_message_to_scan(
 
         # STEP [ 1 ] : =========== Check if user is in team and check if team has enough credits======================
         check_if_user_is_in_team(user.id, team_id, engine)
+        # CBOM runs with no AI model at all (on-premise and air-gapped installs); the chat needs one, so it is off
+        # unless an operator explicitly allows it. Nothing is stored or charged.
+        if type == "cbom" and os.getenv("CBOM_ALLOW_LLM", "").lower() not in ("1", "true", "yes"):
+            return {"content": "Chat is turned off for CBOM scans: CBOM runs without any AI model. Every finding "
+                               "has its explanation, CVE / CWE / OWASP mapping, remediation steps and proof "
+                               "commands on the results page."}
         if not check_if_team_has_enough_credits(team_id, 0.006):
             return { "content" : "Team does not have enough credits to send a message" }
 
@@ -1166,6 +1172,16 @@ async def generate_finding_remediation(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
         if finding.get("scan_id") != scan_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Finding does not belong to this scan")
+
+        # CBOM findings: remediation and proof of exposure come from the offline crypto knowledge base
+        # (deterministic, no AI call, no credits). Always rebuilt so an older stored result (including one an
+        # earlier release generated with a model) is replaced by the current knowledge base.
+        if type == "cbom":
+            from backend.utilities.cbom_sources.kb_remediation import remediation as kb_remediation
+
+            remediation_result = kb_remediation(finding.get("finding_data") or {}, "code")
+            scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
+            return remediation_result
 
         # STEP [ 2 ] : =========== Check if remediation already exists (cache hit) ======================
         existing_remediation = finding.get("remediation")

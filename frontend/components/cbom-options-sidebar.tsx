@@ -6,7 +6,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
   ScanIcon,
   Download,
@@ -15,7 +14,6 @@ import {
   ScanLine,
   FileJson,
   FolderGit2,
-  Cpu,
 } from "lucide-react";
 import {
   Accordion,
@@ -423,26 +421,6 @@ export function CBOMOptionsSidebar({
 
           <Separator className="bg-zinc-800" />
 
-          {/* Binary Scanning Toggle */}
-          <div className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Cpu className="h-4 w-4 text-zinc-400" />
-                <div>
-                  <Label className="text-zinc-300 text-sm">Scan binaries</Label>
-                  <p className="text-xs text-zinc-500">Inspect compiled artifacts and binaries for cryptographic usage</p>
-                </div>
-              </div>
-              <Switch
-                checked={scan_binaries}
-                onCheckedChange={setScanBinaries}
-                className="cursor-pointer"
-              />
-            </div>
-          </div>
-
-          <Separator className="bg-zinc-800" />
-
           <div className="p-6">
             <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
             <Button
@@ -527,7 +505,7 @@ export function CBOMOptionsSidebar({
         <div className="p-6 space-y-4">
           <div className="flex flex-col items-center justify-center min-h-[200px] space-y-4">
             <p className="text-zinc-300 text-center">
-              Scan has run successfully. You can now chat with your scan results.
+              Scan has run successfully. Open the results to see every finding with its fix and proof.
             </p>
             <Button
               variant="ghost"

@@ -13,6 +13,8 @@ from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources.classify import classify
 from backend.utilities.cbom_sources.common import iso_z
 
 EXPORT_CAP = 50_000
@@ -124,6 +126,96 @@ _REL_TYPE = {"private_key": "private-key", "public_key": "public-key", "ssh_host
              "k8s_certificate": "key"}
 
 
+# CycloneDX 1.6 enums (cryptoProperties): values outside them make the document invalid
+_CDX_PRIMITIVES = {"drbg", "mac", "block-cipher", "stream-cipher", "signature", "hash", "pke", "xof", "kdf", "key-agree",
+                   "kem", "ae", "combiner", "other", "unknown"}
+_CDX_MODES = {"cbc", "ecb", "ccm", "gcm", "cfb", "ofb", "ctr", "other", "unknown"}
+_KEY_STATE = {"Enabled": "active", "Disabled": "suspended", "PendingDeletion": "deactivated",
+              "PendingImport": "pre-activation", "Unavailable": "suspended", "active": "active"}
+_SEVERITY = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
+
+
+def _rank(impact: str) -> int:
+    order = list(_SEVERITY)
+    value = str(impact or "").capitalize()
+    return order.index(value) if value in order else len(order)
+
+
+def _code_impacts(row: CbomCollectedAsset) -> dict[str, str | None]:
+    """The impact the classifier gives each code on this asset (re-run on the stored facts; it is deterministic)."""
+    try:
+        return classify(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts or {}, row.created_at)["impacts"]
+    except Exception:
+        return {}
+
+
+def vulnerabilities(rows: list[CbomCollectedAsset]) -> list[dict[str, Any]]:
+    """CycloneDX vulnerabilities with VEX analysis.
+
+    One entry per finding code (the weak setting was observed on the listed assets, so the analysis state is
+    "exploitable", CERT-In's "Affected"), and one per CVE matched from that evidence or from a library version
+    ("in_triage": a version or configuration match is not proof; distribution back-ports are not checked)."""
+    by_code: dict[str, list[CbomCollectedAsset]] = {}
+    code_impacts: dict[str, list[str]] = {}
+    by_cve: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        own = _code_impacts(row)
+        for code in row.finding_codes or []:
+            if isinstance(code, str) and crypto_kb.entry("node", code):
+                by_code.setdefault(code, []).append(row)
+                impact = own.get(code) or (crypto_kb.entry("node", code) or {}).get("default_impact")
+                if impact:
+                    code_impacts.setdefault(code, []).append(impact)
+                for cve in crypto_kb.cves_for("node", code, row.finding or ""):
+                    if code == "LIB_KNOWN_CVE":
+                        continue
+                    hit = by_cve.setdefault(cve["id"], {"cve": cve, "rows": [], "why": set()})
+                    hit["rows"].append(row)
+                    hit["why"].add(f"{code} ({cve.get('matched_on')})")
+        facts = row.facts or {}
+        if "LIB_KNOWN_CVE" in (row.finding_codes or []) and facts.get("version"):
+            status = crypto_kb.library_status(str(facts.get("name") or facts.get("package") or ""), str(facts["version"]))
+            for cid in (status or {}).get("cves") or []:
+                hit = by_cve.setdefault(cid, {"cve": crypto_kb.cve(cid) or {"id": cid}, "rows": [], "why": set()})
+                hit["rows"].append(row)
+                hit["why"].add(f"{status['package']} {status['upstream_version']} is in the affected range")
+    out: list[dict[str, Any]] = []
+    for code, hits in sorted(by_code.items()):
+        e = crypto_kb.entry("node", code) or {}
+        # the severity of THIS finding (worst across the assets that have it), not the worst finding on those assets
+        worst = min(code_impacts.get(code) or [], key=_rank, default=None)
+        out.append({
+            "bom-ref": f"zs-vuln-{code.lower()}", "id": f"ZS-CBOM-{code}",
+            "source": {"name": "ZeroShield crypto knowledge base", "url": "https://cwe.mitre.org/"},
+            "ratings": [{"severity": _SEVERITY.get(str(worst or "").capitalize(), "info"), "method": "other"}],
+            "cwes": [int(c[4:]) for c in e.get("cwe") or []],
+            "description": e.get("description"), "detail": e.get("attack"),
+            "recommendation": (e.get("remediation") or {}).get("summary"),
+            "analysis": {"state": "exploitable", "detail": "Observed directly by the collector on each affected asset."},
+            "affects": [{"ref": f"zs-asset-{rid}"} for rid in list(dict.fromkeys(h.id for h in hits))[:5000]],
+            "properties": [{"name": "zs:kb_version", "value": crypto_kb.version()}],
+        })
+    for cid, hit in sorted(by_cve.items()):
+        cve = hit["cve"]
+        cvss = cve.get("cvss") or {}
+        rating = {"method": "CVSSv31" if cvss.get("version") == "3.1" else "CVSSv3" if cvss.get("version") == "3.0" else "other"}
+        if cvss.get("score") is not None:
+            rating.update({"score": cvss["score"], "severity": str(cvss.get("severity") or "unknown").lower(),
+                           "vector": cvss.get("vector")})
+        out.append({
+            "bom-ref": f"zs-vuln-{cid.lower()}", "id": cid,
+            "source": {"name": "NVD", "url": cve.get("url") or f"https://nvd.nist.gov/vuln/detail/{cid}"},
+            "ratings": [{k: v for k, v in rating.items() if v is not None}],
+            "cwes": [int(c[4:]) for c in cve.get("cwe") or [] if c[4:].isdigit()],
+            "description": cve.get("summary") or f"{cid}: see the NVD record (not in the offline knowledge base).",
+            "analysis": {"state": "in_triage",
+                         "detail": "Matched on: " + "; ".join(sorted(hit["why"]))[:900] +
+                                   ". A version or configuration match is not proof of exposure."},
+            "affects": [{"ref": f"zs-asset-{rid}"} for rid in list(dict.fromkeys(r.id for r in hit["rows"]))[:5000]],
+        })
+    return out
+
+
 def _component(row: CbomCollectedAsset, source_name: str | None) -> dict[str, Any]:
     facts = row.facts or {}
     ref = f"zs-asset-{row.id}"
@@ -164,17 +256,19 @@ def _component(row: CbomCollectedAsset, source_name: str | None) -> dict[str, An
     elif crypto["assetType"] == "related-crypto-material":
         crypto["relatedCryptoMaterialProperties"] = {k: v for k, v in {
             "type": _REL_TYPE.get(row.asset_type, "other"), "size": row.key_size,
-            "format": facts.get("format"), "state": facts.get("key_state"),
+            "format": facts.get("format"), "state": _KEY_STATE.get(str(facts.get("key_state") or "")),
         }.items() if v}
     else:
+        mode = str(facts.get("mode") or "").lower()
         crypto["algorithmProperties"] = {k: v for k, v in {
-            "primitive": facts.get("primitive") or "other", "parameterSetIdentifier": str(row.key_size) if row.key_size else None,
-            "mode": facts.get("mode"),
-        }.items() if v}
+            "primitive": facts.get("primitive") if facts.get("primitive") in _CDX_PRIMITIVES else "other",
+            "parameterSetIdentifier": str(row.key_size) if row.key_size else None,
+            "mode": (mode if mode in _CDX_MODES else "other") if mode else None,
+            # CycloneDX allows the quantum level only on algorithms: 0 means a quantum computer breaks it
+            "nistQuantumSecurityLevel": 0 if row.quantum_vulnerable is True else None,
+        }.items() if v is not None and v != ""}
     if row.algorithm:
         props.append({"name": "zs:algorithm", "value": row.algorithm})
-    if row.quantum_vulnerable is False and row.cdx_type in ("protocol", "related-crypto-material", "certificate"):
-        crypto["nistQuantumSecurityLevel"] = 1
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
             "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
 
@@ -208,4 +302,5 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
             ],
         },
         "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id)) for row in rows],
+        "vulnerabilities": vulnerabilities(list(rows)),
     }

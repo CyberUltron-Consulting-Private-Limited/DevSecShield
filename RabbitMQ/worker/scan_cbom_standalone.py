@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Standalone REAL CBOM scanner (bypasses Celery/RabbitMQ).
-Runs the real CBOMAgent: real git clone + real AWS Bedrock LLM enrichment.
+Runs the real CBOMAgent: real git clone + the deterministic aibom crypto engine (no LLM).
 Scans a list of public repos and writes one JSON per repo to /tmp/cbom_runs/.
 """
 import json, os, re, sys, time, subprocess, traceback
@@ -55,9 +55,9 @@ def scan(url):
     t0 = time.time()
     ctx = validate_dict_with_context({"mode":"github","repo_url":url,"branch":branch,"PAT":""})
     agent = CBOMAgent(context=ctx, scan_binaries=False, state_update_writer=NoOpWriter())
-    result = agent.run_agent()
-    results = agent.to_dict_list(result)
-    cbom_json = agent.get_cyclonedx_cbom()
+    run = agent.run_agent()
+    results = run["results"]
+    cbom_json = run.get("cbom_json")
     dur = time.time()-t0
     payload = {"repo_url":url,"branch":branch,"name":name,
                "results":results,"cbom_json":cbom_json,"duration_of_scan":dur}
@@ -69,7 +69,7 @@ def scan(url):
 if __name__ == "__main__":
     repos = sys.argv[1:] if len(sys.argv) > 1 else REPOS
     open(LOG,"w").close()
-    log(f"Starting {len(repos)} real CBOM scans (Bedrock model={os.getenv('LLM_MODEL')})")
+    log(f"Starting {len(repos)} real CBOM scans (deterministic engine)")
     summary=[]
     for url in repos:
         try:

@@ -2,7 +2,9 @@
 
 Default analysis state is ``not_affected`` unless proven otherwise.
 Proven affected: SBOM finding rows with non-empty CVE ids.
-Do **not** treat CBOM WEAK_* flags as VEX affected.
+CBOM code scans: a weakness seen in the code (finding code) or a CVE matched from that evidence is ``in_triage``
+(the use is real, whether it protects anything exploitable needs a person); only assets with no finding are
+``not_affected``. A CBOM asset that names a CVE is never reported as not affected.
 """
 
 from __future__ import annotations
@@ -60,6 +62,45 @@ def _vuln_entry(
     return entry
 
 
+CBOM_VEX_RULES = "2"
+
+
+def _cbom_vulnerabilities(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One entry per finding code and per CVE across the scan, listing the assets (bom-refs) they affect."""
+    by_code: dict[str, list[str]] = {}
+    by_cve: dict[str, list[str]] = {}
+    clean: list[str] = []
+    for i, row in enumerate(findings):
+        if not isinstance(row, dict):
+            continue
+        ref = str(row.get("bom_ref") or row.get("bom-ref") or f"component-{i}")
+        codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str)]
+        for code in codes:
+            by_code.setdefault(code, []).append(ref)
+        for cid in _cve_ids_from_finding(row):
+            by_cve.setdefault(cid, []).append(ref)
+        if not codes and not _cve_ids_from_finding(row):
+            clean.append(ref)
+    out: list[dict[str, Any]] = []
+    for code, refs in sorted(by_code.items()):
+        entry = _vuln_entry(vuln_id=f"ZS-CBOM-{code}", state="in_triage", affects_ref=None,
+                            detail="Seen in the source code or configuration; confirm whether it protects data that "
+                                   "matters, then fix or record the exception.")
+        entry["affects"] = [{"ref": r} for r in dict.fromkeys(refs)]
+        out.append(entry)
+    for cid, refs in sorted(by_cve.items()):
+        entry = _vuln_entry(vuln_id=cid, state="in_triage", affects_ref=None,
+                            detail="Matched from the algorithm or protocol the code uses; a match is not proof of "
+                                   "exposure.")
+        entry["source"] = {"name": "NVD", "url": f"https://nvd.nist.gov/vuln/detail/{cid}"}
+        entry["affects"] = [{"ref": r} for r in dict.fromkeys(refs)]
+        out.append(entry)
+    for ref in dict.fromkeys(clean):
+        out.append(_vuln_entry(vuln_id=f"not-affected:{ref}", state="not_affected", affects_ref=ref,
+                               detail="No weakness or CVE found for this asset (CERT-In F5)"))
+    return out
+
+
 def build_vex(
     *,
     bom: dict[str, Any] | None = None,
@@ -78,7 +119,9 @@ def build_vex(
     vulnerabilities: list[dict[str, Any]] = []
     seen_cves: set[str] = set()
 
-    if findings:
+    if scan_type == "cbom" and findings:
+        vulnerabilities = _cbom_vulnerabilities(findings)
+    elif findings:
         for i, row in enumerate(findings):
             if not isinstance(row, dict):
                 continue
@@ -147,6 +190,7 @@ def build_vex(
                 ]
             },
             "properties": [
+                {"name": "zs:vex_rules", "value": CBOM_VEX_RULES},
                 {
                     "name": "certin:disclaimer",
                     "value": (

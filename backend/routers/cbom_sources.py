@@ -60,6 +60,7 @@ from backend.utilities.cbom_sources.http import (
     write_limiter,
 )
 from backend.utilities.cbom_sources import inventory as INV
+from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import KINDS, credential_target_problem, validate_secret_value
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
@@ -567,7 +568,11 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         settings = get_or_create_settings(session, team_id)
         spec = KINDS[source.kind]
         old_cfg = _validate_config(source.kind, source.config or {}) if source.config else None
-        cfg = _validate_config(source.kind, body.config) if body.config is not None else old_cfg
+        incoming = body.config
+        if isinstance(incoming, dict) and "business_criticality" not in incoming and old_cfg is not None:
+            # the source forms send their own fields only; keep the criticality set on Review & Run (send null to clear)
+            incoming = {**incoming, "business_criticality": getattr(old_cfg, "business_criticality", None)}
+        cfg = _validate_config(source.kind, incoming) if incoming is not None else old_cfg
         if cfg is None:
             raise HTTPException(status_code=400, detail="config: required")
         changed: set[str] = set()
@@ -619,9 +624,11 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             source.row_version += 1
             source.updated_by_user_id = user_id
             source.last_updated = now
-            if changed - {"name"}:  # a rename does not change what a running sweep may touch
+            # a rename or a business-criticality change does not change what a sweep may touch or how it connects
+            cosmetic = {"name", "config.business_criticality"}
+            if changed - cosmetic:
                 J.stop_discoveries_using(session, source, now, "A range in this discovery was changed")
-            if changed - {"name", "enabled"}:
+            if changed - cosmetic - {"enabled"}:
                 J.cancel_open_jobs(session, source, now, reason="Source changed")
                 source.last_test_status = "never" if spec.collectable(cfg) or source.kind == "aws_account" else "not_available"
                 source.last_test_summary, source.last_test_at, source.last_test_job_id = None, None, None
@@ -871,6 +878,8 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                 seen.add(canonical)
                 items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
+        if "risk_model" in changes:
+            changes["risk_model"] = body.risk_model.model_dump() if body.risk_model else {}
         if "cert_domains" in changes:
             changes["cert_domains"] = _norm_hostnames(body.cert_domains or [], "cert_domains")
         if "sni_hostnames" in changes:
@@ -1328,6 +1337,37 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader 
     engine, _user = await authorize(team_id, Authorization)
     payload = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id)
     return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
+
+
+def _run_posture(engine, team_id: int, run_id: int) -> dict:
+    with Session(engine) as session:
+        run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
+        settings = get_or_create_settings(session, team_id)
+        return {"run": public_run(run),
+                "posture": POSTURE.run_posture(session, team_id=team_id, run_id=run.id, risk_model=settings.risk_model)}
+
+
+@router.get(BASE + "/runs/{run_id}/posture", dependencies=READ,
+            summary="Post-quantum readiness, harvest-now-decrypt-later exposure, Mosca verdict, top risks, compliance")
+async def run_posture(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("run posture", team_id, _run_posture, engine, team_id, run_id))
+
+
+def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
+    with Session(engine) as session:
+        row = _get_owned(session, CbomCollectedAsset, asset_id, team_id, "Asset")
+        source = session.get(CbomCollectionSource, row.source_id) if row.source_id else None
+        if source is not None and source.team_id != team_id:
+            source = None
+        return {"asset": POSTURE.asset_detail(row, source)}
+
+
+@router.get(BASE + "/assets/{asset_id}", dependencies=READ,
+            summary="One collected asset explained: CWE, OWASP, CVEs, remediation and read-only proof commands")
+async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return _ok(await _run("asset detail", team_id, _asset_detail, engine, team_id, asset_id))
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

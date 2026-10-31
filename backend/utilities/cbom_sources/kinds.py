@@ -34,6 +34,14 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+Criticality = Literal["low", "medium", "high", "critical"]
+
+
+class _Source(_Strict):
+    """Fields every source has. business_criticality scales the risk score of what the source finds."""
+    business_criticality: Criticality | None = None
+
+
 class VaultRef(_Strict):
     provider: VaultProvider
     path: str = Field(min_length=1, max_length=512)
@@ -114,7 +122,7 @@ def check_login(value: str | None) -> str | None:
 
 
 # ----------------------------------------------------------------------------- servers
-class ServersConfig(_Strict):
+class ServersConfig(_Source):
     targets: list[str] = Field(default_factory=list, max_length=T.MAX_LINES + 50)
     exclusions: list[str] = Field(default_factory=list, max_length=2000)
     port: int = Field(default=22, ge=1, le=65535)
@@ -200,7 +208,7 @@ def _server_secrets(cfg: ServersConfig) -> set[str]:
 
 
 # ----------------------------------------------------------------------------- kubernetes
-class KubernetesConfig(_Strict):
+class KubernetesConfig(_Source):
     api_url: str = Field(max_length=512)
     ca_pem: str | None = Field(default=None, max_length=MAX_PEM_BYTES)
     credential_type: Literal["kubeconfig", "vault"] = "kubeconfig"
@@ -261,7 +269,7 @@ def check_kubeconfig(text: str) -> dict[str, Any]:
 DB_DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306, "mssql": 1433, "oracle": 1521, "mongodb": 27017, "redis": 6379}
 
 
-class DatabaseConfig(_Strict):
+class DatabaseConfig(_Source):
     engine: Literal["postgres", "mysql", "mssql", "oracle", "mongodb", "redis"]
     host: str = Field(max_length=253)
     port: int | None = Field(default=None, ge=1, le=65535)
@@ -309,7 +317,7 @@ def _db_secrets(cfg: DatabaseConfig) -> set[str]:
 
 
 # ----------------------------------------------------------------------------- cloud
-class AwsAccountConfig(_Strict):
+class AwsAccountConfig(_Source):
     scope: Literal["account", "organization"] = "account"
     role_arn: str = Field(max_length=600)
     regions: list[str] = Field(default_factory=lambda: ["ap-south-1"], min_length=1, max_length=32)
@@ -339,7 +347,7 @@ def aws_account_id(role_arn: str) -> str | None:
     return match.group(2) if match else None
 
 
-class AzureConfig(_Strict):
+class AzureConfig(_Source):
     tenant_id: str
     client_id: str
     subscription_ids: list[str] = Field(default_factory=list, max_length=200)
@@ -360,7 +368,7 @@ class AzureConfig(_Strict):
         return [i.lower() for i in v]
 
 
-class GcpConfig(_Strict):
+class GcpConfig(_Source):
     organization_id: str | None = Field(default=None, max_length=32)
     project_ids: list[str] = Field(default_factory=list, max_length=200)
     service_account_email: str = Field(max_length=254)
@@ -385,7 +393,7 @@ class GcpConfig(_Strict):
 
 
 # ----------------------------------------------------------------------------- identity
-class CaConnectorConfig(_Strict):
+class CaConnectorConfig(_Source):
     provider: Literal["adcs", "aws_private_ca", "venafi", "keyfactor", "digicert", "ejbca", "sectigo", "other"]
     api_url: str | None = Field(default=None, max_length=512)
     login: str | None = Field(default=None, max_length=64)
@@ -420,7 +428,7 @@ def _ca_secrets(cfg: CaConnectorConfig) -> set[str]:
     return {"api_key"}
 
 
-class IdpConfig(_Strict):
+class IdpConfig(_Source):
     provider: Literal["entra_id", "okta", "keycloak", "adfs", "saml_metadata", "oidc_discovery"]
     tenant_id: str | None = None
     client_id: str | None = Field(default=None, max_length=128)
@@ -474,7 +482,7 @@ def _idp_secrets(cfg: IdpConfig) -> set[str]:
 
 
 # ----------------------------------------------------------------------------- network
-class NetworkRangeConfig(_Strict):
+class NetworkRangeConfig(_Source):
     cidr: str = Field(max_length=64)
     mode: Literal["full", "fragile"] = "full"
 
