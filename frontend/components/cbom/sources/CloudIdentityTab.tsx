@@ -126,6 +126,7 @@ const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
+const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata; no secret is needed for that.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
 const STORED_HINT = "Encrypted at rest by ZeroShield. Never shown again.";
 
@@ -459,7 +460,10 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
         </SectionCard>
       </div>
 
-      <SectionCard title="Connected cloud accounts" description={pluralize(cloudSources.length, "account")}>
+      <SectionCard
+        title="Connected cloud accounts"
+        description={`${pluralize(cloudSources.length, "account")} · AWS accounts that pass validation are scanned read-only from ZeroShield's cloud (4 credits per account per run). Azure and Google Cloud are listed but not scanned yet.`}
+      >
         {cloudSources.length === 0 ? (
           <EmptyState
             title="No cloud accounts yet"
@@ -599,7 +603,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           </div>
         </SectionCard>
 
-        <SectionCard title="Identity providers" description="Signing keys, their sizes and how often they rotate, once identity collection is available.">
+        <SectionCard title="Identity providers" description="Signing keys and certificates, read from each provider's public OIDC and SAML metadata by ZeroShield's cloud. Free.">
           <div className="space-y-6">
             <div className="space-y-2">
               {IDP_ROWS.map((row) => (
@@ -609,13 +613,13 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                   label={row.label}
                   detail={row.detail}
                   sources={idpSources.filter((s) => s.config?.provider === row.provider)}
-                  canTest={false}
-                  testing={null}
+                  canTest
+                  testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
                   onConnect={() => setIdpDialog({ row, source: null, nonce: Date.now() })}
                   onEdit={(s) => setIdpDialog({ row, source: s, nonce: Date.now() })}
-                  onTest={() => undefined}
+                  onTest={(s) => testMutation.mutate(s)}
                   onDelete={(s) => setDeleting(s)}
-                  renderDetail={() => <span className="text-xs text-zinc-500">{NOT_AVAILABLE}</span>}
+                  renderDetail={(s) => <IdpTestLine source={s} />}
                 />
               ))}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
@@ -631,7 +635,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                 </div>
               </div>
             </div>
-            <MetadataUrls teamId={teamId} sources={metadataSources} takenNames={identityNames} onDelete={(s) => setDeleting(s)} />
+            <MetadataUrls
+              teamId={teamId}
+              sources={metadataSources}
+              takenNames={identityNames}
+              onDelete={(s) => setDeleting(s)}
+              onTest={(s) => testMutation.mutate(s)}
+              testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
+            />
           </div>
         </SectionCard>
       </div>
@@ -1864,26 +1875,18 @@ function IdpDialog({
 
   const submit = () => {
     const next: Record<string, string | null> = { name: nameError(name) };
-    let whereChanged = false;
     if (provider === "entra_id") {
       next.tenant = GUID_RE.test(tenantId.trim()) ? null : "Enter the directory (tenant) ID, a GUID";
       next.client = clientId.trim() ? null : "Enter the application (client) ID";
-      whereChanged = !!source && (tenantId.trim().toLowerCase() !== cfgString(source, "tenant_id").toLowerCase() || clientId.trim() !== cfgString(source, "client_id"));
     } else if (provider === "okta") {
       next.baseUrl = httpsUrlError(baseUrl, "Okta domain");
-      whereChanged = !!source && baseUrl.trim() !== cfgString(source, "base_url");
     } else {
       next.baseUrl = httpsUrlError(baseUrl, "Keycloak base URL");
       next.realm = realm.trim() ? null : "Enter the realm";
       next.client = clientId.trim() ? null : "Enter the client ID";
-      whereChanged = !!source && (baseUrl.trim() !== cfgString(source, "base_url") || clientId.trim() !== cfgString(source, "client_id"));
     }
-    next.secret =
-      secret || (secretSet && !whereChanged)
-        ? null
-        : secretSet
-          ? `Re-enter the ${secretLabel.toLowerCase()}: it is cleared when the address or IDs change`
-          : `Enter the ${secretLabel.toLowerCase()}`;
+    // Signing keys come from the IdP's public metadata, so the secret is optional.
+    next.secret = null;
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
     save.mutate();
@@ -1947,11 +1950,9 @@ function IdpDialog({
             value={secret}
             onChange={setSecret}
             isSet={secretSet}
-            required
             error={errors.secret}
-            hint={secretSet ? "Saved. Leave blank to keep it; changing the address or IDs clears it." : STORED_HINT}
+            hint={secretSet ? "Saved. Leave blank to keep it; changing the address or IDs clears it." : `Optional. ${IDP_HOW}`}
           />
-          <p className="text-xs text-zinc-500">{NOT_AVAILABLE}</p>
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
@@ -1973,11 +1974,15 @@ function MetadataUrls({
   sources,
   takenNames,
   onDelete,
+  onTest,
+  testing,
 }: {
   teamId: number;
   sources: CbomSource[];
   takenNames: string[];
   onDelete: (s: CbomSource) => void;
+  onTest: (s: CbomSource) => void;
+  testing: number | null;
 }) {
   const invalidate = useInvalidate(teamId);
   const [urls, setUrls] = useState<Record<MetadataProvider, string>>({ saml_metadata: "", oidc_discovery: "" });
@@ -2037,24 +2042,51 @@ function MetadataUrls({
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500">
-        No admin access? Public metadata is enough to read signing keys and their rotation. The URLs are saved for ZeroShield&apos;s identity
-        collector to fetch later; nothing is fetched now.
+        No admin access? Public metadata is enough to read signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when
+        you press Test and during each run; only public https addresses can be read.
       </p>
       {input("saml_metadata", "SAML metadata URL", "https://login.example.com/saml/metadata", "cloud-saml")}
       {input("oidc_discovery", "OIDC discovery URL", "https://login.example.com/.well-known/openid-configuration", "cloud-oidc")}
       {sources.length > 0 && (
         <ul className="space-y-1.5" data-testid="cloud-metadata-list">
           {sources.map((s) => (
-            <li key={s.id} className="flex items-center gap-2 rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2">
-              <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? "Metadata"}</StatusBadge>
-              <Truncate className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300" text={cfgString(s, "metadata_url")} />
-              <Button variant="ghost" size="icon-sm" className="cursor-pointer shrink-0" aria-label={`Delete ${s.name}`} onClick={() => onDelete(s)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+            <li key={s.id} className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 space-y-1">
+              <div className="flex items-center gap-2">
+                <StatusBadge tone="zinc">{METADATA_LABEL[s.config?.provider as MetadataProvider] ?? "Metadata"}</StatusBadge>
+                <Truncate className="flex-1 min-w-0 font-mono text-xs text-zinc-700 dark:text-zinc-300" text={cfgString(s, "metadata_url")} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="cursor-pointer shrink-0"
+                  disabled={testing === s.id}
+                  onClick={() => onTest(s)}
+                  data-testid={`cloud-metadata-test-${s.id}`}
+                >
+                  {testing === s.id && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                  Test
+                </Button>
+                <Button variant="ghost" size="icon-sm" className="cursor-pointer shrink-0" aria-label={`Delete ${s.name}`} onClick={() => onDelete(s)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <IdpTestLine source={s} />
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+/** Last metadata read for an identity provider (the Test button reads it live). */
+function IdpTestLine({ source }: { source: CbomSource }) {
+  if (!source.last_test_status || source.last_test_status === "never") {
+    return <span className="text-xs text-zinc-500">Not tested yet. Test reads the public metadata now.</span>;
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-zinc-500" data-testid={`idp-test-${source.id}`}>
+      <TestStatusBadge status={source.last_test_status} />
+      <span className="break-words">{source.last_test_summary}</span>
+    </span>
   );
 }

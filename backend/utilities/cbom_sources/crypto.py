@@ -16,11 +16,20 @@ from cryptography.fernet import Fernet
 from backend.utilities.cbom_sources.common import log
 from backend.utilities.db.encryption import decrypt_value, encrypt_value
 
+# A private-key block is removed up to its END line, or to the end of the text when it was truncated.
 _PEM_PRIVATE = re.compile(
-    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----", re.DOTALL
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)", re.DOTALL
 )
-_TOKENS = re.compile(r"\bzs[rnv]_[A-Za-z0-9_-]{16,}")
+# ZeroShield tokens, HashiCorp Vault tokens and AWS session tokens.
+_TOKENS = re.compile(r"\bzs[rnv]_[A-Za-z0-9_-]{16,}|\bhv[sbr]\.[A-Za-z0-9_-]{20,}|(?:IQoJb3JpZ2lu|FwoGZXIvYXdz)[A-Za-z0-9/+=]{40,}")
 _SECRET_KEYS = re.compile(r"(password|passwd|secret|token|private_key|privatekey|kubeconfig|api_key|apikey|credential)", re.I)
+# Collected facts legitimately use words like "password_encryption" or "token_endpoint", so for them only
+# these exact keys are value-redacted.
+_SECRET_KEYS_EXACT = frozenset({
+    "password", "passwd", "client_secret", "private_key", "privatekey", "requirepass", "masterauth",
+    "authentication_string", "tls-key-file-pass", "kubeconfig", "api_key", "apikey", "secret_value", "token",
+    "access_token", "refresh_token", "session_token", "secret_access_key", "tls.key",
+})
 REDACTED = "[redacted]"
 _warned = False
 
@@ -53,8 +62,12 @@ def decrypt_secrets(blob: str | None) -> dict[str, str]:
     return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
 
 
-def scrub(value: Any, known_secrets: list[str] | None = None, *, depth: int = 0) -> Any:
-    """Remove secret values, private-key blocks and ZeroShield tokens from untrusted node output."""
+def scrub(value: Any, known_secrets: list[str] | None = None, *, depth: int = 0, exact_keys: bool = False) -> Any:
+    """Remove secret values, private-key blocks and tokens from untrusted node output.
+
+    ``exact_keys`` redacts only values under the exact secret key names (for collected facts, where
+    ``password_encryption: md5`` is a finding, not a secret); otherwise any key that looks secret is.
+    """
     if depth > 12:
         return None
     secrets_ = [s for s in (known_secrets or []) if isinstance(s, str) and len(s) >= 4]
@@ -69,13 +82,14 @@ def scrub(value: Any, known_secrets: list[str] | None = None, *, depth: int = 0)
         out = {}
         for key, item in list(value.items())[:500]:
             name = str(key)[:128]
-            if _SECRET_KEYS.search(name) and isinstance(item, str):
+            secret_key = name.lower() in _SECRET_KEYS_EXACT if exact_keys else bool(_SECRET_KEYS.search(name))
+            if secret_key and isinstance(item, str):
                 out[name] = REDACTED
             else:
-                out[name] = scrub(item, secrets_, depth=depth + 1)
+                out[name] = scrub(item, secrets_, depth=depth + 1, exact_keys=exact_keys)
         return out
     if isinstance(value, list):
-        return [scrub(item, secrets_, depth=depth + 1) for item in value[:2000]]
+        return [scrub(item, secrets_, depth=depth + 1, exact_keys=exact_keys) for item in value[:2000]]
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     return str(value)[:1000]

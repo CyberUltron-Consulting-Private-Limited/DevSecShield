@@ -7,14 +7,16 @@ expired).  Credits are charged and refunded inside the same transaction as the j
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import secrets
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import update
+from sqlalchemy import delete, func, update
 from sqlmodel import Session, select
 
 from backend.new_models import (
+    CbomCollectedAsset,
     CbomCollectionJob,
     CbomCollectionRun,
     CbomCollectionSettings,
@@ -23,11 +25,12 @@ from backend.new_models import (
     Team,
 )
 from backend.utilities.cbom_sources import targets as T
-from backend.utilities.cbom_sources.common import audit, log
+from backend.utilities.cbom_sources.classify import ASSET_TYPES, classify
+from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.planning import credits, node_status
-from backend.utilities.cbom_sources.settings import team_exclusions, window_allows
+from backend.utilities.cbom_sources.settings import team_exclusions, window_allows, window_end
 
 LEASE = _dt.timedelta(minutes=15)
 MAX_ATTEMPTS = 3
@@ -35,6 +38,23 @@ TEST_JOB_TTL = _dt.timedelta(hours=24)
 COLLECT_JOB_TTL = _dt.timedelta(days=7)
 TERMINAL = ("success", "failure", "cancelled", "expired")
 OPEN = ("pending", "claimed")
+# A job may run at most this long after it was claimed, whatever its lease says.
+MAX_RUNTIME = {"test_connection": _dt.timedelta(minutes=20), "collect": _dt.timedelta(hours=8),
+               "discovery": _dt.timedelta(hours=8)}
+# A claimed job its node no longer reports as running is released after this grace period.
+ORPHAN_GRACE = _dt.timedelta(seconds=120)
+# A node that does not confirm a requested cancel within this time has the job cancelled for it.
+CANCEL_GRACE = _dt.timedelta(minutes=10)
+MAX_ASSETS_PER_ATTEMPT = 50_000
+TARGET_STATUSES = frozenset({
+    "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
+    "sudoers_missing", "sudo_denied", "tls_unavailable", "not_supported", "error", "skipped_never_scan",
+    "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
+})
+
+
+def _run_of(session: Session, job: CbomCollectionJob) -> CbomCollectionRun | None:
+    return session.get(CbomCollectionRun, job.run_id) if job.run_id else None
 
 
 # ----------------------------------------------------------------------------- credits
@@ -83,7 +103,7 @@ def recompute_run(session: Session, run_id: int | None, now: _dt.datetime) -> Cb
     elif "pending" in statuses:
         new = "queued"
     elif all(s == "success" for s in statuses):
-        new = "done"
+        new = "partial" if any(j.outcome in ("partial", "failed") for j in jobs) else "done"
     elif all(s == "cancelled" for s in statuses):
         new = "cancelled"
     elif all(s in ("failure", "expired") for s in statuses):
@@ -93,6 +113,10 @@ def recompute_run(session: Session, run_id: int | None, now: _dt.datetime) -> Cb
     if new != run.status:
         run.status = new
         run.last_updated = now
+        if new in ("done", "partial", "failed", "cancelled"):
+            run.finished_at = now
+        elif run.finished_at is not None:
+            run.finished_at = None  # a job went back to pending (lease expired); the run is open again
         session.add(run)
         log("run status", team=run.team_id, run=run.id, status=new)
     return run
@@ -109,6 +133,31 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
     moved = 0
     runs: set[int] = set()
     for job in session.exec(query).all():
+        started = job.claimed_at
+        too_long = job.status == "claimed" and started is not None and started < now - MAX_RUNTIME.get(job.kind, MAX_RUNTIME["collect"])
+        stale_cancel = job.status == "claimed" and job.cancel_requested_at is not None and job.cancel_requested_at < now - CANCEL_GRACE
+        if too_long or stale_cancel:
+            status = "cancelled" if stale_cancel and not too_long else "failure"
+            error = (job.cancel_reason or "Cancelled") if status == "cancelled" else "Stopped: ran longer than the maximum time for this job"
+            changed = session.exec(
+                update(CbomCollectionJob)
+                .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "claimed",
+                       CbomCollectionJob.lease_id == job.lease_id)
+                .values(status=status, finished_at=now, error=error[:1024], lease_id=None, lease_expires_at=None,
+                        outcome="failed")
+            ).rowcount
+            if changed:
+                session.refresh(job)
+                refunded = refund_job(session, job, _run_of(session, job)) if job.kind == "collect" else 0
+                _test_result_from_job(session, job, now)
+                audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action=f"job.{status}",
+                      object_type="job", object_id=job.id, changed_fields=["max_runtime" if too_long else "cancel"])
+                log("job stopped", team=job.team_id, job=job.id, node=job.node_id, status=status,
+                    reason="max_runtime" if too_long else "cancel_unconfirmed", refunded_c=refunded)
+                moved += 1
+                if job.run_id:
+                    runs.add(job.run_id)
+            continue
         if job.status == "claimed" and job.lease_expires_at is not None and job.lease_expires_at < now:
             if job.attempts < MAX_ATTEMPTS:
                 target, values = "pending", {"lease_id": None, "lease_expires_at": None}
@@ -123,10 +172,14 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
             ).rowcount
             if changed:
                 session.refresh(job)
+                refunded = 0
                 if target == "failure" and job.kind == "collect":
-                    refund_job(session, job, session.get(CbomCollectionRun, job.run_id) if job.run_id else None)
+                    refunded = refund_job(session, job, _run_of(session, job))
                 _test_result_from_job(session, job, now)
-                log("job lease expired", team=job.team_id, job=job.id, node=job.node_id, status=target)
+                audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action=f"job.lease_expired.{target}",
+                      object_type="job", object_id=job.id)
+                log("job lease expired", team=job.team_id, job=job.id, node=job.node_id, status=target,
+                    attempt=job.attempts, refunded_c=refunded)
                 moved += 1
                 if job.run_id:
                     runs.add(job.run_id)
@@ -140,10 +193,13 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                 ).rowcount
                 if changed:
                     session.refresh(job)
+                    refunded = 0
                     if job.kind == "collect":
-                        refund_job(session, job, session.get(CbomCollectionRun, job.run_id) if job.run_id else None)
+                        refunded = refund_job(session, job, _run_of(session, job))
                     _test_result_from_job(session, job, now)
-                    log("job expired", team=job.team_id, job=job.id, node=job.node_id)
+                    audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.expired",
+                          object_type="job", object_id=job.id)
+                    log("job expired", team=job.team_id, job=job.id, node=job.node_id, refunded_c=refunded)
                     moved += 1
                     if job.run_id:
                         runs.add(job.run_id)
@@ -196,7 +252,17 @@ def cancel_open_jobs(
     session: Session, source: CbomCollectionSource, now: _dt.datetime, *, reason: str,
     kinds: tuple[str, ...] = ("test_connection", "collect"),
 ) -> int:
-    """Cancel the source's pending jobs (refunding collect jobs).  Claimed jobs fail on their next call."""
+    """Cancel the source's pending jobs (refunding collect jobs) and ask the node to stop claimed ones.
+
+    A claimed job gets ``cancel_requested_at``: the node sees it in its next heartbeat, and its next
+    asset batch or result is refused, so nothing collected under the old settings is stored."""
+    session.exec(
+        update(CbomCollectionJob)
+        .where(CbomCollectionJob.source_id == source.id, CbomCollectionJob.status == "claimed",
+               CbomCollectionJob.kind.in_(kinds),  # type: ignore[attr-defined]
+               CbomCollectionJob.cancel_requested_at.is_(None))  # type: ignore[union-attr]
+        .values(cancel_requested_at=now, cancel_reason=reason[:255])
+    )
     rows = session.exec(
         select(CbomCollectionJob).where(
             CbomCollectionJob.source_id == source.id, CbomCollectionJob.status == "pending",
@@ -249,10 +315,15 @@ def create_discovery_jobs(
 
 
 # ----------------------------------------------------------------------------- claim
-def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, settings: CbomCollectionSettings) -> dict[str, Any]:
+def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, settings: CbomCollectionSettings,
+               now: _dt.datetime | None = None) -> dict[str, Any]:
     """What the node may touch.  Exclusions are the union of those at job creation and now."""
     exclusions = sorted(set((job.params or {}).get("exclusions") or []) | set(_snapshot_exclusions(settings)))
     scope: dict[str, Any] = {"never_scan": exclusions}
+    now = now or _dt.datetime.utcnow()
+    scope["max_runtime_s"] = int(MAX_RUNTIME.get(job.kind, MAX_RUNTIME["collect"]).total_seconds())
+    ends = None if job.kind == "test_connection" else window_end(_job_window(source, settings), settings.window_timezone, now)
+    scope["window_ends_at"] = ends.strftime("%Y-%m-%dT%H:%M:%SZ") if ends else None
     cfg = (source.config or {}) if source else {}
     if source is not None and KINDS[source.kind].group == "servers":
         scope["targets"] = cfg.get("targets") or []
@@ -285,17 +356,30 @@ def _job_window(source: CbomCollectionSource | None, settings: CbomCollectionSet
     return settings.scan_window
 
 
-def _invalid_reason(job: CbomCollectionJob, source: CbomCollectionSource | None, node: CbomScanNode) -> str | None:
+def _invalid_reason(job: CbomCollectionJob, source: CbomCollectionSource | None, node: CbomScanNode | None) -> str | None:
+    """Why a job must not run (or must stop), or None.  ``node`` is None for jobs the cloud worker runs."""
+    if job.cancel_requested_at is not None:
+        return job.cancel_reason or "Cancelled"
     if job.source_id is None:
         return None if job.kind == "discovery" else "Source no longer exists"
-    if source is None or source.team_id != node.team_id:
+    if source is None or source.team_id != job.team_id:
         return "Source no longer exists"
-    if source.node_id != node.id:
+    if node is not None and source.node_id != node.id:
+        return "Source moved to another scan node"
+    if node is None and source.node_id is not None and job.node_id is not None:
         return "Source moved to another scan node"
     if job.source_version is not None and source.row_version != job.source_version:
         return "Source changed after this job was created"
     if job.kind == "collect" and not source.enabled:
         return "Source was disabled"
+    spec = KINDS.get(source.kind)
+    if spec is not None:
+        try:
+            cfg = spec.model.model_validate(source.config or {})
+        except Exception:
+            return "Source configuration is no longer valid"
+        if not spec.collectable(cfg):
+            return "Collection for this source is not available"
     return None
 
 
@@ -322,8 +406,11 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
             if changed:
                 session.refresh(job)
                 if job.kind == "collect":
-                    refund_job(session, job, session.get(CbomCollectionRun, job.run_id) if job.run_id else None)
+                    refund_job(session, job, _run_of(session, job))
+                _test_result_from_job(session, job, now)
                 recompute_run(session, job.run_id, now)
+                audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.cancelled",
+                      object_type="job", object_id=job.id, changed_fields=["stale_source"])
                 log("job cancelled", team=job.team_id, job=job.id, reason="stale_source")
             continue
         is_network = job.kind == "discovery" or (source is not None and source.kind == "network_range")
@@ -336,11 +423,12 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
             update(CbomCollectionJob)
             .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
             .values(status="claimed", lease_id=lease_id, lease_expires_at=now + LEASE, claimed_at=now,
-                    attempts=CbomCollectionJob.attempts + 1)
+                    attempts=CbomCollectionJob.attempts + 1, asset_count=0, outcome=None)
         ).rowcount
         if not changed:
             continue
         session.refresh(job)
+        _start_attempt(session, job, now)
         recompute_run(session, job.run_id, now)
         node.last_claim_at = now
         session.add(node)
@@ -349,7 +437,7 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
         payload: dict[str, Any] = {
             "job": {"id": job.id, "kind": job.kind, "lease_id": lease_id, "lease_seconds": int(LEASE.total_seconds()),
                     "attempt": job.attempts, "run_id": job.run_id},
-            "scope": _scope_for(job, source, settings),
+            "scope": _scope_for(job, source, settings, now),
         }
         if source is not None:
             payload["source"] = {
@@ -361,12 +449,81 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
     return None
 
 
-def renew_leases(session: Session, node: CbomScanNode, now: _dt.datetime) -> None:
-    session.exec(
-        update(CbomCollectionJob)
-        .where(CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")
-        .values(lease_expires_at=now + LEASE)
-    )
+def _start_attempt(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> None:
+    """A (re)claimed job starts clean: assets from earlier attempts are dropped."""
+    if job.first_claimed_at is None:
+        job.first_claimed_at = now
+        session.add(job)
+    if job.attempts > 1:
+        session.exec(delete(CbomCollectedAsset).where(CbomCollectedAsset.job_id == job.id,
+                                                      CbomCollectedAsset.attempt < job.attempts))
+
+
+def renew_leases(session: Session, node: CbomScanNode, now: _dt.datetime,
+                 running: list[tuple[int, str]] | None = None) -> list[int]:
+    """Extend the leases of the jobs the node says it is running.
+
+    ``running`` None (an older node that does not report) renews every claimed job of the node.
+    Otherwise only the reported (job, lease) pairs are renewed, and a claimed job the node has stopped
+    reporting is released once it is older than the grace period.  Returns the released job ids."""
+    if running is None:
+        session.exec(
+            update(CbomCollectionJob)
+            .where(CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")
+            .values(lease_expires_at=now + LEASE)
+        )
+        return []
+    reported = {(int(job_id), str(lease)) for job_id, lease in running}
+    released: list[int] = []
+    runs: set[int] = set()
+    for job in session.exec(select(CbomCollectionJob).where(
+            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).all():
+        if (job.id, job.lease_id) in reported:
+            session.exec(update(CbomCollectionJob)
+                         .where(CbomCollectionJob.id == job.id, CbomCollectionJob.lease_id == job.lease_id,
+                                CbomCollectionJob.status == "claimed")
+                         .values(lease_expires_at=now + LEASE))
+            continue
+        if job.claimed_at is not None and job.claimed_at > now - ORPHAN_GRACE:
+            continue  # claimed moments ago; the node may not have reported it yet
+        retry = job.attempts < MAX_ATTEMPTS
+        values: dict[str, Any] = {"lease_id": None, "lease_expires_at": None}
+        if not retry:
+            values.update(finished_at=now, error="The scan node stopped running this job", outcome="failed")
+        changed = session.exec(
+            update(CbomCollectionJob)
+            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "claimed",
+                   CbomCollectionJob.lease_id == job.lease_id)
+            .values(status="pending" if retry else "failure", **values)
+        ).rowcount
+        if changed:
+            session.refresh(job)
+            refunded = 0
+            if not retry and job.kind == "collect":
+                refunded = refund_job(session, job, _run_of(session, job))
+            _test_result_from_job(session, job, now)
+            audit(session, team_id=job.team_id, actor_type="system", actor_id=None,
+                  action="job.released" if retry else "job.failure", object_type="job", object_id=job.id,
+                  changed_fields=["not_reported_by_node"])
+            log("job released", team=job.team_id, job=job.id, node=node.id, retry=retry, refunded_c=refunded)
+            released.append(job.id)
+            if job.run_id:
+                runs.add(job.run_id)
+    for run_id in runs:
+        recompute_run(session, run_id, now)
+    return released
+
+
+def cancel_ids_for_node(session: Session, node: CbomScanNode, settings: CbomCollectionSettings) -> list[int]:
+    """Claimed jobs this node should stop: cancel requested, source changed, or network scanning stopped."""
+    out: list[int] = []
+    for job in session.exec(select(CbomCollectionJob).where(
+            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).all():
+        source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+        is_network = job.kind == "discovery" or (source is not None and source.kind == "network_range")
+        if _invalid_reason(job, source, node) or (is_network and settings.stop_all_network):
+            out.append(job.id)
+    return out
 
 
 # ----------------------------------------------------------------------------- finish
@@ -398,38 +555,284 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
     session.add(source)
 
 
-def finish_job(
-    session: Session, node: CbomScanNode, job_id: int, lease_id: str, status: str,
-    result: dict[str, Any] | None, error: str | None, now: _dt.datetime,
-) -> CbomCollectionJob:
+def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id: int | None) -> CbomCollectionJob:
     job = session.get(CbomCollectionJob, job_id)
-    if job is None or job.node_id != node.id or job.team_id != node.team_id:
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    if node is not None and (job.node_id != node.id or job.team_id != node.team_id):
+        raise HTTPException(status_code=404, detail="Job not found")
+    if node is None and (job.node_id is not None or (team_id is not None and job.team_id != team_id)):
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int) -> tuple[str, dict[str, Any]]:
+    """ok / partial / failed from the node's own target counts and what the server actually stored."""
+    if status != "success":
+        return "failed", {}
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    ok = int(counts.get("ok") or 0) if str(counts.get("ok", "")).isdigit() else 0
+    failed = int(counts.get("failed") or 0) if str(counts.get("failed", "")).isdigit() else 0
+    skipped = int(counts.get("skipped") or 0) if str(counts.get("skipped", "")).isdigit() else 0
+    extra: dict[str, Any] = {}
+    reported = result.get("asset_count")
+    if job.kind == "collect" and isinstance(reported, int) and reported != stored:
+        extra["asset_mismatch"] = {"reported": reported, "stored": stored}
+    if not counts:
+        return ("partial" if extra or result.get("truncated") else "ok"), extra
+    if ok == 0 and (failed or skipped):
+        return "failed", extra
+    if failed or skipped or extra or result.get("truncated"):
+        return "partial", extra
+    return "ok", extra
+
+
+def finish_job(
+    session: Session, node: CbomScanNode | None, job_id: int, lease_id: str, status: str,
+    result: dict[str, Any] | None, error: str | None, now: _dt.datetime, *, team_id: int | None = None,
+    known_secrets: list[str] | None = None,
+) -> CbomCollectionJob:
+    """Record a job's end.  ``node`` None is the cloud worker.  Failed or cancelled collect jobs are refunded."""
+    job = _owned_job(session, node, job_id, team_id)
     source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
-    clean_result = scrub(result or {}, known)
+    known += [s for s in (known_secrets or []) if isinstance(s, str)]
+    clean_result = scrub(result or {}, known, exact_keys=True)
     clean_error = scrub(error, known) if error else None
+    invalid = _invalid_reason(job, source, node) if job.status == "claimed" and job.lease_id == lease_id else None
+    if invalid and status == "success":
+        status, clean_error = "cancelled", invalid  # collected under settings that no longer apply
+    stored = session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+        CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one()
+    outcome, extra = _outcome(job, status, clean_result if isinstance(clean_result, dict) else {}, int(stored))
+    if extra and isinstance(clean_result, dict):
+        clean_result = {**clean_result, **extra}
+    if isinstance(clean_result, dict):
+        clean_result["stored_asset_count"] = int(stored)
     changed = session.exec(
         update(CbomCollectionJob)
-        .where(CbomCollectionJob.id == job_id, CbomCollectionJob.node_id == node.id,
+        .where(CbomCollectionJob.id == job_id,
+               (CbomCollectionJob.node_id == node.id) if node is not None else CbomCollectionJob.node_id.is_(None),  # type: ignore[union-attr]
                CbomCollectionJob.status == "claimed", CbomCollectionJob.lease_id == lease_id)
-        .values(status=status, finished_at=now, result=clean_result,
+        .values(status=status, finished_at=now, result=clean_result, outcome=outcome, asset_count=int(stored),
                 error=(str(clean_error)[:1024] if clean_error else None), lease_id=None, lease_expires_at=None)
     ).rowcount
     if not changed:
         raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     session.refresh(job)
+    refunded = 0
+    if job.kind == "collect" and status in ("failure", "cancelled"):
+        refunded = refund_job(session, job, _run_of(session, job))
     _test_result_from_job(session, job, now)
     recompute_run(session, job.run_id, now)
-    audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action=f"job.{status}",
-          object_type="job", object_id=job.id)
-    log("job finished", team=job.team_id, job=job.id, node=node.id, kind=job.kind, status=status)
+    audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,
+          action=f"job.{status}", object_type="job", object_id=job.id)
+    counts = clean_result.get("counts") if isinstance(clean_result, dict) and isinstance(clean_result.get("counts"), dict) else {}
+    duration = int((now - job.claimed_at).total_seconds()) if job.claimed_at else None
+    log("job finished", team=job.team_id, run=job.run_id, job=job.id, node=node.id if node else "cloud", kind=job.kind,
+        attempt=job.attempts, status=status, outcome=outcome, ok=counts.get("ok"), failed=counts.get("failed"),
+        skipped=counts.get("skipped"), assets=int(stored), duration_s=duration, refunded_c=refunded)
     return job
+
+
+# ----------------------------------------------------------------------------- assets
+def _asset_key(asset_type: str, location: str, facts: dict[str, Any], name: str | None) -> str:
+    identity = facts.get("fingerprint_sha256") or facts.get("identity") or name or ""
+    return hashlib.sha256(f"{asset_type}|{location}|{identity}".encode("utf-8", "replace")).hexdigest()
+
+
+def _insert_ignore(session: Session, rows: list[dict[str, Any]]) -> int:
+    """INSERT ... ON CONFLICT DO NOTHING on Postgres and SQLite.  Returns rows inserted."""
+    if not rows:
+        return 0
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+    stmt = dialect_insert(CbomCollectedAsset.__table__).values(rows).on_conflict_do_nothing(
+        index_elements=["job_id", "attempt", "asset_key"])
+    return int(session.exec(stmt).rowcount or 0)  # type: ignore[call-overload]
+
+
+def add_assets(
+    session: Session, node: CbomScanNode | None, job_id: int, lease_id: str, assets: list[dict[str, Any]],
+    now: _dt.datetime, *, team_id: int | None = None, known_secrets: list[str] | None = None,
+) -> dict[str, Any]:
+    """Store one batch of a running job's assets.  Team, run and source always come from the job row."""
+    job = _owned_job(session, node, job_id, team_id)
+    if job.status != "claimed" or job.lease_id != lease_id:
+        raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
+    source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+    reason = _invalid_reason(job, source, node)
+    if reason:
+        changed = session.exec(
+            update(CbomCollectionJob)
+            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "claimed", CbomCollectionJob.lease_id == lease_id)
+            .values(status="cancelled", finished_at=now, error=reason[:1024], lease_id=None, lease_expires_at=None,
+                    outcome="failed")
+        ).rowcount
+        if changed:
+            session.refresh(job)
+            if job.kind == "collect":
+                refund_job(session, job, _run_of(session, job))
+            _test_result_from_job(session, job, now)
+            recompute_run(session, job.run_id, now)
+            audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.cancelled",
+                  object_type="job", object_id=job.id, changed_fields=["stale_source"])
+            log("job cancelled", team=job.team_id, job=job.id, reason="stale_source_on_assets")
+        session.commit()
+        raise HTTPException(status_code=409, detail=f"Stop this job: {reason}")
+    known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
+    known += [s for s in (known_secrets or []) if isinstance(s, str)]
+    rows: list[dict[str, Any]] = []
+    rejected = 0
+    in_batch_dups = 0
+    keys: set[str] = set()
+    for raw in assets:
+        asset_type = raw.get("type")
+        location = clean_text(scrub(raw.get("location"), known), 512) if raw.get("location") else None
+        if asset_type not in ASSET_TYPES or not location:
+            rejected += 1
+            continue
+        facts = scrub(raw.get("facts") if isinstance(raw.get("facts"), dict) else {}, known, exact_keys=True) or {}
+        name = clean_text(scrub(raw.get("name"), known), 255) if raw.get("name") else None
+        algorithm = clean_text(raw.get("algorithm"), 64) if raw.get("algorithm") else None
+        key_size = raw.get("key_size") if isinstance(raw.get("key_size"), int) and 0 < raw.get("key_size") < 1_000_000 else None
+        protocol = clean_text(raw.get("protocol"), 32) if raw.get("protocol") else None
+        key = _asset_key(asset_type, location, facts, name)
+        if key in keys:
+            in_batch_dups += 1
+            continue
+        keys.add(key)
+        verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
+        rows.append({
+            "team_id": job.team_id, "run_id": job.run_id, "job_id": job.id, "source_id": job.source_id,
+            "attempt": job.attempts, "asset_key": key, "asset_type": asset_type, "cdx_type": verdict["cdx_type"],
+            "target": clean_text(scrub(raw.get("target"), known), 255) if raw.get("target") else None,
+            "location": location, "name": name, "algorithm": algorithm, "key_size": key_size, "protocol": protocol,
+            "quantum_vulnerable": verdict["quantum_vulnerable"], "impact": verdict["impact"],
+            "finding_codes": verdict["finding_codes"], "finding": verdict["finding"], "facts": facts, "created_at": now,
+        })
+    existing = set()
+    if rows:
+        existing = set(session.exec(select(CbomCollectedAsset.asset_key).where(
+            CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
+            CbomCollectedAsset.asset_key.in_([r["asset_key"] for r in rows]))).all())  # type: ignore[attr-defined]
+    fresh = [r for r in rows if r["asset_key"] not in existing]
+    room = max(MAX_ASSETS_PER_ATTEMPT - (job.asset_count or 0), 0)
+    cap_reached = len(fresh) > room
+    dropped = max(len(fresh) - room, 0)
+    fresh = fresh[:room]
+    if fresh:
+        # the counter update re-checks the lease, so a batch racing the reaper or the result is refused
+        changed = session.exec(
+            update(CbomCollectionJob)
+            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "claimed",
+                   CbomCollectionJob.lease_id == lease_id,
+                   CbomCollectionJob.asset_count + len(fresh) <= MAX_ASSETS_PER_ATTEMPT)
+            .values(asset_count=CbomCollectionJob.asset_count + len(fresh))
+        ).rowcount
+        if not changed:
+            raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
+    inserted = _insert_ignore(session, fresh)
+    if inserted < len(fresh):  # another request stored some of these keys first
+        session.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == job.id)
+                     .values(asset_count=CbomCollectionJob.asset_count - (len(fresh) - inserted)))
+    total = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+        CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one())
+    duplicate = in_batch_dups + len(existing) + (len(fresh) - inserted)
+    log("assets stored", team=job.team_id, run=job.run_id, job=job.id, attempt=job.attempts, accepted=inserted,
+        duplicate=duplicate, rejected=rejected, dropped=dropped, total=total, cap_reached=cap_reached)
+    if cap_reached and isinstance(job.result, dict):
+        job.result = {**job.result, "truncated": True}
+        session.add(job)
+    return {"accepted": inserted, "duplicate": duplicate, "rejected": rejected, "dropped": dropped,
+            "total_for_attempt": total, "cap_reached": cap_reached}
+
+
+# ----------------------------------------------------------------------------- cloud worker
+def claim_cloud_job(session: Session, now: _dt.datetime, worker: str) -> dict | None:
+    """Claim the oldest node-less collect job (AWS accounts, identity providers) for the cloud worker."""
+    query = (
+        select(CbomCollectionJob)
+        .where(CbomCollectionJob.node_id.is_(None), CbomCollectionJob.kind == "collect",  # type: ignore[union-attr]
+               CbomCollectionJob.status == "pending")
+        .order_by(CbomCollectionJob.id)
+        .limit(25)
+    )
+    if session.get_bind().dialect.name == "postgresql":
+        query = query.with_for_update(skip_locked=True)
+    for job in session.exec(query).all():
+        source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+        spec = KINDS.get(source.kind) if source is not None else None
+        reason = _invalid_reason(job, source, None)
+        if reason is None and (spec is None or not spec.node_less):
+            reason = "This source needs a scan node"
+        if reason:
+            changed = session.exec(
+                update(CbomCollectionJob).where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
+                .values(status="cancelled", finished_at=now, error=reason, outcome="failed")
+            ).rowcount
+            if changed:
+                session.refresh(job)
+                refund_job(session, job, _run_of(session, job))
+                recompute_run(session, job.run_id, now)
+                audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.cancelled",
+                      object_type="job", object_id=job.id, changed_fields=["stale_source"])
+            continue
+        lease_id = secrets.token_hex(12)
+        changed = session.exec(
+            update(CbomCollectionJob)
+            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
+            .values(status="claimed", lease_id=lease_id, lease_expires_at=now + LEASE, claimed_at=now,
+                    attempts=CbomCollectionJob.attempts + 1, asset_count=0, outcome=None)
+        ).rowcount
+        if not changed:
+            continue
+        session.refresh(job)
+        _start_attempt(session, job, now)
+        recompute_run(session, job.run_id, now)
+        audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action="job.claim",
+              object_type="job", object_id=job.id, changed_fields=["cloud_worker"])
+        log("job claimed", team=job.team_id, run=job.run_id, job=job.id, node="cloud", worker=worker,
+            kind=source.kind, attempt=job.attempts)
+        return {
+            "job": {"id": job.id, "team_id": job.team_id, "run_id": job.run_id, "lease_id": lease_id,
+                    "attempt": job.attempts, "max_runtime_s": int(MAX_RUNTIME["collect"].total_seconds())},
+            "source": {"id": source.id, "kind": source.kind, "name": source.name, "config": source.config or {},
+                       "last_test_status": source.last_test_status,
+                       "secrets": decrypt_secrets(source.secret_encrypted)},
+        }
+    return None
+
+
+def renew_cloud_lease(session: Session, job_id: int, lease_id: str, now: _dt.datetime) -> str | None:
+    """Extend a cloud job's lease.  Returns why it must stop, or None to carry on."""
+    job = session.get(CbomCollectionJob, job_id)
+    if job is None or job.node_id is not None or job.status != "claimed" or job.lease_id != lease_id:
+        return "This job is no longer leased to the cloud worker"
+    source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+    reason = _invalid_reason(job, source, None)
+    if reason:
+        return reason
+    session.exec(update(CbomCollectionJob)
+                 .where(CbomCollectionJob.id == job_id, CbomCollectionJob.lease_id == lease_id,
+                        CbomCollectionJob.status == "claimed")
+                 .values(lease_expires_at=now + LEASE))
+    return None
 
 
 # ----------------------------------------------------------------------------- runs
 def cancel_run(session: Session, run: CbomCollectionRun, user_id: int, now: _dt.datetime) -> int:
-    """Cancel the run's pending jobs and refund exactly those.  Returns centi-credits refunded."""
+    """Cancel the run's pending jobs and refund exactly those; ask the node to stop the claimed ones
+    (they are refunded when the node confirms, or after the cancel grace period).  Returns centi-credits refunded."""
+    asked = session.exec(
+        update(CbomCollectionJob)
+        .where(CbomCollectionJob.run_id == run.id, CbomCollectionJob.status == "claimed",
+               CbomCollectionJob.cancel_requested_at.is_(None))  # type: ignore[union-attr]
+        .values(cancel_requested_at=now, cancel_reason="Cancelled by a user")
+    ).rowcount
     refunded = 0
     jobs = session.exec(
         select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id, CbomCollectionJob.status == "pending")
@@ -442,7 +845,7 @@ def cancel_run(session: Session, run: CbomCollectionRun, user_id: int, now: _dt.
         if changed:
             session.refresh(job)
             refunded += refund_job(session, job, run)
-    if run.cancelled_at is None and jobs:
+    if run.cancelled_at is None and (jobs or asked):
         run.cancelled_by = user_id
         run.cancelled_at = now
         session.add(run)
@@ -455,9 +858,13 @@ def job_waiting_reason(
     source: CbomCollectionSource | None = None,
 ) -> str | None:
     if job.status == "claimed":
-        return "Running on the scan node"
+        if job.cancel_requested_at is not None:
+            return "Stop requested; waiting for the scan node to confirm"
+        return "Running on the scan node" if job.node_id else "Running in ZeroShield cloud"
     if job.status != "pending":
         return None
+    if job.node_id is None and job.kind == "collect":
+        return "Queued for the ZeroShield cloud worker"
     status = node_status(node, now)
     if status == "missing":
         return "No scan node is assigned"

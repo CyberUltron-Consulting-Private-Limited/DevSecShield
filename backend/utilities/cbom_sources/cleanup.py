@@ -6,6 +6,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
 from backend.new_models import (
+    CbomCollectedAsset,
     CbomCollectionAuditEvent,
     CbomCollectionJob,
     CbomCollectionRun,
@@ -17,6 +18,7 @@ from backend.new_models import (
 )
 
 _ORDER = (
+    CbomCollectedAsset,
     CbomCollectionJob,
     CbomCollectionRun,
     CbomCollectionSource,

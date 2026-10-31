@@ -4148,14 +4148,86 @@ export interface CbomJob {
     finished_at: string | null
     result: Record<string, any>
     error: string | null
+    outcome?: "ok" | "partial" | "failed" | null
+    asset_count?: number
+    cancel_requested?: boolean
+    runner?: "node" | "cloud"
     samples: string[]
     server_time: string
 }
 
+export type CbomImpact = "Critical" | "High" | "Medium" | "Low"
+
+export interface CbomAsset {
+    id: number
+    type: string
+    cdx_type: string
+    job_id: number
+    source_id: number | null
+    source_name: string | null
+    target: string | null
+    location: string
+    name: string | null
+    algorithm: string | null
+    key_size: number | null
+    protocol: string | null
+    quantum_vulnerable: boolean | null
+    impact: CbomImpact | null
+    finding: string | null
+    finding_codes: string[]
+    facts: Record<string, unknown>
+}
+
+export interface CbomTargetResult {
+    target: string
+    status: string
+    error?: string | null
+    duration_ms?: number
+    assets?: number
+}
+
+export interface CbomJobTargets {
+    job_id: number
+    source_id: number | null
+    source_name: string | null
+    status: CbomJobStatus
+    outcome: "ok" | "partial" | "failed" | null
+    attempt: number
+    asset_count: number
+    counts: { total?: number; ok?: number; failed?: number; skipped?: number } | null
+    summary: string | null
+    truncated: boolean
+    asset_mismatch: { reported: number; stored: number } | null
+    error: string | null
+    targets: CbomTargetResult[]
+    duration_s: number | null
+}
+
+export interface CbomAssetPage {
+    total: number
+    all_total: number
+    page: number
+    page_size: number
+    items: CbomAsset[]
+    facets: { type: Record<string, number>; impact: Record<string, number>; quantum_vulnerable: number }
+    targets: CbomJobTargets[]
+    run?: CbomRun
+}
+
+export interface CbomAssetFilters {
+    type?: string
+    impact?: CbomImpact | "none"
+    quantum?: boolean
+    q?: string
+    page?: number
+    page_size?: number
+}
+
 export interface CbomTestResponse {
-    status: "queued" | "not_available" | "passed" | "failed" | "error"
+    status: "queued" | "not_available" | "passed" | "partial" | "failed" | "error"
     job?: CbomJob
     message?: string
+    targets?: CbomTargetResult[]
     checks?: CbomAwsCheck[]
     member_accounts?: number | null
     validated_at?: string
@@ -4259,10 +4331,12 @@ export interface CbomRun {
     soc_ack_at: string | null
     cancelled_by: number | null
     cancelled_at: string | null
+    finished_at?: string | null
     created_at: string | null
     last_updated: string | null
     jobs?: CbomJob[]
     job_counts?: Partial<Record<CbomJobStatus, number>>
+    asset_count?: number
 }
 
 export interface CbomEvidenceQuestion { id: string; prompt: string; type: "text" | "choice" }
@@ -4502,7 +4576,8 @@ const testCbomSource = async (team_id: number, source_id: number): Promise<CbomT
         const response = await api.post(`${cbomSourcesBase(team_id)}/items/${source_id}/test`)
         const data = response.data as CbomTestResponse
         if (data.status === "queued") toast.success("Connection test queued for the scan node")
-        else if (data.status === "passed") toast.success("All checks passed")
+        else if (data.status === "passed") toast.success(data.message || "All checks passed")
+        else if (data.status === "partial") toast.warning(data.message || "Some checks did not pass; see the results")
         else if (data.status === "not_available") toast.info(data.message || "Validation is not available yet for this source")
         else toast.error("Some checks did not pass; see the results")
         return data
@@ -4610,6 +4685,38 @@ const startCbomRun = async (team_id: number, body: { include: CbomInclude; sourc
     }
 }
 
+const getCbomRunAssets = async (team_id: number, run_id: number, filters: CbomAssetFilters = {}): Promise<CbomAssetPage> => {
+    const params: Record<string, string | number | boolean> = {}
+    for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== null && value !== "") params[key] = value as string | number | boolean
+    }
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params })
+    return response.data as CbomAssetPage
+}
+
+const getCbomJobAssets = async (team_id: number, job_id: number, page = 1): Promise<CbomAssetPage> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/jobs/${job_id}/assets`, { params: { page, page_size: 200 } })
+    return response.data as CbomAssetPage
+}
+
+/** Saves the run's CycloneDX 1.6 CBOM through the authenticated client (a plain link would carry no token). */
+const downloadCbomRunCbom = async (team_id: number, run_id: number): Promise<void> => {
+    try {
+        const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/cbom`, { responseType: "blob" })
+        const url = URL.createObjectURL(response.data as Blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = `cbom-sources-run-${run_id}.cdx.json`
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+        showErrorToast(error, "Error downloading the CBOM")
+        throw error
+    }
+}
+
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/cancel`)
@@ -4632,6 +4739,9 @@ export {
     getCbomEvidence,
     listCbomRuns,
     getCbomRun,
+    getCbomRunAssets,
+    getCbomJobAssets,
+    downloadCbomRunCbom,
     estimateCbomSources,
     countCbomTargets,
     getCbomTemplate,

@@ -25,18 +25,23 @@ REQUIRED_DENY = ["kms:Decrypt", "kms:Sign", "secretsmanager:GetSecretValue", "ss
 
 TIER1_COMMANDS = [
     "cat /etc/os-release",
-    "dpkg-query -W (or rpm -qa)",
+    "uname -r",
+    "dpkg-query -W -f '${Package}\\t${Version}\\n'  (or rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n')",
     "cat /etc/crypto-policies/config",
     "cat /proc/sys/crypto/fips_enabled",
+    "openssl version -a",
     "cat /etc/ssh/sshd_config",
-    "openssl x509 -noout -text -in <file>",
-    "openssl pkey -pubout -in <file>",
-    "keytool -list -v -keystore <file>",
+    "ssh-keygen -l -f /etc/ssh/ssh_host_<type>_key.pub",
+    "ps -eo pid=,comm=",
+    "openssl storeutl -noout -text -certs <file>",
+    "openssl pkey -pubout -passin pass: -in <file>",
+    "grep -c 'PRIVATE KEY-----' <file>",
+    "keytool -list -v -keystore <file>  (empty store password; only when Java is installed)",
 ]
 TIER2_COMMANDS = [
     "ss -H -tlnp",
     "find /proc -maxdepth 2 -name maps -exec grep -HE <crypto libraries> {} +",
-    "find /proc -maxdepth 2 -name exe -exec readlink {} +",
+    "find /proc -maxdepth 2 -name exe -printf %h\\t%l\\n",
     "sshd -T",
     "dmsetup table --target crypt",
     "lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",
@@ -50,19 +55,28 @@ SUDOERS = r"""# /etc/sudoers.d/zs-cbom -- ZeroShield CBOM collector, Tier 2 allo
 # EXACT command lines only.  There is no wildcard character (* ? [ ]) in any argument: a sudoers
 # argument wildcard also matches spaces and slashes, so "cat /proc/*/maps" would allow
 # "cat /proc/1/maps /etc/shadow".  Extra or reordered arguments are refused by sudo.
-# `ss` is /usr/bin/ss on Debian/Ubuntu and /usr/sbin/ss on RHEL/Amazon Linux, so both are listed.
+# sudo compares arguments with fnmatch(), where a backslash escapes the next character, and the sudoers
+# parser also treats a backslash as an escape.  So one literal backslash in an argument is written as
+# four here: \\\\t below is the two characters \t that find -printf turns into a tab, and \\\\. is the
+# regex \. (a literal dot).
+# /usr/bin and /usr/sbin are listed with their /bin and /sbin twins for distributions without merged /usr.
 
 Defaults:zs-cbom !lecture, env_reset, !setenv, !requiretty
 
 Cmnd_Alias ZS_CBOM_TIER2 = \
     /usr/bin/ss -H -tlnp, \
     /usr/sbin/ss -H -tlnp, \
+    /bin/ss -H -tlnp, \
+    /sbin/ss -H -tlnp, \
     /usr/bin/find /proc -maxdepth 2 -name maps -exec /usr/bin/grep -HE libssl|libcrypto|libgnutls|libnss3|libgcrypt|libsodium|libwolfssl|libmbedcrypto|libbotan|libnettle {} +, \
-    /usr/bin/find /proc -maxdepth 2 -name exe -exec /usr/bin/readlink {} +, \
+    /usr/bin/find /proc -maxdepth 2 -name maps -exec /bin/grep -HE libssl|libcrypto|libgnutls|libnss3|libgcrypt|libsodium|libwolfssl|libmbedcrypto|libbotan|libnettle {} +, \
+    /usr/bin/find /proc -maxdepth 2 -name exe -printf %h\\\\t%l\\\\n, \
     /usr/sbin/sshd -T, \
     /usr/sbin/dmsetup table --target crypt, \
+    /sbin/dmsetup table --target crypt, \
     /usr/bin/lsblk -o NAME\,TYPE\,FSTYPE\,MOUNTPOINT, \
-    /usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(.pem|.crt|.cer|.der|.key|.p8|.pk8|.p12|.pfx|.jks|.jceks|.bks|.keystore|.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key)
+    /bin/lsblk -o NAME\,TYPE\,FSTYPE\,MOUNTPOINT, \
+    /usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(\\\\.pem|\\\\.crt|\\\\.cer|\\\\.der|\\\\.key|\\\\.p8|\\\\.pk8|\\\\.p12|\\\\.pfx|\\\\.jks|\\\\.jceks|\\\\.bks|\\\\.keystore|\\\\.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key)
 
 zs-cbom ALL=(root) NOPASSWD: ZS_CBOM_TIER2
 """
@@ -118,7 +132,7 @@ DB_GRANTS = {
     "mysql": (
         "CREATE USER 'zs_cbom'@'%' IDENTIFIED BY '<from your vault>';\n"
         "GRANT PROCESS, REPLICATION CLIENT ON *.* TO 'zs_cbom'@'%';\n"
-        "GRANT SELECT ON mysql.user TO 'zs_cbom'@'%';\n"
+        "GRANT SELECT (user, host, plugin, ssl_type) ON mysql.user TO 'zs_cbom'@'%';\n"
         "GRANT SELECT ON performance_schema.* TO 'zs_cbom'@'%';\n"
     ),
     "mssql": (
@@ -141,8 +155,8 @@ DB_GRANTS = {
 }
 
 DB_READS = {
-    "postgres": ["TLS on or off, minimum TLS version and ciphers", "Password hashing per role: md5 or scram-sha-256",
-                 "TLS used by live client connections", "pgcrypto use and HBA rules"],
+    "postgres": ["TLS on or off, minimum TLS version and ciphers", "Password hashing setting and the method of each HBA rule",
+                 "TLS used by live client connections", "pgcrypto use"],
     "mysql": ["require_secure_transport and TLS versions", "Authentication plugin per user",
               "TLS used by live client connections", "Table encryption (InnoDB) and keyring"],
     "mssql": ["Force encryption and TLS versions", "Transparent Data Encryption per database",
@@ -150,7 +164,7 @@ DB_READS = {
     "oracle": ["Native network encryption settings", "Transparent Data Encryption and wallet state",
                "Password versions per user"],
     "mongodb": ["TLS mode and allowed protocols", "SCRAM mechanisms per user", "Encryption at rest status"],
-    "redis": ["TLS port and protocols", "ACL users and password hashing", "Persistence encryption hints"],
+    "redis": ["TLS port, protocols and ciphers (named tls-* settings only; never passwords)", "Whether AUTH is required"],
 }
 
 TEMPLATE_NAMES = {

@@ -108,8 +108,13 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
         "created_at": iso_z(job.created_at),
         "claimed_at": iso_z(job.claimed_at),
         "finished_at": iso_z(job.finished_at),
-        "result": job.result or {},
+        # per-target rows are served by /jobs/{id}/assets and /runs/{id}/assets, not on every poll
+        "result": {k: v for k, v in (job.result or {}).items() if k not in ("targets",)},
         "error": job.error,
+        "outcome": job.outcome,
+        "asset_count": job.asset_count,
+        "cancel_requested": job.cancel_requested_at is not None,
+        "runner": "node" if job.node_id else ("cloud" if job.kind == "collect" else "node"),
         "samples": params.get("samples") or [],
         "server_time": iso_z(now),
     }
@@ -129,6 +134,7 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None)
         "soc_ack_at": iso_z(run.soc_ack_at),
         "cancelled_by": run.cancelled_by,
         "cancelled_at": iso_z(run.cancelled_at),
+        "finished_at": iso_z(run.finished_at),
         "created_at": iso_z(run.created_at),
         "last_updated": iso_z(run.last_updated),
     }

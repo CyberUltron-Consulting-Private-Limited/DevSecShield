@@ -406,6 +406,15 @@ class IdpConfig(_Strict):
     def _base(cls, v: str | None) -> str | None:
         return check_http_url(v, https_only=True)
 
+    @field_validator("realm")
+    @classmethod
+    def _realm(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", v):
+            raise ValueError("realm may use letters, digits, dots, dashes and underscores")
+        return v
+
     @field_validator("metadata_url")
     @classmethod
     def _meta(cls, v: str | None) -> str | None:
@@ -463,6 +472,7 @@ class KindSpec:
     needs_node: Callable[[Any], bool]
     collectable: Callable[[Any], bool]
     where_fields: tuple[str, ...]
+    node_less: bool = False  # collected by the ZeroShield cloud worker, not by a scan node
 
 
 def _always(_cfg: Any) -> bool:
@@ -473,29 +483,39 @@ def _never(_cfg: Any) -> bool:
     return False
 
 
+# Engines the scan node can read today; SQL Server and Oracle are listed but not collected yet.
+COLLECTABLE_DB_ENGINES = frozenset({"postgres", "mysql", "redis", "mongodb"})
+
+
+def _db_collectable(cfg: Any) -> bool:
+    return getattr(cfg, "engine", None) in COLLECTABLE_DB_ENGINES
+
+
 KINDS: dict[str, KindSpec] = {
     "linux_servers": KindSpec("linux_servers", "servers", "Linux servers", ServersConfig, _server_secrets,
                               frozenset(), _always, _always, ("targets", "port", "login_user")),
     "windows_servers": KindSpec("windows_servers", "servers", "Windows servers", WindowsServersConfig, _server_secrets,
                                 frozenset(), _always, _always, ("targets", "port", "login_user")),
     "active_directory": KindSpec("active_directory", "servers", "Active Directory", ActiveDirectoryConfig, _server_secrets,
-                                 frozenset(), _always, _always, ("targets", "port", "login_user")),
+                                 frozenset(), _always, _never, ("targets", "port", "login_user")),
     "kubernetes": KindSpec("kubernetes", "kubernetes", "Kubernetes cluster", KubernetesConfig,
                            lambda c: {"kubeconfig"} if c.credential_type == "kubeconfig" else set(),
                            frozenset(), _always, _always, ("api_url", "context")),
     "database": KindSpec("database", "databases", "Database", DatabaseConfig, _db_secrets,
-                         frozenset({"password"}), _always, _always, ("host", "port", "login", "engine")),
+                         frozenset({"password"}), _always, _db_collectable, ("host", "port", "login", "engine")),
     "aws_account": KindSpec("aws_account", "cloud", "AWS account", AwsAccountConfig, lambda c: set(),
-                            frozenset(), _never, _never, ("role_arn",)),
+                            frozenset(), _never, _always, ("role_arn",), node_less=True),
     "azure_subscription": KindSpec("azure_subscription", "cloud", "Azure", AzureConfig, lambda c: {"client_secret"},
                                    frozenset(), _never, _never, ("tenant_id", "client_id")),
     "gcp_project": KindSpec("gcp_project", "cloud", "Google Cloud", GcpConfig, lambda c: {"service_account_key"},
                             frozenset(), _never, _never, ("service_account_email",)),
     "ca_connector": KindSpec("ca_connector", "identity", "Certificate authority", CaConnectorConfig, _ca_secrets,
-                             frozenset(), lambda c: c.provider == "adcs", lambda c: c.provider == "adcs",
+                             frozenset(), lambda c: c.provider == "adcs", _never,
                              ("api_url", "login", "provider")),
-    "idp": KindSpec("idp", "identity", "Identity provider", IdpConfig, _idp_secrets,
-                    frozenset(), _never, _never, ("base_url", "tenant_id", "client_id", "provider")),
+    # Signing keys are read from public metadata, so the IdP secret is optional (kept for API reads later).
+    "idp": KindSpec("idp", "identity", "Identity provider", IdpConfig, lambda c: set(),
+                    frozenset({"client_secret", "api_token"}), _never, _always, ("base_url", "tenant_id", "client_id", "provider", "metadata_url", "realm"),
+                    node_less=True),
     "network_range": KindSpec("network_range", "network", "Network range", NetworkRangeConfig, lambda c: set(),
                               frozenset(), _always, _always, ("cidr",)),
 }

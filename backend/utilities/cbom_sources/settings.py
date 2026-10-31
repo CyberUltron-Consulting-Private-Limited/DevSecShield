@@ -124,3 +124,19 @@ def next_window_start(grid: list[list[bool]] | None, tz_name: str, now_utc: _dt.
         if grid[probe.weekday()][probe.hour]:
             return probe.astimezone(_dt.timezone.utc).replace(tzinfo=None)
     return None
+
+
+def window_end(grid: list[list[bool]] | None, tz_name: str, now_utc: _dt.datetime) -> _dt.datetime | None:
+    """Naive UTC end of the allowed window that contains ``now`` (None when there is no window limit
+    or when every hour is allowed).  Callers only ask while ``window_allows`` is true."""
+    grid = _grid(grid)
+    if grid is None:
+        return None
+    zone = zoneinfo.ZoneInfo(tz_name)
+    local = now_utc.replace(tzinfo=_dt.timezone.utc).astimezone(zone)
+    probe = local.replace(minute=0, second=0, microsecond=0)
+    for _ in range(24 * 7 + 1):
+        probe = (probe + _dt.timedelta(hours=1)).astimezone(zone)
+        if not grid[probe.weekday()][probe.hour]:
+            return probe.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+    return None

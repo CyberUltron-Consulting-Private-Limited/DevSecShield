@@ -360,14 +360,27 @@ def test_insufficient_credits_creates_nothing(api, world):
         assert s.get(Team, 2).credit_balance == 0.5
 
 
-def test_cloud_sources_are_skipped_not_charged(api, world):
+def test_aws_needs_a_passed_validation_then_charges_and_runs_in_the_cloud(api, world, monkeypatch):
+    engine, _ = world
     r = api("POST", "/1/cbom/sources/items", json={"kind": "aws_account", "name": "payments-prod", "config": {
         "role_arn": "arn:aws:iam::111122223333:role/ZeroShieldCBOMReader", "regions": ["ap-south-1", "us-east-1"]}})
     assert r.status_code == 201, r.text
+    src = r.json()["source"]
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"cloud": True}}).json()
-    assert est["total_credits"] == 0 and est["skipped"][0]["reason"] == "Cloud collection is not available yet"
+    assert est["total_credits"] == 0 and est["skipped"][0]["reason"].startswith("Validate the AWS role first")
     run = api("POST", "/1/cbom/sources/runs", json={"include": {"cloud": True}, "client_request_id": "cloud-only-01"})
     assert run.status_code == 400
+    monkeypatch.setattr(cbom_sources, "validate_aws_role", lambda *a: {"status": "passed", "checks": [
+        {"check": "Role assumed with external ID", "status": "pass", "detail": "ok"}]})
+    assert api("POST", f"/1/cbom/sources/items/{src['id']}/test").json()["status"] == "passed"
+    est = api("POST", "/1/cbom/sources/estimate", json={"include": {"cloud": True}}).json()
+    assert est["total_credits"] == 4.0
+    run = api("POST", "/1/cbom/sources/runs", json={"include": {"cloud": True}, "client_request_id": "cloud-only-02"})
+    assert run.status_code == 201, run.text
+    job = run.json()["run"]["jobs"][0]
+    assert job["node_id"] is None and job["waiting_reason"] == "Queued for the ZeroShield cloud worker"
+    node_id, token, _ = enroll_node(api)  # a scan node can never claim a cloud job
+    assert api("POST", "/cbom/node/jobs/claim", None, headers={"X-ZS-Node-Token": token}).status_code == 204
 
 
 def test_aws_validation_uses_external_id_and_stores_checks(api, world, monkeypatch):
@@ -484,3 +497,255 @@ def test_team_cleanup_removes_every_row(api, world):
     assert counts["cbomcollectionjob"] == 1 and counts["cbomscannode"] == 1 and counts["cbomevidencearea"] == 6
     with Session(engine) as s:
         assert s.exec(select(CbomScanNode)).all() == [] and s.exec(select(CbomCollectionSource)).all() == []
+
+
+# ----------------------------------------------------------------------------- collected assets
+def _collect_job(api, engine, *, targets=None):
+    node_id, token, _ = enroll_node(api)
+    src = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id, targets=targets or ["10.20.0.1", "10.20.0.2"],
+                                                               window="any")).json()["source"]
+    run = api("POST", "/1/cbom/sources/runs", json={"include": {"servers": True}, "client_request_id": f"assets-{src['id']}-01"})
+    assert run.status_code == 201, run.text
+    hdr = {"X-ZS-Node-Token": token}
+    claim = api("POST", "/cbom/node/jobs/claim", None, headers=hdr)
+    assert claim.status_code == 200, claim.text
+    return src, run.json()["run"], claim.json(), hdr
+
+
+CERT_FACTS = {"subject": "CN=pay.bank.local", "issuer": "CN=pay.bank.local", "not_after": "2020-01-01T00:00:00Z",
+              "sig_alg": "md5WithRSAEncryption", "key_alg": "RSA", "key_size": 1024, "self_signed": True,
+              "fingerprint_sha256": "ab" * 32}
+
+
+def test_assets_are_stored_classified_deduplicated_and_scrubbed(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    job, lease = claim["job"], claim["job"]["lease_id"]
+    assert claim["scope"]["max_runtime_s"] > 0 and "window_ends_at" in claim["scope"]
+    batch = [
+        {"type": "certificate", "target": "10.20.0.1", "location": "/etc/ssl/pay.pem", "name": "pay", "algorithm": "RSA",
+         "key_size": 1024, "facts": CERT_FACTS},
+        {"type": "certificate", "target": "10.20.0.1", "location": "/etc/ssl/pay.pem", "name": "pay", "algorithm": "RSA",
+         "key_size": 1024, "facts": CERT_FACTS},  # duplicate in the same batch
+        {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.20.0.1:443", "facts": {
+            "protocols": ["TLSv1.0", "TLSv1.2"], "group": "x25519", "weak_ciphers": ["DES-CBC3-SHA"]}},
+        {"type": "database_config", "target": "10.20.0.2", "location": "10.20.0.2:5432", "facts": {
+            "password_encryption": "md5", "password": PASSWORD, "note": f"leak {PASSWORD} {PEM_KEY[:60]}"}},
+        {"type": "not_a_type", "location": "x"},
+        {"type": "certificate", "location": ""},
+        {"type": "tls_endpoint", "location": "10.20.0.2:443", "impact": "Low", "facts": {"protocols": ["SSLv3"]}},
+    ]
+    r = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr, json={"lease_id": lease, "batch_id": "b1", "assets": batch})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["accepted"] == 4 and out["duplicate"] == 1 and out["rejected"] == 2 and out["total_for_attempt"] == 4
+    again = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr, json={"lease_id": lease, "batch_id": "b1", "assets": batch[:1]})
+    assert again.json()["accepted"] == 0 and again.json()["duplicate"] == 1  # a retried batch is idempotent
+    listed = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets").json()
+    text = json.dumps(listed)
+    assert PASSWORD not in text and "PRIVATE KEY" not in text
+    by_loc = {a["location"]: a for a in listed["items"]}
+    cert = by_loc["/etc/ssl/pay.pem"]
+    assert cert["impact"] == "Critical" and {"SIG_MD5", "CERT_EXPIRED", "RSA_LT_2048"} <= set(cert["finding_codes"])
+    assert cert["quantum_vulnerable"] is True
+    tls = by_loc["10.20.0.1:443"]
+    assert tls["impact"] == "High" and "PROTO_TLS10" in tls["finding_codes"] and "WEAK_CIPHER" in tls["finding_codes"]
+    assert by_loc["10.20.0.2:443"]["impact"] == "Critical"  # the node's own "impact" is ignored
+    db = by_loc["10.20.0.2:5432"]
+    assert db["facts"]["password_encryption"] == "md5" and db["facts"]["password"] == "[redacted]" and "DB_MD5_DEFAULT" in db["finding_codes"]
+    assert listed["facets"]["impact"]["Critical"] == 2 and listed["all_total"] == 4
+    only = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets?impact=Critical").json()
+    assert only["total"] == 2
+    assert api("GET", f"/2/cbom/sources/runs/{run['id']}/assets", "carol").status_code == 404
+    done = api("POST", f"/cbom/node/jobs/{job['id']}/result", None, headers=hdr, json={"lease_id": lease, "status": "success",
+               "result": {"counts": {"total": 2, "ok": 1, "failed": 1, "skipped": 0}, "asset_count": 4,
+                          "targets": [{"target": "10.20.0.1", "status": "ok"}, {"target": "10.20.0.2", "status": "auth_failed",
+                                                                                  "error": f"bad {PASSWORD}"}]}})
+    assert done.status_code == 200, done.text
+    detail = api("GET", f"/1/cbom/sources/runs/{run['id']}").json()["run"]
+    assert detail["status"] == "partial" and detail["jobs"][0]["outcome"] == "partial" and detail["jobs"][0]["asset_count"] == 4
+    assert "targets" not in detail["jobs"][0]["result"]
+    listed = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets").json()
+    assert listed["targets"][0]["targets"][1]["status"] == "auth_failed" and PASSWORD not in json.dumps(listed)
+    cdx = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom")
+    assert cdx.status_code == 200 and "attachment" in cdx.headers["content-disposition"]
+    bom = cdx.json()
+    assert bom["specVersion"] == "1.6" and len(bom["components"]) == listed["all_total"]
+    kinds = {c.get("cryptoProperties", {}).get("assetType") for c in bom["components"]}
+    assert {"certificate", "protocol"} <= kinds
+    assert any(p["name"] == "zs:gap" and "auth_failed" in p["value"] for p in bom["metadata"]["properties"])
+    late = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr, json={"lease_id": lease, "assets": batch[:1]})
+    assert late.status_code == 409
+
+
+def test_failed_or_cancelled_collect_jobs_are_refunded(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    with Session(engine) as s:
+        before = s.get(Team, 1).credit_balance
+    r = api("POST", f"/cbom/node/jobs/{claim['job']['id']}/result", None, headers=hdr,
+            json={"lease_id": claim["job"]["lease_id"], "status": "failure", "error": "every target refused"})
+    assert r.status_code == 200
+    with Session(engine) as s:
+        assert round(s.get(Team, 1).credit_balance - before, 2) == 0.4  # 2 targets x 0.2 back
+        assert s.get(CbomCollectionJob, claim["job"]["id"]).refunded is True
+
+
+def test_heartbeat_running_list_renews_only_live_jobs_and_releases_orphans(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    job_id, lease = claim["job"]["id"], claim["job"]["lease_id"]
+    hb = api("POST", "/cbom/node/heartbeat", None, headers=hdr, json={"running": [{"job_id": job_id, "lease_id": lease}]})
+    assert hb.status_code == 200 and hb.json()["cancel_job_ids"] == [] and "never_scan" in hb.json()
+    with Session(engine) as s:  # the node restarted and lost the job
+        job = s.get(CbomCollectionJob, job_id)
+        job.claimed_at = dt.datetime.utcnow() - dt.timedelta(minutes=5)
+        s.add(job)
+        s.commit()
+    hb = api("POST", "/cbom/node/heartbeat", None, headers=hdr, json={"running": []})
+    assert hb.status_code == 200
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, job_id)
+        assert job.status == "pending" and job.lease_id is None
+    # the next attempt starts clean: assets of attempt 1 are dropped
+    claim2 = api("POST", "/cbom/node/jobs/claim", None, headers=hdr).json()
+    assert claim2["job"]["attempt"] == 2
+    old = api("POST", f"/cbom/node/jobs/{job_id}/assets", None, headers=hdr, json={"lease_id": lease, "assets": []})
+    assert old.status_code == 409  # the old lease is dead
+
+
+def test_run_cancel_stops_a_claimed_job_through_the_heartbeat(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    job_id, lease = claim["job"]["id"], claim["job"]["lease_id"]
+    c = api("POST", f"/1/cbom/sources/runs/{run['id']}/cancel").json()
+    assert c["refunded"] == 0 and c["run"]["jobs"][0]["waiting_reason"].startswith("Stop requested")
+    hb = api("POST", "/cbom/node/heartbeat", None, headers=hdr, json={"running": [{"job_id": job_id, "lease_id": lease}]})
+    assert hb.json()["cancel_job_ids"] == [job_id]
+    stale = api("POST", f"/cbom/node/jobs/{job_id}/assets", None, headers=hdr, json={"lease_id": lease, "assets": [
+        {"type": "open_port", "location": "10.20.0.1:22"}]})
+    assert stale.status_code == 409
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, job_id)
+        assert job.status == "cancelled" and job.refunded is True
+        assert s.get(CbomCollectionRun, run["id"]).status == "cancelled"
+
+
+def test_source_edit_mid_job_cancels_the_job_and_rejects_its_result(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    job_id, lease = claim["job"]["id"], claim["job"]["lease_id"]
+    api("PATCH", f"/1/cbom/sources/items/{src['id']}", json={"config": {**src["config"], "port": 2222},
+                                                             "secrets": {"password": "x-new-2"}})
+    hb = api("POST", "/cbom/node/heartbeat", None, headers=hdr, json={"running": [{"job_id": job_id, "lease_id": lease}]})
+    assert job_id in hb.json()["cancel_job_ids"]
+    done = api("POST", f"/cbom/node/jobs/{job_id}/result", None, headers=hdr,
+               json={"lease_id": lease, "status": "success", "result": {"counts": {"total": 2, "ok": 2}}})
+    assert done.status_code == 200 and done.json()["status"] == "cancelled"
+    with Session(engine) as s:
+        assert s.get(CbomCollectionJob, job_id).refunded is True
+
+
+def test_deleting_a_source_keeps_its_assets(api, world):
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    api("POST", f"/cbom/node/jobs/{claim['job']['id']}/assets", None, headers=hdr, json={
+        "lease_id": claim["job"]["lease_id"], "assets": [{"type": "open_port", "location": "10.20.0.1:22"}]})
+    assert api("DELETE", f"/1/cbom/sources/items/{src['id']}").status_code == 200
+    listed = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets").json()
+    assert listed["all_total"] == 1 and listed["items"][0]["source_name"] == src["name"]
+    counts = delete_cbom_sources_for_team(engine, 1)
+    assert counts["cbomcollectedasset"] == 1
+
+
+def test_classify_rules():
+    from backend.utilities.cbom_sources.classify import classify, quantum_vulnerable
+
+    assert quantum_vulnerable("RSA") is True and quantum_vulnerable("X25519MLKEM768") is False
+    assert quantum_vulnerable("ECC_NIST_P256") is True and quantum_vulnerable("ML_DSA_65") is False
+    ssh = classify("ssh_endpoint", None, None, None, {"kex": ["diffie-hellman-group1-sha1"], "ciphers": ["aes128-cbc"],
+                                                      "hostkey_algorithms": ["ssh-dss"]})
+    assert ssh["impact"] == "High" and ssh["quantum_vulnerable"] is True
+    pq = classify("ssh_endpoint", None, None, None, {"kex": ["mlkem768x25519-sha256", "curve25519-sha256"]})
+    assert pq["quantum_vulnerable"] is False and pq["impact"] is None
+    hybrid = classify("tls_endpoint", None, None, None, {"protocols": ["TLSv1.3"], "group": "X25519MLKEM768"})
+    assert hybrid["quantum_vulnerable"] is False and hybrid["impact"] is None
+    luks = classify("disk_encryption", "aes-cbc-essiv:sha256", 256, None, {"luks_version": 1})
+    assert luks["impact"] == "Medium" and "LUKS1" in luks["finding_codes"]
+    kms = classify("kms_key", "SYMMETRIC_DEFAULT", 256, None, {"key_spec": "SYMMETRIC_DEFAULT", "key_manager": "CUSTOMER",
+                                                                "rotation_enabled": False})
+    assert kms["impact"] == "Medium" and kms["quantum_vulnerable"] is False
+    gap = classify("coverage", None, None, None, {"check": "sshd -T", "status": "denied"})
+    assert gap["impact"] is None and gap["finding"].startswith("Not collected")
+
+
+def test_safe_fetch_refuses_private_and_mapped_addresses(monkeypatch):
+    from backend.utilities.cbom_sources import safe_fetch
+
+    for address in ("10.0.0.1", "127.0.0.1", "169.254.169.254", "100.64.1.1", "::ffff:10.0.0.1", "fd00:ec2::254", "::1"):
+        assert not safe_fetch.public_address(address), address
+    assert safe_fetch.public_address("8.8.8.8")
+    monkeypatch.delenv("CBOM_LAB_ALLOW_PRIVATE_FETCH", raising=False)
+    monkeypatch.setattr(safe_fetch.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("169.254.169.254", 443))])
+    with pytest.raises(safe_fetch.FetchError, match="private or reserved"):
+        safe_fetch.fetch("https://metadata.example.com/.well-known/openid-configuration")
+    with pytest.raises(safe_fetch.FetchError, match="https"):
+        safe_fetch.fetch("http://example.com/")
+    # lab mode allows RFC 1918 targets but never the metadata service, loopback or CGNAT
+    assert safe_fetch.lab_address("10.77.0.50") and safe_fetch.lab_address("192.168.1.5")
+    for address in ("169.254.169.254", "127.0.0.1", "100.64.0.1", "fd00:ec2::254", "::ffff:169.254.169.254"):
+        assert not safe_fetch.lab_address(address), address
+    monkeypatch.setenv("CBOM_LAB_ALLOW_PRIVATE_FETCH", "1")
+    with pytest.raises(safe_fetch.FetchError, match="private or reserved"):
+        safe_fetch.fetch("https://metadata.example.com/latest")
+
+
+def test_saml_parser_refuses_entities_and_reads_signing_certs():
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    from backend.utilities.cbom_sources.idp_collect import FetchError, saml_assets_from_xml
+
+    with pytest.raises(FetchError):
+        saml_assets_from_xml(b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a SYSTEM "file:///etc/passwd">]><x>&a;</x>', "u", "l")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "idp.test")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(7).not_valid_before(now - dt.timedelta(days=2)).not_valid_after(now - dt.timedelta(days=1))
+            .sign(key, hashes.SHA256()))
+    import base64
+
+    b64 = base64.b64encode(cert.public_bytes(serialization.Encoding.DER)).decode()
+    xml = (f'<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" '
+           f'entityID="https://idp.test/"><md:IDPSSODescriptor><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data>'
+           f'<ds:X509Certificate>{b64}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>'
+           f'</md:IDPSSODescriptor></md:EntityDescriptor>').encode()
+    assets = saml_assets_from_xml(xml, "https://idp.test/metadata", "idp")
+    types = sorted(a["type"] for a in assets)
+    assert types == ["certificate", "identity_provider", "signing_key"]
+    cert_asset = next(a for a in assets if a["type"] == "certificate")
+    assert cert_asset["key_size"] == 1024 and cert_asset["facts"]["self_signed"] is True
+
+
+def test_command_lists_shown_to_customers_match_the_server_and_sudoers():
+    """The Servers tab, templates.py and the sudoers file must name the same commands."""
+    import re as _re
+
+    from backend.utilities.cbom_sources import templates
+
+    tsx = (_REPO_ROOT / "frontend/components/cbom/sources/ServersTab.tsx").read_text()
+
+    def ts_array(name):
+        body = _re.search(rf"const {name} = \[(.*?)\];", tsx, _re.S).group(1)
+        return [json.loads(item) for item in _re.findall(r'"(?:[^"\\]|\\.)*"', body)]
+
+    assert ts_array("TIER1_COMMANDS") == templates.TIER1_COMMANDS
+    assert ts_array("TIER2_COMMANDS") == templates.TIER2_COMMANDS
+    sudoers = templates.SUDOERS
+    assert "-exec /usr/bin/readlink" not in sudoers and "-printf %h\\\\\\\\t%l\\\\\\\\n" in sudoers
+    for line in templates.TIER2_COMMANDS:
+        program = line.split()[0]
+        assert f"/{program} " in sudoers, program

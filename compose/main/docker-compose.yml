@@ -8,6 +8,18 @@ services:
     volumes:
       - devsecshield-backend-data:/backend/data
 
+  # CBOM Sources cloud worker: collects AWS accounts and identity-provider metadata (node-less sources)
+  # and reaps expired collection jobs.  Same image as the backend; migrations stay with the backend.
+  devsecshield-cbom-cloud-worker:
+    container_name: devsecshield-cbom-cloud-worker
+    image: ${ECR_REGISTRY}/devsecshield-backend:${TAG}
+    command: ["uv", "run", "python", "-m", "backend.workers.cbom_cloud_worker"]
+    environment:
+      SKIP_ALEMBIC: "1"
+    restart: unless-stopped
+    depends_on:
+      - devsecshield-backend
+
   devsecshield-frontend:
     container_name: devsecshield-frontend
     image: ${ECR_REGISTRY}/devsecshield-frontend:${TAG}

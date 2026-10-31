@@ -310,6 +310,7 @@ class CbomCollectionRun(SQLModel, table=True):
     cancelled_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    finished_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
 class CbomCollectionJob(SQLModel, table=True):
@@ -335,6 +336,39 @@ class CbomCollectionJob(SQLModel, table=True):
     finished_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     result: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     error: str | None = Field(default=None, max_length=1024)
+    # ok | partial | failed, computed by the server from the node's target counts and the stored assets
+    outcome: str | None = Field(default=None, max_length=16)
+    asset_count: int = Field(default=0)  # assets stored for the current attempt (guarded counter, capped)
+    first_claimed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    cancel_requested_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    cancel_reason: str | None = Field(default=None, max_length=255)
+
+
+class CbomCollectedAsset(SQLModel, table=True):
+    """One cryptographic asset a collection job found.  Facts come from the node; impact is ours."""
+    __tablename__ = "cbomcollectedasset"
+    __table_args__ = (UniqueConstraint("job_id", "attempt", "asset_key", name="uq_cbomcollectedasset_job_attempt_key"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
+    job_id: int = Field(foreign_key="cbomcollectionjob.id", index=True)
+    source_id: int | None = Field(default=None, foreign_key="cbomcollectionsource.id", index=True)
+    attempt: int = Field(default=1)
+    asset_key: str = Field(max_length=64)
+    asset_type: str = Field(max_length=32, index=True)
+    cdx_type: str = Field(max_length=32)
+    target: str | None = Field(default=None, max_length=255)
+    location: str = Field(max_length=512)
+    name: str | None = Field(default=None, max_length=255)
+    algorithm: str | None = Field(default=None, max_length=64)
+    key_size: int | None = Field(default=None)
+    protocol: str | None = Field(default=None, max_length=32)
+    quantum_vulnerable: bool | None = Field(default=None)
+    impact: str | None = Field(default=None, max_length=16, index=True)
+    finding_codes: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    finding: str | None = Field(default=None, max_length=512)
+    facts: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
 
 
 class CbomCollectionSettings(SQLModel, table=True):

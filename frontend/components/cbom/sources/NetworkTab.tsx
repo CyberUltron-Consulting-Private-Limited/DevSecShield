@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import {
   createCbomSource,
   deleteCbomSource,
+  getCbomJobAssets,
   getCbomSourcesSettings,
   listCbomScanNodes,
   listCbomSources,
@@ -1065,11 +1066,41 @@ function DiscoveryJobRow({ teamId, job }: { teamId: number; job: CbomJob }) {
   const polled = usePolledJob(teamId, job.id);
   const live = polled.data ?? job;
   const note = live.error ?? live.waiting_reason;
+  const [open, setOpen] = useState(false);
+  const found = useQuery({
+    queryKey: cbomSourcesKeys.jobAssets(teamId, job.id),
+    queryFn: () => getCbomJobAssets(teamId, job.id),
+    enabled: open && Number.isFinite(teamId),
+    retry: 1,
+  });
+  const count = live.asset_count ?? 0;
   return (
-    <li className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="font-medium text-zinc-900 dark:text-white">{live.node_name ?? "Scan node"}</span>
-      <JobStatusBadge status={live.status} />
-      {note && <span className="text-xs text-zinc-500">{note}</span>}
+    <li className="text-sm space-y-1" data-testid={`network-discovery-job-${job.id}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-zinc-900 dark:text-white">{live.node_name ?? "Scan node"}</span>
+        <JobStatusBadge status={live.status} />
+        {live.status === "success" && (
+          <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer" onClick={() => setOpen(!open)}>
+            {pluralize(count, "open endpoint")} {open ? "(hide)" : "(show)"}
+          </button>
+        )}
+        {note && <span className="text-xs text-zinc-500">{note}</span>}
+      </div>
+      {open && (
+        <ul className="max-h-48 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-800 p-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+          {found.isLoading ? (
+            <li>Loading</li>
+          ) : (
+            (found.data?.items ?? []).map((a) => (
+              <li key={a.id}>
+                {a.location}
+                {typeof a.facts?.service === "string" ? ` · ${a.facts.service}` : ""}
+              </li>
+            ))
+          )}
+          {found.data && found.data.total > found.data.items.length && <li>… and {found.data.total - found.data.items.length} more</li>}
+        </ul>
+      )}
     </li>
   );
 }

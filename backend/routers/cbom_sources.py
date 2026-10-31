@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.new_models import (
+    CbomCollectedAsset,
     CbomCollectionAuditEvent,
     CbomCollectionJob,
     CbomCollectionRun,
@@ -58,6 +59,8 @@ from backend.utilities.cbom_sources.http import (
     server_error,
     write_limiter,
 )
+from backend.utilities.cbom_sources import inventory as INV
+from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import KINDS, validate_secret_value
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
@@ -647,6 +650,8 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
             job.params = {**(job.params or {}), "source_name": source.name}
             job.source_id = None
             session.add(job)
+        # collected assets stay with their run; only the link to the deleted source goes
+        session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
         session.flush()
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.delete",
               object_type="source", object_id=source.id)
@@ -672,6 +677,8 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         cfg = _validate_config(source.kind, source.config or {})
         if source.kind == "aws_account":
             return {"aws": True}
+        if source.kind == "idp":
+            return {"idp": True}
         if not (spec.needs_node(cfg) and spec.collectable(cfg)):
             source.last_test_status = "not_available"
             source.last_test_summary = "Validation for this source is not available yet"
@@ -717,13 +724,43 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
             "validated_at": iso_z(now)}
 
 
+def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
+    """Read the IdP's public metadata now (no job): it is what collection will read."""
+    from backend.utilities.cbom_sources.idp_collect import collect_idp
+
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
+        cfg, version, name = dict(source.config or {}), source.row_version, source.name
+    out = collect_idp(cfg, name)
+    keys = sum(1 for a in out["assets"] if a["type"] == "signing_key")
+    ok = out["counts"]["ok"]
+    status = "passed" if ok == out["counts"]["total"] and ok else ("partial" if ok else "failed")
+    summary = (f"Read {ok} of {out['counts']['total']} metadata documents; {keys} signing key(s) found"
+               if ok else "Could not read the metadata: " + "; ".join(t["error"] or "" for t in out["targets"])[:400])
+    now = utcnow()
+    with Session(engine) as session:
+        source = session.get(CbomCollectionSource, source_id)
+        if source is not None and source.row_version == version:
+            source.last_test_status, source.last_test_summary, source.last_test_at = status, summary[:512], now
+            source.last_test_result = {"targets": out["targets"], "signing_keys": keys}
+            session.add(source)
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.test",
+                  object_type="source", object_id=source_id)
+            session.commit()
+    log("idp tested", team=team_id, source=source_id, status=status, keys=keys, by=user_id)
+    return {"status": status, "message": summary, "targets": out["targets"], "tested_at": iso_z(now)}
+
+
 @router.post(BASE + "/items/{source_id}/test", dependencies=WRITE,
-             summary="Test a source: a job for its scan node, or live AWS checks for an AWS account")
+             summary="Test a source: a job for its scan node, live AWS checks, or a read of the IdP's public metadata")
 async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("test source", team_id, _test_source, engine, team_id, user.id, source_id)
     if result.get("aws"):
         result = await _run("validate aws", team_id, _test_aws, engine, team_id, user.id, source_id)
+    elif result.get("idp"):
+        result = await _run("test idp", team_id, _test_idp, engine, team_id, user.id, source_id)
     return _ok(result)
 
 
@@ -1174,7 +1211,8 @@ def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[di
         for item in queued:
             source = sources[item.source_id]
             session.add(CbomCollectionJob(
-                team_id=team_id, run_id=run.id, source_id=source.id, node_id=source.node_id, kind="collect",
+                team_id=team_id, run_id=run.id, source_id=source.id,
+                node_id=None if KINDS[source.kind].node_less else source.node_id, kind="collect",
                 params={"source_name": source.name, "units": item.units, "unit": item.unit, "exclusions": snapshot},
                 source_version=source.row_version, weight_c=item.credits_c, created_by_user_id=user_id, created_at=now,
             ))
@@ -1206,7 +1244,9 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
             counts: dict[str, int] = {}
             for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all():
                 counts[job.status] = counts.get(job.status, 0) + 1
-            out.append({**public_run(run), "job_counts": counts})
+            assets = session.exec(select(func.count()).select_from(CbomCollectedAsset)
+                                  .where(CbomCollectedAsset.run_id == run.id)).one()
+            out.append({**public_run(run), "job_counts": counts, "asset_count": int(assets)})
         return {"runs": out, "server_time": iso_z(now)}
 
 
@@ -1230,6 +1270,65 @@ def _get_run(engine, team_id: int, run_id: int) -> dict:
 async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("get run", team_id, _get_run, engine, team_id, run_id))
+
+
+def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
+    with Session(engine) as session:
+        run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
+        out = INV.list_assets(session, team_id=team_id, run_id=run.id, **params)
+        out["run"] = public_run(run)
+        return out
+
+
+def _asset_params(type: str | None, impact: str | None, quantum: bool | None, q: str | None, source_id: int | None,
+                  page: int, page_size: int) -> dict:
+    if type is not None and type not in ASSET_TYPES:
+        raise HTTPException(status_code=400, detail="type: unknown asset type")
+    return {"asset_type": type, "impact": impact, "quantum": quantum, "text": (q or "").strip()[:100] or None,
+            "source_id": source_id, "page": page, "page_size": page_size}
+
+
+@router.get(BASE + "/runs/{run_id}/assets", dependencies=READ, summary="What a run collected: paged assets, facets, per-target results")
+async def run_assets(team_id: TeamId, run_id: ObjectId,
+                     type: str | None = Query(default=None, max_length=32),
+                     impact: str | None = Query(default=None, pattern="^(Critical|High|Medium|Low|none)$"),
+                     quantum: bool | None = Query(default=None),
+                     q: str | None = Query(default=None, max_length=100),
+                     source_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
+                     page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
+                     Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    params = _asset_params(type, impact, quantum, q, source_id, page, page_size)
+    return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
+
+
+def _run_cbom(engine, team_id: int, run_id: int) -> dict:
+    with Session(engine) as session:
+        run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
+        return INV.cyclonedx(session, run, utcnow())
+
+
+@router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ, summary="CycloneDX 1.6 CBOM of what a run collected")
+async def run_cbom(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    payload = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id)
+    return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
+
+
+def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:
+    with Session(engine) as session:
+        job = _get_owned(session, CbomCollectionJob, job_id, team_id, "Job")
+        return INV.list_assets(session, team_id=team_id, job_id=job.id, **params)
+
+
+@router.get(BASE + "/jobs/{job_id}/assets", dependencies=READ, summary="What one job collected (e.g. a discovery sweep)")
+async def job_assets(team_id: TeamId, job_id: ObjectId,
+                     type: str | None = Query(default=None, max_length=32),
+                     page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
+                     Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    params = _asset_params(type, None, None, None, None, page, page_size)
+    return _ok(await _run("job assets", team_id, _job_assets, engine, team_id, job_id, params))
 
 
 def _cancel_run(engine, team_id: int, user_id: int, run_id: int) -> dict:

@@ -122,21 +122,26 @@ const VAULT_PROVIDERS = [
   { value: "azure_key_vault", label: "Azure Key Vault" },
 ];
 
-// backend/utilities/cbom_sources/templates.py TIER1_COMMANDS / TIER2_COMMANDS
+// Must equal backend/utilities/cbom_sources/templates.py TIER1_COMMANDS / TIER2_COMMANDS (a backend test checks this).
 const TIER1_COMMANDS = [
   "cat /etc/os-release",
-  "dpkg-query -W (or rpm -qa)",
+  "uname -r",
+  "dpkg-query -W -f '${Package}\\t${Version}\\n'  (or rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n')",
   "cat /etc/crypto-policies/config",
   "cat /proc/sys/crypto/fips_enabled",
+  "openssl version -a",
   "cat /etc/ssh/sshd_config",
-  "openssl x509 -noout -text -in <file>",
-  "openssl pkey -pubout -in <file>",
-  "keytool -list -v -keystore <file>",
+  "ssh-keygen -l -f /etc/ssh/ssh_host_<type>_key.pub",
+  "ps -eo pid=,comm=",
+  "openssl storeutl -noout -text -certs <file>",
+  "openssl pkey -pubout -passin pass: -in <file>",
+  "grep -c 'PRIVATE KEY-----' <file>",
+  "keytool -list -v -keystore <file>  (empty store password; only when Java is installed)",
 ];
 const TIER2_COMMANDS = [
   "ss -H -tlnp",
   "find /proc -maxdepth 2 -name maps -exec grep -HE <crypto libraries> {} +",
-  "find /proc -maxdepth 2 -name exe -exec readlink {} +",
+  "find /proc -maxdepth 2 -name exe -printf %h\\t%l\\n",
   "sshd -T",
   "dmsetup table --target crypt",
   "lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",

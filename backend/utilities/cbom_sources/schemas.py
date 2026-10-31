@@ -294,7 +294,14 @@ class EnrollBody(_Body):
     clock: str | None = Field(default=None, max_length=40)
 
 
+class RunningJob(_Body):
+    job_id: int = Field(ge=1, le=2_147_483_647)
+    lease_id: str = Field(min_length=8, max_length=32)
+
+
 class HeartbeatBody(_Body):
+    # None: an older node that does not report its jobs (every claimed job is renewed).
+    running: list[RunningJob] | None = Field(default=None, max_length=64)
     hostname: str | None = Field(default=None, max_length=255)
     version: str | None = Field(default=None, max_length=32)
     source_ips: list[str] = Field(default_factory=list, max_length=32)
@@ -305,7 +312,7 @@ class HeartbeatBody(_Body):
 
 class ResultBody(_Body):
     lease_id: str = Field(min_length=8, max_length=32)
-    status: Literal["success", "failure"]
+    status: Literal["success", "failure", "cancelled"]
     result: dict[str, Any] = Field(default_factory=dict)
     error: str | None = Field(default=None, max_length=4000)
 
@@ -314,3 +321,31 @@ class ResultBody(_Body):
         if self.status == "failure" and not self.error:
             self.error = "The scan node reported a failure"
         return self
+
+
+class AssetIn(BaseModel):
+    """One asset from a node.  Unknown keys are ignored; the server classifies, the node only reports facts."""
+    model_config = ConfigDict(extra="ignore")
+    type: str = Field(max_length=32)
+    target: str | None = Field(default=None, max_length=255)
+    location: str = Field(min_length=1, max_length=512)
+    name: str | None = Field(default=None, max_length=255)
+    algorithm: str | None = Field(default=None, max_length=64)
+    key_size: int | None = Field(default=None, ge=0, le=1_000_000)
+    protocol: str | None = Field(default=None, max_length=32)
+    facts: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("facts")
+    @classmethod
+    def _facts_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        import json
+
+        if len(json.dumps(v, default=str)) > 16 * 1024:
+            raise ValueError("facts larger than 16 KB")
+        return v
+
+
+class AssetsBody(_Body):
+    lease_id: str = Field(min_length=8, max_length=32)
+    batch_id: str | None = Field(default=None, max_length=64)
+    assets: list[dict[str, Any]] = Field(default_factory=list, max_length=500)

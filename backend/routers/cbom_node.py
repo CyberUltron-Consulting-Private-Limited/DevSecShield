@@ -37,14 +37,15 @@ from backend.utilities.cbom_sources.http import (
     read_capped_json,
     server_error,
 )
-from backend.utilities.cbom_sources.schemas import EnrollBody, HeartbeatBody, ResultBody
-from backend.utilities.cbom_sources.settings import get_or_create_settings
+from backend.utilities.cbom_sources.schemas import AssetIn, AssetsBody, EnrollBody, HeartbeatBody, ResultBody
+from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions
 
 router = APIRouter(tags=["cbom-node"], route_class=CbomRoute)
 node_token_header = APIKeyHeader(name="X-ZS-Node-Token", auto_error=False)
 HEARTBEAT_SECONDS = 30
 SMALL_BODY = 16 * 1024
 RESULT_BODY = 256 * 1024
+ASSETS_BODY = 1024 * 1024
 _UNAUTHORIZED = HTTPException(status_code=401, detail="Invalid node token")
 
 
@@ -152,29 +153,33 @@ def _heartbeat(token: str | None, body: HeartbeatBody, ip: str) -> dict:
         if skew is not None:
             node.clock_skew_s = skew
         node.last_node_error = clean_text(scrub(body.last_error), 512) if body.last_error else None
+        if node.last_node_error:
+            log("node error", team=node.team_id, node=node.id, error=node.last_node_error)
         node.last_heartbeat_at = now
         node.last_seen_ip = ip
         session.add(node)
-        J.renew_leases(session, node, now)
+        running = None if body.running is None else [(r.job_id, r.lease_id) for r in body.running]
+        released = J.renew_leases(session, node, now, running)
         J.reap(session, now, node_id=node.id)
         settings = get_or_create_settings(session, node.team_id)
-        cancel_ids: list[int] = []
-        if settings.stop_all_network:
-            claimed = session.exec(select(CbomCollectionJob).where(
-                CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).all()
-            from backend.new_models import CbomCollectionSource
-
-            for job in claimed:
-                source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
-                if job.kind == "discovery" or (source is not None and source.kind == "network_range"):
-                    cancel_ids.append(job.id)
+        cancel_ids = J.cancel_ids_for_node(session, node, settings)
+        if running is not None:
+            # jobs the node runs but the server already ended (released, reaped, cancelled) must stop too
+            live = {job_id for job_id, _lease in running}
+            for job_id, lease in running:
+                job = session.get(CbomCollectionJob, job_id)
+                if job is None or job.node_id != node.id or job.status != "claimed" or job.lease_id != lease:
+                    cancel_ids.append(job_id)
+            cancel_ids = sorted(set(cancel_ids) | (set(released) & live))
         pending = len(session.exec(select(CbomCollectionJob.id).where(
             CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "pending")).all())
+        exclusions = team_exclusions(settings)
         session.commit()
         if gap is not None and gap > 120:
             log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
         return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
-                "pending_jobs": pending, "cancel_job_ids": cancel_ids, "heartbeat_interval_s": HEARTBEAT_SECONDS}
+                "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
+                "heartbeat_interval_s": HEARTBEAT_SECONDS}
 
 
 @router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")
@@ -204,6 +209,34 @@ async def claim(request: Request, token: Annotated[str | None, Security(node_tok
     if payload is None:
         return Response(status_code=204, headers=PRIVATE)
     return JSONResponse(payload, headers=PRIVATE)
+
+
+# ----------------------------------------------------------------------------- assets
+def _assets(token: str | None, job_id: int, body: AssetsBody) -> dict:
+    now = utcnow()
+    valid: list[dict[str, Any]] = []
+    rejected = 0
+    for raw in body.assets:
+        try:
+            valid.append(AssetIn.model_validate(raw).model_dump())
+        except (ValidationError, TypeError):
+            rejected += 1
+    with Session(get_db()) as session:
+        node = _node_for(token, session)
+        out = J.add_assets(session, node, job_id, body.lease_id, valid, now)
+        session.commit()
+        out["rejected"] += rejected
+        out["batch_id"] = body.batch_id
+        return out
+
+
+@router.post("/cbom/node/jobs/{job_id}/assets", dependencies=[Depends(node_limiter)],
+             summary="Report a batch of collected assets for a leased job")
+async def assets(job_id: int, request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
+    if job_id < 1 or job_id > 2_147_483_647:
+        raise HTTPException(status_code=404, detail="Job not found")
+    body = _parse(AssetsBody, await read_capped_json(request, ASSETS_BODY))
+    return JSONResponse(await _guard("assets", _assets, token, job_id, body), headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- result

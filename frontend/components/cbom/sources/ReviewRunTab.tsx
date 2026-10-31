@@ -26,6 +26,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
+import RunResults from "./RunResults";
 import { credits, formatDateTime, newRequestId, pluralize } from "./logic";
 import {
   Checkbox2,
@@ -428,6 +429,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                     <TableHead>Started</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Jobs</TableHead>
+                    <TableHead className="text-right">Assets</TableHead>
                     <TableHead>Credits</TableHead>
                     <TableHead>
                       <span className="sr-only">Actions</span>
@@ -443,6 +445,9 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                         <RunStatusBadge status={run.status} />
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{jobSummary(run.job_counts)}</TableCell>
+                      <TableCell className="text-right text-zinc-600 dark:text-zinc-400" data-testid={`review-run-assets-${run.id}`}>
+                        {run.asset_count ?? 0}
+                      </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {credits(run.credits.charged)} charged / {credits(run.credits.refunded)} refunded
                       </TableCell>
@@ -456,9 +461,9 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                             onClick={() => setDetailsRunId(run.id)}
                           >
                             <Eye className="h-4 w-4 mr-1.5" />
-                            Details
+                            Results
                           </Button>
-                          {isActiveRun(run.status) && (run.job_counts?.pending ?? 1) > 0 &&
+                          {isActiveRun(run.status) && ((run.job_counts?.pending ?? 0) + (run.job_counts?.claimed ?? 0)) > 0 &&
                             (overview.viewer?.is_admin || overview.viewer?.user_id === run.owner_user_id) && (
                             <Button
                               size="sm"
@@ -491,7 +496,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         open={!!cancelling}
         onOpenChange={(v) => !v && setCancelling(null)}
         title={cancelling ? `Cancel run #${cancelling.id}?` : "Cancel run?"}
-        description="Jobs not yet picked up by a scan node are cancelled and their credits refunded. Jobs already running on a node finish. Only the person who started the run or a team admin can cancel it."
+        description="Jobs not yet picked up are cancelled and refunded at once. Running jobs are told to stop and are refunded when they stop; what they collected so far is kept. Only the person who started the run or a team admin can cancel it."
         confirmLabel="Cancel run"
         destructive
         pending={cancelMutation.isPending}
@@ -724,7 +729,7 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Run #{runId}</DialogTitle>
           <DialogDescription>
@@ -756,8 +761,10 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
                   <TableHeader>
                     <TableRow>
                       <TableHead>Source</TableHead>
-                      <TableHead>Scan node</TableHead>
+                      <TableHead>Runs on</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Assets</TableHead>
+                      <TableHead className="text-right">Credits</TableHead>
                       <TableHead className="text-right">Attempts</TableHead>
                       <TableHead>Error</TableHead>
                     </TableRow>
@@ -769,13 +776,18 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
                           <Truncate text={job.source_name ?? `Source ${job.source_id ?? "—"}`} />
                         </TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[180px]">
-                          <Truncate text={job.node_name ?? "—"} />
+                          <Truncate text={job.runner === "cloud" ? "ZeroShield cloud" : job.node_name ?? "—"} />
                         </TableCell>
                         <TableCell className="max-w-[260px]">
                           <JobStatusBadge status={job.status} title={job.waiting_reason} />
                           {job.waiting_reason && (
                             <p className="mt-1 whitespace-normal text-xs text-zinc-500">{job.waiting_reason}</p>
                           )}
+                        </TableCell>
+                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.asset_count ?? 0}</TableCell>
+                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+                          {credits(job.credits)}
+                          {job.refunded && <span className="ml-1 text-xs text-green-600 dark:text-green-400">refunded</span>}
                         </TableCell>
                         <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.attempts}</TableCell>
                         <TableCell className="max-w-[260px] text-zinc-600 dark:text-zinc-400">
@@ -800,6 +812,11 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {run && jobs.length > 0 && (
+            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
+              <RunResults teamId={teamId} runId={runId} active={isActiveRun(run.status)} />
             </div>
           )}
           {run && isActiveRun(run.status) && (

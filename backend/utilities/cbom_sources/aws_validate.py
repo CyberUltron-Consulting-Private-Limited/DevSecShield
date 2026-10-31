@@ -22,17 +22,25 @@ from backend.utilities.cbom_sources.templates import REQUIRED_DENY, zeroshield_a
 DEADLINE_SECONDS = 20.0
 
 
-def _boto():
+class NoZeroShieldCredentials(RuntimeError):
+    pass
+
+
+def _boto(*, retries: int = 2, mode: str = "standard"):
+    """ZeroShield's own AWS principal (the one customers trust), from CBOM_AWS_* only.
+
+    Ambient credentials (instance role, ~/.aws, AWS_*) are never used: they could belong to
+    ZeroShield's own infrastructure, whose inventory must never land in a customer's CBOM."""
     import boto3  # imported lazily: only this path needs it
     from botocore.config import Config
 
-    cfg = Config(connect_timeout=5, read_timeout=8, retries={"max_attempts": 2, "mode": "standard"})
+    cfg = Config(connect_timeout=5, read_timeout=8, retries={"max_attempts": retries, "mode": mode})
     key = os.environ.get("CBOM_AWS_ACCESS_KEY_ID")
     secret = os.environ.get("CBOM_AWS_SECRET_ACCESS_KEY")
-    if key and secret:
-        session = boto3.session.Session(aws_access_key_id=key, aws_secret_access_key=secret)
-    else:
-        session = boto3.session.Session()
+    token = os.environ.get("CBOM_AWS_SESSION_TOKEN") or None
+    if not (key and secret):
+        raise NoZeroShieldCredentials("CBOM_AWS_ACCESS_KEY_ID / CBOM_AWS_SECRET_ACCESS_KEY are not configured")
+    session = boto3.session.Session(aws_access_key_id=key, aws_secret_access_key=secret, aws_session_token=token)
     return session, cfg
 
 

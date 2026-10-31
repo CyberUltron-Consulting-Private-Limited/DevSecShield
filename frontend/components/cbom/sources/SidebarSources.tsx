@@ -131,7 +131,13 @@ export function SourcesAccordionItems({
         <AccordionContent className="pb-5 pt-0">
           <Line label="Cloud accounts" value={cloudAccounts || "Not added"} />
           <Line label="CAs and identity providers" value={g.identity?.sources || "Not added"} />
-          <p className="text-xs text-zinc-500 mt-2">Cloud collection is not available yet: accounts are validated and listed, but not scanned or charged.</p>
+          <p className="text-xs text-zinc-500 mt-2">
+            AWS accounts that passed validation are read from ZeroShield&apos;s cloud (4 credits each). Identity-provider signing keys are free. Azure
+            and Google Cloud are listed but not scanned yet.
+          </p>
+          {cloudAccounts + (g.identity?.sources ?? 0) > 0 && (
+            <IncludeRow id="inc-cloud" label="Include cloud and identity" checked={!!include.cloud} onChange={(v) => onToggle("cloud", v)} />
+          )}
           <Manage teamId={teamId} tab="cloud" />
         </AccordionContent>
       </AccordionItem>
@@ -190,6 +196,7 @@ export function SourcesBreakdown({ estimate, codeCredits }: { estimate: CbomEsti
     g.kubernetes ? `Kubernetes ${credits(g.kubernetes.credits)}` : null,
     g.databases ? `Databases ${credits(g.databases.credits)}` : null,
     g.network ? `Network ${credits(g.network.credits)}` : null,
+    g.cloud ? `Cloud ${credits(g.cloud.credits)}` : null,
     "Evidence free",
   ].filter(Boolean);
   return <p className="text-xs text-zinc-500 mt-1">{parts.join(" · ")}</p>;

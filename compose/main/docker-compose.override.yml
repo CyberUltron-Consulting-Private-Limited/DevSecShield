@@ -9,6 +9,11 @@ services:
       - infra
     volumes:
       - ../aibom-config-overlay:/aibom/config:ro
+  devsecshield-cbom-cloud-worker:
+    env_file: .env
+    networks:
+      - default
+      - infra
   devsecshield-frontend:
     networks:
       - default

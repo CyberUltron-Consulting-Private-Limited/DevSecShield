@@ -183,6 +183,8 @@ def plan_run(
             item.reason = "No scan node assigned"
         elif needs_node and status in ("pending_registration", "registration_expired"):
             item.reason = f"Scan node {node.name} has not registered yet"
+        elif source.kind == "aws_account" and source.last_test_status != "passed":
+            item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
         elif source.last_test_status == "failed":
             item.reason = "Last connection test failed; fix it and test again"
         elif units <= 0:
@@ -200,6 +202,8 @@ def plan_run(
                 item.credits_c = RATES_C["kubernetes"]
             elif group == "databases":
                 item.credits_c = RATES_C["database"]
+            elif group == "cloud":
+                item.credits_c = RATES_C["cloud_account"] * max(units, 1)
             elif group == "network":
                 # each /24 is charged once, even when ranges overlap or sit on two nodes
                 blocks_before = T.count_blocks(counted_blocks)
