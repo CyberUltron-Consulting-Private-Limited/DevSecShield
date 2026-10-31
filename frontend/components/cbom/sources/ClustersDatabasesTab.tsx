@@ -334,7 +334,8 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           <ClusterForm
-            key={editingCluster ? `edit-${editingCluster.id}-${editingCluster.row_version}-${clusterNonce}` : `new-${clusterNonce}`}
+            // sibling keys must differ from the database form's, or React keeps a ghost form after a remount
+            key={editingCluster ? `cluster-edit-${editingCluster.id}-${editingCluster.row_version}-${clusterNonce}` : `cluster-new-${clusterNonce}`}
             teamId={teamId}
             source={editingCluster}
             nodes={nodes}
@@ -346,7 +347,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
             onNavigate={onNavigate}
           />
           <DatabaseForm
-            key={editingDb ? `edit-${editingDb.id}-${editingDb.row_version}-${dbNonce}` : `new-${dbNonce}`}
+            key={editingDb ? `db-edit-${editingDb.id}-${editingDb.row_version}-${dbNonce}` : `db-new-${dbNonce}`}
             teamId={teamId}
             source={editingDb}
             nodes={nodes}

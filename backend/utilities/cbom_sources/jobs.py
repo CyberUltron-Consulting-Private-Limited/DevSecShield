@@ -30,7 +30,7 @@ from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.planning import credits, node_status
-from backend.utilities.cbom_sources.settings import team_exclusions, window_allows, window_end
+from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
 LEASE = _dt.timedelta(minutes=15)
 MAX_ATTEMPTS = 3
@@ -48,7 +48,7 @@ CANCEL_GRACE = _dt.timedelta(minutes=10)
 MAX_ASSETS_PER_ATTEMPT = 50_000
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
-    "sudoers_missing", "sudo_denied", "tls_unavailable", "not_supported", "error", "skipped_never_scan",
+    "sudoers_missing", "sudo_denied", "rbac_denied", "tls_unavailable", "not_supported", "error", "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
 })
 
@@ -540,6 +540,10 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         ok = sum(1 for s in samples if isinstance(s, dict) and s.get("status") in ("ready", "ok", "passed"))
         status = "passed" if ok == len(samples) else ("failed" if ok == 0 else "partial")
         summary = f"{ok} of {len(samples)} samples ready"
+        notes = [str(s.get("note") or s.get("error") or s.get("status")) for s in samples
+                 if isinstance(s, dict) and s.get("status") not in ("ready", "ok", "passed")]
+        if notes:  # the first reason, so lists that show only the summary still say why
+            summary = f"{summary}: {notes[0]}"[:512]
     elif job.status == "success":
         status, summary = "passed", str(result.get("summary") or "Connection test passed")[:512]
     elif job.status == "cancelled":
@@ -553,6 +557,18 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
     source.last_test_at = now
     source.last_test_result = {"samples": samples} if samples else ({"summary": summary})
     session.add(source)
+
+
+def _stop_reason(session: Session, job: CbomCollectionJob, source: CbomCollectionSource | None,
+                 node: CbomScanNode | None) -> str | None:
+    """_invalid_reason plus the team's network stop, for writes coming back from a running job."""
+    reason = _invalid_reason(job, source, node)
+    if reason:
+        return reason
+    is_network = job.kind == "discovery" or (source is not None and source.kind == "network_range")
+    if is_network and get_or_create_settings(session, job.team_id).stop_all_network:
+        return "Network scanning was stopped"
+    return None
 
 
 def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id: int | None) -> CbomCollectionJob:
@@ -599,7 +615,7 @@ def finish_job(
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     clean_result = scrub(result or {}, known, exact_keys=True)
     clean_error = scrub(error, known) if error else None
-    invalid = _invalid_reason(job, source, node) if job.status == "claimed" and job.lease_id == lease_id else None
+    invalid = _stop_reason(session, job, source, node) if job.status == "claimed" and job.lease_id == lease_id else None
     if invalid and status == "success":
         status, clean_error = "cancelled", invalid  # collected under settings that no longer apply
     stored = session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
@@ -664,7 +680,7 @@ def add_assets(
     if job.status != "claimed" or job.lease_id != lease_id:
         raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
-    reason = _invalid_reason(job, source, node)
+    reason = _stop_reason(session, job, source, node)
     if reason:
         changed = session.exec(
             update(CbomCollectionJob)
@@ -683,6 +699,9 @@ def add_assets(
             log("job cancelled", team=job.team_id, job=job.id, reason="stale_source_on_assets")
         session.commit()
         raise HTTPException(status_code=409, detail=f"Stop this job: {reason}")
+    if job.kind == "test_connection":  # a connection test proves access; it does not build inventory
+        return {"accepted": 0, "duplicate": 0, "rejected": 0, "dropped": len(assets), "total_for_attempt": 0,
+                "cap_reached": False, "ignored": "connection tests do not store assets"}
     known = list(decrypt_secrets(source.secret_encrypted).values()) if source is not None else []
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows: list[dict[str, Any]] = []

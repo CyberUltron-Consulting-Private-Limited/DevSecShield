@@ -161,6 +161,10 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
         out.add("STATIC_RSA_KEX", "Medium", f"{what} accepts RSA key exchange without forward secrecy")
     if facts.get("cbc_only"):
         out.add("CBC_ONLY", "Medium", f"{what} only offers CBC cipher suites")
+    elif facts.get("cbc_accepted"):
+        out.add("CBC_ACCEPTED", "Low", f"{what} still accepts CBC-mode cipher suites")
+    if facts.get("downgrade_exposed"):
+        out.add("DOWNGRADE", "Medium", f"{what} can be downgraded to an older protocol version")
     if facts.get("fallback_scsv") is False and len(protocols) > 1:
         out.add("NO_FALLBACK_SCSV", "Medium", f"{what} does not reject protocol downgrades (TLS_FALLBACK_SCSV)")
     if facts.get("plaintext_only") or facts.get("tls") is False:
@@ -170,18 +174,20 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
         impact, label = _TLS_OLD[min_version]
         out.add(f"MIN_{label.replace(' ', '').replace('.', '')}", impact, f"{what} allows {label} as the minimum version")
     group = facts.get("group") or facts.get("negotiated_group")
-    if facts.get("pq_group_supported") is False or (group and quantum_vulnerable(group)):
+    if facts.get("pq_group_supported") is False or (facts.get("pq_group_supported") is None and group and quantum_vulnerable(group)):
         out.add("NO_PQ_KEX", "Low", f"{what} has no post-quantum key exchange")
 
 
 _SSH_WEAK = (
-    (re.compile(r"(arcfour|3des|blowfish|cast128|-cbc$|rijndael-cbc)", re.I), "SSH_WEAK_CIPHER", "High", "weak SSH ciphers"),
-    (re.compile(r"(hmac-md5|-96$|umac-64)", re.I), "SSH_WEAK_MAC", "High", "weak SSH MACs"),
+    (re.compile(r"(arcfour|3des|blowfish|cast128)", re.I), "SSH_WEAK_CIPHER", "High", "broken SSH ciphers"),
+    (re.compile(r"(-cbc$|rijndael-cbc)", re.I), "SSH_CBC_CIPHER", "Medium", "CBC-mode SSH ciphers"),
+    (re.compile(r"(hmac-md5|-96$)", re.I), "SSH_WEAK_MAC", "Medium", "weak or truncated SSH MACs"),
+    (re.compile(r"^umac-64", re.I), "SSH_UMAC64", "Low", "64-bit UMAC tags"),
     (re.compile(r"^diffie-hellman-group1-sha1$", re.I), "SSH_DH_GROUP1", "High", "1024-bit DH key exchange"),
     (re.compile(r"^(diffie-hellman-group14-sha1|diffie-hellman-group-exchange-sha1)$", re.I), "SSH_DH_SHA1", "Medium", "SHA-1 key exchange"),
     (re.compile(r"^ssh-dss", re.I), "SSH_DSS", "High", "DSA host keys"),
     (re.compile(r"^ssh-rsa$", re.I), "SSH_RSA_SHA1", "Medium", "SHA-1 RSA signatures (ssh-rsa)"),
-    (re.compile(r"^hmac-sha1$", re.I), "SSH_HMAC_SHA1", "Low", "HMAC-SHA1"),
+    (re.compile(r"^hmac-sha1(-etm@openssh\.com)?$", re.I), "SSH_HMAC_SHA1", "Low", "HMAC-SHA1"),
 )
 
 
@@ -207,16 +213,51 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
     return not pq
 
 
+def _normalise(asset_type: str, facts: dict[str, Any]) -> dict[str, Any]:
+    """Map the scan node's fact names onto the ones the rules read (node facts stay as reported)."""
+    out = dict(facts)
+    if asset_type in ("tls_endpoint", "database_tls", "k8s_ingress_tls"):
+        versions = facts.get("versions")
+        if not out.get("protocols"):
+            if isinstance(versions, dict):
+                out["protocols"] = [name for name, offered in versions.items() if offered]
+            elif isinstance(versions, list):
+                out["protocols"] = versions
+            elif facts.get("negotiated_version"):
+                out["protocols"] = [facts["negotiated_version"]]
+        weak = facts.get("weak_ciphers_accepted")
+        if isinstance(weak, dict):
+            out.setdefault("weak_ciphers", list(weak.get("obsolete") or []))
+            out.setdefault("static_rsa_kex", bool(weak.get("static_rsa")))
+            out.setdefault("cbc_accepted", bool(weak.get("cbc")))
+        if facts.get("pq_hybrid") is not None and "pq_group_supported" not in out:
+            out["pq_group_supported"] = bool(facts.get("pq_hybrid"))
+        if facts.get("tls") is False or facts.get("plaintext_only"):
+            out["plaintext_only"] = True
+    if asset_type == "ssh_endpoint":
+        out.setdefault("ciphers", sorted(set((facts.get("ciphers_c2s") or []) + (facts.get("ciphers_s2c") or []))))
+        out.setdefault("macs", sorted(set((facts.get("macs_c2s") or []) + (facts.get("macs_s2c") or []))))
+        out.setdefault("hostkey_algorithms", facts.get("host_key_algs") or [])
+    if asset_type == "os_crypto_policy" and "policy" not in out:
+        out["policy"] = facts.get("crypto_policy")
+    return out
+
+
+_EOL_OPENSSL = re.compile(r"^(openssl|libssl|libcrypto|compat-openssl|openssl-libs)", re.I)
+
+
 def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,
              now: _dt.datetime | None = None) -> dict[str, Any]:
-    facts = facts or {}
+    facts = _normalise(asset_type, facts or {})
     now = now or _dt.datetime.utcnow()
     out = _Out()
     qv: bool | None = quantum_vulnerable(algorithm)
     what = {"tls_endpoint": "Endpoint", "database_tls": "Database", "load_balancer_tls": "Load balancer listener",
             "cdn_tls": "CDN distribution", "api_tls": "API domain", "k8s_ingress_tls": "Ingress"}.get(asset_type, "It")
 
-    if asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
+    if asset_type == "certificate" and facts.get("trust_store"):
+        qv = None  # a CA bundle summary (one row per bundle) is inventory, not a finding
+    elif asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
         _cert_rules(out, facts, algorithm, key_size, now)
         qv = quantum_vulnerable(algorithm or facts.get("key_alg"))
     elif asset_type in ("private_key", "public_key", "ssh_host_key", "signing_key", "kms_key", "k8s_certificate"):
@@ -225,6 +266,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
                                               "kms_key": "KMS key", "k8s_certificate": "Certificate request"}[asset_type])
         if asset_type == "private_key" and facts.get("embedded_in_document"):
             out.add("KEY_IN_DOCUMENT", "Medium", "Private key stored inside a non-key file")
+        if asset_type == "private_key" and facts.get("plaintext_in_configmap"):
+            out.add("KEY_IN_CONFIGMAP", "High", "Private key stored in plain text in a Kubernetes ConfigMap")
+        if asset_type == "private_key" and facts.get("readable") and facts.get("encrypted") is False and facts.get("path"):
+            out.add("KEY_READABLE", "Medium", "Unencrypted private key is readable without root")
         if asset_type == "private_key" and facts.get("encrypted") is False and facts.get("world_readable"):
             out.add("KEY_WORLD_READABLE", "High", "Unencrypted private key is readable by every user")
         if asset_type == "kms_key":
@@ -244,17 +289,24 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     elif asset_type in ("tls_endpoint", "database_tls", "load_balancer_tls", "cdn_tls", "api_tls", "k8s_ingress_tls"):
         _tls_rules(out, facts, what)
         group = facts.get("group") or facts.get("negotiated_group")
-        if group:
+        if facts.get("pq_group_supported") is True:
+            qv = False  # the server accepts a post-quantum hybrid when the client offers one
+        elif group:
             qv = quantum_vulnerable(group)
-        elif facts.get("pq_group_supported") is True:
-            qv = False
         elif facts.get("protocols") or facts.get("cipher"):
             qv = True
         if facts.get("http_listener"):
             out.add("PLAINTEXT_LISTENER", "Medium", f"{what} also serves plaintext HTTP")
     elif asset_type in ("ssh_endpoint", "ssh_server_config"):
         qv = _ssh_rules(out, facts, "SSH server")
+        host_key = facts.get("host_key") if isinstance(facts.get("host_key"), dict) else {}
+        if host_key:
+            _key_rules(out, host_key.get("key_type"), host_key.get("bits"), "SSH host key")
     elif asset_type in ("crypto_library", "process_library"):
+        version = str(facts.get("version") or "")
+        if not facts.get("eol") and _EOL_OPENSSL.match(str(facts.get("name") or facts.get("package") or "")) \
+                and re.match(r"^(\d+:)?1\.[01]\.", version):
+            out.add("LIB_EOL", "Medium", f"{facts.get('name')} {version}: OpenSSL 1.x is end of life upstream; confirm vendor support")
         if facts.get("eol"):
             out.add("LIB_EOL", "High", f"{facts.get('package') or algorithm or 'Library'} {facts.get('version') or ''} is end of life".strip())
         if facts.get("deleted"):
@@ -279,7 +331,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("POLICY_LEGACY", "High", "System crypto policy is LEGACY")
         qv = None
     elif asset_type == "database_config":
-        if facts.get("ssl") is False or facts.get("tls_enabled") is False:
+        if facts.get("ssl") is False or facts.get("tls_enabled") is False or facts.get("tls") is False:
             out.add("DB_NO_TLS", "High", "Database does not offer TLS")
         if facts.get("require_secure_transport") is False:
             out.add("DB_TLS_OPTIONAL", "Medium", "Database accepts unencrypted connections")
@@ -287,12 +339,28 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("DB_NO_AUTH", "High", "Database accepts connections without a password")
         if _upper(facts.get("password_encryption")) == "MD5":
             out.add("DB_MD5_DEFAULT", "Medium", "New passwords are stored as MD5 hashes")
+        if facts.get("engine") == "mysql" and facts.get("keyring_plugins") == [] and not facts.get("encrypted_tables"):
+            out.add("DB_NO_TDE", "Low", "No tables are encrypted at rest (no keyring component)")
         if facts.get("tls_mode") in ("disabled", "allowTLS", "preferTLS"):
             out.add("DB_TLS_MODE", "High" if facts.get("tls_mode") == "disabled" else "Medium",
                     f"TLS mode is {facts.get('tls_mode')}")
         _tls_rules(out, {k: facts.get(k) for k in ("protocols", "min_version")}, "Database")
         qv = None
     elif asset_type == "database_user_auth":
+        hba = facts.get("hba_methods") if isinstance(facts.get("hba_methods"), dict) else {}
+        if hba.get("trust"):
+            out.add("DB_TRUST", "High", f"{hba['trust']} HBA rule(s) let clients in without a password (trust)")
+        if hba.get("password"):
+            out.add("DB_CLEARTEXT_PW", "High", "An HBA rule sends passwords in clear text (password method)")
+        if hba.get("md5"):
+            out.add("DB_WEAK_HASH", "Medium", f"{hba['md5']} HBA rule(s) use md5 authentication")
+        if _upper(facts.get("password_encryption")) == "MD5":
+            out.add("DB_MD5_DEFAULT", "Medium", "New passwords are stored as MD5 hashes")
+        plugins = facts.get("plugins") if isinstance(facts.get("plugins"), dict) else {}
+        if plugins.get("mysql_native_password"):
+            out.add("DB_NATIVE_PW", "Medium", f"{plugins['mysql_native_password']} account(s) use mysql_native_password (SHA-1)")
+        if plugins.get("mysql_old_password"):
+            out.add("DB_OLD_PASSWORD", "Critical", "Accounts use mysql_old_password")
         method = _upper(facts.get("method") or facts.get("plugin") or algorithm)
         if method in ("TRUST",):
             out.add("DB_TRUST", "Critical", "Database rule lets clients in without a password")
@@ -321,7 +389,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("SECRET_NO_ROTATION", "Low", "Secret rotation is off")
         qv = None
     elif asset_type == "keystore":
-        if _upper(facts.get("format")) == "JKS":
+        if _upper(facts.get("format") or facts.get("store_type")) == "JKS":
             out.add("KEYSTORE_JKS", "Low", "JKS keystore format (weak integrity protection); prefer PKCS#12")
         qv = None
     elif asset_type == "identity_provider":

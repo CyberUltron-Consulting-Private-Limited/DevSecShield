@@ -23,10 +23,11 @@ DENY_ACTIONS = [
 # The actions the "data-plane deny present" check insists on.
 REQUIRED_DENY = ["kms:Decrypt", "kms:Sign", "secretsmanager:GetSecretValue", "ssm:GetParameter", "s3:GetObject"]
 
+# Must equal scan_node/zs_scan_node/commands.py (TIER1_DISPLAY / tier2_display()); a test checks it.
 TIER1_COMMANDS = [
     "cat /etc/os-release",
     "uname -r",
-    "dpkg-query -W -f '${Package}\\t${Version}\\n'  (or rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n')",
+    "dpkg-query -W -f '${Package}\\t${Version}\\n'  (or: rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n')",
     "cat /etc/crypto-policies/config",
     "cat /proc/sys/crypto/fips_enabled",
     "openssl version -a",
@@ -36,16 +37,17 @@ TIER1_COMMANDS = [
     "openssl storeutl -noout -text -certs <file>",
     "openssl pkey -pubout -passin pass: -in <file>",
     "grep -c 'PRIVATE KEY-----' <file>",
-    "keytool -list -v -keystore <file>  (empty store password; only when Java is installed)",
+    "ssh-keygen -l -f <file>",
+    "keytool -list -v -keystore <file>",
 ]
 TIER2_COMMANDS = [
-    "ss -H -tlnp",
-    "find /proc -maxdepth 2 -name maps -exec grep -HE <crypto libraries> {} +",
-    "find /proc -maxdepth 2 -name exe -printf %h\\t%l\\n",
-    "sshd -T",
-    "dmsetup table --target crypt",
-    "lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",
-    "find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regex <key and certificate names>",
+    "/usr/bin/ss -H -tlnp",
+    "/usr/bin/find /proc -maxdepth 2 -name maps -exec /usr/bin/grep -HE libssl|libcrypto|libgnutls|libnss3|libgcrypt|libsodium|libwolfssl|libmbedcrypto|libbotan|libnettle {} +",
+    "/usr/bin/find /proc -maxdepth 2 -name exe -printf %h\\t%l\\n",
+    "/usr/sbin/sshd -T",
+    "/usr/sbin/dmsetup table --target crypt",
+    "/usr/bin/lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",
+    "/usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(\\.pem|\\.crt|\\.cer|\\.der|\\.key|\\.p8|\\.pk8|\\.p12|\\.pfx|\\.jks|\\.jceks|\\.bks|\\.keystore|\\.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key) -print0",
 ]
 
 SUDOERS = r"""# /etc/sudoers.d/zs-cbom -- ZeroShield CBOM collector, Tier 2 allowlist
@@ -76,7 +78,7 @@ Cmnd_Alias ZS_CBOM_TIER2 = \
     /sbin/dmsetup table --target crypt, \
     /usr/bin/lsblk -o NAME\,TYPE\,FSTYPE\,MOUNTPOINT, \
     /bin/lsblk -o NAME\,TYPE\,FSTYPE\,MOUNTPOINT, \
-    /usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(\\\\.pem|\\\\.crt|\\\\.cer|\\\\.der|\\\\.key|\\\\.p8|\\\\.pk8|\\\\.p12|\\\\.pfx|\\\\.jks|\\\\.jceks|\\\\.bks|\\\\.keystore|\\\\.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key)
+    /usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(\\\\.pem|\\\\.crt|\\\\.cer|\\\\.der|\\\\.key|\\\\.p8|\\\\.pk8|\\\\.p12|\\\\.pfx|\\\\.jks|\\\\.jceks|\\\\.bks|\\\\.keystore|\\\\.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key) -print0
 
 zs-cbom ALL=(root) NOPASSWD: ZS_CBOM_TIER2
 """
@@ -127,7 +129,10 @@ DB_GRANTS = {
     "postgres": (
         "CREATE ROLE zs_cbom LOGIN PASSWORD '<from your vault>';\n"
         "GRANT pg_monitor, pg_read_all_settings TO zs_cbom;\n"
+        "-- Run these two in the database you enter in ZeroShield (blank means postgres);\n"
+        "-- catalog grants are per database.\n"
         "GRANT SELECT ON pg_hba_file_rules TO zs_cbom;\n"
+        "GRANT EXECUTE ON FUNCTION pg_hba_file_rules() TO zs_cbom;\n"
     ),
     "mysql": (
         "CREATE USER 'zs_cbom'@'%' IDENTIFIED BY '<from your vault>';\n"

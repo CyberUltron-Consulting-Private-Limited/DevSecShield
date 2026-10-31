@@ -43,6 +43,7 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings, team
 router = APIRouter(tags=["cbom-node"], route_class=CbomRoute)
 node_token_header = APIKeyHeader(name="X-ZS-Node-Token", auto_error=False)
 HEARTBEAT_SECONDS = 30
+BUSY_HEARTBEAT_SECONDS = 5
 SMALL_BODY = 16 * 1024
 RESULT_BODY = 256 * 1024
 ASSETS_BODY = 1024 * 1024
@@ -173,13 +174,16 @@ def _heartbeat(token: str | None, body: HeartbeatBody, ip: str) -> dict:
             cancel_ids = sorted(set(cancel_ids) | (set(released) & live))
         pending = len(session.exec(select(CbomCollectionJob.id).where(
             CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "pending")).all())
+        busy = session.exec(select(CbomCollectionJob.id).where(
+            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).first() is not None
         exclusions = team_exclusions(settings)
         session.commit()
         if gap is not None and gap > 120:
             log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
         return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
                 "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
-                "heartbeat_interval_s": HEARTBEAT_SECONDS}
+                # while a job runs, beat faster so a cancel or a network stop reaches the node within seconds
+                "heartbeat_interval_s": BUSY_HEARTBEAT_SECONDS if busy else HEARTBEAT_SECONDS}
 
 
 @router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")

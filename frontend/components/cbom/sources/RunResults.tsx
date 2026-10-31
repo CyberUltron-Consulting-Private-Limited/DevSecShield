@@ -68,7 +68,7 @@ const TARGET_TONE: Record<string, Tone> = { ok: "green", skipped_never_scan: "zi
   skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc" };
 const TARGET_LABEL: Record<string, string> = {
   ok: "Read", unreachable: "Unreachable", refused: "Connection refused", timeout: "Timed out", no_route: "No route",
-  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", sudoers_missing: "Sudoers missing",
+  auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
   sudo_denied: "Sudo refused", tls_unavailable: "No TLS", not_supported: "Not supported", error: "Error",
   skipped_never_scan: "Skipped: never-scan list", skipped_window: "Skipped: scan window closed", skipped_stop: "Skipped: scanning stopped",
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",
@@ -97,8 +97,13 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
       <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets</p>
       <ul className="space-y-2">
         {jobs.map((job) => {
-          const [tone, label] = job.outcome ? OUTCOME[job.outcome] ?? ["zinc", job.outcome] : ["blue", job.status === "pending" ? "Waiting" : "Running"];
           const problems = job.targets.filter((t) => t.status !== "ok");
+          const [tone, label] =
+            job.outcome === "ok" && problems.length > 0
+              ? ["amber", "Read, with errors"]
+              : job.outcome
+                ? OUTCOME[job.outcome] ?? ["zinc", job.outcome]
+                : ["blue", job.status === "pending" ? "Waiting" : "Running"];
           const counts = job.counts;
           return (
             <li key={job.job_id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 text-sm" data-testid={`run-results-job-${job.job_id}`}>
@@ -130,7 +135,7 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                     data-testid={`run-results-problems-${job.job_id}`}
                   >
                     {open === job.job_id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                    {pluralize(problems.length, "target")} not fully read
+                    {pluralize(problems.length, problems.every((t) => /:\d+$/.test(t.target)) ? "endpoint" : "target")} not fully read
                   </button>
                   {open === job.job_id && (
                     <ul className="mt-2 space-y-1">

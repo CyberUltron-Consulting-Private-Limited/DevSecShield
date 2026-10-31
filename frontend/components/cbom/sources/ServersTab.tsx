@@ -126,7 +126,7 @@ const VAULT_PROVIDERS = [
 const TIER1_COMMANDS = [
   "cat /etc/os-release",
   "uname -r",
-  "dpkg-query -W -f '${Package}\\t${Version}\\n'  (or rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n')",
+  "dpkg-query -W -f '${Package}\\t${Version}\\n'  (or: rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\n')",
   "cat /etc/crypto-policies/config",
   "cat /proc/sys/crypto/fips_enabled",
   "openssl version -a",
@@ -136,16 +136,17 @@ const TIER1_COMMANDS = [
   "openssl storeutl -noout -text -certs <file>",
   "openssl pkey -pubout -passin pass: -in <file>",
   "grep -c 'PRIVATE KEY-----' <file>",
-  "keytool -list -v -keystore <file>  (empty store password; only when Java is installed)",
+  "ssh-keygen -l -f <file>",
+  "keytool -list -v -keystore <file>",
 ];
 const TIER2_COMMANDS = [
-  "ss -H -tlnp",
-  "find /proc -maxdepth 2 -name maps -exec grep -HE <crypto libraries> {} +",
-  "find /proc -maxdepth 2 -name exe -printf %h\\t%l\\n",
-  "sshd -T",
-  "dmsetup table --target crypt",
-  "lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",
-  "find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regex <key and certificate names>",
+  "/usr/bin/ss -H -tlnp",
+  "/usr/bin/find /proc -maxdepth 2 -name maps -exec /usr/bin/grep -HE libssl|libcrypto|libgnutls|libnss3|libgcrypt|libsodium|libwolfssl|libmbedcrypto|libbotan|libnettle {} +",
+  "/usr/bin/find /proc -maxdepth 2 -name exe -printf %h\\t%l\\n",
+  "/usr/sbin/sshd -T",
+  "/usr/sbin/dmsetup table --target crypt",
+  "/usr/bin/lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINT",
+  "/usr/bin/find /etc /opt /srv /home /root /usr/local -xdev -type f -size -1024k -regextype posix-extended -regex .+(\\.pem|\\.crt|\\.cer|\\.der|\\.key|\\.p8|\\.pk8|\\.p12|\\.pfx|\\.jks|\\.jceks|\\.bks|\\.keystore|\\.truststore|/id_rsa|/id_dsa|/id_ecdsa|/id_ed25519|/authorized_keys|/ssh_host_.+_key) -print0",
 ];
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;

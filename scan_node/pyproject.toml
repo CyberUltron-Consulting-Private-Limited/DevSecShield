@@ -1,0 +1,29 @@
+[project]
+name = "zs-scan-node"
+version = "1.0.0"
+description = "ZeroShield CBOM scan node: agentless, read-only collection inside the customer network"
+requires-python = ">=3.11"
+dependencies = [
+    "paramiko==3.5.1",
+    "httpx==0.28.1",
+    "cryptography==44.0.2",
+    "psycopg[binary]==3.2.6",
+    "PyMySQL==1.1.1",
+    "redis==5.2.1",
+    "pymongo==4.11.3",
+    "pywinrm==0.5.0",
+    "boto3==1.37.38",
+    "PyYAML==6.0.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+zs-scan-node = "zs_scan_node.agent:main"
+
+[tool.setuptools]
+packages = ["zs_scan_node", "zs_scan_node.collectors"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

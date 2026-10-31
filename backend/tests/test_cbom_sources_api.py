@@ -287,7 +287,8 @@ def test_connection_test_round_trip_with_lease_and_scrub(api, world):
                json={"lease_id": payload["job"]["lease_id"], "status": "success", "result": {"samples": samples}})
     assert done.status_code == 200, done.text
     got = api("GET", f"/1/cbom/sources/items/{src['id']}").json()["source"]
-    assert got["last_test_status"] == "partial" and got["last_test_summary"] == "3 of 4 samples ready"
+    assert got["last_test_status"] == "partial" and got["last_test_summary"].startswith("3 of 4 samples ready: leak")
+    assert PASSWORD not in got["last_test_summary"]
     job = api("GET", f"/1/cbom/sources/jobs/{job_id}").json()["job"]
     assert PASSWORD not in json.dumps(job) and "PRIVATE KEY" not in json.dumps(job)
 
@@ -746,6 +747,15 @@ def test_command_lists_shown_to_customers_match_the_server_and_sudoers():
     assert ts_array("TIER2_COMMANDS") == templates.TIER2_COMMANDS
     sudoers = templates.SUDOERS
     assert "-exec /usr/bin/readlink" not in sudoers and "-printf %h\\\\\\\\t%l\\\\\\\\n" in sudoers
-    for line in templates.TIER2_COMMANDS:
-        program = line.split()[0]
-        assert f"/{program} " in sudoers, program
+    # the scan node is the single source of truth for what runs on a customer server
+    sys.path.insert(0, str(_REPO_ROOT / "scan_node"))
+    from zs_scan_node import commands as node_commands
+
+    assert templates.TIER1_COMMANDS == node_commands.TIER1_DISPLAY
+    assert templates.TIER2_COMMANDS == node_commands.tier2_display()
+
+    def cmnd_entries(text):
+        body = text[text.index("Cmnd_Alias"):text.index("zs-cbom ALL=")]
+        return [line.strip().rstrip(", \\").strip() for line in body.splitlines()[1:] if line.strip()]
+
+    assert cmnd_entries(sudoers) == cmnd_entries(node_commands.sudoers_file())
