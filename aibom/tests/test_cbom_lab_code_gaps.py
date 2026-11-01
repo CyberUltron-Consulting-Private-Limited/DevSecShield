@@ -406,3 +406,25 @@ def test_node_forge_rsa_keygen() -> None:
     assert d["rsa"].line_no == 3 and d["rsa"].key_size == 1024
     assert _dets("const forge = require('node-forge');\nconst c = forge.pki.certificateFromPem(p);\n",
                  "javascript") == {}
+
+
+def test_backslash_runs_do_not_backtrack_exponentially(tmp_path):
+    # a configure-script line with a long run of backslashes hung the scans of keycloak and DependencyCheck
+    # (the string-literal patterns let each backslash parse two ways)
+    import time
+
+    from aibom.cbom import detect, redact
+
+    line = 'as_echo="' + "\\" * 400 + "x"
+    t0 = time.monotonic()
+    detect._fold_strings(line, "shell")
+    detect.blank_prose(line, "javascript")
+    redact._LITERAL.search('k = "' + "\\" * 400 + "x")
+    assert time.monotonic() - t0 < 1.0
+    (tmp_path / "configure").write_text("#!/bin/sh\n" + line + "\nopenssl enc -rc4 -in a -out b\n")
+    t0 = time.monotonic()
+    from aibom.integrations.cbom_devsecshield import scan_crypto_to_devsecshield
+
+    rows = scan_crypto_to_devsecshield(tmp_path)["results"]
+    assert time.monotonic() - t0 < 30 and any(r["title"].startswith("RC4") for r in rows)
+    assert detect._fold_strings("h = hashlib.new('md' + '5')", "python") == "h = hashlib.new('md5')"

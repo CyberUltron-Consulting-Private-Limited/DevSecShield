@@ -38,7 +38,8 @@ _SECRETY = re.compile(
     r"(key|secret|passw|pwd|token|credential|private|\biv\b|_iv\b|\biv_|nonce|salt|seed|apikey|api_key|auth|"
     r"bearer|cipher|aes\.new|des\.new|createcipher|secretkeyspec|ivparameterspec|gcmparameterspec|\.init\(|"
     r"newcipher|getinstance)", re.I)
-_LITERAL = re.compile(r"""(?P<prefix>\b[bBrRuUfF]{0,2})(?P<q>["'`])(?P<body>(?:\\.|(?!(?P=q)).){1,4096}?)(?P=q)""")
+# a backslash is only ever an escape pair here, so a run of backslashes has one parse (no exponential backtracking)
+_LITERAL = re.compile(r"""(?P<prefix>\b[bBrRuUfF]{0,2})(?P<q>["'`])(?P<body>(?:\\.|(?!(?P=q))[^\\]){1,4096}?)(?P=q)""")
 _TOKENS = [
     re.compile(r"\b(AKIA|ASIA|AGPA|AIDA|AROA)[0-9A-Z]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"),

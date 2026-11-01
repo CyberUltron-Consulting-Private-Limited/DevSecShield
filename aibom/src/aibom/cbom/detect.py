@@ -867,7 +867,11 @@ def _merge(into: Detection, other: Detection) -> None:
     into.variant = into.variant or other.variant
 
 
-_STR_LIT = re.compile(r"""(["'`])((?:\\.|(?!\1).)*)\1""")
+# One alternative per quote character, so a backslash can only be consumed as an escape pair. The shared form
+# (?:\\.|(?!\1).)* let a run of backslashes split two ways at every position and backtracked exponentially: one
+# configure-script line of backslashes hung the scans of DependencyCheck and keycloak.
+_STR_LIT = re.compile(r'"(?:\\.|[^"\\])*"' r"|'(?:\\.|[^'\\])*'" r"|`(?:\\.|[^`\\])*`")
+_MAX_STRING_SCAN = 8000  # longer lines are generated or minified; string-level rewriting skips them
 _JSX_TEXT = re.compile(r">([^<>{}]*)<")
 _WORD = re.compile(r"[A-Za-z]{3,}")
 
@@ -880,8 +884,11 @@ def _is_prose(body: str) -> bool:
 def blank_prose(line: str, lang: str) -> str:
     """``line`` with prose-like string literals (and JSX text in JS/TS) replaced by spaces of the same length."""
     def blank(m: re.Match) -> str:
-        return m.group(1) + " " * len(m.group(2)) + m.group(1) if _is_prose(m.group(2)) else m.group(0)
+        lit = m.group(0)
+        return lit[0] + " " * (len(lit) - 2) + lit[-1] if _is_prose(lit[1:-1]) else lit
 
+    if len(line) > _MAX_STRING_SCAN:
+        return line
     out = _STR_LIT.sub(blank, line)
     if lang == "javascript" and "<" in out:
         out = _JSX_TEXT.sub(lambda m: ">" + " " * len(m.group(1)) + "<" if _is_prose(m.group(1)) else m.group(0), out)
@@ -1262,12 +1269,18 @@ def _keyword_list_lines(lines: list[str], lang: str) -> set[int]:
 # raises nothing. Only literal-to-literal folds: a piece that is a runtime value
 # is never guessed.
 # --------------------------------------------------------------------------- #
-_SQ = r"""(["'])((?:\\.|(?!\{0}).)*)\{0}"""
+# a quoted literal, one alternative per quote character (unambiguous, see _STR_LIT); {0} names its groups
+_SQ = r'(?:"(?P<{0}d>(?:\\.|[^"\\])*)"' r"|'(?P<{0}s>(?:\\.|[^'\\])*)')"
 _CONCAT_OPS = {"php": r"[.+]", "perl": r"\.", _VBNET: r"[&+]"}
 _CONCAT_RE = {
-    op: re.compile(_SQ.format(1) + r"\s*" + op + r"\s*" + _SQ.format(3))
+    op: re.compile(_SQ.format("a") + r"\s*" + op + r"\s*" + _SQ.format("b"))
     for op in (*_CONCAT_OPS.values(), r"\+")
 }
+
+
+def _lit(m: re.Match[str], side: str) -> str:
+    dq = m.group(side + "d")
+    return dq if dq is not None else (m.group(side + "s") or "")
 _B64_CALL = re.compile(
     r"(?:\bb64decode|\bbase64_decode|\batob|\bFromBase64String|\bdecodeBase64|\bBase64\.(?:decode|getDecoder\(\)\.decode))"
     r"\s*\(\s*b?([\"'])([A-Za-z0-9+/]{4,88}={0,2})\1\s*\)"
@@ -1288,7 +1301,7 @@ def _quote(value: str) -> str:
 
 
 def _fold_strings(line: str, lang: str) -> str:
-    if "'" not in line and '"' not in line:
+    if ("'" not in line and '"' not in line) or len(line) > _MAX_STRING_SCAN:
         return line
 
     def b64(m: re.Match[str]) -> str:
@@ -1310,7 +1323,7 @@ def _fold_strings(line: str, lang: str) -> str:
     line = _REVERSED.sub(rev, line)
     concat = _CONCAT_RE[_CONCAT_OPS.get(lang, r"\+")]
     for _ in range(16):  # 'a' + 'b' + 'c' folds left to right, one join per pass
-        folded = concat.sub(lambda m: _quote(m.group(2) + m.group(4)), line, count=1)
+        folded = concat.sub(lambda m: _quote(_lit(m, "a") + _lit(m, "b")), line, count=1)
         if folded == line:
             break
         line = folded
