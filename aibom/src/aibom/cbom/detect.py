@@ -40,6 +40,7 @@ nothing — :mod:`aibom.cbom.scanners.algorithm_scan` turns facts into component
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from aibom.cbom.rules import (
@@ -94,6 +95,9 @@ class CryptoRule:
     method: str
     key: str
     arg_roles: tuple[str, ...] = ()
+    # Construction qualifier folded into the display name (``AESWrapEngine`` ->
+    # ``AES-KW``); the canonical ``key`` keeps the algorithm's strength record.
+    variant: str | None = None
     # Compiled patterns (populated in __post_init__; excluded from equality).
     method_re: re.Pattern[str] = field(default=_NEVER, compare=False, repr=False)
     receiver_re: re.Pattern[str] | None = field(default=None, compare=False, repr=False)
@@ -132,6 +136,10 @@ class Detection:
     parameter: str | None = None
     library: str | None = None
     receiver_bound: bool = False  # True when a receiver+method rule matched
+    # Construction qualifier named by the source next to the algorithm: the HMAC /
+    # PBKDF2 hash (``HmacSHA256`` -> ``SHA256``, ``PBKDF2WithHmacSHA512`` ->
+    # ``HMAC-SHA512``) or AES key wrap (``KW``). Folded into the display name only.
+    variant: str | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -216,14 +224,21 @@ _JAVA = "java"
 _BC = "Bouncy Castle"
 
 
-def _bc_rule(method: str, key: str, roles: tuple[str, ...] = ()) -> CryptoRule:
+def _bc_rule(method: str, key: str, roles: tuple[str, ...] = (),
+             variant: str | None = None) -> CryptoRule:
     """A Bouncy Castle free-constructor rule (``new <Class>(...)``)."""
-    return CryptoRule(_JAVA, _BC, None, method, key, roles)
+    return CryptoRule(_JAVA, _BC, None, method, key, roles, variant)
 
 
 JAVA_RULES: tuple[CryptoRule, ...] = (
     # --- BouncyCastle symmetric engines ---
     _bc_rule(r"(?:AESEngine|AESFastEngine|AESLightEngine)", "aes"),
+    # RFC 3394 / RFC 5649 AES key wrap (JWE A*KW, ECDH-ES+A*KW).
+    _bc_rule(r"AESWrapEngine", "aes", variant="KW"),
+    _bc_rule(r"AESWrapPadEngine", "aes", variant="KWP"),
+    _bc_rule(r"ElGamalEngine", "elgamal"),
+    # --- BouncyCastle KDFs (SP 800-56A Concatenation KDF, JWE ECDH-ES) ---
+    _bc_rule(r"ConcatenationKDFGenerator", "concat-kdf"),
     _bc_rule(r"DESEngine", "des"),
     _bc_rule(r"DESedeEngine", "3des"),
     _bc_rule(r"RC2Engine", "rc2"),
@@ -323,7 +338,12 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("des", re.compile(
         r"\balgorithms\.DES\b|\bDES_(?:set_key|ecb|cbc)\b|\bMODE_DES\b", _F)),
     ("rc4", re.compile(r"\bARC4\b|\bRC4\b", _F)),
-    ("rc2", re.compile(r"\bRC2\b", _F)),
+    # RC2 the cipher, not a release candidate: the bare token is case-sensitive and
+    # never a version suffix ("1.0.0-RC2", "struts:1.1:rc2", "2.0.RC2"); lowercase
+    # only as a cipher spec ("rc2-cbc", 'rc2'), never a variable such as ``rc2``.
+    ("rc2", re.compile(
+        r"(?<![-.:/\w])RC2\b(?![-.]\d)"
+        r"|(?i:\brc2-(?:cbc|ecb|cfb|ofb|40|64|128)\b|(?<=[\"'])rc2(?=[\"'/]))")),
     ("blowfish", re.compile(r"\bBlowfish\b", _F)),
     ("aes", re.compile(
         r"\balgorithms\.AES\b|\bAESGCM\b|\bAESCCM\b|\bAES-?(?:128|192|256)\b"
@@ -365,7 +385,8 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # standalone uppercase tokens — crypto-specific enough at word boundaries.
     ("xmss", re.compile(r"\bXMSS(?:\^?MT)?\b", _F)),
     ("lms", re.compile(r"\bLMS\b", _F)),
-    ("hss", re.compile(r"\bHSS\b", _F)),
+    # Case-sensitive: a lowercase ``hss`` is an identifier (``HttpSessionsSite hss``).
+    ("hss", re.compile(r"\bHSS\b")),
 )
 
 
@@ -390,6 +411,18 @@ JAVA_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # JCA MAC spelling "HmacSHA256" / "HmacMD5"
     ("hmac", re.compile(r"\bHmac(?:SHA\d*|MD5)\b", _F)),
     ("pbkdf2", re.compile(r"\bPBKDF2With", _F)),
+    # MGF1 inside RSA-OAEP / RSA-PSS: the "MGF1" argument of OAEPParameterSpec /
+    # PSSParameterSpec, an MGF1ParameterSpec, or a "...AndMGF1Padding" /
+    # "...withRSAandMGF1" standard name.
+    ("mgf1", re.compile(r"[\"']MGF1[\"']|\bMGF1ParameterSpec\b|andMGF1", _F)),
+    # Bouncy Castle DigestFactory.createSHA256() (``createSHA256`` has no word
+    # boundary before SHA, so the global hash lane never sees it).
+    ("sha256", re.compile(r"\bDigestFactory\s*\.\s*createSHA(?:224|256)\b")),
+    ("sha384", re.compile(r"\bDigestFactory\s*\.\s*createSHA384\b")),
+    ("sha512", re.compile(r"\bDigestFactory\s*\.\s*createSHA512\b")),
+    ("sha1", re.compile(r"\bDigestFactory\s*\.\s*createSHA1\b")),
+    ("md5", re.compile(r"\bDigestFactory\s*\.\s*createMD5\b")),
+    ("sha3_256", re.compile(r"\bDigestFactory\s*\.\s*createSHA3_256\b")),
 )
 
 # --------------------------------------------------------------------------- #
@@ -701,7 +734,8 @@ def _apply_rule(
     line: str,
     symbols: dict[str, _Symbol],
 ) -> Detection:
-    det = Detection(key=rule.key, line_no=0, library=rule.library, receiver_bound=True)
+    det = Detection(key=rule.key, line_no=0, library=rule.library, receiver_bound=True,
+                    variant=rule.variant)
     for role in rule.arg_roles:
         if role == ROLE_KEY_SIZE:
             det.key_size = _resolve_key_size(args, line, symbols)
@@ -753,6 +787,7 @@ def _merge(into: Detection, other: Detection) -> None:
     into.parameter = into.parameter or other.parameter
     into.library = into.library or other.library
     into.receiver_bound = into.receiver_bound or other.receiver_bound
+    into.variant = into.variant or other.variant
 
 
 _STR_LIT = re.compile(r"""(["'`])((?:\\.|(?!\1).)*)\1""")
@@ -776,6 +811,369 @@ def blank_prose(line: str, lang: str) -> str:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Java JCA/JCE argument lane. The literal lane only sees an algorithm when its
+# spelling is distinctive on the line; JCA hides it in an ARGUMENT: a same-file
+# ``static final String`` constant (``Cipher.getInstance(SYM_CIPHER)``), a bare
+# ambiguous token inside an API call (``new SecretKeySpec(k, "AES")``,
+# ``KeyFactory.getInstance("EdDSA")``), or a literal passed through a one-line
+# helper (``keyFactory("RSA")`` -> ``KeyFactory.getInstance(alg)``). This lane
+# resolves those arguments against the JCA standard-name table, and also splits
+# the composite standard names (``SHA256withDSA`` -> DSA + SHA-256,
+# ``HmacSHA256`` -> HMAC-SHA256, ``PBKDF2WithHmacSHA512`` -> PBKDF2-HMAC-SHA512).
+# API-bound only: a bare "AES" outside these calls is never a detection.
+# --------------------------------------------------------------------------- #
+_JCA_LIB = "JCA/JCE (Java)"
+_JCA_CLASSES = (
+    "Cipher", "MessageDigest", "Signature", "Mac", "KeyGenerator",
+    "KeyPairGenerator", "SecretKeyFactory", "KeyFactory", "KeyAgreement",
+)
+# A file only gets the API-bound lane when it imports (or fully qualifies) the JCA.
+_JCA_FILE = re.compile(r"\b(?:javax\.crypto|java\.security)\b")
+# An argument: a string literal, or a (this.|Class.)identifier followed by , or ).
+_JAVA_ARG = (
+    r'(?:"(?P<lit>[^"\\\s]{1,80})"'
+    r"|(?P<ident>(?:this\.)?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?=\s*[,)]))"
+)
+_JCA_CALL = re.compile(
+    r"\b(?P<cls>" + "|".join(_JCA_CLASSES) + r")\s*\.\s*getInstance\s*\(\s*" + _JAVA_ARG
+)
+_SECRET_KEY_SPEC = re.compile(r"\bnew\s+SecretKeySpec\s*\(")
+# Same-file string constants: Java ``[modifiers] String NAME = "value";`` and Kotlin
+# ``[const] val NAME[: String] = "value"``. The value must look like a standard
+# name (no spaces) — never prose.
+_JAVA_STR_DECL = re.compile(r'\bString\s+([A-Za-z_]\w*)\s*=\s*"([^"\\\s]{1,80})"\s*[;,)]')
+_KT_STR_DECL = re.compile(r'\bval\s+([A-Za-z_]\w*)\s*(?::\s*String\s*)?=\s*"([^"\\\s$]{1,80})"')
+# ``String alias = OTHER_CONSTANT;`` (one hop).
+_JAVA_ALIAS_DECL = re.compile(r"\bString\s+([A-Za-z_]\w*)\s*=\s*([A-Za-z_][\w.]*)\s*;")
+# Every declaration / parameter / write of a name (single-assignment check).
+_ANY_STR_DECL = re.compile(r"\b(?:String|val|var)\s+([A-Za-z_]\w*)\b")
+_KT_TYPED_PARAM = re.compile(r"(?<!val )(?<!var )\b([A-Za-z_]\w*)\s*:\s*String\b")
+_ANY_ASSIGN = re.compile(r"(?<!\w)([A-Za-z_]\w*)\s*\+?=(?!=)")
+_JAVA_CLASS_DECL = re.compile(r"\b(?:class|interface|enum|object)\s+([A-Z]\w*)")
+# A helper whose single String parameter feeds a JCA getInstance in its body.
+_JAVA_HELPER_DECL = re.compile(
+    r"\b([a-z_]\w*)\s*\(\s*(?:final\s+)?String\s+([A-Za-z_]\w*)\s*\)\s*"
+    r"(?:throws\s+[\w.,\s]+)?\{"
+)
+_HELPER_BODY_LINES = 30
+
+# Standard-name pieces.
+_HMAC_NAME = re.compile(r"^Hmac(?P<d>.+)$", re.I)
+_PBKDF2_NAME = re.compile(r"^PBKDF2WithHmac(?P<d>.+)$", re.I)
+_SIG_NAME = re.compile(
+    r"^(?P<d>[A-Za-z0-9-]+?)with(?P<pk>[A-Za-z0-9-]+?)(?P<mgf>andMGF1)?"
+    r"(?:in\w+Format)?(?:/PSS)?$", re.I)
+_HASH_LABEL = re.compile(r"^(?:SHA(?:1|224|256|384|512)(?:/(?:224|256))?|SHA3-(?:224|256|384|512)|MD5)$", re.I)
+_AES_SIZED = re.compile(r"^AES_(128|192|256)$", re.I)
+_AES_WRAP = re.compile(r"^AESWrap(?P<pad>Pad)?(?:_(?P<size>128|192|256))?$", re.I)
+# JCA standard names the shared alias table does not carry.
+_JCA_EXTRA_KEYS = {
+    "arcfour": "rc4", "eddsa": "eddsa", "elgamal": "elgamal", "ec": "ecdsa",
+    "dh": "dh", "rsassapss": "rsa",
+}
+_SYMMETRIC_PRIMITIVES = ("block-cipher", "stream-cipher", "ae")
+
+
+def _jca_key(token: str) -> str | None:
+    """Canonical key for a JCA standard-name token (``DESede`` -> 3des)."""
+    flat = re.sub(r"[\s\-_]", "", token).lower()
+    key = _JCA_EXTRA_KEYS.get(flat) or LITERAL_ALGO_ALIASES.get(flat)
+    return key if key and algo_info(key) else None
+
+
+def _hash_key(token: str) -> str | None:
+    if token.upper() == "SHA":  # JCA alias of SHA-1
+        return "sha1"
+    key = _jca_key(token)
+    return key if key and (algo_info(key) or {}).get("primitive") == "hash" else None
+
+
+def _hmac_variant(digest: str) -> str | None:
+    return digest.upper() if _HASH_LABEL.match(digest) else None
+
+
+def _signature_assets(spec: str) -> list[tuple[str, str | None, str | None, int | None]]:
+    """``SHA256withRSA`` -> RSA + SHA-256 (+ MGF1 for ``...andMGF1``)."""
+    m = _SIG_NAME.match(spec)
+    if not m:
+        return []
+    pk = m.group("pk").upper()
+    pk_key: str | None
+    if "ECDSA" in pk:
+        pk_key = "ecdsa"
+    elif pk in ("RSA", "RSASSA-PSS", "RSAENCRYPTION"):  # sha256WithRSAEncryption (X.509)
+        pk_key = "rsa"
+    else:
+        pk_key = _jca_key(pk)
+    if pk_key is None:
+        return []
+    out: list[tuple[str, str | None, str | None, int | None]] = [(pk_key, None, None, None)]
+    digest = _hash_key(m.group("d"))
+    if digest:
+        out.append((digest, None, None, None))
+    if m.group("mgf"):
+        out.append(("mgf1", None, None, None))
+    return out
+
+
+def jca_assets(cls: str, spec: str) -> list[tuple[str, str | None, str | None, int | None]]:
+    """``(key, variant, mode, key_size)`` for a JCA ``<cls>.getInstance(spec)``.
+
+    ``cls`` is the JCA engine class (``Cipher``, ``Mac`` ...) or ``SecretKeySpec``
+    for a key spec's algorithm argument. Unknown names resolve to nothing.
+    """
+    spec = spec.strip()
+    if not spec:
+        return []
+    if cls == "Signature":
+        assets = _signature_assets(spec)
+        if assets:
+            return assets
+        key = _jca_key(spec)
+        return [(key, None, None, None)] if key else []
+    hm = _HMAC_NAME.match(spec)
+    if cls in ("Mac", "KeyGenerator", "SecretKeySpec") and hm:
+        return [("hmac", _hmac_variant(hm.group("d")), None, None)]
+    pm = _PBKDF2_NAME.match(spec)
+    if cls in ("SecretKeyFactory", "SecretKeySpec") and pm:
+        digest = _hmac_variant(pm.group("d"))
+        return [("pbkdf2", f"HMAC-{digest}" if digest else None, None, None)]
+    if cls == "MessageDigest":
+        key = _hash_key(spec)
+        return [(key, None, None, None)] if key else []
+    if cls == "Mac":
+        up = spec.upper()
+        if up.endswith("CMAC"):
+            return [("cmac", None, None, None)]
+        key = _jca_key(spec)
+        return [(key, None, None, None)] if key in ("poly1305", "hmac") else []
+    # Cipher / KeyGenerator / KeyPairGenerator / KeyFactory / KeyAgreement /
+    # SecretKeyFactory / SecretKeySpec: a transformation or a bare algorithm name.
+    parts = [p.strip() for p in spec.split("/")]
+    algo = parts[0]
+    sized = _AES_SIZED.match(algo)
+    wrap = _AES_WRAP.match(algo)
+    variant: str | None = None
+    size: int | None = None
+    if sized:
+        key, size = "aes", int(sized.group(1))
+    elif wrap:
+        key = "aes"
+        variant = "KWP" if wrap.group("pad") else "KW"
+        size = int(wrap.group("size")) if wrap.group("size") else None
+    else:
+        key = _jca_key(algo)
+    if key is None or (cls == "SecretKeySpec" and key in ("rsa", "dsa", "ecdsa", "dh")):
+        return []
+    mode = None
+    if cls == "Cipher" and len(parts) >= 2 and variant is None:
+        cand = parts[1].upper()
+        if cand in ("GCM", "CBC", "ECB", "CTR", "CFB", "OFB", "XTS", "CCM") and \
+                (algo_info(key) or {}).get("primitive") in _SYMMETRIC_PRIMITIVES:
+            mode = cand
+    out = [(key, variant, mode, size)]
+    if cls == "Cipher" and len(parts) >= 3 and "MGF1" in parts[2].upper():
+        out.append(("mgf1", None, None, None))
+    return out
+
+
+class _JavaContext:
+    """Per-file facts the JCA argument lane resolves against."""
+
+    __slots__ = ("jca", "consts", "classes", "helpers")
+
+    def __init__(self, lines: list[str]) -> None:
+        code = "\n".join(lines)  # comments already stripped
+        self.jca = bool(_JCA_FILE.search(code))
+        self.classes = set(_JAVA_CLASS_DECL.findall(code))
+        self.consts = _string_constants(code)
+        self.helpers = _jca_helpers(lines) if self.jca else {}
+
+
+def _string_constants(code: str) -> dict[str, str]:
+    """Single-assignment same-file String constants (``NAME -> value``).
+
+    A name declared more than once (a parameter or local of the same name, two
+    inner classes) or assigned anywhere else (a setter) is dropped: its value at
+    the call site is not provable from the file.
+    """
+    values: dict[str, set[str]] = {}
+    for m in (*_JAVA_STR_DECL.finditer(code), *_KT_STR_DECL.finditer(code)):
+        values.setdefault(m.group(1), set()).add(m.group(2))
+    if not values:
+        return {}
+    aliases = {m.group(1): m.group(2) for m in _JAVA_ALIAS_DECL.finditer(code)}
+    # One pass each (not one regex per name): declarations of a String / val / var
+    # named X (incl. parameters ``String X`` / Kotlin ``X: String``) and writes ``X =``.
+    decls = Counter(m.group(1) for m in _ANY_STR_DECL.finditer(code))
+    decls.update(m.group(1) for m in _KT_TYPED_PARAM.finditer(code))
+    assigns = Counter(m.group(1) for m in _ANY_ASSIGN.finditer(code))
+
+    def single(name: str) -> bool:
+        return decls[name] == 1 and assigns[name] == 1
+
+    out = {n: next(iter(v)) for n, v in values.items() if len(v) == 1 and single(n)}
+    for name, target in aliases.items():
+        target = target.rsplit(".", 1)[-1]
+        if name not in out and target in out and single(name):
+            out[name] = out[target]
+    return out
+
+
+def _jca_helpers(lines: list[str]) -> dict[str, tuple[str, int]]:
+    """Same-file helpers ``name(String p) { ... X.getInstance(p) ... }`` -> (X, decl line)."""
+    out: dict[str, tuple[str, int]] = {}
+    for i, line in enumerate(lines):
+        m = _JAVA_HELPER_DECL.search(line)
+        if not m or m.group(1) in ("if", "for", "while", "switch", "catch", "synchronized"):
+            continue
+        name, param = m.group(1), m.group(2)
+        depth = 0
+        for j in range(i, min(len(lines), i + _HELPER_BODY_LINES)):
+            seg = lines[j][m.end() - 1:] if j == i else lines[j]
+            for call in _JCA_CALL.finditer(seg):
+                if call.group("ident") == param:
+                    out.setdefault(name, (call.group("cls"), i + 1))
+            depth += seg.count("{") - seg.count("}")
+            if depth <= 0:
+                break  # end of the helper body
+    return out
+
+
+def _call_args(line: str, open_idx: int) -> list[str]:
+    """Top-level comma-split arguments of the call whose ``(`` is at ``open_idx``."""
+    depth = 0
+    cur: list[str] = []
+    args: list[str] = []
+    in_str = False
+    for ch in line[open_idx:]:
+        if ch == '"' and (not cur or cur[-1] != "\\"):
+            in_str = not in_str
+        if not in_str:
+            if ch == "(":
+                depth += 1
+                if depth == 1:
+                    continue
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    args.append("".join(cur).strip())
+                    return args
+            elif ch == "," and depth == 1:
+                args.append("".join(cur).strip())
+                cur = []
+                continue
+        cur.append(ch)
+    return []  # call continues on the next line: not resolvable here
+
+
+def _resolve_java_arg(lit: str | None, ident: str | None, ctx: _JavaContext) -> str | None:
+    if lit is not None:
+        return lit
+    if not ident:
+        return None
+    name = ident[5:] if ident.startswith("this.") else ident
+    if "." in name:
+        qualifier, name = name.rsplit(".", 1)
+        if qualifier not in ctx.classes:
+            return None
+    return ctx.consts.get(name)
+
+
+# Bouncy Castle ``new HMac(new SHA256Digest())``: the nested digest is the HMAC hash.
+_BC_HMAC = re.compile(r"\bnew\s+HMac\s*\(\s*new\s+(SHA(?:1|224|256|384|512)|MD5)Digest\s*\(")
+# Keys whose variant is a parameter of one construction (the HMAC / PRF hash).
+_FOLDABLE_VARIANT_KEYS = ("hmac", "pbkdf2")
+
+
+def _fold_variants(dets: list[Detection]) -> None:
+    """A file that names exactly ONE variant of a construction (only HmacSHA256) is
+    using that variant; its other, unqualified mentions of the construction (an
+    ``HMAC`` identifier, an ``"hmac"`` id string) take the variant instead of
+    becoming a second, coarser ``HMAC`` row next to ``HMAC-SHA256``. A file with
+    several variants keeps its unqualified mentions as they are (ambiguous)."""
+    for key in _FOLDABLE_VARIANT_KEYS:
+        variants = {d.variant for d in dets if d.key == key and d.variant}
+        if len(variants) != 1:
+            continue
+        variant = next(iter(variants))
+        for d in dets:
+            if d.key == key and not d.variant:
+                d.variant = variant
+
+
+_ARG_TOKEN = re.compile(r'^(?:"(?P<lit>[^"\\\s]{1,80})"|(?P<ident>(?:this\.)?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?))$')
+# Self-describing JCA composite names: "<digest>with<pk>", "Hmac<digest>",
+# "PBKDF2WithHmac<digest>" (the digest prefix keeps "doSomethingWithRSA" out).
+_COMPOSITE_LIT = re.compile(
+    r'"((?:SHA|MD[245]|NONE|RIPEMD)[A-Za-z0-9-]*?with[A-Za-z0-9-]+'
+    r'|Hmac(?:SHA|MD5)[A-Za-z0-9-]*|PBKDF2WithHmac(?:SHA|MD5)[A-Za-z0-9-]*)"', re.I)
+
+
+def _java_jca_lane(line: str, line_no: int, ctx: _JavaContext) -> list[Detection]:
+    found: list[tuple[str, str | None, str | None, int | None]] = []
+    if ctx.jca:
+        for m in _JCA_CALL.finditer(line):
+            spec = _resolve_java_arg(m.group("lit"), m.group("ident"), ctx)
+            if spec:
+                found.extend(jca_assets(m.group("cls"), spec))
+        for m in _SECRET_KEY_SPEC.finditer(line):
+            args = _call_args(line, m.end() - 1)
+            if len(args) >= 2:
+                am = _ARG_TOKEN.match(args[-1])
+                spec = _resolve_java_arg(am.group("lit"), am.group("ident"), ctx) if am else None
+                if spec:
+                    found.extend(jca_assets("SecretKeySpec", spec))
+        for helper, (cls, decl_line) in ctx.helpers.items():
+            if line_no == decl_line:
+                continue
+            for m in re.finditer(rf'(?:(?<![\w.])|(?<=this\.)){helper}\s*\(\s*"([^"\\\s]{{1,80}})"\s*\)', line):
+                found.extend(jca_assets(cls, m.group(1)))
+    for m in _BC_HMAC.finditer(line):
+        found.append(("hmac", m.group(1).upper(), None, None))
+    # Self-describing composite standard names anywhere in a string literal (a
+    # constant, a ``return "SHA256withRSA";`` mapping): split into their parts.
+    for m in _COMPOSITE_LIT.finditer(line):
+        name = m.group(1)
+        if _HMAC_NAME.match(name):
+            found.extend(jca_assets("Mac", name))
+        elif _PBKDF2_NAME.match(name):
+            found.extend(jca_assets("SecretKeyFactory", name))
+        else:
+            found.extend(_signature_assets(name))
+    out: list[Detection] = []
+    for key, variant, mode, size in found:
+        out.append(Detection(key=key, line_no=line_no, key_size=size, mode=mode,
+                             variant=variant, library=_JCA_LIB, receiver_bound=True))
+    return out
+
+
+# A long run of bare string-list elements (``'md5',`` one per line) in which crypto
+# names are a small minority is a keyword / autocomplete table (SQL function names,
+# IntelliSense word lists), not crypto usage: such lines are not scanned. A short
+# list (``['sha256', 'sha384']``) or a mostly-crypto one (a cipher-suite list) is.
+_BARE_ELEMENT = re.compile(r"""^\s*(["'])[A-Za-z0-9_.$-]{1,64}\1\s*,?\s*$""")
+_KEYWORD_RUN_MIN = 12
+_KEYWORD_RUN_MAX_CRYPTO_SHARE = 0.25
+
+
+def _keyword_list_lines(lines: list[str], lang: str) -> set[int]:
+    patterns = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
+    out: set[int] = set()
+    run: list[int] = []
+    for idx in range(len(lines) + 1):
+        if idx < len(lines) and _BARE_ELEMENT.match(lines[idx]):
+            run.append(idx)
+            continue
+        if len(run) >= _KEYWORD_RUN_MIN:
+            crypto = sum(1 for i in run if any(p.search(lines[i]) for _, p in patterns))
+            if crypto <= _KEYWORD_RUN_MAX_CRYPTO_SHARE * len(run):
+                out.update(i + 1 for i in run)  # 1-based line numbers
+        run = []
+    return out
+
+
 def detect_crypto(text: str, lang: str) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
@@ -790,12 +1188,16 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
     work_lines = [_strip_line_comment(ln, lang) for ln in raw_lines]
     symbols = build_symbols(work_lines)
     rules = RULES_BY_LANG.get(lang, ())
+    java_ctx = _JavaContext(work_lines) if lang == _JAVA else None
+    keyword_lines = _keyword_list_lines(work_lines, lang)
 
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
         line = work.strip()
         if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work):
             continue  # imports are LIBRARY signals, handled by the scanner
+        if line_no in keyword_lines:
+            continue  # an element of a non-crypto keyword table
         per_line: dict[str, Detection] = {}
 
         # --- receiver+method rule lane ---
@@ -819,6 +1221,15 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
         lit_line = blank_prose(line, lang)
+
+        # --- Java JCA argument lane (constants, API-bound bare names, helpers) ---
+        if java_ctx is not None:
+            for det in _java_jca_lane(lit_line, line_no, java_ctx):
+                if det.key in per_line:
+                    _merge(per_line[det.key], det)
+                else:
+                    per_line[det.key] = det
+
         explicit_ks = extract_key_size(lit_line)
         mode = extract_mode(lit_line)
         curve = extract_curve(lit_line)
@@ -839,6 +1250,8 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                 per_line[key] = lit
 
         out.extend(per_line.values())
+    if java_ctx is not None:
+        _fold_variants(out)
     return out
 
 

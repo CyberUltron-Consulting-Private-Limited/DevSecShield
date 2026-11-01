@@ -93,6 +93,7 @@ def _display_name(
     explicit_key_size: int | None,
     mode: str | None,
     parameter: str | None = None,
+    variant: str | None = None,
 ) -> str:
     """Build the asset display name. Only a key size found EXPLICITLY on the
     source line is folded into the name (so RSA-2048 vs RSA-1024 separate); a
@@ -102,6 +103,11 @@ def _display_name(
     (``ML-KEM-768``); without one, the unsized research name is kept
     (``CRYSTALS-Kyber``) so an unparameterized ``new MLKEMEngine(0)`` is stable.
     Hybrid assets read ``Hybrid ML-KEM-<set>``.
+
+    ``variant`` is the construction qualifier the source names alongside the
+    algorithm (the HMAC / PBKDF2 hash: ``HMAC-SHA256``, ``PBKDF2-HMAC-SHA512``;
+    AES key wrap: ``AES-KW``). The canonical key, and so the strength/primitive
+    record, stays the bare algorithm's.
     """
     if key == "hybrid":
         return f"Hybrid ML-KEM-{parameter}" if parameter else "Hybrid ML-KEM"
@@ -112,6 +118,8 @@ def _display_name(
         info = algo_info(key) or {}
         if info.get("primitive") in ("pke", "block-cipher", "stream-cipher"):
             base = f"{base}-{explicit_key_size}"
+    if variant:
+        base = f"{base}-{variant}"
     if mode and mode.upper() not in base.upper().split("-"):
         return f"{base}-{mode.upper()}"
     return base
@@ -158,7 +166,7 @@ def _detect_assets(root: Path) -> list[_Asset]:
             # A mode of operation belongs to block ciphers only: "RSA/ECB/OAEP..." is a JCA naming quirk, and a
             # mode seen elsewhere on the line must not turn HMAC or SHA-256 into "HMAC-CBC" / "SHA-256-CBC".
             mode = det.mode if info.get("primitive") == "block-cipher" else None
-            name = _display_name(refined, det.key_size, mode, det.parameter)
+            name = _display_name(refined, det.key_size, mode, det.parameter, det.variant)
             ident = (name, rel)
             if ident not in seen:
                 seen[ident] = _Asset(

@@ -132,7 +132,7 @@ class _FileIndex:
         if lang in set(LANGUAGE_EXTENSIONS.values()):
             for det in detect_crypto(text, lang):
                 refined = _refine_key(det.key, det.key_size)
-                name = _display_name(refined, det.key_size, det.mode, det.parameter)
+                name = _display_name(refined, det.key_size, det.mode, det.parameter, det.variant)
                 self.by_name.setdefault(name.lower(), []).append(det.line_no)
                 base = str(ALGORITHM_NORMALIZE.get(refined, refined)).lower()
                 if base != name.lower():

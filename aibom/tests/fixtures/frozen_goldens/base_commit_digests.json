@@ -32,9 +32,9 @@
       "scan": "b1bafba027ecdb0f7aabc724f8091c40f9fcaadeb82ce30099212efa4af1a0d1"
     },
     "synthetic-crypto-jvm-go": {
-      "cyclonedx": "88ee5ad415888602c8cc9fb8f4ef79087d7716fffa51dfb872ba3bbf4b265ede",
-      "normalize": "c3e7c4ecb9504f0c1db5a737ecb66e1fbf7e35419a4ab1e78def14fa31d6901c",
-      "scan": "a6ee1044a5f56d5136fe45383b891eed26a55614a617c3551062b4ab42eb64c7"
+      "cyclonedx": "bc676dd382708c29adfac9c97c39eeadcf08af298323eeabc6c4018de123fc24",
+      "normalize": "68305c3228003a0dc05e75634ebb35c8ec5d1d81d1aa913ae1cc174087428c7c",
+      "scan": "68cbedddb1ce59f42ec209f18ec5883fe7003c2a89b5bb488d0869405a328d5f"
     },
     "synthetic-crypto-manifests": {
       "cyclonedx": "756015a411a3bece232b2194a682d33dfbe10a3d791be50adfaa51e6ca1ce1da",

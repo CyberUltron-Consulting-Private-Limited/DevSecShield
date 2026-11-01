@@ -117,6 +117,18 @@ STANDARD_ALGORITHMS: dict[str, dict] = {
     "ecdh": {"primitive": "key-agree", "strength": _STRONG,
              "quantum_vulnerable": True},
     "dsa": {"primitive": "signature", "strength": _MOD, "quantum_vulnerable": True},
+    # JCA "EdDSA" names the Edwards-curve signature family without the curve
+    # (KeyFactory / KeyPairGenerator / Signature.getInstance("EdDSA")).
+    "eddsa": {"primitive": "signature", "strength": _STRONG,
+              "quantum_vulnerable": True},
+    # ElGamal (JCA / Bouncy Castle "ELGAMAL"): discrete-log encryption, as used by
+    # OpenPGP encryption subkeys; not NIST-approved, broken by Shor's algorithm.
+    "elgamal": {"primitive": "pke", "strength": _MOD, "quantum_vulnerable": True},
+    # MGF1 (PKCS #1 mask generation function) inside RSA-OAEP / RSA-PSS.
+    "mgf1": {"primitive": "other", "strength": _STRONG, "quantum_vulnerable": False},
+    # NIST SP 800-56A Concatenation KDF (JOSE ECDH-ES "Concat KDF").
+    "concat-kdf": {"primitive": "kdf", "strength": _STRONG,
+                   "quantum_vulnerable": False},
     "pbkdf2": {"primitive": "kdf", "strength": _STRONG, "quantum_vulnerable": False},
     "scrypt": {"primitive": "kdf", "strength": _STRONG, "quantum_vulnerable": False},
     "argon2": {"primitive": "kdf", "strength": _STRONG, "quantum_vulnerable": False},
@@ -170,6 +182,8 @@ ALGORITHM_NORMALIZE: dict[str, str] = {
     "rsa-2048": "RSA-2048", "rsa-4096": "RSA-4096",
     "ecdsa": "ECDSA", "ed25519": "Ed25519", "ed448": "Ed448", "x25519": "X25519",
     "dh": "Diffie-Hellman", "ecdh": "ECDH", "dsa": "DSA",
+    "eddsa": "EdDSA", "elgamal": "ElGamal", "mgf1": "MGF1",
+    "concat-kdf": "ConcatenationKDF",
     "pbkdf2": "PBKDF2", "scrypt": "scrypt", "argon2": "Argon2", "bcrypt": "bcrypt",
     "hkdf": "HKDF", "hmac": "HMAC", "cmac": "CMAC", "poly1305": "Poly1305",
     "kyber": "CRYSTALS-Kyber", "dilithium": "CRYSTALS-Dilithium",

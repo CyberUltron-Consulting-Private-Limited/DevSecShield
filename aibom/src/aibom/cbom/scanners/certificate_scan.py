@@ -58,6 +58,11 @@ _CERT_EXTS = frozenset(
         ".pub",
         ".p7b",
         ".p7c",
+        # ASCII-armored OpenPGP keys (``-----BEGIN PGP PUBLIC KEY BLOCK-----``).
+        # Only armored blocks are read (no binary keyring parse); an ``.asc`` that
+        # holds a PGP SIGNATURE / MESSAGE is not key material and emits nothing.
+        ".gpg",
+        ".asc",
     }
 )
 # When a container has no PEM armor, try DER parse on these (not .key/.pub —
@@ -230,9 +235,22 @@ class CertificateMaterialScanner(Scanner):
             if cert is not None:
                 self._emit_certificate(ctx, seen, chain, cert, rel)
         elif _PRIVATE_KEY_RE.search(label):
-            self._emit_material(ctx, seen, "private-key", rel, _label_alg(label))
+            self._emit_key_block(ctx, seen, "private-key", rel, label, body)
         elif _PUBLIC_KEY_RE.search(label):
-            self._emit_material(ctx, seen, "public-key", rel, _label_alg(label))
+            self._emit_key_block(ctx, seen, "public-key", rel, label, body)
+
+    def _emit_key_block(
+        self, ctx: ScanContext, seen: set[str], kind: str, rel: str, label: str, body: str
+    ) -> None:
+        """A PEM / OpenPGP armored key block -> private-/public-key material."""
+        if not label.startswith("PGP "):
+            self._emit_material(ctx, seen, kind, rel, _label_alg(label))
+            return
+        extra = {"crypto:containerFormat": "openpgp"}
+        info = _openpgp_key_info(body)
+        if info is not None and info[1]:
+            extra["crypto:keySize"] = str(info[1])
+        self._emit_material(ctx, seen, kind, rel, info[0] if info else None, extra=extra)
 
     # --- embedded key material in source ---------------------------------- #
 
@@ -257,9 +275,9 @@ class CertificateMaterialScanner(Scanner):
                     if cert is not None:
                         self._emit_certificate(ctx, seen, chain, cert, rel)
                 elif _PRIVATE_KEY_RE.search(up):
-                    self._emit_material(ctx, seen, "private-key", rel, _label_alg(up))
+                    self._emit_key_block(ctx, seen, "private-key", rel, up, body)
                 elif _PUBLIC_KEY_RE.search(up):
-                    self._emit_material(ctx, seen, "public-key", rel, _label_alg(up))
+                    self._emit_key_block(ctx, seen, "public-key", rel, up, body)
             # Conservative hardcoded IV / salt / secret-key literals.
             for m in _MATERIAL_ASSIGN.finditer(text):
                 kind = _VAR_TO_MATERIAL[m.group("var").lower()]
@@ -355,6 +373,63 @@ def _label_alg(label: str) -> str | None:
     """Algorithm encoded in a key PEM label (``RSA PRIVATE KEY`` -> ``RSA``)."""
     m = _KEY_ALG_RE.search(label)
     return m.group(1).upper() if m else None
+
+
+# RFC 9580 public-key algorithm ids -> the names the rest of the CBOM uses.
+_PGP_ALGORITHMS = {
+    1: "RSA", 2: "RSA", 3: "RSA", 16: "ElGamal", 17: "DSA", 18: "ECDH",
+    19: "ECDSA", 22: "EdDSA", 25: "X25519", 26: "X448", 27: "Ed25519", 28: "Ed448",
+}
+# Algorithms whose first key-material MPI is the modulus / prime (its bit count is
+# the key size); EC keys are sized by their curve instead.
+_PGP_MODULUS_ALGORITHMS = frozenset({"RSA", "DSA", "ElGamal"})
+
+
+def _openpgp_key_info(armored: str) -> tuple[str, int | None] | None:
+    """(algorithm, key size) of the first key packet of an ASCII-armored OpenPGP
+    key block (RFC 9580 s4-5), or None. TOTAL: garbage returns None."""
+    b64: list[str] = []
+    for raw in armored.splitlines():
+        s = raw.strip()
+        if not s or ":" in s:
+            continue  # blank separator / armor header ("Version: ...")
+        if s.startswith("="):
+            break  # CRC-24 checksum line ends the data
+        b64.append(s)
+    joined = "".join(b64)[:4096]  # the first key packet is all that is read
+    try:
+        data = base64.b64decode(joined[: len(joined) // 4 * 4], validate=False)
+    except (ValueError, base64.binascii.Error):  # type: ignore[attr-defined]
+        return None
+    if len(data) < 9 or not data[0] & 0x80:
+        return None
+    if data[0] & 0x40:  # new-format packet header
+        tag = data[0] & 0x3F
+        first = data[1]
+        header = 2 if first < 192 else 3 if first < 224 else 6 if first == 255 else 0
+    else:  # legacy header: length type in the low two bits
+        tag = (data[0] >> 2) & 0x0F
+        header = {0: 2, 1: 3, 2: 5}.get(data[0] & 0x03, 0)
+    if tag not in (5, 6) or not header:  # 5 = secret key, 6 = public key
+        return None
+    body = data[header:]
+    version = body[0] if body else 0
+    if version in (2, 3):
+        offset = 7  # version, creation time, validity days
+    elif version in (4, 5, 6):
+        offset = 5  # version, creation time
+    else:
+        return None
+    if len(body) <= offset:
+        return None
+    algorithm = _PGP_ALGORITHMS.get(body[offset])
+    if algorithm is None:
+        return None
+    mpi = offset + 1 + (4 if version in (5, 6) else 0)  # v5/v6 add a key-material length
+    bits = None
+    if algorithm in _PGP_MODULUS_ALGORITHMS and len(body) >= mpi + 2:
+        bits = (body[mpi] << 8) | body[mpi + 1]
+    return algorithm, bits or None
 
 
 __all__ = ["CertificateMaterialScanner"]

@@ -111,7 +111,11 @@ _IPSEC_USE = re.compile(
     r"\bstrongswan\b|\blibreswan\b|\bcharon\b|\bracoon\b|\bIKEv[12]\b|"
     # strongSwan's legacy "stroke" interface only as a command ("ipsec stroke ...", "stroke up|down|statusall"):
     # a bare \bstroke\b matched every SVG/Recharts stroke= attribute in React charts.
-    r"\bipsec\b|\bxfrm\b|\bsetkey\b|\bipsec\s+stroke\b|\bstroke\s+(?:up|down|status|statusall|loglevel|listall)\b",
+    r"\bipsec\b|\bxfrm\b|\bipsec\s+stroke\b|\bstroke\s+(?:up|down|status|statusall|loglevel|listall)\b"
+    # ipsec-tools' ``setkey`` only as the lowercase command (``setkey -f ...``): a
+    # case-insensitive \bsetkey\b matched every Java/JS ``setKey(`` / ``.setkey(``
+    # call (and POSIX crypt(3) ``setkey()``), which are not IPsec.
+    r"|(?-i:(?<![.\w])setkey\b(?!\s*\())",
     _F,
 )
 # Negotiated IKE version: ``IKEv1`` / ``keyexchange=ikev2`` (bare token) — a

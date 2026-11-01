@@ -330,6 +330,11 @@ _FAMILY_TOKENS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("aes", ("AES",)),
     ("rc4", ("RC4", "ARCFOUR", "ARC4")),
     ("des", ("DES",)),
+    # A keyed construction that names its inner hash (HMAC-SHA256,
+    # PBKDF2-HMAC-SHA512) is that construction, never the bare hash.
+    ("pbkdf2", ("PBKDF2",)),
+    ("hkdf", ("HKDF",)),
+    ("hmac", ("HMAC",)),
     ("md5", ("MD5",)),
     ("sha3", ("SHA3", "SHA-3")),
     ("sha2", ("SHA-224", "SHA224", "SHA-256", "SHA256",
@@ -342,7 +347,6 @@ _FAMILY_TOKENS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rsa", ("RSA",)),
     ("dsa", ("DSA",)),
     ("dh", ("DIFFIE",)),
-    ("hmac", ("HMAC",)),
     ("poly1305", ("POLY1305",)),
 )
 
