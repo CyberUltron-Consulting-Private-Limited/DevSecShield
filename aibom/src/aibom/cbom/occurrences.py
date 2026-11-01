@@ -36,6 +36,8 @@ _EXTRA_LANG = {
     ".cer": "pem", ".key": "pem", ".conf": "config", ".cfg": "config", ".ini": "config", ".properties": "config",
     ".lock": "lockfile", ".sum": "lockfile", ".mod": "go-mod", ".txt": "text", ".sh": "shell", ".tsx": "typescript",
     ".ts": "typescript", ".swift": "swift", ".m": "objective-c", ".vue": "javascript",
+    # code-scan-only sources (rules.CODE_SCAN_EXTENSIONS): their own display names
+    ".groovy": "groovy", ".pl": "perl", ".pm": "perl", ".vb": "vbnet", ".sql": "sql", ".bash": "shell",
 }
 _LOCK_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "cargo.lock", "go.sum", "poetry.lock",
                "pipfile.lock", "composer.lock", "gemfile.lock", "packages.lock.json", "gradle.lockfile"}
@@ -51,7 +53,7 @@ def language_of(rel: str) -> str | None:
         return "go-mod"
     if name.startswith("requirements") and name.endswith(".txt"):
         return "pip-requirements"
-    if name == "dockerfile":
+    if name == "dockerfile" or name.startswith("dockerfile.") or name.endswith(".dockerfile"):
         return "dockerfile"
     suffix = Path(name).suffix
     if suffix in (".ts", ".tsx"):
@@ -191,6 +193,9 @@ def annotate(root: Path, components: list) -> dict[str, int]:
         if not rel:
             continue
         lang = language_of(rel)
+        if not lang and comp.kind == "crypto_asset":  # extension-less script: the language its #! line names
+            path = safe_file(root, rel)
+            lang = source_language(path) if path else None
         if lang:
             props["crypto:language"] = lang
         lines = known

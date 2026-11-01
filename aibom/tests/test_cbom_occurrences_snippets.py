@@ -189,3 +189,15 @@ def test_key_file_gets_the_line_of_its_pem_armour(tmp_path):
     rows = [r for r in scan_crypto_to_devsecshield(tmp_path)["results"] if r["location"].endswith("server.key")]
     assert rows and all(r.get("line") == 3 for r in rows), [(r["title"], r.get("line")) for r in rows]
     assert "MII" not in json.dumps(rows)  # the window around a key never carries key bytes
+
+
+def test_code_scan_only_languages_are_labelled(tmp_path):
+    # Groovy, Perl, VB.NET, SQL, Dockerfile.* and #! scripts are scanned; their findings must say which language
+    (tmp_path / "Crypto.groovy").write_text('import java.security.MessageDigest\ndef h = MessageDigest.getInstance("MD5")\n')
+    (tmp_path / "digest.pl").write_text("use Digest::MD5 qw(md5_hex);\nmy $h = md5_hex($data);\n")
+    (tmp_path / "Dockerfile.build").write_text("FROM debian:12\nRUN openssl enc -aes-128-ecb -in a -out b -K 00 \n")
+    (tmp_path / "cryptohelper").write_text("#!/bin/bash\nopenssl enc -rc4 -in \"$1\" -out \"$1.enc\" -pass pass:x\n")
+    rows = scan_crypto_to_devsecshield(tmp_path)["results"]
+    langs = {r["location"]: r.get("language") for r in rows if r.get("line")}
+    assert langs.get("Crypto.groovy") == "groovy" and langs.get("digest.pl") == "perl"
+    assert langs.get("Dockerfile.build") == "dockerfile" and langs.get("cryptohelper") == "shell", langs
