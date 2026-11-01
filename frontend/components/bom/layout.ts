@@ -111,7 +111,72 @@ function connectedIds(edges: BomGraphEdge[]): Set<string> {
   return s;
 }
 
-/** Dagre LR on the connected component; orphan rail on the right. */
+export const BOARD_RELS = new Set(["contains", "provides", "declares", "is_a"]);
+
+/** True when a CBOM graph is laid out as a family board (it has algorithm-family nodes). */
+export function isFamilyBoard(graph: BomGraph, lane: BomLane): boolean {
+  return lane === "cbom" && (graph.nodes ?? []).some((n) => n.kind === "family");
+}
+
+/**
+ * CBOM "family board": one column per algorithm family (family node on top, its assets stacked below, wrapping
+ * after 12 rows), folders in a band above and libraries in a band below.  A dagre layout of the same graph puts
+ * every asset in one rank, which renders as a single very tall column once a repository has more than ~20 assets.
+ * Returns null when the graph has no family nodes (older scans), so the dagre layout is used.
+ */
+function cbomFamilyBoard(gn: BomGraphNode[], ge: BomGraphEdge[]): Map<string, { x: number; y: number }> | null {
+  const families = gn.filter((n) => n.kind === "family");
+  if (families.length === 0) return null;
+  const COLW = NODE_W + 36;
+  const ROWH = NODE_H + 14;
+  const MAX_ROWS = 12;
+  const famOf = new Map<string, string>();
+  for (const e of ge) if (e.rel === "is_a") famOf.set(e.source, e.target);
+  const members = new Map<string, BomGraphNode[]>(families.map((f) => [f.id, []]));
+  for (const n of gn) {
+    const f = famOf.get(n.id);
+    if (f && members.has(f) && n.kind !== "family") members.get(f)!.push(n);
+  }
+  const placed = new Set<string>();
+  const pos = new Map<string, { x: number; y: number }>();
+  // widths first, so the folder and library bands can wrap at the board width
+  const cols = families.map((f) => Math.max(1, Math.ceil((members.get(f.id)?.length ?? 0) / MAX_ROWS)));
+  const boardCols = Math.max(4, cols.reduce((a, b) => a + b, 0));
+  const band = (nodes: BomGraphNode[], top: number): number => {
+    nodes.forEach((n, i) => {
+      pos.set(n.id, { x: 24 + (i % boardCols) * COLW, y: top + Math.floor(i / boardCols) * ROWH });
+      placed.add(n.id);
+    });
+    return nodes.length ? Math.ceil(nodes.length / boardCols) * ROWH : 0;
+  };
+  const folders = gn.filter((n) => n.kind === "location");
+  const libraries = gn.filter((n) => n.kind === "framework" || n.asset_type === "library");
+  let y = 24;
+  y += band(folders, y);
+  if (folders.length) y += ROWH;
+  const famTop = y;
+  let x = 24;
+  let tallest = 0;
+  families.forEach((f, k) => {
+    pos.set(f.id, { x, y: famTop });
+    placed.add(f.id);
+    const list = members.get(f.id) ?? [];
+    list.forEach((m, i) => {
+      if (placed.has(m.id)) return;
+      pos.set(m.id, { x: x + Math.floor(i / MAX_ROWS) * COLW, y: famTop + Math.round(ROWH * 1.4) + (i % MAX_ROWS) * ROWH });
+      placed.add(m.id);
+    });
+    tallest = Math.max(tallest, Math.min(list.length, MAX_ROWS));
+    x += cols[k] * COLW + 24;
+  });
+  y = famTop + Math.round(ROWH * 1.4) + tallest * ROWH + ROWH;
+  y += band(libraries.filter((n) => !placed.has(n.id)), y);
+  // anything else (certificate/key lineage without a family): one more band at the bottom
+  band(gn.filter((n) => !placed.has(n.id)), y + (libraries.length ? ROWH : 0));
+  return pos;
+}
+
+/** Dagre LR on the connected component; orphan rail on the right (CBOM detailed graphs: family board). */
 export function layoutBomGraph(
   graph: BomGraph,
   lane: BomLane,
@@ -125,9 +190,12 @@ export function layoutBomGraph(
   const connected = gn.filter((n) => touched.has(n.id));
   const orphans = gn.filter((n) => !touched.has(n.id));
 
-  const positions = new Map<string, { x: number; y: number }>();
+  const board = lane === "cbom" ? cbomFamilyBoard(gn, ge) : null;
+  const positions = board ?? new Map<string, { x: number; y: number }>();
 
-  if (connected.length > 0) {
+  if (board) {
+    // family board placed every node
+  } else if (connected.length > 0) {
     const g = new dagre.graphlib.Graph();
     g.setDefaultEdgeLabel(() => ({}));
     g.setGraph({ rankdir: "LR", nodesep: 28, ranksep: 72, marginx: 24, marginy: 24 });
@@ -172,9 +240,11 @@ export function layoutBomGraph(
     maxX = Math.max(maxX, p.x + NODE_W);
   }
   const railX = connected.length > 0 ? maxX + 80 : 40;
-  orphans.forEach((n, i) => {
-    positions.set(n.id, { x: railX, y: 24 + i * 56 });
-  });
+  if (!board) {
+    orphans.forEach((n, i) => {
+      positions.set(n.id, { x: railX, y: 24 + i * 56 });
+    });
+  }
 
   // Explicit width/height are REQUIRED for MiniMap: xyflow gates
   // `.react-flow__minimap-node` on nodeHasDimensions(userNode), which reads
@@ -193,9 +263,10 @@ export function layoutBomGraph(
     id: `e${i}-${e.source}-${e.target}`,
     source: e.source,
     target: e.target,
-    label: relLabels[e.rel] ?? e.rel,
+    // on the family board the structure is the layout itself; the legend explains it, so no edge labels
+    label: board && BOARD_RELS.has(e.rel) ? undefined : relLabels[e.rel] ?? e.rel,
     animated: e.rel === "deployed_at",
-    style: { stroke: "#a1a1aa" },
+    style: board && BOARD_RELS.has(e.rel) ? { stroke: "#a1a1aa", strokeOpacity: 0.45 } : { stroke: "#a1a1aa" },
     labelStyle: { fontSize: 10, fill: "#71717a" },
   }));
 

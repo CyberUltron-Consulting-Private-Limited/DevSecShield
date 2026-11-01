@@ -75,7 +75,8 @@ export function BomGraphCard({
             <div
               className={`${heightClass} w-full rounded-lg border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/40`}
             >
-              <BomGraphCanvas graph={graph} lane={lane} minZoom={0.55} fitOnMount />
+              {/* CBOM family boards are wide: let the card zoom out far enough to show the whole board */}
+              <BomGraphCanvas graph={graph} lane={lane} minZoom={lane === "cbom" ? 0.3 : 0.55} fitOnMount />
             </div>
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
               {lane === "aibom"

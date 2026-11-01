@@ -27,7 +27,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { BomGraph, BomGraphNode, BomLane } from "./types";
-import { layoutBomGraph, REL_LABEL_AIBOM, REL_LABEL_CBOM } from "./layout";
+import { BOARD_RELS, isFamilyBoard, layoutBomGraph, REL_LABEL_AIBOM, REL_LABEL_CBOM } from "./layout";
 
 /** Sync React Flow colorMode to the app's class-based dark theme. */
 function useAppColorMode(): ColorMode {
@@ -169,14 +169,18 @@ function CanvasInner({
     }));
     // Fix labels from raw edge rels
     const rawEdges = graph.edges ?? [];
+    // Family board: structure edges (folder contains, library provides, is-a family) carry no label; the layout and
+    // the legend say what they are, and hundreds of labels would hide the nodes.
+    const board = isFamilyBoard(graph, lane);
+    const quiet = (rel: string) => board && BOARD_RELS.has(rel);
     const labeled: Edge[] = rawEdges.map((e, i) => ({
       id: `e${i}-${e.source}-${e.target}`,
       source: e.source,
       target: e.target,
-      label: (relLabel ? relLabel(e.rel) : defaultRel[e.rel]) ?? e.rel,
+      label: quiet(e.rel) ? undefined : (relLabel ? relLabel(e.rel) : defaultRel[e.rel]) ?? e.rel,
       animated: e.rel === "deployed_at",
       markerEnd: { type: MarkerType.ArrowClosed },
-      style: { stroke: "#a1a1aa" },
+      style: quiet(e.rel) ? { stroke: "#a1a1aa", strokeOpacity: 0.4 } : { stroke: "#a1a1aa" },
       labelStyle: { fontSize: 10, fill: "#71717a" },
     }));
     return { nodes, edges: labeled.length ? labeled : edges };
