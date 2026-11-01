@@ -46,6 +46,69 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
     ".cs": "csharp",
 }
 
+# Sources only the algorithm / misuse / protocol code-scan lanes read (via :func:`source_language`). Kept out of
+# LANGUAGE_EXTENSIONS on purpose: that table also decides which files the posture pass classifies as "source".
+CODE_SCAN_EXTENSIONS: dict[str, str] = {
+    # Groovy calls the same JCA API (``MessageDigest.getInstance('MD5')``).
+    ".groovy": "java",
+    ".swift": "swift",
+    ".pl": "perl",
+    ".pm": "perl",
+    ".vb": "vbnet",
+    ".sql": "sql",
+    ".sh": "shell",
+    ".bash": "shell",
+}
+
+# Files whose language is not in their suffix: Dockerfiles (``RUN openssl enc …`` lines are shell) and
+# extension-less scripts that name their interpreter on a ``#!`` line (``scripts/cryptohelper``).
+_SHEBANG_RE = re.compile(
+    rb"^#!\s*(?:/usr/bin/env\s+(?:-S\s+)?)?(?:\S*/)?(python[\d.]*|node|bash|sh|zsh|ksh|dash|ruby|perl|php)(?:\s|$)"
+)
+_SHEBANG_LANG = {"node": "javascript", "ruby": "ruby", "perl": "perl", "php": "php"}
+
+
+def source_language(path) -> str | None:
+    """The detector language of a source file: its suffix, else a Dockerfile name, else a ``#!`` line."""
+    lang = LANGUAGE_EXTENSIONS.get(path.suffix.lower()) or CODE_SCAN_EXTENSIONS.get(path.suffix.lower())
+    if lang:
+        return lang
+    name = path.name.lower()
+    if name == "dockerfile" or name.startswith("dockerfile.") or name.endswith(".dockerfile"):
+        return "shell"
+    if path.suffix:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(128)
+    except OSError:
+        return None
+    m = _SHEBANG_RE.match(head)
+    if not m:
+        return None
+    interp = m.group(1).decode("ascii")
+    if interp.startswith("python"):
+        return "python"
+    return _SHEBANG_LANG.get(interp, "shell")
+
+
+DETECTOR_LANGUAGES = frozenset(LANGUAGE_EXTENSIONS.values()) | frozenset(CODE_SCAN_EXTENSIONS.values())
+
+
+def read_source(path) -> str:
+    """Source text as ``Path.read_text(encoding="utf-8", errors="ignore")`` returns it (universal newlines), but a
+    UTF-16 file with a byte-order mark is decoded as UTF-16 instead of being read as NUL-riddled UTF-8."""
+    raw = path.read_bytes()
+    text = None
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            text = raw.decode("utf-16")
+        except UnicodeDecodeError:
+            text = None
+    if text is None:
+        text = raw.decode("utf-8", errors="ignore")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
 # --------------------------------------------------------------------------- #
 # Algorithm strength tables (port: WEAK_ALGORITHMS / STANDARD_ALGORITHMS).
 # ``primitive`` is the CycloneDX 1.6 cryptographic primitive enum value
@@ -77,6 +140,10 @@ WEAK_ALGORITHMS: dict[str, dict] = {
                 "quantum_vulnerable": True, "key_size": 512},
     "rsa-1024": {"primitive": "pke", "strength": _WEAK,
                  "quantum_vulnerable": True, "key_size": 1024},
+    # JWT ``alg: none`` (or a decode with signature verification switched off): the token carries no
+    # signature anyone checks, so it can be forged (CWE-347). Inventoried as the signature algorithm in use.
+    "jwt-none": {"primitive": "signature", "strength": _WEAK,
+                 "quantum_vulnerable": False},
 }
 
 STANDARD_ALGORITHMS: dict[str, dict] = {
@@ -189,6 +256,7 @@ ALGORITHM_NORMALIZE: dict[str, str] = {
     "kyber": "CRYSTALS-Kyber", "dilithium": "CRYSTALS-Dilithium",
     "sphincs+": "SPHINCS+", "falcon": "FALCON",
     "lms": "LMS", "hss": "HSS", "xmss": "XMSS", "hybrid": "Hybrid ML-KEM",
+    "jwt-none": "JWT-none",
 }
 
 # PQC family -> FIPS 203/204/205 canonical spelling, used to build the SIZED
@@ -342,6 +410,8 @@ CRYPTO_IMPORT_MODULES: dict[str, str] = {
 # safe here precisely because they are scoped to their own language.
 # --------------------------------------------------------------------------- #
 CRYPTO_IMPORT_MODULES_BY_LANG: dict[str, dict[str, str]] = {
+    # Languages added for the algorithm lanes only: no import-library lane (and never the Python table).
+    "swift": {}, "perl": {}, "vbnet": {}, "sql": {}, "shell": {},
     "javascript": {
         "node:crypto": "Node.js crypto (stdlib)",
         "crypto": "Node.js crypto (stdlib)",

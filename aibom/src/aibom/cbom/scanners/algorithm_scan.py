@@ -33,10 +33,11 @@ from aibom.cbom.rules import (
     CRYPTO_IMPORT_MODULES,
     CRYPTO_IMPORT_MODULES_BY_LANG,
     CRYPTO_LIBRARY_PACKAGES,
-    LANGUAGE_EXTENSIONS,
     PQC_FIPS_NAME,
     algo_info,
     match_dep_coordinate,
+    read_source,
+    source_language,
 )
 from aibom.model.component import CryptoAssetComponent, FrameworkComponent
 from aibom.scan.registry import ScanContext, Scanner
@@ -65,7 +66,7 @@ def _iter_source_files(root: Path):
     for p in sorted(root.rglob("*")):
         if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
-        if not p.is_file() or p.suffix.lower() not in LANGUAGE_EXTENSIONS:
+        if not p.is_file() or source_language(p) is None:
             continue
         try:
             if p.stat().st_size > _MAX_BYTES:
@@ -153,10 +154,10 @@ def _detect_assets(root: Path) -> list[_Asset]:
     """
     seen: dict[tuple[str, str], _Asset] = {}
     for path in _iter_source_files(root):
-        lang = LANGUAGE_EXTENSIONS[path.suffix.lower()]
+        lang = source_language(path)
         rel = path.relative_to(root).as_posix()
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            text = read_source(path)
         except OSError:
             continue
         for det in detect_crypto(text, lang):
@@ -340,7 +341,7 @@ def _detect_libraries(root: Path) -> list[tuple[str, str]]:
     # 2) imported crypto modules in source
     for path in _iter_source_files(root):
         rel = path.relative_to(root).as_posix()
-        lang = LANGUAGE_EXTENSIONS[path.suffix.lower()]
+        lang = source_language(path)
         # Node's ``crypto`` and C's ``openssl`` roots collide with the Python keys,
         # so JS/C/Rust/.NET files use a language-scoped map; Python/Go/Java (whose
         # roots are distinctive) fall back to the global one (C3).

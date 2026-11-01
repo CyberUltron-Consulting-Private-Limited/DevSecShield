@@ -27,7 +27,7 @@ from pathlib import Path
 
 from aibom.cbom.misuse import detect_material_misuse
 from aibom.cbom.registry import cbom_register
-from aibom.cbom.rules import LANGUAGE_EXTENSIONS
+from aibom.cbom.rules import read_source, source_language
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -54,7 +54,7 @@ def _iter_source_files(root: Path):
     for p in sorted(root.rglob("*")):
         if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
-        if not p.is_file() or p.suffix.lower() not in LANGUAGE_EXTENSIONS:
+        if not p.is_file() or source_language(p) is None:
             continue
         try:
             if p.stat().st_size > _MAX_BYTES:
@@ -74,10 +74,10 @@ class CryptoMisuseScanner(Scanner):
         for path in _iter_source_files(ctx.root):
             rel = path.relative_to(ctx.root).as_posix()
             try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
+                text = read_source(path)
             except OSError:
                 continue
-            lang = LANGUAGE_EXTENSIONS[path.suffix.lower()]
+            lang = source_language(path)
             cipher_refs = self._cipher_refs_in(ctx, rel)
             for fact in detect_material_misuse(text, lang):
                 self._emit(ctx, fact, rel, cipher_refs)

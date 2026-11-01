@@ -464,6 +464,8 @@ JS_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("rsa", re.compile(
         r"\bRSA-OAEP\b|\bRSA-PSS\b|\bRSASSA-PKCS1"
         r"|generateKeyPair(?:Sync)?\s*\(\s*['\"]rsa", _F)),
+    # node-forge ``forge.pki.rsa.generateKeyPair({ bits: 1024 })`` — size via the ``bits`` digit on the line.
+    ("rsa", re.compile(r"\bpki\.rsa\.generateKeyPair\b")),
     # Node ``generateKeyPair[Sync]('ec',…)`` — curve via the ``namedCurve`` string.
     ("ecdsa", re.compile(r"generateKeyPair(?:Sync)?\s*\(\s*['\"]ec['\"]", _F)),
     # Node ``createHmac(…)`` — ``\bHMAC\b`` never fires on ``createHmac``.
@@ -531,7 +533,59 @@ DOTNET_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("hmac", re.compile(r"\bnew\s+HMAC|\bHMAC(?:SHA\d+|MD5)\b", _F)),
     # PBKDF2 under its .NET class name.
     ("pbkdf2", re.compile(r"\bRfc2898DeriveBytes\b", _F)),
+    # Hash provider classes (``new SHA1Managed()``, ``new MD5CryptoServiceProvider()``, ``SHA256Cng``): the class
+    # suffix leaves no word boundary after the family, so the global ``\bMD5\b`` / ``\bSHA-?1\b`` never fire.
+    ("md5", re.compile(r"\bMD5(?:CryptoServiceProvider|Cng)\b", _F)),
+    ("sha1", re.compile(r"\bSHA1(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
+    ("sha256", re.compile(r"\bSHA256(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
+    ("sha384", re.compile(r"\bSHA384(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
+    ("sha512", re.compile(r"\bSHA512(?:Managed|CryptoServiceProvider|Cng)\b", _F)),
 )
+
+# OpenSSL EVP cipher names passed as a string: PHP ``openssl_encrypt($d, 'des-ecb', …)`` and Ruby
+# ``OpenSSL::Cipher.new('des-ede3-cbc')``. AES / RC4 / RC2 spellings (``'aes-128-ecb'``, ``'rc4'``) already hit the
+# global lane; DES, 3DES and Blowfish names only exist in this quoted form. A bare ``'bf'`` / ``'des'`` string is
+# not matched (too generic outside an OpenSSL call); the mode rides the ``-ecb`` / ``-cbc`` suffix (extract_mode).
+OPENSSL_NAME_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("3des", re.compile(r"['\"](?:des-ede3?(?:-(?:cbc|ecb|cfb1?|cfb8|ofb))?|des3)['\"]", _F)),
+    ("des", re.compile(r"['\"]des-(?:cbc|ecb|cfb1?|cfb8|ofb)['\"]", _F)),
+    ("blowfish", re.compile(r"['\"]bf-(?:cbc|ecb|cfb|ofb)['\"]", _F)),
+)
+
+# Perl ``Digest::MD5`` / ``Digest::SHA`` function interface (``md5_hex($x)``): the ``_hex`` suffix leaves no word
+# boundary after the family, so the global lane never sees it.
+PERL_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("md5", re.compile(r"\bmd5(?:_hex|_base64)?\s*\(|\bDigest::MD5\s*->\s*new\b")),
+    ("sha1", re.compile(r"\bsha1(?:_hex|_base64)?\s*\(")),
+    ("sha256", re.compile(r"\bsha256(?:_hex|_base64)?\s*\(")),
+    ("sha512", re.compile(r"\bsha512(?:_hex|_base64)?\s*\(")),
+)
+
+# SQL engines: MySQL ``AES_ENCRYPT()`` / ``DES_ENCRYPT()``, pgcrypto ``encrypt(data, key, 'des')`` (the cipher type
+# is the quoted third argument), SQL Server ``CREATE SYMMETRIC KEY … ALGORITHM = TRIPLE_DES``.
+_PGCRYPTO = r"\b(?:en|de)crypt(?:_iv)?\s*\(.*['\"]{}(?:-(?:cbc|ecb))?(?:/pad:\w+)?['\"]"
+SQL_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("aes", re.compile(r"\bAES_(?:EN|DE)CRYPT\s*\(|" + _PGCRYPTO.format("aes"), _F)),
+    ("des", re.compile(r"\bDES_(?:EN|DE)CRYPT\s*\(|" + _PGCRYPTO.format("des") + r"|\bALGORITHM\s*=\s*DESX?\b", _F)),
+    ("3des", re.compile(_PGCRYPTO.format("3des") + r"|\bTRIPLE_DES(?:_3KEY)?\b", _F)),
+    ("blowfish", re.compile(_PGCRYPTO.format("bf"), _F)),
+    ("rc4", re.compile(r"\bALGORITHM\s*=\s*RC4(?:_128)?\b", _F)),
+)
+
+# ``openssl`` command lines (shell scripts, Dockerfile ``RUN``): ``openssl enc -des3``, ``openssl des-ede3-cbc``,
+# ``-bf-cbc``. ``-aes-128-ecb`` and ``-rc4`` already hit the global lane.
+SHELL_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("3des", re.compile(r"\bopenssl\s+(?:enc\s+(?:\S+\s+)*?)?-?(?:des3|des-ede3?(?:-\w+)?)(?=\s|$)")),
+    ("des", re.compile(r"\bopenssl\s+(?:enc\s+(?:\S+\s+)*?)?-?des(?:-(?:cbc|ecb|cfb|ofb))?(?=\s|$)")),
+    ("blowfish", re.compile(r"\bopenssl\s+(?:enc\s+(?:\S+\s+)*?)?-?bf(?:-(?:cbc|ecb|cfb|ofb))?(?=\s|$)")),
+)
+
+_PHP = "php"
+_RUBY = "ruby"
+_PERL = "perl"
+_SQL = "sql"
+_SHELL = "shell"
+_VBNET = "vbnet"
 
 LITERAL_BY_LANG: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     _JAVA: JAVA_LITERALS,
@@ -539,6 +593,12 @@ LITERAL_BY_LANG: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     _C: C_LITERALS,
     _RUST: RUST_LITERALS,
     _CSHARP: DOTNET_LITERALS,
+    _VBNET: DOTNET_LITERALS,
+    _PHP: OPENSSL_NAME_LITERALS,
+    _RUBY: OPENSSL_NAME_LITERALS,
+    _PERL: PERL_LITERALS,
+    _SQL: SQL_LITERALS,
+    _SHELL: SHELL_LITERALS,
 }
 
 
@@ -551,10 +611,11 @@ _PY_COMMENT = re.compile(r"#.*$")
 _C_LINE_COMMENT = re.compile(r"//.*$")
 # C#'s ``using`` is overloaded: ``using System.Security.Cryptography;`` is an
 # import directive (a LIBRARY signal), but ``using (var aes = Aes.Create())`` is a
-# real USAGE statement — the negative lookahead keeps the latter out of the
-# import-skip so its crypto call is still scanned (C3).
+# real USAGE statement — the negative lookahead keeps the latter (and a C# 8
+# ``using var h = new SHA1Cng();`` declaration) out of the import-skip so its
+# crypto call is still scanned (C3).
 _IMPORT_RE = re.compile(
-    r"^\s*(?:import|from|require|use|using(?!\s*[(])|#include|require_once)\b", re.I
+    r"^\s*(?:import|from|require|use|using(?!\s*[(]|\s+var\b)|#include|require_once)\b", re.I
 )
 # A grouped-import path entry (Go ``import (\n  "crypto/aes"\n )``): a line that is
 # only a path-like quoted string (optionally aliased). These are LIBRARY signals,
@@ -574,11 +635,27 @@ def strip_noncode(text: str) -> str:
     return text
 
 
+_HASH_COMMENT = re.compile(r"(?:^|(?<=\s))#.*$")       # shell / Perl: ``$#`` / ``${#v}`` are not comments
+_SQL_COMMENT = re.compile(r"--.*$")
+_PHP_HASH_COMMENT = re.compile(r"(?:^|(?<=\s))#(?!\[).*$")
+_VB_COMMENT = re.compile(r"^((?:[^\"']|\"[^\"]*\")*)'.*$")  # VB ``'`` comment outside a "string"
+
+
 def _strip_line_comment(line: str, lang: str) -> str:
     if lang in ("python", "ruby"):
         return _PY_COMMENT.sub("", line)
-    if lang in ("javascript", "java", "go", "c", "rust", "php", "csharp"):
+    if lang in ("javascript", "java", "go", "c", "rust", "csharp", "swift"):
         return _C_LINE_COMMENT.sub("", line)
+    if lang in (_SHELL, _PERL):
+        return _HASH_COMMENT.sub("", line)
+    if lang == _PHP:  # ``//`` and ``#`` (not a PHP 8 ``#[Attribute]``)
+        return _PHP_HASH_COMMENT.sub("", _C_LINE_COMMENT.sub("", line))
+    if lang == _SQL:
+        return _SQL_COMMENT.sub("", line)
+    if lang == _VBNET:
+        if re.match(r"^\s*REM\b", line, re.I):
+            return ""
+        return _VB_COMMENT.sub(r"\1", line)
     return line
 
 
@@ -1174,6 +1251,185 @@ def _keyword_list_lines(lines: list[str], lang: str) -> set[int]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Constant folding (evasion-resistant spellings). An algorithm name glued from
+# string pieces (``'md' + '5'``, PHP ``'des' . '-' . 'ecb'``), decoded from a
+# base64 literal (``b64decode('bWQ1')``), reversed (``'bce-821-sea'.split('')
+# .reverse().join('')``) or spelled as a Java char array names the algorithm
+# exactly as the plain literal would. Each form is folded into ONE string literal
+# in place (same line, so line numbers never move) and the lanes below judge the
+# folded literal like any other: a folded value that is not an algorithm name
+# raises nothing. Only literal-to-literal folds: a piece that is a runtime value
+# is never guessed.
+# --------------------------------------------------------------------------- #
+_SQ = r"""(["'])((?:\\.|(?!\{0}).)*)\{0}"""
+_CONCAT_OPS = {"php": r"[.+]", "perl": r"\.", _VBNET: r"[&+]"}
+_CONCAT_RE = {
+    op: re.compile(_SQ.format(1) + r"\s*" + op + r"\s*" + _SQ.format(3))
+    for op in (*_CONCAT_OPS.values(), r"\+")
+}
+_B64_CALL = re.compile(
+    r"(?:\bb64decode|\bbase64_decode|\batob|\bFromBase64String|\bdecodeBase64|\bBase64\.(?:decode|getDecoder\(\)\.decode))"
+    r"\s*\(\s*b?([\"'])([A-Za-z0-9+/]{4,88}={0,2})\1\s*\)"
+    r"|\bBuffer\.from\(\s*([\"'])([A-Za-z0-9+/]{4,88}={0,2})\3\s*,\s*[\"']base64[\"']\s*\)"
+)
+_REVERSED = re.compile(
+    r"([\"'])([^\"'\\]{2,64})\1\s*\.\s*split\(\s*([\"'])\3\s*\)\s*\.\s*reverse\(\s*\)\s*\.\s*join\(\s*([\"'])\4\s*\)"
+    r"|([\"'])([^\"'\\]{2,64})\5\s*\[\s*::\s*-1\s*\]"
+    r"|\bstrrev\(\s*([\"'])([^\"'\\]{2,64})\7\s*\)"
+)
+_CHAR_ARRAY = re.compile(r"\bchar\s*\[\s*\]\s+([A-Za-z_]\w*)\s*=\s*\{((?:\s*'[^'\\]'\s*,?)+)\}")
+_NEW_STRING_OF = re.compile(r"\bnew\s+String\s*\(\s*([A-Za-z_]\w*)\s*\)")
+_PRINTABLE_NAME = re.compile(r"^[A-Za-z0-9 _./+-]{2,64}$")
+
+
+def _quote(value: str) -> str:
+    return f"'{value}'" if "'" not in value else f'"{value}"'
+
+
+def _fold_strings(line: str, lang: str) -> str:
+    if "'" not in line and '"' not in line:
+        return line
+
+    def b64(m: re.Match[str]) -> str:
+        import base64
+        import binascii
+
+        raw = m.group(2) or m.group(4)
+        try:
+            val = base64.b64decode(raw + "=" * (-len(raw) % 4), validate=True).decode("ascii")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return m.group(0)
+        return _quote(val) if _PRINTABLE_NAME.match(val) and re.search(r"[A-Za-z]", val) else m.group(0)
+
+    def rev(m: re.Match[str]) -> str:
+        val = m.group(2) or m.group(6) or m.group(8) or ""
+        return _quote(val[::-1])
+
+    line = _B64_CALL.sub(b64, line)
+    line = _REVERSED.sub(rev, line)
+    concat = _CONCAT_RE[_CONCAT_OPS.get(lang, r"\+")]
+    for _ in range(16):  # 'a' + 'b' + 'c' folds left to right, one join per pass
+        folded = concat.sub(lambda m: _quote(m.group(2) + m.group(4)), line, count=1)
+        if folded == line:
+            break
+        line = folded
+    return line
+
+
+def _fold_java_arrays(line: str) -> str:
+    """``char[] n = {'D','E','S'};`` -> ``String n = "DES";`` and ``new String(n)`` -> ``n``."""
+    def chars(m: re.Match[str]) -> str:
+        value = "".join(re.findall(r"'([^'\\])'", m.group(2)))
+        return f'String {m.group(1)} = "{value}"'
+
+    line = _CHAR_ARRAY.sub(chars, line)
+    return _NEW_STRING_OF.sub(r"\1", line)
+
+
+_JAVA_CONCAT = re.compile(r'(?:"[^"\\]*"|[A-Za-z_]\w*)(?:\s*\+\s*(?:"[^"\\]*"|[A-Za-z_]\w*))+')
+
+
+def _fold_java_constants(line: str, consts: dict[str, str]) -> str:
+    """``a + bb + c`` where every piece is a proven same-file String constant (or a literal) -> one literal."""
+    if not consts or "+" not in line:
+        return line
+
+    def join(m: re.Match[str]) -> str:
+        parts = [p.strip() for p in m.group(0).split("+")]
+        out = []
+        for p in parts:
+            if p.startswith('"'):
+                out.append(p[1:-1])
+            elif p in consts:
+                out.append(consts[p])
+            else:
+                return m.group(0)
+        return '"' + "".join(out) + '"'
+
+    return _JAVA_CONCAT.sub(join, line)
+
+
+# Import aliases: Go ``import d "crypto/des"`` (``d.NewCipher``), Python ``from Crypto.Cipher import DES as d`` and
+# ``d = importlib.import_module('Crypto.Cipher.DES')``. The alias is rewritten to the module's own name on the
+# file's other lines, so the receiver rules see ``des.NewCipher`` / ``DES.new``.
+_GO_ALIAS = re.compile(r'^\s*(?:import\s+)?([A-Za-z_]\w*)\s+"(?:crypto|golang\.org/x/crypto)/(?:[\w/]+/)?(\w+)"\s*$')
+_PY_ALIAS = re.compile(
+    r"^\s*(?:from\s+[\w.]+\s+)?import\s+(?:[\w]+\.)*(\w+)\s+as\s+([A-Za-z_]\w*)\s*$"
+    r"|^\s*([A-Za-z_]\w*)\s*=\s*(?:importlib\.import_module|__import__)\(\s*[\"'](?:[\w]+\.)*(\w+)[\"'][^)]*\)\s*$"
+)
+_PY_CRYPTO_MODULES = frozenset({
+    "AES", "DES", "DES3", "ARC4", "ARC2", "Blowfish", "CAST", "ChaCha20", "Salsa20", "MD5", "SHA1", "SHA256",
+    "SHA512", "HMAC", "RSA", "DSA", "ECC", "PKCS1_v1_5", "PKCS1_OAEP", "hashlib", "hmac",
+})
+
+
+def _import_aliases(lines: list[str], lang: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in lines:
+        if lang == _GO:
+            m = _GO_ALIAS.match(line)
+            if m and m.group(1) not in ("_", m.group(2)):
+                out[m.group(1)] = m.group(2)
+        elif lang == _PY:
+            m = _PY_ALIAS.match(line)
+            if not m:
+                continue
+            module, alias = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
+            if module in _PY_CRYPTO_MODULES and alias != module:
+                out[alias] = module
+    return out
+
+
+def _apply_aliases(line: str, aliases: dict[str, str]) -> str:
+    for alias, module in aliases.items():
+        line = re.sub(rf"(?<![\w.]){re.escape(alias)}\.", f"{module}.", line)
+    return line
+
+
+# --------------------------------------------------------------------------- #
+# JWT ``alg`` header (JWA names). The algorithm a token is signed or verified with
+# is a string option of the JWT call (jsonwebtoken ``{ algorithm: 'HS256' }`` /
+# ``{ algorithms: ['RS256'] }``, jose ``{ alg: 'ES256' }``, PyJWT
+# ``algorithm="HS256"`` / ``algorithms=[...]``, jjwt / Nimbus
+# ``SignatureAlgorithm.HS256``). ``none`` (and PyJWT ``verify_signature: False``)
+# means an unsigned / unverified token. File-gated on a JWT library so a generic
+# ``algorithm: 'none'`` option elsewhere is never read as JWT.
+# --------------------------------------------------------------------------- #
+_JWT_FILE = re.compile(r"jsonwebtoken|\bjose\b|\bjwt\b|\bPyJWT\b|\bJwts\b|nimbusds|\bJWSAlgorithm\b", re.I)
+_JWT_OPTION = re.compile(r"\b(?:algorithms?|alg)['\"]?\s*[:=]\s*(\[[^\]]*\]|['\"][A-Za-z0-9]{2,6}['\"])")
+_JWT_ENUM = re.compile(r"\b(?:SignatureAlgorithm|JWSAlgorithm)\s*\.\s*(HS|RS|PS|ES)(256|384|512)\b|\bSignatureAlgorithm\s*\.\s*(NONE)\b")
+_JWT_NO_VERIFY = re.compile(r"[\"']verify_signature[\"']\s*:\s*False\b")
+_JWA = re.compile(r"^(?:(HS|RS|PS|ES)(256|384|512)|(EdDSA)|(none))$", re.I)
+
+
+def _jwa_assets(alg: str) -> list[tuple[str, str | None]]:
+    m = _JWA.match(alg)
+    if not m:
+        return []
+    if m.group(4):
+        return [("jwt-none", None)]
+    if m.group(3):
+        return [("ed25519", None)]
+    fam, bits = m.group(1).upper(), m.group(2)
+    digest = f"sha{bits}"
+    if fam == "HS":
+        return [("hmac", f"SHA{bits}")]
+    return [({"RS": "rsa", "PS": "rsa", "ES": "ecdsa"}[fam], None), (digest, None)]
+
+
+def _jwt_lane(line: str, line_no: int) -> list[Detection]:
+    found: list[tuple[str, str | None]] = []
+    for m in _JWT_OPTION.finditer(line):
+        for alg in re.findall(r"['\"]([A-Za-z0-9]{2,6})['\"]", m.group(1)):
+            found.extend(_jwa_assets(alg))
+    for m in _JWT_ENUM.finditer(line):
+        found.extend(_jwa_assets("none" if m.group(3) else m.group(1) + m.group(2)))
+    if _JWT_NO_VERIFY.search(line):
+        found.append(("jwt-none", None))
+    return [Detection(key=k, line_no=line_no, variant=v, library="JWT", receiver_bound=True) for k, v in found]
+
+
 def detect_crypto(text: str, lang: str) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
@@ -1185,10 +1441,17 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
     # Split on "\n" only: splitlines() also breaks on \f, \v, \x1c-\x1e, \x85, U+2028/9 and would shift
     # every reported line number after such a character (the occurrence pass uses the same rule).
     raw_lines = stripped.split("\n")
-    work_lines = [_strip_line_comment(ln, lang) for ln in raw_lines]
+    work_lines = [_fold_strings(_strip_line_comment(ln, lang), lang) for ln in raw_lines]
+    if lang == _JAVA:
+        work_lines = [_fold_java_arrays(ln) for ln in work_lines]
+    aliases = _import_aliases(work_lines, lang) if lang in (_GO, _PY) else {}
+    if aliases:
+        work_lines = [ln if _IMPORT_RE.search(ln.strip()) or _GO_ALIAS.match(ln) else _apply_aliases(ln, aliases)
+                      for ln in work_lines]
     symbols = build_symbols(work_lines)
     rules = RULES_BY_LANG.get(lang, ())
     java_ctx = _JavaContext(work_lines) if lang == _JAVA else None
+    jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
     keyword_lines = _keyword_list_lines(work_lines, lang)
 
     out: list[Detection] = []
@@ -1222,8 +1485,16 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
         # no spaces and stay).
         lit_line = blank_prose(line, lang)
 
+        if jwt_file:
+            for det in _jwt_lane(lit_line, line_no):
+                if det.key in per_line:
+                    _merge(per_line[det.key], det)
+                else:
+                    per_line[det.key] = det
+
         # --- Java JCA argument lane (constants, API-bound bare names, helpers) ---
         if java_ctx is not None:
+            lit_line = _fold_java_constants(lit_line, java_ctx.consts)
             for det in _java_jca_lane(lit_line, line_no, java_ctx):
                 if det.key in per_line:
                     _merge(per_line[det.key], det)

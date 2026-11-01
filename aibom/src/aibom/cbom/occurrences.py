@@ -21,7 +21,9 @@ from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
     CRYPTO_IMPORT_MODULES,
     CRYPTO_IMPORT_MODULES_BY_LANG,
+    DETECTOR_LANGUAGES,
     LANGUAGE_EXTENSIONS,
+    source_language,
 )
 
 MAX_OCCURRENCES = 25
@@ -129,7 +131,7 @@ class _FileIndex:
                 for module, label in modules.items():
                     if re.search(rf"(?<![a-z0-9_./]){re.escape(module)}(?![a-z0-9_])", low):
                         self.libraries.add(label)
-        if lang in set(LANGUAGE_EXTENSIONS.values()):
+        if lang in DETECTOR_LANGUAGES:
             for det in detect_crypto(text, lang):
                 refined = _refine_key(det.key, det.key_size)
                 name = _display_name(refined, det.key_size, det.mode, det.parameter, det.variant)
@@ -195,12 +197,12 @@ def annotate(root: Path, components: list) -> dict[str, int]:
         if rel not in cache and comp.kind == "crypto_asset":
             path = safe_file(root, rel)
             text = read_text(path) if path else None
-            cache[rel] = _FileIndex(text, LANGUAGE_EXTENSIONS.get(Path(rel).suffix.lower())) if text else None
+            cache[rel] = _FileIndex(text, source_language(path)) if text else None
         if not lines:
             if rel not in cache:
                 path = safe_file(root, rel)
                 text = read_text(path) if path else None
-                cache[rel] = _FileIndex(text, LANGUAGE_EXTENSIONS.get(Path(rel).suffix.lower())) if text else None
+                cache[rel] = _FileIndex(text, source_language(path)) if text else None
             idx = cache[rel]
             if idx is None:
                 stats["unreadable"] += 1

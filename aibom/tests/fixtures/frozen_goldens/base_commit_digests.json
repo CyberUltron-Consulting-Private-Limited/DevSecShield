@@ -87,9 +87,9 @@
       "scan": "fe7a5f973c73aed6bf1b4421c9580d2a8b79743f5b5cf2000d8a32755f756563"
     },
     "synthetic-crypto-web-native": {
-      "cyclonedx": "d2a8d63553da7b71ab388b5b032bb777368bc5fa5732f6a22ccb4748457928ff",
-      "normalize": "130fec1dff9e572c96206bb635ece0cb19fdd80ce3f98249cafc9a792b6e3a3f",
-      "scan": "52ab83bf58b6d3cc3929e7e218f91642682f63c6aa4f233ac53144c4595f9dfd"
+      "cyclonedx": "0cee03ec833b1a64ef0710d894b703641dffbc28b2862ed718f988a60e91d9b0",
+      "normalize": "7e594461d72950f2adbf2a3ece5e27cb2f7a2cc359e55becc706d9a6961eedb3",
+      "scan": "47fd54baaba6320afa3bf41ef852d0823e0a5492cfd6dc41b334f7d28792fbdd"
     }
   }
 }

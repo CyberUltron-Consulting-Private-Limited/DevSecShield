@@ -67,6 +67,49 @@
       "id": "java.trustall",
       "matcher": "literal",
       "pattern": "TrustAll"
+    },
+    {
+      "anchor": "SSLSession",
+      "id": "java.hostname_verify_all",
+      "matcher": "anchor_window",
+      "tail": "^\\s{0,16}\\{? ?return true;",
+      "window": 2
+    },
+    {
+      "anchor": "HostnameVerifier",
+      "id": "java.hostname_verifier_lambda",
+      "matcher": "anchor_window",
+      "tail": "-> ?true\\b",
+      "window": 1
+    },
+    {
+      "id": "java.allow_all_hostnames",
+      "matcher": "literal",
+      "pattern": "ALLOW_ALL_HOSTNAME_VERIFIER"
+    },
+    {
+      "id": "java.noop_hostname_verifier",
+      "matcher": "literal",
+      "pattern": "NoopHostnameVerifier"
+    },
+    {
+      "anchor": "CertificateValidationCallback",
+      "id": "dotnet.validation_callback_true",
+      "matcher": "anchor_window",
+      "tail": "=> ?true\\b|\\breturn true;",
+      "window": 3
+    },
+    {
+      "anchor": "CertificateCustomValidationCallback",
+      "id": "dotnet.custom_validation_callback_true",
+      "matcher": "anchor_window",
+      "tail": "=> ?true\\b|\\breturn true;|DangerousAcceptAnyServerCertificateValidator",
+      "window": 3
+    },
+    {
+      "id": "openssl.verify_none",
+      "matcher": "literal",
+      "pattern": "SSL_VERIFY_NONE"
     }
   ],
   "valid_as_of": "2026-10-25"

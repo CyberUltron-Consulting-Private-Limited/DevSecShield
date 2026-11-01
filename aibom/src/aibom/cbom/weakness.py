@@ -196,6 +196,14 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
     #    RC2, RC4, RSA-512/1024 — strength "weak" — AND 3DES/Blowfish, which the
     #    worker rates "moderate" strength but still deprecates).
     key = _base_key(name)
+    if key == "jwt-none":
+        return (
+            WEAK_ALGORITHM,
+            _SEV,
+            f"Unsigned JWT ({name}): alg=none or a decode with signature verification off accepts tokens "
+            f"nobody signed, so any claim can be forged (CWE-347). Sign with HS256+/RS256/ES256/EdDSA and "
+            f"pin the accepted algorithms on verify.",
+        )
     if key is not None and key in WEAK_ALGORITHMS:
         return (
             WEAK_ALGORITHM,
@@ -303,6 +311,8 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
     if props.get("crypto:assetType") != "related-crypto-material":
         return []
     kind = props.get("crypto:materialKind", "material")
+    if kind in ("unknown", "other"):
+        kind = "material"
     name = component.name
     findings: list[tuple[str, str, str]] = []
 

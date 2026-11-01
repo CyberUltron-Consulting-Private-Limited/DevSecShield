@@ -91,9 +91,159 @@ _WEAK_RNG_RE = re.compile(
     r"|new\s+Random\s*\(|java\.util\.Random"  # Java
     r"|mt19937|std::rand\b"            # C++ Mersenne / std::rand
     r"|(?<![\w.])rand\s*\(|(?<![\w.])srand\s*\("  # C rand()/srand()
-    r"|math/rand|(?<![\w.])mrand\.|rand\.Intn\s*\(",  # Go math/rand
+    r"|math/rand|(?<![\w.])mrand\.|rand\.Intn\s*\("  # Go math/rand
+    r"|(?<![\w.>$])mt_rand\s*\(|(?<![\w.>$])lcg_value\s*\("  # PHP Mersenne Twister / LCG
+    r"|\bRAND_pseudo_bytes\s*\(",       # OpenSSL: deprecated, not cryptographically strong
     re.IGNORECASE,
 )
+# OpenSSL's RAND_pseudo_bytes() is never a CSPRNG source (deprecated since 1.1.0 for exactly that reason), so a call
+# is reported wherever it appears, not only when it feeds a material-named binding.
+_ALWAYS_WEAK_RNG_RE = re.compile(r"\bRAND_pseudo_bytes\s*\(")
+# A constant seed makes any PRNG, even SecureRandom's SHA1PRNG, replay the same stream (CWE-336):
+# ``r.setSeed(123456789L)`` / ``setSeed("fixed".getBytes())`` in a file that uses SecureRandom.
+_CONST_SEED_RE = re.compile(
+    r"\b([A-Za-z_]\w*)\s*\.\s*setSeed\s*\(\s*(?:-?\d+[Ll]?|\"[^\"]*\"\s*\.\s*getBytes\s*\([^)]*\)|new\s+byte\s*\[\s*\]\s*\{[^}]*\})\s*\)"
+)
+_SECURE_RANDOM_RE = re.compile(r"\bSecureRandom\b")
+
+# --------------------------------------------------------------------------- #
+# Material produced by a FUNCTION: ``def token(): return random.choice(...)``,
+# ``function token() { return Math.random()... }``, ``func Key(n int) []byte {
+# ... b[i] = byte(rand.Intn(256)) ...; return b }``. The function NAME is the
+# material-name gate (as a variable name is for a binding); the weak-RNG value
+# must be what the function RETURNS (a ``return`` of the call, or a variable the
+# call writes that is then returned). A UI helper (``jitter()``, ``shuffle()``,
+# ``randomColor()``) has no material name and is never read.
+# --------------------------------------------------------------------------- #
+_FUNC_HEAD_RE = re.compile(
+    r"^\s*(?:"
+    r"def\s+(?:self\.)?(?P<py>[A-Za-z_]\w*[?!]?)\s*(?:\(|$)"                       # Python / Ruby
+    r"|(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*&?\s*(?P<fn>[A-Za-z_$][\w$]*)\s*\("  # JS / PHP
+    r"|(?:(?:public|private|protected|static|final|abstract)\s+)+function\s+&?(?P<php>\w+)\s*\("  # PHP method
+    r"|(?:export\s+)?(?:const|let|var)\s+(?P<arrow>[A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?"
+    r"(?:function\b|\([^)]*\)\s*(?::\s*[\w<>\[\]]+\s*)?=>|[A-Za-z_$][\w$]*\s*=>)"  # JS arrow / function expression
+    r"|func\s+(?:\([^)]*\)\s*)?(?P<go>[A-Za-z_]\w*)\s*\("                          # Go
+    r"|(?:(?:private|public|internal|override)\s+)*fun\s+(?P<kt>[A-Za-z_]\w*)\s*\("      # Kotlin
+    r"|(?:(?:public|private|protected|internal|static|final|synchronized|override|virtual|async|unsafe)\s+)*"
+    r"(?!(?:return|new|throw|else|await|yield|case|typeof|delete|echo|print|goto|if|while|for|switch|catch)\b)"
+    r"[A-Za-z_][\w<>\[\],.?*]*\s+\**(?P<typed>[A-Za-z_]\w*)\s*\([^;=]*$"            # Java / C# / C / Kotlin
+    r")"
+)
+# Material words a function name ENDS with (camelCase / snake_case words), and the material kind each produces.
+_FUNC_MATERIAL = {
+    "token": "token", "tokens": "token", "otp": "token", "nonce": "nonce", "iv": "initialization-vector",
+    "salt": "salt", "secret": "secret-key", "password": "password", "passwd": "password", "pwd": "password",
+    "passphrase": "password",
+}
+# ``...Key`` is only key material after a crypto qualifier (``secretKey``, ``generateKey``, ``aesKey``) or alone
+# (``key()``, Go ``Key(n)``): ``cacheKey()`` / ``sortKey()`` / a React ``randomKey()`` list key are not secrets.
+_KEY_QUALIFIERS = frozenset({
+    "secret", "api", "enc", "encryption", "aes", "des", "hmac", "mac", "signing", "sign", "private", "master",
+    "session", "crypto", "cipher", "generate", "gen", "new", "make", "create", "derive", "symmetric", "sym",
+})
+_SESSION_SUFFIX = frozenset({"id", "key", "token", "secret"})
+_WORD_SPLIT = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+
+
+def _function_material_kind(name: str) -> str | None:
+    words = [w.lower() for w in _WORD_SPLIT.findall(name.rstrip("?!"))]
+    if not words:
+        return None
+    last = words[-1]
+    if last in _FUNC_MATERIAL:
+        return _FUNC_MATERIAL[last]
+    if last == "key" and (len(words) == 1 or words[-2] in _KEY_QUALIFIERS):
+        return "secret-key"
+    if len(words) >= 2 and words[-2] == "session" and last in _SESSION_SUFFIX:
+        return "token"
+    return None
+
+
+def _function_body(lines: list[str], head: int) -> range:
+    """0-based line indexes of the body of the function whose header is ``lines[head]``."""
+    header = lines[head]
+    if "{" in header or (head + 1 < len(lines) and lines[head + 1].strip().startswith("{")):
+        depth, started = 0, False
+        for j in range(head, min(len(lines), head + 400)):
+            for ch in lines[j]:
+                if ch == "{":
+                    depth += 1
+                    started = True
+                elif ch == "}":
+                    depth -= 1
+            if started and depth <= 0:
+                return range(head, j + 1)
+        return range(head, min(len(lines), head + 400))
+    if re.search(r"=>\s*\S", header):  # expression-bodied arrow function
+        return range(head, head + 1)
+    indent = len(header) - len(header.lstrip())
+    end = head + 1
+    while end < len(lines):
+        ln = lines[end]
+        if ln.strip() and (len(ln) - len(ln.lstrip())) <= indent:
+            break
+        end += 1
+    return range(head, end)
+
+
+_ASSIGN_TARGET_RE = re.compile(r"([A-Za-z_$][\w$]*)\s*(?:\[[^\]]*\]\s*)?(?::=|\+=|(?<![=!<>])=(?!=))")
+
+
+def _returned_rng_lines(lines: list[str], body: range) -> list[tuple[int, str]]:
+    """(0-based line, rng token) for every weak-RNG call in ``body`` whose value the function returns."""
+    out: list[tuple[int, str]] = []
+    for i in body:
+        line = lines[i]
+        rng = _rng_token(line)
+        if rng is None:
+            continue
+        m = _WEAK_RNG_RE.search(line)
+        before = line[: m.start()] if m else line
+        if re.search(r"\breturn\b", before) or (i == body.start and "=>" in before):
+            out.append((i, rng))
+            continue
+        targets = [t.group(1) for t in _ASSIGN_TARGET_RE.finditer(before)]
+        if not targets:
+            continue
+        var = targets[-1]
+        word = re.compile(rf"\breturn\b[^;\n]*(?<![\w.$]){re.escape(var)}(?![\w$])")
+        if any(word.search(lines[k]) for k in body if k > i) or word.search(line[m.end():] if m else ""):
+            out.append((i, rng))
+    return out
+
+
+# A material-named function that RETURNS key bytes spelled in the source: a decoded literal (hex / base64), a byte
+# array of 8+ bytes, or a plain string that looks like key material (16+ hex digits, or 16+ base64 characters with a
+# digit) — a plain word (``return "username"`` from a sort-``key()``) is not key material.
+_RETURNED_CONST_RE = re.compile(
+    r"\breturn\s+(?:"
+    r"b?[\"'](?:[0-9a-fA-F]{16,}|(?=[A-Za-z+/]*\d)[0-9A-Za-z+/]{16,}={0,2})[\"']\s*[;)]?\s*$"
+    r"|(?:bytes\.fromhex|unhexlify|(?:base64\.)?b64decode|hex2bin|base64_decode)\(\s*b?[\"'][0-9A-Za-z+/]{16,}={0,2}[\"']\s*\)"
+    r"|Buffer\.from\(\s*[\"'][0-9A-Za-z+/]{16,}={0,2}[\"']\s*,\s*[\"'](?:base64|hex)[\"']\s*\)"
+    r"|\[\]byte\s*\{\s*(?:0x[0-9a-fA-F]{1,2}\s*,\s*){7,}"
+    r"|new\s+byte\s*\[\s*\]\s*\{\s*(?:\(byte\)\s*)?(?:0x[0-9a-fA-F]{1,2}|-?\d{1,3})\s*(?:,\s*(?:\(byte\)\s*)?(?:0x[0-9a-fA-F]{1,2}|-?\d{1,3})\s*){7,}\}"
+    r")"
+)
+
+
+def _function_rng_facts(lines: list[str]) -> list[MaterialMisuse]:
+    facts: list[MaterialMisuse] = []
+    for idx, raw in enumerate(lines):
+        m = _FUNC_HEAD_RE.match(raw)
+        if not m:
+            continue
+        name = next(g for g in m.groups() if g)
+        kind = _function_material_kind(name)
+        if kind is None:
+            continue
+        body = _function_body(lines, idx)
+        for i, rng in _returned_rng_lines(lines, body):
+            facts.append(MaterialMisuse(kind=kind, var=f"{name}()", line=i + 1, weak_rng=rng))
+        if kind in ("secret-key", "salt", "initialization-vector", "nonce"):
+            for i in body:
+                if _RETURNED_CONST_RE.search(lines[i]):
+                    facts.append(MaterialMisuse(kind=kind, var=f"{name}()", line=i + 1, hardcoded=True))
+    return facts
 # CSPRNGs — a binding that uses one of these is NEVER weak-RNG, even if it also
 # mentions a `random`-rooted module (e.g. `random.SystemRandom`).
 _SECURE_RNG_RE = re.compile(
@@ -180,14 +330,44 @@ def _count_cipher_uses(lines: list[str], var: str) -> int:
 def detect_material_misuse(text: str, lang: str) -> list[MaterialMisuse]:
     """Detect crypto-material misuse facts in one source file.
 
-    Returns an empty list unless the file carries a crypto context — the
-    load-bearing gate that keeps non-crypto randomness (a game die roll, a UI
-    jitter) out of the crypto lane. ``lang`` is accepted for parity with the
-    other detectors; the rule set is intentionally language-agnostic.
+    The binding lane (a material-named VARIABLE) only runs when the file carries
+    a crypto context — the load-bearing gate that keeps non-crypto randomness (a
+    game die roll, a UI jitter) out of the crypto lane. Three narrower lanes need
+    no file context because their own gate is already crypto-specific: a weak RNG
+    a material-named FUNCTION returns (``token()``, ``generateSalt()``), OpenSSL's
+    always-weak ``RAND_pseudo_bytes()``, and a constant ``setSeed`` on a
+    SecureRandom. ``lang`` selects the comment syntax those lanes strip.
     """
-    if not _CRYPTO_CTX_RE.search(text):
-        return []
+    facts = _binding_facts(text, lang) if _CRYPTO_CTX_RE.search(text) else []
+    covered = {f.line for f in facts}
+    for fact in _context_free_facts(text, lang):
+        if fact.line not in covered:
+            covered.add(fact.line)
+            facts.append(fact)
+    return facts
 
+
+def _context_free_facts(text: str, lang: str) -> list[MaterialMisuse]:
+    from aibom.cbom.detect import _strip_line_comment, strip_noncode
+
+    lines = [_strip_line_comment(ln, lang) for ln in strip_noncode(text).splitlines()]
+    facts = _function_rng_facts(lines)
+    seen = {f.line for f in facts}
+    for idx, line in enumerate(lines, start=1):
+        if idx not in seen and _ALWAYS_WEAK_RNG_RE.search(line):
+            seen.add(idx)
+            facts.append(MaterialMisuse(kind="unknown", var=None, line=idx, weak_rng="RAND_pseudo_bytes"))
+    if _SECURE_RANDOM_RE.search(text):
+        for idx, line in enumerate(lines, start=1):
+            m = _CONST_SEED_RE.search(line)
+            if m and idx not in seen:
+                seen.add(idx)
+                facts.append(MaterialMisuse(kind="seed", var=m.group(1), line=idx, hardcoded=True,
+                                            weak_rng="setSeed(constant)"))
+    return sorted(facts, key=lambda f: f.line)
+
+
+def _binding_facts(text: str, lang: str) -> list[MaterialMisuse]:
     lines = text.splitlines()
     facts: list[MaterialMisuse] = []
     seen_inline: set[int] = set()

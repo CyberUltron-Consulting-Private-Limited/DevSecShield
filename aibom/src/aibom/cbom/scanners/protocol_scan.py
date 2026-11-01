@@ -38,7 +38,7 @@ import re
 from pathlib import Path
 
 from aibom.cbom.registry import cbom_register
-from aibom.cbom.rules import LANGUAGE_EXTENSIONS
+from aibom.cbom.rules import read_source, source_language
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -170,7 +170,7 @@ def _iter_source_files(root: Path):
     for p in sorted(root.rglob("*")):
         if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
-        if not p.is_file() or p.suffix.lower() not in LANGUAGE_EXTENSIONS:
+        if not p.is_file() or source_language(p) is None:
             continue
         try:
             if p.stat().st_size > _MAX_BYTES:
@@ -210,11 +210,27 @@ class _TlsVersion:
         self.weak = weak
 
 
+# Pinned versions spelled as API constants the generic pattern cannot see (a letter or ``_`` glued to the version
+# leaves no word boundary): Go ``tls.VersionTLS10`` / ``tls.VersionSSL30``, OpenSSL ``TLSv1_method()`` /
+# ``TLSv1_1_client_method()`` / ``TLS1_VERSION`` / ``TLS1_1_VERSION`` / ``SSLv3_method()`` / ``SSL3_VERSION``.
+_TLS_VERSION_API = re.compile(
+    r"\bVersionTLS1([0-3])\b"
+    r"|\bTLSv1(?:_([0-3]))?_(?:client_|server_)?method\b"
+    r"|\bTLS1(?:_([0-3]))?_VERSION\b"
+)
+_SSL_VERSION_API = re.compile(r"\bVersionSSL30\b|\bSSLv3_(?:client_|server_)?method\b|\bSSL3_VERSION\b")
+
+
 def _tls_versions(code: str) -> list[_TlsVersion]:
     out: list[_TlsVersion] = []
     for m in _TLS_VERSION.finditer(code):
         minor = int(m.group(1)) if m.group(1) is not None else 0
         out.append(_TlsVersion((1, minor), f"1.{minor}", minor < 2))
+    for m in _TLS_VERSION_API.finditer(code):
+        minor = int(next((g for g in m.groups() if g is not None), "0"))
+        out.append(_TlsVersion((1, minor), f"1.{minor}", minor < 2))
+    for _m in _SSL_VERSION_API.finditer(code):
+        out.append(_TlsVersion((0, 3), "SSLv3", True))
     for m in _SSL_VERSION.finditer(code):
         ver = int(m.group(1))
         out.append(_TlsVersion((0, ver), f"SSLv{ver}", True))
@@ -231,7 +247,7 @@ class ProtocolScanner(Scanner):
         for path in _iter_source_files(ctx.root):
             rel = path.relative_to(ctx.root).as_posix()
             try:
-                code = _strip_prose(path.read_text(encoding="utf-8", errors="ignore"))
+                code = _strip_prose(read_source(path))
             except OSError:
                 continue
             self._emit_tls(ctx, rel, code)
