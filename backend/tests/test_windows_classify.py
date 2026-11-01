@@ -102,3 +102,11 @@ def test_host_service_secrets_overrides_and_cli_uses():
     assert "WEAK_CIPHER" in classify("crypto_config", "des3", None, None, legacy)["finding_codes"]
     modern = {**cron, "cipher": "aes-256-cbc", "pbkdf2": True, "hardcoded_passphrase": False}
     assert classify("crypto_config", "aes-256-cbc", None, None, modern)["finding_codes"] == []
+
+
+def test_rdp_seen_from_the_network_without_tls_is_rdp_no_tls():
+    rdp = {"protocol_label": "RDP", "service": "rdp", "tls": False, "plaintext_only": True, "detail": "RDP uses no TLS"}
+    codes = classify("tls_endpoint", None, None, None, rdp)["finding_codes"]
+    assert "RDP_NO_TLS" in codes and "NO_TLS" not in codes
+    plain = classify("tls_endpoint", None, None, None, {"service": "ldap", "plaintext_only": True})["finding_codes"]
+    assert "NO_TLS" in plain and "RDP_NO_TLS" not in plain

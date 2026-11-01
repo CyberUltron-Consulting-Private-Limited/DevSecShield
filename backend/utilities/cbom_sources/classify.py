@@ -174,7 +174,10 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
         out.add("DOWNGRADE", "Medium", f"{what} can be downgraded to an older protocol version")
     if facts.get("fallback_scsv") is False and len(protocols) > 1:
         out.add("NO_FALLBACK_SCSV", "Medium", f"{what} does not reject protocol downgrades (TLS_FALLBACK_SCSV)")
-    if facts.get("plaintext_only") or facts.get("tls") is False:
+    if (facts.get("plaintext_only") or facts.get("tls") is False) and str(facts.get("service") or "").lower() == "rdp":
+        # seen from the network: the server negotiated Standard RDP Security, the same weakness the host check reports
+        out.add("RDP_NO_TLS", "High", "Remote Desktop negotiates the legacy RDP security layer (no TLS)")
+    elif facts.get("plaintext_only") or facts.get("tls") is False:
         out.add("NO_TLS", "High", f"{what} does not offer TLS")
     min_version = _norm_proto(facts.get("min_version"))
     if min_version in _TLS_OLD:
@@ -382,6 +385,8 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("KEY_READABLE", "Medium", "Unencrypted private key is readable without root")
         if asset_type == "private_key" and facts.get("encrypted") is False and facts.get("world_readable"):
             out.add("KEY_WORLD_READABLE", "High", "Unencrypted private key is readable by every user")
+        if asset_type == "private_key" and facts.get("plaintext_in_cloud_config"):
+            out.add("SECRET_IN_CONFIG", "High", f"Private key stored in plain text in {facts.get('store') or 'cloud configuration'}")
         if asset_type == "kms_key":
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
                     and facts.get("key_manager") == "CUSTOMER":
@@ -530,7 +535,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("EBS_DEFAULT_OFF", "Medium", "EBS encryption by default is off in this region")
         qv = False if facts.get("encrypted") else None
     elif asset_type == "cloud_secret":
-        if facts.get("service") == "ssm":
+        if facts.get("plaintext_in_cloud_config"):
+            out.add("SECRET_IN_CONFIG", "High", f"{facts.get('variable') or 'A secret'} stored in plain text in "
+                                                f"{facts.get('store') or 'cloud configuration'}")
+        elif facts.get("service") == "ssm":
             if facts.get("parameter_type") == "String" and facts.get("secret_like_name"):
                 out.add("SECRET_PLAINTEXT_PARAM", "High", "Secret-looking SSM parameter stored as a plain String")
         elif facts.get("rotation_enabled") is False:

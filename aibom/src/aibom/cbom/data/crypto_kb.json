@@ -7363,7 +7363,7 @@
      "CWE-312"
     ],
     "default_impact": "High",
-    "description": "An encryption key or passphrase is written in clear text in a service definition (systemd Environment=), a cron job or a script, where anyone who can read the file (often every local user) or its backups can copy it.",
+    "description": "An encryption key, private key or passphrase is written in clear text in a service definition (systemd Environment=), a cron job or a script, or in cloud configuration (a Lambda environment variable, an ECS task definition environment entry, EC2 user data), where anyone who can read the file or the configuration (often every local user, or any principal with read-only Describe/List access) or its backups can copy it.",
     "owasp": [
      "crypto",
      "misconfig"
@@ -7427,6 +7427,10 @@
        "platform": "cron / scripts"
       },
       {
+       "how": "Store the value in Secrets Manager or an SSM SecureString; in ECS reference it from the container's secrets (valueFrom) instead of environment; in Lambda read it at run time with the SDK or the Parameters and Secrets extension; in user data fetch it at boot with the instance role (aws secretsmanager get-secret-value) instead of embedding it",
+       "platform": "AWS (Lambda / ECS / EC2 user data)"
+      },
+      {
        "how": "Generate a new key, re-encrypt the data, then revoke the old value everywhere it was copied",
        "platform": "Rotation"
       }
@@ -7437,7 +7441,7 @@
      "NIST SP 800-57 Part 1 Rev. 5 (key protection)"
     ],
     "summary_rules": [],
-    "title": "Key or passphrase in plain text in a service or script",
+    "title": "Key or passphrase in plain text in a service, script or cloud configuration",
     "verify": [
      {
       "command": "systemctl show --type=service --state=running -p Id -p Environment '*' | grep -iE 'key|secret|pass|token'",
@@ -7446,6 +7450,14 @@
      {
       "command": "stat -c '%a %U %G %n' /etc/systemd/system/*.service",
       "label": "Who can read the unit"
+     },
+     {
+      "command": "aws lambda get-function-configuration --function-name <fn> --query 'keys(Environment.Variables)'",
+      "label": "Lambda variable names (not values)"
+     },
+     {
+      "command": "aws ecs describe-task-definition --task-definition <family:rev> --query 'taskDefinition.containerDefinitions[].environment[].name'",
+      "label": "ECS environment names"
      }
     ]
    },
@@ -8739,7 +8751,7 @@
    }
   }
  },
- "kb_version": "2026.11.01.3",
+ "kb_version": "2026.11.01.4",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

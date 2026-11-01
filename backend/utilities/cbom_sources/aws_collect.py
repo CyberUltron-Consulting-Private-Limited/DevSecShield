@@ -111,6 +111,118 @@ _SECRET_NAME = re.compile(r"(private|secret|passw|pwd|token|api[-_]?key|credenti
                           r"(^|[/_.-])key($|[/_.-]))", re.I)
 
 
+# --- secrets written into configuration (Lambda environment, ECS task definitions, EC2 user data) -----------------
+# The value is inspected in memory and only its shape leaves this module: material (private key / secret), encoding,
+# length, and for a private key its algorithm and size.  Nothing that could rebuild the value is ever emitted.
+_PEM_KEY = re.compile(r"-----BEGIN ((?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY)-----.*?-----END \1-----", re.S)
+_DER_B64 = re.compile(r"MI[A-Za-z0-9+/]{100,}={0,2}")  # a DER SEQUENCE; kept only if it parses as a private key
+_ENV_SECRET_NAME = re.compile(r"(KEY|SECRET|PASSWORD|PASSWD|PASSPHRASE|TOKEN|CREDENTIAL)", re.I)
+_ENV_NOT_SECRET = re.compile(r"(_FILE|_PATH|_DIR|_ID|_URL|_URI|_NAME|_ARN|_ALIAS|_TYPE|_SIZE|_LEN|_BITS|_ALG|_REGION|_ENABLED)$", re.I)
+_REFERENCE = ("arn:", "{{resolve:", "${", "$(", "ssm:", "secretsmanager:", "s3://", "/", "file:", "alias/", "http://", "https://")
+_USERDATA_ASSIGN = re.compile(r"^\s*(?:export\s+|set\s+|\$env:)?([A-Za-z_][A-Za-z0-9_]{0,127})\s*=\s*(.+?)\s*$")
+CONFIG_SCAN_CAP = 300  # functions / task definitions / instances read per region
+
+
+def _key_shape(data: bytes, label: str | None) -> tuple[str | None, int | None]:
+    """Algorithm and size of a private key held in memory; (None, None) when it is encrypted or unreadable."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+
+    try:
+        if label == "OPENSSH PRIVATE KEY":
+            key = serialization.load_ssh_private_key(data, password=None)
+        elif label is None:
+            key = serialization.load_der_private_key(data, password=None)
+        else:
+            key = serialization.load_pem_private_key(data, password=None)
+    except Exception:
+        return None, None
+    if isinstance(key, rsa.RSAPrivateKey):
+        return "RSA", key.key_size
+    if isinstance(key, ec.EllipticCurvePrivateKey):
+        return "ECDSA", key.curve.key_size
+    if isinstance(key, dsa.DSAPrivateKey):
+        return "DSA", key.key_size
+    if isinstance(key, ed25519.Ed25519PrivateKey):
+        return "ED25519", 256
+    if isinstance(key, ed448.Ed448PrivateKey):
+        return "ED448", 456
+    return None, None
+
+
+def _value_shape(name: str, value: Any) -> dict[str, Any] | None:
+    """What a configuration value holds -- never the value.  None when it is neither key material nor a secret."""
+    import base64
+
+    text = str(value or "").strip().replace("\\n", "\n")  # JSON-escaped newlines, as keys are often pasted
+    if not text:
+        return None
+    pem = _PEM_KEY.search(text)
+    if pem:
+        label = pem.group(1)
+        alg, bits = _key_shape(pem.group(0).encode(), label)
+        return {"material": "private-key", "encoding": "pem", "pem_label": label, "algorithm": alg, "key_bits": bits,
+                "passphrase_protected": "ENCRYPTED" in label or "Proc-Type: 4,ENCRYPTED" in pem.group(0) or None}
+    compact = re.sub(r"\s+", "", text)
+    if _DER_B64.fullmatch(compact):
+        try:
+            der = base64.b64decode(compact + "=" * (-len(compact) % 4))
+        except Exception:
+            der = b""
+        alg, bits = _key_shape(der, None) if der else (None, None)
+        if alg:
+            return {"material": "private-key", "encoding": "base64-der", "algorithm": alg, "key_bits": bits}
+    if not _ENV_SECRET_NAME.search(name) or _ENV_NOT_SECRET.search(name):
+        return None
+    if text.startswith(_REFERENCE) or text.lower() in ("true", "false", "none", "null", "changeme", "placeholder") \
+            or len(text) < 8 or text.isdigit():
+        return None
+    return {"material": "secret", "encoding": "text", "length": len(text)}
+
+
+def _embedded_asset(label: str, location: str, name: str, shape: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
+    """A private key becomes a private_key asset; any other secret a cloud_secret.  Both carry the store, never the value."""
+    facts = {**facts, **{k: v for k, v in shape.items() if v is not None}, "plaintext_in_cloud_config": True,
+             "identity": location}
+    if shape["material"] == "private-key":
+        return {"type": "private_key", "target": label, "location": location, "name": name,
+                "algorithm": shape.get("algorithm"), "key_size": shape.get("key_bits"),
+                "facts": {**facts, "encrypted": bool(shape.get("passphrase_protected")) if shape.get("algorithm") else None}}
+    return {"type": "cloud_secret", "target": label, "location": location, "name": name, "facts": facts}
+
+
+def _userdata_shapes(raw: str) -> list[dict[str, Any]]:
+    """EC2 user data (base64, possibly gzip) -> shapes of the key material and secret assignments it contains, with lines."""
+    import base64
+    import gzip
+
+    try:
+        blob = base64.b64decode(raw)
+        if blob[:2] == b"\x1f\x8b":
+            blob = gzip.decompress(blob)[:262144]
+        text = blob[:262144].decode("utf-8", "replace")
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for pem in _PEM_KEY.finditer(text):
+        shape = _value_shape("", pem.group(0)) or {}
+        out.append({**shape, "line": text.count("\n", 0, pem.start()) + 1})
+    covered = [(m.start(), m.end()) for m in _PEM_KEY.finditer(text)]
+    offset = 0
+    for number, line in enumerate(text.splitlines(), 1):
+        start = offset
+        offset += len(line) + 1
+        if any(a <= start < b for a, b in covered):
+            continue
+        m = _USERDATA_ASSIGN.match(line)
+        if not m:
+            continue
+        shape = _value_shape(m.group(1), m.group(2).strip().strip("'\""))
+        if shape:
+            out.append({**shape, "variable": m.group(1), "line": number})
+    return out[:50]
+
+
 def _ssh_public_bits(public_key: str) -> int | None:
     """RSA modulus size from an OpenSSH public key line ("ssh-rsa AAAA... comment")."""
     import base64
@@ -215,11 +327,78 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
               "name": f"EBS encryption by default ({region})", "facts": {"resource": "EBS default", "default_encryption": default}})
         volumes, truncated = _paginate(client, "describe_volumes", "Volumes")
         plain = [v for v in volumes if not v.get("Encrypted")]
-        for volume in plain[:500]:
+        # every volume is inventory (encrypted ones with their KMS key); unencrypted ones first so the cap never hides them
+        for volume in (plain + [v for v in volumes if v.get("Encrypted")])[:PER_SERVICE_CAP]:
+            encrypted = bool(volume.get("Encrypted"))
+            attached = [a.get("InstanceId") for a in volume.get("Attachments") or [] if a.get("InstanceId")]
             emit({"type": "storage_encryption", "target": label,
                   "location": f"arn:aws:ec2:{region}:{acct.account}:volume/{volume['VolumeId']}", "name": volume["VolumeId"],
-                  "facts": {"resource": f"EBS volume {volume['VolumeId']}", "encrypted": False, "size_gib": volume.get("Size")}})
+                  "facts": {"resource": f"EBS volume {volume['VolumeId']}", "encrypted": encrypted, "size_gib": volume.get("Size"),
+                            "kms_key_id": volume.get("KmsKeyId") if encrypted else None, "volume_type": volume.get("VolumeType"),
+                            "attached_to": attached[:5], "identity": volume["VolumeId"]}})
         return f"{len(volumes)} volumes, {len(plain)} unencrypted" + (" (truncated)" if truncated else "")
+
+    def lambdas() -> str | None:
+        # ListFunctions returns each function's environment; values are inspected here and only their shape is kept.
+        # Variables under a customer-managed key come back as an error (kms:Decrypt is denied) and are not readable.
+        client = acct.client("lambda", region)
+        functions, truncated = _paginate(client, "list_functions", "Functions", cap=CONFIG_SCAN_CAP)
+        hits = 0
+        for fn in functions:
+            env = fn.get("Environment") or {}
+            for var, value in sorted((env.get("Variables") or {}).items()):
+                shape = _value_shape(var, value)
+                if not shape:
+                    continue
+                hits += 1
+                emit(_embedded_asset(label, f"{fn['FunctionArn']}#environment/{var}", f"{fn.get('FunctionName')} env {var}", shape,
+                                     {"service": "lambda", "store": f"Lambda function {fn.get('FunctionName')} environment",
+                                      "variable": var, "kms_key_id": fn.get("KMSKeyArn") or "aws/lambda"}))
+        return f"{len(functions)} functions, {hits} secrets in environment" + (" (truncated)" if truncated else "")
+
+    def ecs_taskdefs() -> str | None:
+        # Active task definitions: plain `environment` entries are checked; `secrets` (valueFrom references) are fine.
+        client = acct.client("ecs", region)
+        arns, truncated = _paginate(client, "list_task_definitions", "taskDefinitionArns", cap=CONFIG_SCAN_CAP, status="ACTIVE")
+        hits = 0
+        for arn in arns:
+            td = client.describe_task_definition(taskDefinition=arn).get("taskDefinition") or {}
+            for container in td.get("containerDefinitions") or []:
+                for item in container.get("environment") or []:
+                    var = str(item.get("name") or "")
+                    shape = _value_shape(var, item.get("value"))
+                    if not shape:
+                        continue
+                    hits += 1
+                    family = f"{td.get('family')}:{td.get('revision')}"
+                    emit(_embedded_asset(label, f"{arn}#containerDefinitions/{container.get('name')}/environment/{var}",
+                                         f"{family} {container.get('name')} env {var}", shape,
+                                         {"service": "ecs", "store": f"ECS task definition {family} container {container.get('name')}",
+                                          "variable": var}))
+        return f"{len(arns)} task definitions, {hits} secrets in environment" + (" (truncated)" if truncated else "")
+
+    def userdata() -> str | None:
+        # DescribeInstanceAttribute(userData): bootstrap scripts often carry keys; only shapes and line numbers are kept.
+        client = acct.client("ec2", region)
+        reservations, truncated = _paginate(client, "describe_instances", "Reservations", cap=CONFIG_SCAN_CAP)
+        instances = [i for r in reservations for i in r.get("Instances") or []
+                     if (i.get("State") or {}).get("Name") not in ("terminated", "shutting-down")][:CONFIG_SCAN_CAP]
+        hits = 0
+        for inst in instances:
+            raw = ((client.describe_instance_attribute(InstanceId=inst["InstanceId"], Attribute="userData")
+                    .get("UserData") or {}).get("Value")) or ""
+            shapes = _userdata_shapes(raw) if raw else []
+            if not shapes:
+                continue
+            hits += 1
+            primary = next((s for s in shapes if s.get("material") == "private-key"), shapes[0])
+            items = [{k: s.get(k) for k in ("material", "algorithm", "key_bits", "variable", "line", "encoding", "length") if s.get(k)}
+                     for s in shapes]
+            emit(_embedded_asset(label, f"arn:aws:ec2:{region}:{acct.account}:instance/{inst['InstanceId']}#userData",
+                                 f"{inst['InstanceId']} user data", {k: v for k, v in primary.items() if k not in ("line", "variable")},
+                                 {"service": "ec2", "store": f"EC2 instance {inst['InstanceId']} user data",
+                                  "line": primary.get("line"), "items": items}))
+        return f"{len(instances)} instances, {hits} with secrets in user data" + (" (truncated)" if truncated else "")
 
     def rds() -> str | None:
         client = acct.client("rds", region)
@@ -313,7 +492,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
         return f"{len(params)} parameters" + (" (truncated)" if truncated else "")
 
     for service, fn in (("kms", kms), ("acm", acm), ("acm-pca", pca), ("secretsmanager", secrets), ("ec2", ebs),
-                        ("ec2-keypairs", keypairs), ("ssm", ssm),
+                        ("ec2-keypairs", keypairs), ("ssm", ssm), ("lambda", lambdas), ("ecs", ecs_taskdefs),
+                        ("ec2-userdata", userdata),
                         ("rds", rds), ("elasticloadbalancing", elbv2), ("apigateway", apigw), ("eks", eks)):
         run(service, fn)
     return rows
