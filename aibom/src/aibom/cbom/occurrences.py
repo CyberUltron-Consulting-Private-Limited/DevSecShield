@@ -39,7 +39,7 @@ _EXTRA_LANG = {
 }
 _LOCK_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "cargo.lock", "go.sum", "poetry.lock",
                "pipfile.lock", "composer.lock", "gemfile.lock", "packages.lock.json", "gradle.lockfile"}
-_COMMENT = re.compile(r"^\s*(#|//|\*|/\*|--|;|<!--)")
+_COMMENT = re.compile(r"^\s*(#|//|\*|/\*|--(?!---(?:BEGIN|END) )|;|<!--)")  # PEM armour is not a SQL comment
 _IMPORT = re.compile(r"^\s*(?:import|from|require|use|using|#include|require_once)\b|\brequire\(", re.I)
 
 

@@ -179,3 +179,13 @@ def test_cyclonedx_evidence_occurrences_carry_file_and_line(tmp_path):
     doc = json.loads(doc) if isinstance(doc, str) else doc
     md5 = next(c for c in doc["components"] if c.get("name") == "MD5")
     assert md5["evidence"]["occurrences"] == [{"location": "a.py", "line": 3}, {"location": "a.py", "line": 4}]
+
+
+def test_key_file_gets_the_line_of_its_pem_armour(tmp_path):
+    # the occurrence pass used to blank "-----BEGIN ..." as a SQL "--" comment, so key files had no line
+    pem = (FIX / "synthetic-crypto-certs-harden" / "server.key").read_text()
+    (tmp_path / "deploy").mkdir()
+    (tmp_path / "deploy" / "server.key").write_text("# staging TLS key\n\n" + pem)
+    rows = [r for r in scan_crypto_to_devsecshield(tmp_path)["results"] if r["location"].endswith("server.key")]
+    assert rows and all(r.get("line") == 3 for r in rows), [(r["title"], r.get("line")) for r in rows]
+    assert "MII" not in json.dumps(rows)  # the window around a key never carries key bytes
