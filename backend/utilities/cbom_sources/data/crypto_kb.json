@@ -6342,6 +6342,66 @@
      }
     ]
    },
+   "OPENSSL_ENC_WEAK_KDF": {
+    "attack": "Take an encrypted backup and run a GPU password cracker against the passphrase; a weak cipher (DES/3DES/RC4) makes even a strong passphrase weaker.",
+    "category": "host",
+    "compliance": [
+     "algorithms"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-916",
+     "CWE-327"
+    ],
+    "default_impact": "Medium",
+    "description": "An `openssl enc` call without -pbkdf2 derives the key with EVP_BytesToKey (a single MD5 or SHA-256 round, plus -md md5 here), so the passphrase can be brute-forced at billions of guesses per second, and without -pbkdf2 the ciphertext also carries no authentication.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-916, CWE-327 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-916, CWE-327 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.openssl.org/3.0/man1/openssl-enc/"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass file:/etc/<app>/backup.pass -in in -out in.enc",
+       "platform": "openssl 1.1.1+"
+      },
+      {
+       "how": "age -p / age -r <recipient> (authenticated encryption), or gpg --symmetric --cipher-algo AES256 --s2k-count 65011712",
+       "platform": "Better"
+      }
+     ],
+     "summary": "Use -aes-256-cbc with -pbkdf2 -iter 600000 (or age / gpg --symmetric with a long passphrase) and read the passphrase from a root-only file."
+    },
+    "standards": [
+     "NIST SP 800-132 (PBKDF)"
+    ],
+    "summary_rules": [],
+    "title": "openssl enc derives the key from a passphrase with one MD5/SHA-256 round",
+    "verify": [
+     {
+      "command": "grep -rnE 'openssl[[:space:]]+enc' /etc/cron.d /etc/crontab /usr/local/bin",
+      "label": "Find openssl enc calls"
+     }
+    ]
+   },
    "PLAINTEXT_LISTENER": {
     "attack": "Users or clients that land on the plaintext port send cookies and credentials in clear text; SSL-stripping attacks rely on this.",
     "category": "protocol",
@@ -7289,6 +7349,105 @@
     "summary_rules": [],
     "title": "SAML metadata not signed",
     "verify": []
+   },
+   "SECRET_IN_CONFIG": {
+    "attack": "Read the unit file, crontab or script (or `systemctl show`, which any local user may run) and use the key to decrypt the data it protects; it also travels with every backup and configuration-management copy.",
+    "category": "host",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-798",
+     "CWE-312"
+    ],
+    "default_impact": "High",
+    "description": "An encryption key or passphrase is written in clear text in a service definition (systemd Environment=), a cron job or a script, where anyone who can read the file (often every local user) or its backups can copy it.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-312 is in OWASP's mapped CWE list",
+      "id": "A04:2021",
+      "label": "A04:2021 - Insecure Design"
+     },
+     {
+      "basis": "CWE-798 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-312 is in OWASP's mapped CWE list",
+      "id": "A06:2025",
+      "label": "A06:2025 - Insecure Design"
+     },
+     {
+      "basis": "CWE-798 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#Credentials"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Use LoadCredential= / LoadCredentialEncrypted= (systemd-creds encrypt) or an EnvironmentFile= readable only by root and the service user (chmod 600), then systemctl daemon-reload && systemctl restart <unit>",
+       "platform": "systemd"
+      },
+      {
+       "how": "Read the passphrase from a root-only file (openssl enc ... -pass file:/etc/<app>/backup.pass) or from the secret manager; never put it on the command line, where ps shows it",
+       "platform": "cron / scripts"
+      },
+      {
+       "how": "Generate a new key, re-encrypt the data, then revoke the old value everywhere it was copied",
+       "platform": "Rotation"
+      }
+     ],
+     "summary": "Move the value to a secret store and give it to the service at run time; rotate it, because the old value is exposed."
+    },
+    "standards": [
+     "NIST SP 800-57 Part 1 Rev. 5 (key protection)"
+    ],
+    "summary_rules": [],
+    "title": "Key or passphrase in plain text in a service or script",
+    "verify": [
+     {
+      "command": "systemctl show --type=service --state=running -p Id -p Environment '*' | grep -iE 'key|secret|pass|token'",
+      "label": "Which units carry secrets"
+     },
+     {
+      "command": "stat -c '%a %U %G %n' /etc/systemd/system/*.service",
+      "label": "Who can read the unit"
+     }
+    ]
    },
    "SECRET_NO_ROTATION": {
     "attack": "A leaked secret stays valid indefinitely.",
@@ -8384,6 +8543,89 @@
     "title": "Storage not encrypted at rest",
     "verify": []
    },
+   "TLS_POLICY_OVERRIDE": {
+    "attack": "The service accepts SSL 3.0 / TLS 1.0, RC4, 3DES, export or anonymous suites and small keys again, so an on-path attacker can downgrade and attack its connections (POODLE, BEAST, Sweet32, Logjam).",
+    "category": "host",
+    "compliance": [
+     "tls_min"
+    ],
+    "cve_rules": [],
+    "cves": [
+     "CVE-2014-3566",
+     "CVE-2016-2183"
+    ],
+    "cwe": [
+     "CWE-327",
+     "CWE-757"
+    ],
+    "default_impact": "High",
+    "description": "A per-service OpenSSL configuration (OPENSSL_CONF with SECLEVEL=0 or MinProtocol below TLS 1.2) or a Java security override (empty jdk.tls.disabledAlgorithms) re-enables protocols and algorithms the system policy forbids, for that service only, where a host-level check does not see it.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-327, CWE-757 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-327, CWE-757 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.openssl.org/3.0/man3/SSL_CTX_set_security_level/",
+     "https://www.java.com/en/configure_crypto.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "In the [system_default_sect] of the override: MinProtocol = TLSv1.2 and CipherString = DEFAULT@SECLEVEL=2; or drop OPENSSL_CONF from the unit",
+       "platform": "OpenSSL (OPENSSL_CONF)"
+      },
+      {
+       "how": "Remove -Djava.security.properties=..., or keep jdk.tls.disabledAlgorithms = SSLv3, TLSv1, TLSv1.1, RC4, DES, MD5withRSA, DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC, anon, NULL",
+       "platform": "Java"
+      },
+      {
+       "how": "systemctl daemon-reload && systemctl restart <unit>",
+       "platform": "systemd"
+      }
+     ],
+     "summary": "Remove the override so the service follows the system policy, or set it to TLS 1.2+ with SECLEVEL 2 and a non-empty disabled-algorithms list."
+    },
+    "standards": [
+     "NIST SP 800-52 Rev. 2"
+    ],
+    "summary_rules": [],
+    "title": "A service overrides the crypto policy to allow legacy algorithms",
+    "verify": [
+     {
+      "command": "systemctl show -p Environment <unit>; grep -nE 'MinProtocol|CipherString' <openssl.cnf>",
+      "label": "Effective OpenSSL settings for the service"
+     },
+     {
+      "command": "systemctl show -p ExecStart <unit> | grep -o 'java.security.properties=[^ ]*'",
+      "label": "Java override"
+     }
+    ]
+   },
    "WEAK_CIPHER": {
     "attack": "Depending on the suite: RC4 biases leak plaintext; 64-bit block ciphers (3DES) allow SWEET32 birthday attacks on long sessions; EXPORT suites can be factored or broken in real time (FREAK, Logjam); anonymous suites give no server authentication at all.",
     "category": "cipher",
@@ -8497,7 +8739,7 @@
    }
   }
  },
- "kb_version": "2026.11.01.2",
+ "kb_version": "2026.11.01.3",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

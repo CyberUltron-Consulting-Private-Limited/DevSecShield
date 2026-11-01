@@ -122,7 +122,7 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any
 
 # ----------------------------------------------------------------------------- CycloneDX 1.6
 _REL_TYPE = {"private_key": "private-key", "public_key": "public-key", "ssh_host_key": "public-key",
-             "signing_key": "public-key", "kms_key": "key", "cloud_secret": "secret-key", "keystore": "key",
+             "signing_key": "public-key", "kms_key": "key", "cloud_secret": "secret-key", "host_secret": "secret-key", "keystore": "key",
              "k8s_certificate": "key"}
 
 

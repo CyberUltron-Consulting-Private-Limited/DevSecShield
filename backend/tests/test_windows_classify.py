@@ -77,3 +77,28 @@ def test_world_readable_key_and_luks1_from_new_node_facts():
     disk = {"name": "zs_legacy_crypt", "cipher": "aes-cbc-essiv:sha256", "key_bits": 256, "effective_key_bits": 256,
             "device": "7:4", "luks_version": 1}
     assert {"LUKS1", "DISK_CBC"} <= set(classify("disk_encryption", "aes-cbc-essiv:sha256", 256, None, disk)["finding_codes"])
+
+
+def test_host_service_secrets_overrides_and_cli_uses():
+    sec = {"name": "AES_KEY", "encoding": "hex", "length": 64, "key_bits": 256, "store": "systemd unit Environment=",
+           "unit": "zs-payments.service", "file": "/etc/systemd/system/zs-payments.service", "world_readable": True}
+    assert classify("host_secret", None, 256, None, sec)["finding_codes"] == ["SECRET_IN_CONFIG"]
+    ossl = {"kind": "openssl_conf", "used_by": ["zs-payments.service"], "directives": {
+        "minprotocol": {"value": "TLSv1", "line": 12}, "cipherstring": {"value": "DEFAULT@SECLEVEL=0", "line": 13}}}
+    assert {"MIN_TLS10", "TLS_POLICY_OVERRIDE"} <= set(classify("crypto_config", None, None, None, ossl)["finding_codes"])
+    java = {"kind": "java_security", "used_by": ["zs-legacy-java.service"],
+            "directives": {"jdk.tls.disabledalgorithms": {"value": "", "line": 1}}}
+    assert classify("crypto_config", None, None, None, java)["finding_codes"] == ["TLS_POLICY_OVERRIDE"]
+    strict_java = {**java, "directives": {"jdk.tls.disabledalgorithms": {"value": "SSLv3, TLSv1, RC4", "line": 1}}}
+    assert classify("crypto_config", None, None, None, strict_java)["finding_codes"] == []
+    ng = {"kind": "nginx", "protocols": ["TLSv1", "TLSv1.1", "TLSv1.2"], "ciphers": "ALL:@SECLEVEL=0"}
+    assert {"PROTO_TLS10", "PROTO_TLS11", "WEAK_CIPHER"} <= set(classify("crypto_config", None, None, None, ng)["finding_codes"])
+    good = {"kind": "nginx", "protocols": ["TLSv1.2", "TLSv1.3"], "ciphers": "ECDHE+AESGCM:!aNULL:!MD5"}
+    assert classify("crypto_config", None, None, None, good)["finding_codes"] == []
+    cron = {"kind": "openssl_cli", "file": "/etc/cron.d/zs-payments-backup", "line": 2, "cipher": "aes-128-cbc", "md": "md5",
+            "pbkdf2": False, "decrypt": False, "hardcoded_passphrase": True}
+    assert set(classify("crypto_config", "aes-128-cbc", None, None, cron)["finding_codes"]) == {"OPENSSL_ENC_WEAK_KDF", "SECRET_IN_CONFIG"}
+    legacy = {**cron, "cipher": "des3", "md": None}
+    assert "WEAK_CIPHER" in classify("crypto_config", "des3", None, None, legacy)["finding_codes"]
+    modern = {**cron, "cipher": "aes-256-cbc", "pbkdf2": True, "hardcoded_passphrase": False}
+    assert classify("crypto_config", "aes-256-cbc", None, None, modern)["finding_codes"] == []

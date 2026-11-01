@@ -38,6 +38,19 @@ KEYSTORE_LIST = "keytool -list -v -keystore {file}"
 FILE_MODE = "stat -c %a {file}"
 # LUKS header version per block device (FSVER needs util-linux 2.36+; older lsblk fails and the check is skipped).
 LUKS_VERSIONS = "lsblk -nr -o MAJ:MIN,FSTYPE,FSVER"
+# Running services: which unit sets OPENSSL_CONF or a Java security override, and which carries a key in its
+# Environment= (only the variable name and the value's length/encoding are kept; the node never sends a value).
+SERVICES = "systemctl show --type=service --state=running -p Id -p FragmentPath -p Environment -p ExecStart '*'"
+# openssl enc / des / aes command lines in cron jobs and local scripts (cipher, digest, KDF; the passphrase is dropped).
+OPENSSL_CLI_USES = ("grep -rnIEs 'openssl[[:space:]]+(enc|des|des3|des-ede3|aes-[0-9]+-[a-z]+|bf|rc4|rc2|cast)([[:space:]]|$)' "
+                    "/etc/cron.d /etc/crontab /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly "
+                    "/usr/local/bin /usr/local/sbin")
+# TLS directives in web server configuration (nginx, Apache).
+WEB_TLS = ("grep -rnIEs '^[[:space:]]*(ssl_protocols|ssl_ciphers|SSLProtocol|SSLCipherSuite)[[:space:]]' "
+           "/etc/nginx /etc/httpd /etc/apache2")
+# Only the crypto directives of a file a service points at (OPENSSL_CONF, -Djava.security.properties).
+CRYPTO_DIRECTIVES = ("grep -nEi '^[[:space:]]*(MinProtocol|MaxProtocol|CipherString|Ciphersuites|"
+                     "jdk[.]tls[.]disabledAlgorithms|jdk[.]certpath[.]disabledAlgorithms)[[:space:]]*=' {file}")
 
 TIER1_DISPLAY = [
     OS_RELEASE,
@@ -56,6 +69,10 @@ TIER1_DISPLAY = [
     KEYSTORE_LIST.format(file="<file>"),
     FILE_MODE.format(file="<file>"),
     LUKS_VERSIONS,
+    SERVICES,
+    OPENSSL_CLI_USES,
+    WEB_TLS,
+    CRYPTO_DIRECTIVES.format(file="<file>"),
 ]
 
 # ----------------------------------------------------------------------------- Tier 2 (sudo -n, exact argv)

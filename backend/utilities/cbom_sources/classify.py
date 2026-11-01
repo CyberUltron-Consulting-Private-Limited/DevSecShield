@@ -21,14 +21,15 @@ ASSET_TYPES = (
     "database_config", "database_user_auth", "k8s_cluster", "k8s_tls_secret", "k8s_certificate", "k8s_ingress_tls",
     "k8s_mesh_policy", "kms_key", "cloud_secret", "storage_encryption", "load_balancer_tls", "cdn_tls", "api_tls",
     "cloud_ca", "iam_certificate", "identity_provider", "signing_key", "open_port", "coverage",
+    "host_secret", "crypto_config",
 )
 
 CDX_TYPE = {
     **{t: "certificate" for t in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca")},
     **{t: "protocol" for t in ("tls_endpoint", "ssh_endpoint", "ssh_server_config", "database_tls", "load_balancer_tls",
-                                "cdn_tls", "api_tls", "k8s_ingress_tls")},
+                                "cdn_tls", "api_tls", "k8s_ingress_tls", "crypto_config")},
     **{t: "related-crypto-material" for t in ("private_key", "public_key", "keystore", "ssh_host_key", "kms_key",
-                                               "cloud_secret", "signing_key", "k8s_certificate")},
+                                               "cloud_secret", "signing_key", "k8s_certificate", "host_secret")},
     **{t: "library" for t in ("crypto_library", "process_library")},
 }
 
@@ -305,6 +306,53 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
         out.add("RDP_NO_NLA", "Medium", "Remote Desktop accepts connections without Network Level Authentication")
 
 
+_LEGACY_TLS = {"SSLV2": ("MIN_SSLv2", "PROTO_SSLv2"), "SSLV3": ("MIN_SSLv3", "PROTO_SSLv3"),
+               "TLSV1": ("MIN_TLS10", "PROTO_TLS10"), "TLSV1.0": ("MIN_TLS10", "PROTO_TLS10"),
+               "TLSV1.1": ("MIN_TLS11", "PROTO_TLS11")}
+_WEAK_CIPHER_STRING = re.compile(r"@SECLEVEL=0|(?<![!-])\b(ALL|aNULL|eNULL|NULL|EXPORT|EXP|RC4|DES|3DES|MD5|LOW)\b")
+_BAD_ENC = re.compile(r"^(des|des3|des-ede3|des-ede3-cbc|des-ede|des-ede-cbc|des-cbc|des-ecb|bf|bf-cbc|bf-ecb|rc4|rc4-40|rc2|rc2-cbc|"
+                      r"cast|cast5|cast5-cbc|cast-cbc)$|-ecb$", re.I)
+
+
+def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
+    """Service crypto overrides, web server TLS directives and openssl enc command lines read from a host."""
+    kind = facts.get("kind")
+    used = ", ".join(facts.get("used_by") or [])[:120]
+    if kind == "openssl_conf":
+        d = facts.get("directives") or {}
+        minp = _upper((d.get("minprotocol") or {}).get("value"))
+        if minp in _LEGACY_TLS:
+            out.add(_LEGACY_TLS[minp][0], "High", f"OPENSSL_CONF of {used or 'a service'} sets MinProtocol = {minp}")
+        cs = str((d.get("cipherstring") or {}).get("value") or "")
+        if "@SECLEVEL=0" in cs.upper() or minp in _LEGACY_TLS:
+            out.add("TLS_POLICY_OVERRIDE", "High", f"{used or 'A service'} overrides the OpenSSL policy"
+                                                   f"{' (CipherString ' + cs + ')' if cs else ''}")
+    elif kind == "java_security":
+        d = facts.get("directives") or {}
+        tls = d.get("jdk.tls.disabledalgorithms")
+        if tls is not None and not str(tls.get("value") or "").strip():
+            out.add("TLS_POLICY_OVERRIDE", "High", f"{used or 'A Java service'} empties jdk.tls.disabledAlgorithms: "
+                                                   "SSLv3, TLS 1.0/1.1, RC4, 3DES and anonymous suites are accepted again")
+    elif kind in ("nginx", "apache"):
+        for proto in facts.get("protocols") or []:
+            codes = _LEGACY_TLS.get(_upper(proto).lstrip("+"))
+            if codes:
+                out.add(codes[1], "High", f"{kind} configuration enables {proto}")
+        ciphers = str(facts.get("ciphers") or "")
+        if ciphers and _WEAK_CIPHER_STRING.search(ciphers):
+            out.add("WEAK_CIPHER", "High", f"{kind} cipher list allows weak suites ({ciphers[:60]})")
+    elif kind == "openssl_cli":
+        cipher = str(facts.get("cipher") or "")
+        if cipher and _BAD_ENC.search(cipher):
+            out.add("WEAK_CIPHER", "High", f"openssl {cipher} in {facts.get('file')}:{facts.get('line')}")
+        if not facts.get("pbkdf2") and facts.get("decrypt") is not True:
+            md = facts.get("md")
+            out.add("OPENSSL_ENC_WEAK_KDF", "Medium", "openssl enc derives the key with EVP_BytesToKey"
+                                                      f"{' -md ' + md if md else ''} (no -pbkdf2)")
+        if facts.get("hardcoded_passphrase"):
+            out.add("SECRET_IN_CONFIG", "High", f"Passphrase written on the openssl command line in {facts.get('file')}")
+
+
 _EOL_OPENSSL = re.compile(r"^(openssl|libssl|libcrypto|compat-openssl|openssl-libs)", re.I)
 
 
@@ -487,6 +535,16 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
                 out.add("SECRET_PLAINTEXT_PARAM", "High", "Secret-looking SSM parameter stored as a plain String")
         elif facts.get("rotation_enabled") is False:
             out.add("SECRET_NO_ROTATION", "Low", "Secret rotation is off")
+        qv = None
+    elif asset_type == "host_secret":
+        bits = facts.get("key_bits")
+        what = f"{bits}-bit key" if isinstance(bits, int) and bits else "secret"
+        where = facts.get("store") or "a file"
+        readable = " (world-readable file)" if facts.get("world_readable") else ""
+        out.add("SECRET_IN_CONFIG", "High", f"{facts.get('name') or 'A'} {what} stored in plain text in {where}{readable}")
+        qv = None
+    elif asset_type == "crypto_config":
+        _config_rules(out, facts)
         qv = None
     elif asset_type == "keystore":
         if _upper(facts.get("format") or facts.get("store_type")) == "JKS":

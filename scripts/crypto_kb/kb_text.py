@@ -351,6 +351,37 @@ entry("DOTNET_WEAK_TLS", title=".NET Framework strong cryptography is disabled",
           {"platform": "Group Policy", "how": "Deploy the same two DWORD values with Group Policy Preferences > Registry"}]},
       verify=[{"label": "Current values", "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\.NETFramework\\v4.0.30319' | Select-Object SchUseStrongCrypto,SystemDefaultTlsVersions"}],
       references=["https://learn.microsoft.com/en-us/dotnet/framework/network-programming/tls"])
+entry("SECRET_IN_CONFIG", title="Key or passphrase in plain text in a service or script", category="host", default_impact="High",
+      description="An encryption key or passphrase is written in clear text in a service definition (systemd Environment=), a cron job or a script, where anyone who can read the file (often every local user) or its backups can copy it.",
+      attack="Read the unit file, crontab or script (or `systemctl show`, which any local user may run) and use the key to decrypt the data it protects; it also travels with every backup and configuration-management copy.",
+      cwe=["CWE-798", "CWE-312"], owasp=["crypto", "misconfig"], cves=[], standards=["NIST SP 800-57 Part 1 Rev. 5 (key protection)"], compliance=["key_mgmt"],
+      remediation={"summary": "Move the value to a secret store and give it to the service at run time; rotate it, because the old value is exposed.", "steps": [
+          {"platform": "systemd", "how": "Use LoadCredential= / LoadCredentialEncrypted= (systemd-creds encrypt) or an EnvironmentFile= readable only by root and the service user (chmod 600), then systemctl daemon-reload && systemctl restart <unit>"},
+          {"platform": "cron / scripts", "how": "Read the passphrase from a root-only file (openssl enc ... -pass file:/etc/<app>/backup.pass) or from the secret manager; never put it on the command line, where ps shows it"},
+          {"platform": "Rotation", "how": "Generate a new key, re-encrypt the data, then revoke the old value everywhere it was copied"}]},
+      verify=[{"label": "Which units carry secrets", "command": "systemctl show --type=service --state=running -p Id -p Environment '*' | grep -iE 'key|secret|pass|token'"},
+              {"label": "Who can read the unit", "command": "stat -c '%a %U %G %n' /etc/systemd/system/*.service"}],
+      references=["https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#Credentials"])
+entry("TLS_POLICY_OVERRIDE", title="A service overrides the crypto policy to allow legacy algorithms", category="host", default_impact="High",
+      description="A per-service OpenSSL configuration (OPENSSL_CONF with SECLEVEL=0 or MinProtocol below TLS 1.2) or a Java security override (empty jdk.tls.disabledAlgorithms) re-enables protocols and algorithms the system policy forbids, for that service only, where a host-level check does not see it.",
+      attack="The service accepts SSL 3.0 / TLS 1.0, RC4, 3DES, export or anonymous suites and small keys again, so an on-path attacker can downgrade and attack its connections (POODLE, BEAST, Sweet32, Logjam).",
+      cwe=["CWE-327", "CWE-757"], owasp=["crypto", "misconfig"], cves=["CVE-2014-3566", "CVE-2016-2183"], standards=["NIST SP 800-52 Rev. 2"], compliance=["tls_min"],
+      remediation={"summary": "Remove the override so the service follows the system policy, or set it to TLS 1.2+ with SECLEVEL 2 and a non-empty disabled-algorithms list.", "steps": [
+          {"platform": "OpenSSL (OPENSSL_CONF)", "how": "In the [system_default_sect] of the override: MinProtocol = TLSv1.2 and CipherString = DEFAULT@SECLEVEL=2; or drop OPENSSL_CONF from the unit"},
+          {"platform": "Java", "how": "Remove -Djava.security.properties=..., or keep jdk.tls.disabledAlgorithms = SSLv3, TLSv1, TLSv1.1, RC4, DES, MD5withRSA, DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC, anon, NULL"},
+          {"platform": "systemd", "how": "systemctl daemon-reload && systemctl restart <unit>"}]},
+      verify=[{"label": "Effective OpenSSL settings for the service", "command": "systemctl show -p Environment <unit>; grep -nE 'MinProtocol|CipherString' <openssl.cnf>"},
+              {"label": "Java override", "command": "systemctl show -p ExecStart <unit> | grep -o 'java.security.properties=[^ ]*'"}],
+      references=["https://docs.openssl.org/3.0/man3/SSL_CTX_set_security_level/", "https://www.java.com/en/configure_crypto.html"])
+entry("OPENSSL_ENC_WEAK_KDF", title="openssl enc derives the key from a passphrase with one MD5/SHA-256 round", category="host", default_impact="Medium",
+      description="An `openssl enc` call without -pbkdf2 derives the key with EVP_BytesToKey (a single MD5 or SHA-256 round, plus -md md5 here), so the passphrase can be brute-forced at billions of guesses per second, and without -pbkdf2 the ciphertext also carries no authentication.",
+      attack="Take an encrypted backup and run a GPU password cracker against the passphrase; a weak cipher (DES/3DES/RC4) makes even a strong passphrase weaker.",
+      cwe=["CWE-916", "CWE-327"], owasp=["crypto"], cves=[], standards=["NIST SP 800-132 (PBKDF)"], compliance=["algorithms"],
+      remediation={"summary": "Use -aes-256-cbc with -pbkdf2 -iter 600000 (or age / gpg --symmetric with a long passphrase) and read the passphrase from a root-only file.", "steps": [
+          {"platform": "openssl 1.1.1+", "how": "openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass file:/etc/<app>/backup.pass -in in -out in.enc"},
+          {"platform": "Better", "how": "age -p / age -r <recipient> (authenticated encryption), or gpg --symmetric --cipher-algo AES256 --s2k-count 65011712"}]},
+      verify=[{"label": "Find openssl enc calls", "command": "grep -rnE 'openssl[[:space:]]+enc' /etc/cron.d /etc/crontab /usr/local/bin"}],
+      references=["https://docs.openssl.org/3.0/man1/openssl-enc/"])
 entry("LIB_EOL", title="End-of-life crypto library", category="library", default_impact="High",
       description="The crypto library version is past its upstream end of support, so new vulnerabilities are not fixed upstream.",
       attack="Unpatched library flaws (memory corruption, side channels) stay exploitable; check whether your OS vendor still backports fixes.",

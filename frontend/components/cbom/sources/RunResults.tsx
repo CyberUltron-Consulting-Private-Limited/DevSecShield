@@ -50,6 +50,8 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
   k8s_mesh_policy: "Mesh mTLS policy",
   kms_key: "KMS key",
   cloud_secret: "Cloud secret",
+  host_secret: "Secret in a service or script",
+  crypto_config: "Crypto configuration",
   storage_encryption: "Storage encryption",
   load_balancer_tls: "Load balancer TLS",
   cdn_tls: "CDN TLS",

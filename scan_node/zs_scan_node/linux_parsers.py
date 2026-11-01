@@ -366,3 +366,172 @@ def keytool_list(text: str) -> dict[str, Any]:
     if "integrity of the information stored in your keystore" in text:
         out["integrity_unverified"] = True
     return out
+
+
+# ----------------------------------------------------------------------------- services, configs, scripts
+_SECRET_NAME = re.compile(r"(KEY|SECRET|PASSWORD|PASSWD|PASSPHRASE|TOKEN|CREDENTIAL)", re.I)
+_NOT_SECRET_NAME = re.compile(r"(_FILE|_PATH|_DIR|_ID|_URL|_URI|_NAME|_ARN|_ALIAS|_TYPE|_SIZE|_LEN|_BITS|_ALG)$", re.I)
+_HEX = re.compile(r"[0-9a-fA-F]+")
+_B64 = re.compile(r"[A-Za-z0-9+/_-]+={0,2}")
+
+
+def _ok_abs(path: str) -> bool:
+    return (path.startswith("/") and len(path) <= 512 and ".." not in path.split("/")
+            and not any(ord(ch) < 32 or ord(ch) == 127 for ch in path))
+
+
+def _env_pairs(text: str) -> list[tuple[str, str]]:
+    import shlex
+    try:
+        parts = shlex.split(text)
+    except ValueError:
+        parts = text.split()
+    out = []
+    for p in parts:
+        name, sep, value = p.partition("=")
+        if sep and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name):
+            out.append((name, value))
+    return out
+
+
+def secret_shape(name: str, value: str) -> dict[str, Any] | None:
+    """Length/encoding of a secret-looking value -- never the value.  None when it is not key or passphrase material."""
+    if not _SECRET_NAME.search(name) or _NOT_SECRET_NAME.search(name):
+        return None
+    v = value.strip()
+    if not v or v.startswith(("$", "/", "file:", "env:", "@")) or v.lower() in ("true", "false", "none", "null", "changeme"):
+        return None
+    if _HEX.fullmatch(v) and len(v) >= 32 and len(v) % 2 == 0:
+        return {"encoding": "hex", "length": len(v), "key_bits": len(v) * 4}
+    if _B64.fullmatch(v) and len(v) >= 22:
+        return {"encoding": "base64", "length": len(v), "key_bits": (len(v.rstrip("=")) * 6) // 8 * 8}
+    if len(v) >= 8 and re.search(r"(PASS|SECRET|TOKEN|KEY)", name, re.I):
+        return {"encoding": "text", "length": len(v), "key_bits": None}
+    return None
+
+
+def systemd_services(text: str) -> list[dict[str, Any]]:
+    """``systemctl show -p Id -p FragmentPath -p Environment -p ExecStart '*'`` -> one dict per unit.
+
+    Secret values are replaced by their shape here, so they never leave this function."""
+    units: list[dict[str, str]] = []
+    cur: dict[str, str] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            if cur:
+                units.append(cur)
+                cur = {}
+            continue
+        key, _sep, value = line.partition("=")
+        if key in ("Id", "FragmentPath", "Environment", "ExecStart"):
+            cur[key] = value
+    if cur:
+        units.append(cur)
+    out = []
+    for u in units[:3000]:
+        env = _env_pairs(u.get("Environment", ""))
+        argv_m = re.search(r"argv\[\]=(.*?) ; ignore_errors", u.get("ExecStart", ""))
+        argv = argv_m.group(1) if argv_m else ""
+        secrets_ = []
+        for name, value in env:
+            shape = secret_shape(name, value)
+            if shape:
+                secrets_.append({"name": name, **shape})
+        openssl_conf = next((v for n, v in env if n == "OPENSSL_CONF" and _ok_abs(v)), None)
+        jsec = re.search(r"-Djava\.security\.properties==?(\S+)", argv)
+        java_props = jsec.group(1) if jsec and _ok_abs(jsec.group(1)) else None
+        if not (secrets_ or openssl_conf or java_props):
+            continue
+        frag = u.get("FragmentPath") or ""
+        out.append({"unit": printable(u.get("Id") or "", 255), "fragment": frag if _ok_abs(frag) else None,
+                    "secrets": secrets_[:20], "openssl_conf": openssl_conf, "java_security": java_props,
+                    "java_override_replaces": bool(jsec and "==" in jsec.group(0))})
+    return out
+
+
+def crypto_directives(text: str) -> dict[str, dict[str, Any]]:
+    """``grep -n`` of MinProtocol/CipherString/jdk.*.disabledAlgorithms -> {directive: {value, line}}."""
+    out: dict[str, dict[str, Any]] = {}
+    for line in text.splitlines():
+        m = re.match(r"^(\d+):\s*([A-Za-z.]+)\s*=\s*(.*?)\s*$", line)
+        if m:
+            out[m.group(2).lower()] = {"value": printable(m.group(3), 300), "line": int(m.group(1))}
+    return out
+
+
+_ENC_CIPHER = re.compile(r"^-(aes-\d+-[a-z0-9]+|des(?:3|-ede3(?:-cbc)?|-ede(?:-cbc)?|-cbc|-ecb)?|bf(?:-cbc|-ecb)?|rc4(?:-40)?|rc2(?:-cbc)?|"
+                         r"cast5?(?:-cbc)?|camellia-\d+-[a-z]+|chacha20)$", re.I)
+
+
+def openssl_cli_uses(text: str) -> list[dict[str, Any]]:
+    """``grep -rn`` hits of openssl enc/des/aes command lines -> cipher, digest, KDF and whether a literal passphrase
+    is on the command line.  The passphrase itself is never kept."""
+    out = []
+    for line in text.splitlines()[:500]:
+        m = re.match(r"^(/[^:]+):(\d+):(.*)$", line)
+        if not m or not _ok_abs(m.group(1)):
+            continue
+        content = m.group(3)
+        if content.lstrip().startswith("#"):
+            continue
+        tokens = content.replace("|", " | ").split()
+        try:
+            i = next(k for k, t in enumerate(tokens) if t.rsplit("/", 1)[-1] == "openssl")
+        except StopIteration:
+            continue
+        args = tokens[i + 1:]
+        cut = args.index("|") if "|" in args else len(args)
+        args = args[:cut]
+        if not args:
+            continue
+        sub = args[0]
+        cipher = None
+        if sub == "enc":
+            cipher = next((a[1:] for a in args[1:] if _ENC_CIPHER.match(a)), None)
+        elif _ENC_CIPHER.match("-" + sub):
+            cipher = sub
+        md = next((args[k + 1] for k, a in enumerate(args[:-1]) if a == "-md"), None)
+        literal = False
+        for k, a in enumerate(args[:-1]):
+            nxt = args[k + 1]
+            if a == "-k" and not nxt.startswith(("$", '"$')):
+                literal = True
+            if a in ("-pass", "-passin", "-passout") and nxt.startswith(("pass:", "'pass:", '"pass:')) and "$" not in nxt:
+                literal = True
+        out.append({"file": m.group(1), "line": int(m.group(2)), "command": "openssl " + sub,
+                    "cipher": cipher.lower() if cipher else None, "md": md.lower() if md else None,
+                    "pbkdf2": "-pbkdf2" in args or "-iter" in args, "salt": "-nosalt" not in args,
+                    "decrypt": "-d" in args, "hardcoded_passphrase": literal})
+    return out
+
+
+def web_tls(text: str) -> dict[str, dict[str, Any]]:
+    """nginx ssl_protocols/ssl_ciphers and Apache SSLProtocol/SSLCipherSuite per file."""
+    out: dict[str, dict[str, Any]] = {}
+    for line in text.splitlines()[:2000]:
+        m = re.match(r"^(/[^:]+):(\d+):\s*(ssl_protocols|ssl_ciphers|SSLProtocol|SSLCipherSuite)\s+(.*?);?\s*$", line)
+        if not m or not _ok_abs(m.group(1)):
+            continue
+        f = out.setdefault(m.group(1), {"server": "nginx" if m.group(3).startswith("ssl_") else "apache", "lines": []})
+        f["lines"].append(int(m.group(2)))
+        # "ssl_protocols TLSv1 TLSv1.1; # comment" -> directive value only, unquoted
+        raw = m.group(4).split("#", 1)[0].split(";", 1)[0].strip()
+        value = printable(raw.strip("'\"").strip(), 400)
+        if m.group(3) in ("ssl_protocols", "SSLProtocol"):
+            f["protocols_raw"] = value
+            if m.group(3) == "ssl_protocols":
+                f["protocols"] = [p for p in value.replace(";", " ").split() if p]
+            else:  # Apache: all, +X, -X
+                enabled = set()
+                for tok in value.split():
+                    t = tok.lstrip("+")
+                    if tok.lower() == "all":
+                        enabled |= {"TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"}
+                    elif tok.startswith("-"):
+                        enabled.discard(tok[1:])
+                    else:
+                        enabled.add(t)
+                f["protocols"] = sorted(enabled)
+        else:
+            f["ciphers"] = value
+    return out

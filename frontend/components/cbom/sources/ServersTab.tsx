@@ -141,6 +141,10 @@ const TIER1_COMMANDS = [
   "keytool -list -v -keystore <file>",
   "stat -c %a <file>",
   "lsblk -nr -o MAJ:MIN,FSTYPE,FSVER",
+  "systemctl show --type=service --state=running -p Id -p FragmentPath -p Environment -p ExecStart '*'",
+  "grep -rnIEs 'openssl[[:space:]]+(enc|des|des3|des-ede3|aes-[0-9]+-[a-z]+|bf|rc4|rc2|cast)([[:space:]]|$)' /etc/cron.d /etc/crontab /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly /usr/local/bin /usr/local/sbin",
+  "grep -rnIEs '^[[:space:]]*(ssl_protocols|ssl_ciphers|SSLProtocol|SSLCipherSuite)[[:space:]]' /etc/nginx /etc/httpd /etc/apache2",
+  "grep -nEi '^[[:space:]]*(MinProtocol|MaxProtocol|CipherString|Ciphersuites|jdk[.]tls[.]disabledAlgorithms|jdk[.]certpath[.]disabledAlgorithms)[[:space:]]*=' <file>",
 ];
 const TIER2_COMMANDS = [
   "/usr/bin/ss -H -tlnp",

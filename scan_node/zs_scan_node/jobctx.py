@@ -18,6 +18,7 @@ ASSET_TYPES = frozenset({
     "database_config", "database_user_auth", "k8s_cluster", "k8s_tls_secret", "k8s_certificate", "k8s_ingress_tls",
     "k8s_mesh_policy", "kms_key", "cloud_secret", "storage_encryption", "load_balancer_tls", "cdn_tls", "api_tls",
     "cloud_ca", "iam_certificate", "identity_provider", "signing_key", "open_port", "coverage",
+    "host_secret", "crypto_config",
 })
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",

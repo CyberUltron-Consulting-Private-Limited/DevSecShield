@@ -471,6 +471,7 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                          facts={**b, "container": True})
         emit("os_crypto_policy", loc, "os", name=(facts.get("os") or {}).get("pretty_name") or "operating system",
              facts=facts)
+        _service_and_config_crypto(sess, loc, emit)
         # files
         state, out, _ = tier2.get("key_and_certificate_files", ("skip", b"", ""))
         if tier < 2:
@@ -643,6 +644,54 @@ def _private_key(ctx: JobContext, sess: Session, loc: str, real_path: str) -> in
     ctx.emit("private_key", loc, path, name=path.rsplit("/", 1)[-1], algorithm=facts.get("key_alg"),
              key_size=facts.get("key_size"), facts=facts)
     return 1
+
+
+def _service_and_config_crypto(sess: Session, loc: str, emit) -> None:
+    """Tier 1 (no sudo): keys in running services' Environment=, per-service OpenSSL / Java crypto overrides, openssl
+    enc command lines in cron jobs and local scripts, and nginx / Apache TLS directives.  Secret values never leave
+    the parsers (only name, length and encoding); passphrases on command lines are only noted as present."""
+    status, text, _ = _t1(sess, C.SERVICES, 60)
+    services = P.systemd_services(text) if status == 0 else []
+    modes: dict[str, int | None] = {}
+
+    def mode_of(path: str | None) -> int | None:
+        if not path:
+            return None
+        if path not in modes:
+            st, out, _e, _t = sess.run(_file_cmd(C.FILE_MODE, path), FILE_CMD_TIMEOUT)
+            modes[path] = P.file_mode(out) if st == 0 else None
+        return modes[path]
+
+    overrides: dict[str, dict[str, Any]] = {}
+    for svc in services[:500]:
+        frag = svc.get("fragment")
+        for sec in svc["secrets"]:
+            m = mode_of(frag)
+            where = f"{frag or svc['unit']}:Environment={sec['name']}"
+            emit("host_secret", loc, where, name=sec["name"], key_size=sec.get("key_bits"),
+                 facts={**sec, "store": "systemd unit Environment=", "unit": svc["unit"], "file": frag,
+                        "file_mode": format(m, "04o") if m is not None else None,
+                        "world_readable": bool(m & 0o004) if m is not None else None,
+                        "readable_by_any_user_via_systemctl": True})
+        for kind, path in (("openssl_conf", svc.get("openssl_conf")), ("java_security", svc.get("java_security"))):
+            if path:
+                o = overrides.setdefault(path, {"kind": kind, "used_by": []})
+                o["used_by"].append(svc["unit"])
+                if kind == "java_security":
+                    o["replaces_master_file"] = svc.get("java_override_replaces")
+    for path, o in list(overrides.items())[:200]:
+        st, out, err, _t = sess.run(_file_cmd(C.CRYPTO_DIRECTIVES, path), FILE_CMD_TIMEOUT)
+        directives = P.crypto_directives(out) if st in (0, 1) else {}
+        readable = st in (0, 1) and "permission denied" not in err.lower() and "no such file" not in err.lower()
+        emit("crypto_config", loc, path, name=path.rsplit("/", 1)[-1],
+             facts={**o, "path": path, "readable": readable, "directives": directives})
+    status, text, _ = _t1(sess, C.OPENSSL_CLI_USES, 60)
+    for use in (P.openssl_cli_uses(text) if status in (0, 1, 2) else [])[:200]:
+        emit("crypto_config", loc, f"{use['file']}:{use['line']}", name=use["command"], algorithm=use.get("cipher"),
+             facts={"kind": "openssl_cli", **use})
+    status, text, _ = _t1(sess, C.WEB_TLS, 60)
+    for path, cfg in list((P.web_tls(text) if status in (0, 1, 2) else {}).items())[:200]:
+        emit("crypto_config", loc, path, name=path.rsplit("/", 1)[-1], facts={"kind": cfg["server"], "path": path, **cfg})
 
 
 # ----------------------------------------------------------------------------- entry points
