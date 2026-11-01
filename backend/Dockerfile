@@ -27,9 +27,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ============================================================
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+# `uv run` at start (entrypoint, alembic, gunicorn) must never resolve or download: the venv is complete from the
+# build and an air-gapped site has no package index.
 ENV IS_DOCKER_CONTAINER="True" \
     PYTHONPATH="/backend/.." \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_NO_SYNC=1 \
+    UV_OFFLINE=1
 
 WORKDIR /backend
 

@@ -52,7 +52,12 @@ RUN git clone --depth 1 https://github.com/cbomkit/cbomkit-theia.git /tmp/cbomki
 # ============================================================
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+# UV_NO_SYNC / UV_OFFLINE: `uv run` at start must never resolve or download anything. The venv is complete from
+# the build; an air-gapped site has no index to reach (found in the AWS lab: a worker restart with no internet
+# path crash-looped trying to fetch wheels).
 ENV PYTHONUNBUFFERED=1 \
+    UV_NO_SYNC=1 \
+    UV_OFFLINE=1 \
     UV_PYTHON=3.12 \
     UV_PYTHON_PREFERENCE=only-system \
     IS_DOCKER_CONTAINER="True" \
