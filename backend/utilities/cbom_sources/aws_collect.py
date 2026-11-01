@@ -343,9 +343,17 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
         # Variables under a customer-managed key come back as an error (kms:Decrypt is denied) and are not readable.
         client = acct.client("lambda", region)
         functions, truncated = _paginate(client, "list_functions", "Functions", cap=CONFIG_SCAN_CAP)
-        hits = 0
+        hits = unreadable = 0
         for fn in functions:
             env = fn.get("Environment") or {}
+            if env.get("Error"):  # e.g. KMS decrypt denied: say so per function instead of reporting nothing
+                unreadable += 1
+                err = env["Error"] if isinstance(env["Error"], dict) else {}
+                emit({"type": "coverage", "target": label, "location": f"{fn['FunctionArn']}#environment",
+                      "facts": {"check": f"lambda {fn.get('FunctionName')} environment variables", "status": "denied",
+                                "detail": str(err.get("ErrorCode") or "not readable")[:120] +
+                                          " (Lambda decrypts them with the caller's KMS permissions)"}})
+                continue
             for var, value in sorted((env.get("Variables") or {}).items()):
                 shape = _value_shape(var, value)
                 if not shape:
@@ -354,7 +362,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
                 emit(_embedded_asset(label, f"{fn['FunctionArn']}#environment/{var}", f"{fn.get('FunctionName')} env {var}", shape,
                                      {"service": "lambda", "store": f"Lambda function {fn.get('FunctionName')} environment",
                                       "variable": var, "kms_key_id": fn.get("KMSKeyArn") or "aws/lambda"}))
-        return f"{len(functions)} functions, {hits} secrets in environment" + (" (truncated)" if truncated else "")
+        return (f"{len(functions)} functions, {hits} secrets in environment"
+                + (f", {unreadable} environments not readable" if unreadable else "") + (" (truncated)" if truncated else ""))
 
     def ecs_taskdefs() -> str | None:
         # Active task definitions: plain `environment` entries are checked; `secrets` (valueFrom references) are fine.

@@ -98,7 +98,9 @@ def _data():
             {"FunctionArn": fn_arn, "FunctionName": "legacy-signer", "Environment": {"Variables": {
                 "SIGNING_KEY": RSA_BODY, "API_TOKEN": "tok_9f8e7d6c5b4a", "KMS_KEY_ID": "alias/app",
                 "DB_SECRET_ARN": f"arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:db", "LOG_LEVEL": "debug"}}},
-            {"FunctionArn": fn_arn + "2", "FunctionName": "clean"}]}],
+            {"FunctionArn": fn_arn + "2", "FunctionName": "clean"},
+            {"FunctionArn": fn_arn + "3", "FunctionName": "cmk-env",
+             "Environment": {"Error": {"ErrorCode": "AccessDeniedException", "Message": "KMS decrypt denied"}}}]}],
         ("ecs", "list_task_definitions"): [{"taskDefinitionArns": [td_arn]}],
         ("ecs", "describe_task_definition"): {"taskDefinition": {"family": "legacy-task", "revision": 3, "containerDefinitions": [
             {"name": "legacy", "environment": [{"name": "TLS_PRIVATE_KEY", "value": EC_B64}, {"name": "PORT", "value": "8443"}],
@@ -198,3 +200,10 @@ def test_denied_services_become_coverage_gaps():
     assert status["lambda"] == status["ecs"] == status["ec2-userdata"] == "denied"
     assert {g["facts"]["check"] for g in found if g["type"] == "coverage"} >= {f"lambda in {REGION}", f"ecs in {REGION}",
                                                                                f"ec2-userdata in {REGION}"}
+
+
+def test_lambda_environment_that_cannot_be_decrypted_is_a_coverage_gap():
+    # the reader's deny on kms:Decrypt also blocks Lambda from decrypting variables for it (seen in the AWS lab)
+    _status, found = _collect()
+    gaps = [a for a in found if a["type"] == "coverage" and a["location"].endswith("legacy-signer3#environment")]
+    assert len(gaps) == 1 and gaps[0]["facts"]["status"] == "denied" and "AccessDenied" in gaps[0]["facts"]["detail"]
