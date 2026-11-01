@@ -198,8 +198,11 @@ def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
             continue
         codes = set(row.get("finding_codes") or [])
         kind = str(row.get("material_kind") or "").lower()
+        in_source = bool(row.get("language")) and row.get("language") not in ("pem", "text", "unknown")
         if row.get("asset_type") in ("certificate",) or kind in ("private-key", "private_key", "key-pair",
-                                                                  "keystore", "secret-key", "pkcs12"):
+                                                                  "keystore", "pkcs12") or (
+                kind == "secret-key" and not in_source):
+            # key files are never copied; a key literal inside source code gets a strictly redacted window below
             row["snippet_note"] = "Key or certificate material is not copied into findings."
             stats["skipped_material"] += 1
             continue
@@ -213,7 +216,7 @@ def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
             row["snippet_note"] = "Generated or minified file: no code window."
             stats["skipped_generated"] += 1
             continue
-        strict = bool(codes & {"HARDCODED_KEY", "STATIC_IV", "REUSED_NONCE"}) or kind in ("key", "iv", "nonce",
+        strict = bool(codes & {"HARDCODED_KEY", "STATIC_IV", "REUSED_NONCE"}) or kind in ("key", "secret-key", "iv", "nonce",
                                                                                               "salt", "seed")
         needle = re.split(r"[\s(@-]", str(row.get("title") or ""), maxsplit=1)[0] or None
         win = code_window(text, int(line), strict=strict, needle=needle)

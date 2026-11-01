@@ -52,6 +52,8 @@ C = frozenset({"c"})
 PHP = frozenset({"php"})
 RB = frozenset({"ruby"})
 TF = frozenset({"terraform"})
+CONF = frozenset({"config", "nginx", "apache"})
+YAML = frozenset({"yaml"})
 WEAK = frozenset({"WEAK_ALGORITHM", "WEAK_CIPHER_SUITE", "WEAK_CERTIFICATE_SIGNATURE"})
 MODE = frozenset({"WEAK_CIPHER_MODE", "WEAK_ALGORITHM"})
 KEYSZ = frozenset({"WEAK_KEY_SIZE", "WEAK_CERTIFICATE_KEY"})
@@ -78,10 +80,62 @@ N_KEY = ("Existing keys and certificates keep their old size: generate new keys,
 N_TLS = ("Make sure the trust store contains the CA that issued the server certificate (for internal CAs, load it "
          "explicitly instead of disabling verification).",)
 N_PROTO = ("Peers that only speak TLS 1.0/1.1 will stop connecting: check the clients first.",)
+N_SECRET = ("Rotate the exposed value now: it stays in the repository history after this change.",
+            "Store it in your secret manager (or the deployment environment) and inject it at run time; never commit it.")
+N_IV = ("A fresh random IV/nonce is needed for every message: store it next to the ciphertext (it is not secret) and "
+        "read it back for decryption.",)
+HARD = frozenset({"HARDCODED_KEY", "HARDCODED_SECRET", "STATIC_IV", "REUSED_NONCE"})
+_IVNAME = re.compile(r"(^|_)(iv|nonce|salt)($|_)|^(iv|nonce|salt)[A-Z0-9]|(Iv|Nonce|Salt)$", re.I)
+
+
+def _env_name(name: str) -> str:
+    snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).upper().strip("_")
+    return snake if snake not in ("KEY", "SECRET") else f"CRYPTO_{snake}"
+
+
+def _py_hard(m: re.Match) -> str:
+    name, lhs, b = m.group("name"), m.group("lhs"), m.group("b")
+    if _IVNAME.search(name):
+        return f"{lhs}os.urandom({12 if 'nonce' in name.lower() else 16})"
+    return f'{lhs}os.environ["{_env_name(name)}"]' + (".encode()" if b else "")
+
+
+def _java_hard(m: re.Match) -> str:
+    return f'{m.group("lhs")}System.getenv("{_env_name(m.group("name"))}"){m.group("tail") or ""}'
+
+
+def _js_hard(m: re.Match) -> str:
+    return f'{m.group("lhs")}process.env.{_env_name(m.group("name"))}'
+
+
 N_RENAME = ("Function and variable names that still say md5/sha1 are left as they are; rename them separately if "
             "you want the code to read accurately.",)
 
 RULES: tuple[Rule, ...] = (
+    # Hard-coded keys and IVs.  The stored window is strictly redacted, so these rewrite the <redacted:N> placeholder:
+    # no secret value ever reaches the fix.
+    Rule("py-hardcoded-assign", PY, HARD,
+         _r(r"""(?P<lhs>\b(?P<name>[A-Za-z_]\w*)\s*(?::\s*[\w\[\]]+\s*)?=\s*)(?P<b>b?)(?P<q>['"])<redacted:\d+>(?P=q)"""),
+         _py_hard, 70, "Read the key from the environment (or generate a random IV per message) instead of a literal.",
+         N_SECRET + N_IV + ("Add `import os` at the top of the file if it is not there.",)),
+    Rule("py-hardcoded-arg", PY, HARD,
+         _r(r"""(?P<call>\b(?:Fernet|AESGCM|ChaCha20Poly1305|AES\.new|hmac\.new|HMAC)\(\s*)(?P<b>b?)(?P<q>['"])<redacted:\d+>(?P=q)"""),
+         lambda m: f'{m.group("call")}os.environ["CRYPTO_KEY"]' + (".encode()" if m.group("b") else ""), 65,
+         "Pass the key from the environment instead of a literal.", N_SECRET + ("Add `import os` if it is missing.",)),
+    Rule("java-hardcoded-assign", JAVA, HARD,
+         _r(r"""(?P<lhs>\b(?:(?:private|public|protected|static|final)\s+)*String\s+(?P<name>\w+)\s*=\s*)"<redacted:\d+>"(?P<tail>\.getBytes\([^)]*\))?"""),
+         _java_hard, 65, "Read the key from the environment instead of a string literal.", N_SECRET),
+    Rule("java-hardcoded-keyspec", JAVA, HARD,
+         _r(r"""(?P<call>new\s+SecretKeySpec\(\s*)"<redacted:\d+>"(?P<tail>\.getBytes\([^)]*\))"""),
+         r'\g<call>System.getenv("CRYPTO_KEY")\g<tail>', 65, "Load the key from the environment instead of a literal.",
+         N_SECRET),
+    Rule("js-hardcoded-assign", JS, HARD,
+         _r(r"""(?P<lhs>\b(?:const|let|var)\s+(?P<name>\w+)\s*(?::\s*\w+\s*)?=\s*)(?P<q>['"`])<redacted:\d+>(?P=q)"""),
+         _js_hard, 65, "Read the key from the environment instead of a literal.", N_SECRET),
+    Rule("js-hardcoded-buffer", JS, HARD, _r(r"""(Buffer\.from\(\s*)(['"`])<redacted:\d+>\2"""), r"\1process.env.CRYPTO_KEY",
+         65, "Read the key from the environment instead of a literal.", N_SECRET),
+    Rule("go-hardcoded-bytes", GO, HARD, _r(r"""\[\]byte\(\s*"<redacted:\d+>"\s*\)"""), '[]byte(os.Getenv("CRYPTO_KEY"))', 65,
+         "Read the key from the environment instead of a literal.", N_SECRET + ('Add "os" to the imports if it is missing.',)),
     # ------------------------------------------------------------------------------------------ Python
     Rule("py-hashlib-call", PY, WEAK, _r(r"\bhashlib\.(md5|sha1)\("), "hashlib.sha256(", 85,
          "Use hashlib.sha256 instead of {old}.", N_HASH + N_RENAME, HASHES),
@@ -266,6 +320,15 @@ RULES: tuple[Rule, ...] = (
     Rule("tf-elb-policy", TF, PROTO | REST | WEAK,
          _r(r"""(ssl_policy\s*=\s*")ELBSecurityPolicy-(?:2015-05|2016-08|TLS-1-0-2015-04|TLS-1-1-2017-01|2015-03|2014-\d\d|FS-2018-06)(")"""),
          r"\1ELBSecurityPolicy-TLS13-1-2-2021-06\2", 80, "Use a TLS 1.2/1.3 listener policy.", N_PROTO, block=True),
+    Rule("nginx-ssl-protocols", CONF, PROTO, _r(r"(\bssl_protocols\s+)[^;]*(;)"), r"\1TLSv1.2 TLSv1.3\2", 85,
+         "Allow only TLS 1.2 and 1.3.", N_PROTO + ("Reload the server (nginx -t && nginx -s reload).",)),
+    Rule("apache-sslprotocol", CONF, PROTO, _r(r"(\bSSLProtocol\s+)[^\n#]*"), r"\1-all +TLSv1.2 +TLSv1.3", 85,
+         "Allow only TLS 1.2 and 1.3.", N_PROTO + ("Check with apachectl configtest, then reload.",)),
+    Rule("cfn-rds-encrypted", YAML, REST, _r(r"^(?P<i>[ \t]*)Properties:[ \t]*$"),
+         lambda m: f"{m.group(0)}\n{m.group('i')}  StorageEncrypted: true", 50, "Encrypt the database storage.",
+         ("Set KmsKeyId to a customer-managed key if your policy requires one.",), algo=_r(r"relational_db|AWS::RDS", re.I),
+         block=True, warning="Turning on encryption for an existing RDS instance replaces it: snapshot, copy the "
+                             "snapshot with encryption, restore, then switch traffic."),
     Rule("tf-cloudfront-min", TF, PROTO, _r(r"""(minimum_protocol_version\s*=\s*")(?:SSLv3|TLSv1|TLSv1_2016|TLSv1\.1_2016)(")"""),
          r"\1TLSv1.2_2021\2", 85, "Require TLS 1.2 at the edge.", N_PROTO, block=True),
 )

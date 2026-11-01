@@ -156,3 +156,18 @@ def test_graph_budget_holds_on_a_huge_repo(budget):
     shown = [n for n in g["nodes"] if n.get("kind") == "crypto_asset" and not n.get("cluster")]
     assert all(n.get("weak") for n in shown) or len(shown) >= 5000 // 7  # riskiest first
     assert len(json.dumps(g)) < 200_000
+
+
+def test_key_literal_in_source_gets_a_strict_window_and_key_files_none(tmp_path):
+    (tmp_path / "fernet_hardcoded.py").write_text(
+        "from cryptography.fernet import Fernet\n"
+        "KEY = b\"ZmVybmV0LWtleS1mb3ItdGVzdGluZy0xMjM0NTY3ODkwYWI=\"\n"
+        "def f():\n    return Fernet(KEY)\n")
+    (tmp_path / "server.key").write_text("-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----\n")
+    out = scan_crypto_to_devsecshield(tmp_path)
+    blob = json.dumps(out)
+    assert "ZmVybmV0LWtleS1mb3I" not in blob and "MIIEvQIBADAN" not in blob
+    hard = [r for r in out["results"] if "HARDCODED_KEY" in (r.get("finding_codes") or [])]
+    assert hard and all(r.get("snippet") and "<redacted:" in r["snippet"] for r in hard
+                        if r["location"].endswith(".py"))
+    assert all(not r.get("snippet") for r in out["results"] if r["location"].endswith(".key"))

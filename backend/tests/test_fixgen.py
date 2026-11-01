@@ -165,3 +165,35 @@ def test_remediation_response_carries_fix_diff_and_demo():
     assert out["diff"].startswith("--- a/src/app.py") and out["code_fix"]["rules"] == ["py-hashlib-call"]
     assert out["exploit_demo"]["family"] == "md5-collision" and "RESULT: COLLISION" in out["exploit_demo"]["poc"]["script"]
     assert "grep" in out["exploit_payload"]["payload"]  # the legacy field stays read-only commands for this asset
+
+
+@pytest.mark.parametrize("lang,line,want", [
+    ("python", "KEY = b'<redacted:44>'", 'KEY = os.environ["CRYPTO_KEY"].encode()'),
+    ("python", "api_secret: str = '<redacted:32>'", 'api_secret: str = os.environ["API_SECRET"]'),
+    ("python", "iv = b'<redacted:16>'", "iv = os.urandom(16)"),
+    ("python", "f = Fernet(b'<redacted:44>')", 'f = Fernet(os.environ["CRYPTO_KEY"].encode())'),
+    ("java", 'private static final String AES_KEY = "<redacted:16>";', 'private static final String AES_KEY = System.getenv("AES_KEY");'),
+    ("java", 'SecretKeySpec k = new SecretKeySpec("<redacted:16>".getBytes(), "AES");',
+     'SecretKeySpec k = new SecretKeySpec(System.getenv("CRYPTO_KEY").getBytes(), "AES");'),
+    ("javascript", "const encKey = '<redacted:32>';", "const encKey = process.env.ENC_KEY;"),
+    ("go", 'key := []byte("<redacted:32>")', 'key := []byte(os.Getenv("CRYPTO_KEY"))'),
+])
+def test_hardcoded_key_rewrites_only_touch_the_placeholder(lang, line, want):
+    ext = {"python": "py", "java": "java", "javascript": "js", "go": "go"}[lang]
+    out = fixgen.generate({"location": f"src/a.{ext}", "line": 1, "language": lang, "snippet": line, "snippet_start": 1,
+                           "finding_codes": ["HARDCODED_KEY"], "title": "secret-key"})
+    assert out["available"], out["summary"]
+    assert out["fixed_code"].strip() == want
+    assert "<redacted" not in out["fixed_code"]
+
+
+def test_server_config_and_cloudformation_rewrites():
+    ng = fixgen.generate({"location": "infra/nginx/nginx.conf", "line": 4, "language": "config", "snippet_start": 1,
+                          "snippet": "server {\n  listen 443 ssl;\n  server_name app.local;\n  ssl_protocols TLSv1;\n}",
+                          "finding_codes": ["WEAK_PROTOCOL"], "title": "TLS"})
+    assert ng["available"] and "ssl_protocols TLSv1.2 TLSv1.3;" in ng["fixed_code"] and "+  ssl_protocols TLSv1.2 TLSv1.3;" in ng["diff"]
+    cfn = fixgen.generate({"location": "infra/cfn/stack.yaml", "line": 1, "language": "yaml", "snippet_start": 1,
+                           "snippet": "Resources:\n  Db:\n    Type: AWS::RDS::DBInstance\n    Properties:\n      Engine: postgres",
+                           "finding_codes": ["UNENCRYPTED_AT_REST"], "title": "relational_db:Db"})
+    assert cfn["available"] and "    Properties:\n      StorageEncrypted: true\n      Engine: postgres" in cfn["fixed_code"]
+    assert cfn["warnings"]
