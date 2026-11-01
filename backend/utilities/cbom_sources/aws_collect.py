@@ -174,7 +174,7 @@ def _value_shape(name: str, value: Any) -> dict[str, Any] | None:
             return {"material": "private-key", "encoding": "base64-der", "algorithm": alg, "key_bits": bits}
     if not _ENV_SECRET_NAME.search(name) or _ENV_NOT_SECRET.search(name):
         return None
-    if text.startswith(_REFERENCE) or text.lower() in ("true", "false", "none", "null", "changeme", "placeholder") \
+    if text.startswith(_REFERENCE) or text[0] in "$%@" or text.lower() in ("true", "false", "none", "null", "changeme", "placeholder") \
             or len(text) < 8 or text.isdigit():
         return None
     return {"material": "secret", "encoding": "text", "length": len(text)}

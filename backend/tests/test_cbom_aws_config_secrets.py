@@ -86,7 +86,8 @@ def _userdata(text: str, zipped=False) -> str:
 def _data():
     fn_arn = f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:legacy-signer"
     td_arn = f"arn:aws:ecs:{REGION}:{ACCOUNT}:task-definition/legacy-task:3"
-    script = f"#!/bin/bash\nexport APP_ENV=prod\nexport DB_PASSWORD='{PASSWORD}'\ncat > /etc/app/tls.key <<'EOF'\n{RSA_PEM}EOF\n"
+    script = (f"#!/bin/bash\nexport APP_ENV=prod\nexport DB_PASSWORD='{PASSWORD}'\ncat > /etc/app/tls.key <<'EOF'\n{RSA_PEM}EOF\n"
+              "REDIS_PASSWORD=$REDIS_PASSWORD\nJWT_SECRET=\"$(aws secretsmanager get-secret-value --secret-id jwt)\"\n")
     return {
         ("ec2", "get_ebs_encryption_by_default"): {"EbsEncryptionByDefault": False},
         ("ec2", "describe_volumes"): [{"Volumes": [
@@ -167,6 +168,7 @@ def test_ec2_user_data_plain_and_gzip_with_line_numbers():
     items = asset["facts"]["items"]
     assert {"material": "secret", "variable": "DB_PASSWORD", "line": 3, "encoding": "text", "length": len(PASSWORD)} in items
     assert any(i.get("material") == "private-key" and i.get("key_bits") == 2048 for i in items)
+    assert not any(i.get("variable") in ("REDIS_PASSWORD", "JWT_SECRET") for i in items)  # references, not values
 
 
 def test_no_value_ever_leaves_the_collector():
@@ -183,6 +185,8 @@ def test_value_shape_rules():
     assert shape("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")["material"] == "secret"
     assert shape("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE") is None
     assert shape("PASSWORD", "${DB_PASSWORD}") is None and shape("PASSWORD", "changeme") is None
+    # shell / batch variable references in bootstrap scripts (seen in the lab account: REDIS_PASSWORD=$REDIS_PASSWORD)
+    assert shape("REDIS_PASSWORD", "$REDIS_PASSWORD") is None and shape("DB_PASSWORD", "%DB_PASSWORD%") is None
     assert shape("PASSWORD", "short") is None and shape("TIMEOUT", "a-long-but-harmless-value") is None
     assert shape("CERT", "MII" + "A" * 400) is None  # base64 that is not a private key
 
