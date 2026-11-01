@@ -61,6 +61,13 @@ def _estimation_failure(task_result) -> HTTPException:
         )
     ):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=text)
+    # A corrupt, truncated, encrypted or mislabelled archive is bad input too, not an outage (found by the lab's
+    # hostile-input suite: a truncated zip and a tar.gz renamed .zip both came back as "try again later").
+    if any(token in lowered for token in ("not a zip file", "bad magic number", "truncated file header", "bad crc-32",
+                                          "password required", "is encrypted", "span multiple disks")):
+        reason = text.rsplit(":", 1)[-1].strip() or "unreadable archive"
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail=f"The uploaded file is not a readable zip archive ({reason[:120]})")
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Credit estimation failed, please try again later",

@@ -9,6 +9,11 @@ from urllib.parse import urlparse
 import json
 from helpers.context.s3_utils import download_zip_file, download_file
 import zipfile
+import errno
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def clone_repo(
     url: str,
@@ -168,6 +173,11 @@ MAX_COMPRESSION_RATIO = 100  # Zip bomb detection: 100x compression is suspiciou
 # Smaller archives stay bounded by MAX_EXTRACTED_SIZE.
 MIN_UNCOMPRESSED_FOR_RATIO = 64 * 1024 * 1024
 MAX_FILES_IN_ARCHIVE = 50000  # Prevent file count DoS
+# Entries the filesystem cannot hold (a name over 255 bytes, a path over 4096 bytes, or absurd nesting) are skipped
+# one by one instead of failing the whole upload: a repository with one such file still gets scanned.
+MAX_NAME_BYTES = 255
+MAX_PATH_BYTES = 4000
+MAX_PATH_DEPTH = 128
 
 
 def safe_extract_zip(zip_path: str, extract_to: str) -> None:
@@ -205,24 +215,39 @@ def safe_extract_zip(zip_path: str, extract_to: str) -> None:
             raise ValueError("Suspicious compression ratio detected (possible zip bomb)")
         
         # Safe extraction with path traversal protection
+        skipped = 0
         for info in zf.infolist():
+            parts = [p for p in info.filename.replace("\\", "/").split("/") if p]
+            if (any(len(p.encode("utf-8", "surrogateescape")) > MAX_NAME_BYTES for p in parts)
+                    or len(parts) > MAX_PATH_DEPTH
+                    or len(str(extract_path).encode()) + len(info.filename.encode("utf-8", "surrogateescape")) > MAX_PATH_BYTES):
+                skipped += 1  # the filesystem cannot hold it; checked before the traversal test so it never mkdirs
+                continue
             # Resolve the full target path
             target_path = (extract_path / info.filename).resolve()
             
             # Security check: Ensure target is within extract directory
-            if not str(target_path).startswith(str(extract_path)):
+            if target_path != extract_path and extract_path not in target_path.parents:
                 raise ValueError(f"Path traversal detected in archive: {info.filename}")
             
             # Create directory or extract file
-            if info.is_dir():
-                target_path.mkdir(parents=True, exist_ok=True)
-            else:
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(info) as source, open(target_path, 'wb') as target:
-                    target.write(source.read())
+            try:
+                if info.is_dir():
+                    target_path.mkdir(parents=True, exist_ok=True)
+                else:
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(info) as source, open(target_path, 'wb') as target:
+                        target.write(source.read())
+            except OSError as exc:
+                if exc.errno != errno.ENAMETOOLONG:
+                    raise
+                skipped += 1
+        if skipped:
+            logger.warning("zip extraction skipped %d entries whose names the filesystem cannot hold", skipped)
 
 
 def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
+    directory = zip_file_path = None
     try:
         # Download the zip file from the s3 bucket 
         zip_file_path = download_zip_file(zip_context.bucket_name, zip_context.object_name)
@@ -236,7 +261,15 @@ def get_directory_from_zip_context(zip_context: ZipContext) -> Path:
         
         return directory
     except Exception as e:
+        if directory:  # a refused archive (bomb, traversal, corrupt) must not leave its partial tree behind
+            shutil.rmtree(directory, ignore_errors=True)
         raise ValueError(f"Error in getting directory from zip context: {e}")
+    finally:  # the downloaded archive is only needed for the extraction
+        if zip_file_path:
+            try:
+                os.remove(zip_file_path)
+            except OSError:
+                pass
     
 def validate_dict_with_zip_context(dict_context: dict) -> ZipContext:
     try:

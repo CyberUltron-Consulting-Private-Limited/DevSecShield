@@ -27,6 +27,16 @@ def test_zip_bomb_is_not_reported_as_a_credit_failure() -> None:
     assert "zip bomb" in exc.detail
 
 
+@pytest.mark.parametrize("worker_error", [
+    "Error in initializing CBOMAgent: Error in getting directory from zip context: File is not a zip file",
+    "Error in initializing CBOMAgent: Error in getting directory from zip context: Bad magic number for file header",
+    "Error in initializing CBOMAgent: File <ZipInfo a.py> is encrypted, password required for extraction",
+])
+def test_an_unreadable_archive_is_bad_input_not_an_outage(worker_error) -> None:
+    exc = _estimation_failure(_Result(worker_error))
+    assert exc.status_code == 400 and exc.detail.startswith("The uploaded file is not a readable zip archive (")
+
+
 def test_other_estimation_failures_stay_credit_errors() -> None:
     exc = _estimation_failure(_Result("broker connection refused"))
     assert exc.status_code == 500
