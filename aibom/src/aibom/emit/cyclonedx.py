@@ -794,9 +794,27 @@ def _emit_crypto_asset(
                 ),
             )
         out["cryptoProperties"] = crypto
+    occurrences = _occurrences(props)
+    if occurrences:
+        out["evidence"] = {"occurrences": occurrences}
     if props:
         out["properties"] = _properties_list(props)
     return out
+
+
+_MAX_EVIDENCE_OCCURRENCES = 50
+
+
+def _occurrences(props: dict[str, str]) -> list[dict[str, Any]]:
+    """CycloneDX 1.6 ``evidence.occurrences`` (file + line) from the occurrence pass, so other CBOM tools and
+    reviewers read the locations in the standard place.  Only repository-relative source paths (never a host path
+    or URL) and only when a line is known."""
+    src = props.get("discovery:source") or ""
+    if not src or src.startswith(("/", "\\")) or "://" in src or ".." in src.replace("\\", "/").split("/"):
+        return []
+    lines = [int(x) for x in (props.get("crypto:occurrences") or props.get("crypto:line") or "").split(",")
+             if x.strip().isdigit() and int(x) > 0]
+    return [{"location": src, "line": n} for n in lines[:_MAX_EVIDENCE_OCCURRENCES]]
 
 
 def _emit_component(

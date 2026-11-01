@@ -171,3 +171,11 @@ def test_key_literal_in_source_gets_a_strict_window_and_key_files_none(tmp_path)
     assert hard and all(r.get("snippet") and "<redacted:" in r["snippet"] for r in hard
                         if r["location"].endswith(".py"))
     assert all(not r.get("snippet") for r in out["results"] if r["location"].endswith(".key"))
+
+
+def test_cyclonedx_evidence_occurrences_carry_file_and_line(tmp_path):
+    (tmp_path / "a.py").write_text("import hashlib\nx = 1\nh = hashlib.md5(b'x')\ng = hashlib.md5(b'y')\n")
+    doc = scan_crypto_to_devsecshield(tmp_path)["cbom_json"]
+    doc = json.loads(doc) if isinstance(doc, str) else doc
+    md5 = next(c for c in doc["components"] if c.get("name") == "MD5")
+    assert md5["evidence"]["occurrences"] == [{"location": "a.py", "line": 3}, {"location": "a.py", "line": 4}]
